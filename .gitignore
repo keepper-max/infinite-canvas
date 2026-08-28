@@ -6,3 +6,5 @@ out/
 !.env.example
 *.log
 tsconfig.tsbuildinfo
+.open-next/
+dist/
