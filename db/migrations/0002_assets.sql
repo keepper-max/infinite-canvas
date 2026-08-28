@@ -1,0 +1,2 @@
+create table if not exists assets (id uuid primary key default gen_random_uuid(), project_id uuid not null references projects(id) on delete cascade, kind text not null default 'image', name text not null, object_key text not null unique, uri text not null, mime_type text not null, size integer not null default 0, version integer not null default 1, metadata jsonb not null default '{}', created_at timestamptz not null default now());
+create index if not exists assets_project_idx on assets(project_id, created_at desc);

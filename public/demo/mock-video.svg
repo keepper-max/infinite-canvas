@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="960" height="540" viewBox="0 0 960 540">
+  <defs><linearGradient id="g" x1="0" x2="1" y1="0" y2="1"><stop stop-color="#22283f"/><stop offset="1" stop-color="#ae6b8e"/></linearGradient></defs>
+  <rect width="960" height="540" fill="url(#g)"/><circle cx="770" cy="140" r="92" fill="#f5c58b" opacity=".85"/>
+  <path d="M0 410 Q180 295 370 405 T760 370 T960 410 V540 H0Z" fill="#171827" opacity=".92"/>
+  <text x="54" y="82" fill="#fff" font-family="Arial" font-size="26" letter-spacing="4">MOCK SEEDANCE 2.5 TAKE</text>
+  <text x="54" y="468" fill="#fff" font-family="Arial" font-size="18" opacity=".78">镜界工坊 · 本地预览占位片段</text>
+</svg>

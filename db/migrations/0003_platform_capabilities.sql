@@ -1,0 +1,5 @@
+create table if not exists story_outlines (id uuid primary key default gen_random_uuid(), project_id uuid not null unique references projects(id) on delete cascade, title text not null default '', content text not null default '', updated_at timestamptz not null default now());
+create table if not exists project_agents (id uuid primary key default gen_random_uuid(), project_id uuid not null references projects(id) on delete cascade, name text not null, kind text not null default 'agent', enabled integer not null default 1, config jsonb not null default '{}', updated_at timestamptz not null default now());
+create table if not exists automation_runs (id uuid primary key default gen_random_uuid(), project_id uuid not null references projects(id) on delete cascade, template text not null, status text not null default 'draft', input jsonb not null default '{}', created_at timestamptz not null default now());
+create index if not exists project_agents_project_idx on project_agents(project_id, updated_at desc);
+create index if not exists automation_runs_project_idx on automation_runs(project_id, created_at desc);
