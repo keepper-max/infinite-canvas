@@ -1,0 +1,6 @@
+create table if not exists project_plugins (id uuid primary key default gen_random_uuid(), project_id uuid not null references projects(id) on delete cascade, slug text not null, name text not null, enabled integer not null default 1, config jsonb not null default '{}', created_at timestamptz not null default now(), unique(project_id, slug));
+create table if not exists prompt_templates (id uuid primary key default gen_random_uuid(), project_id uuid references projects(id) on delete cascade, title text not null, category text not null default '通用', content text not null, created_at timestamptz not null default now());
+create table if not exists model_configs (id uuid primary key default gen_random_uuid(), project_id uuid not null references projects(id) on delete cascade, name text not null, base_url text not null, model text not null, script text not null default '', api_key_env text not null default '', enabled integer not null default 1, updated_at timestamptz not null default now());
+create index if not exists project_plugins_project_idx on project_plugins(project_id);
+create index if not exists prompt_templates_project_idx on prompt_templates(project_id, created_at desc);
+create index if not exists model_configs_project_idx on model_configs(project_id, updated_at desc);

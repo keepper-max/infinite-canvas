@@ -37,3 +37,30 @@
 
 - 真实模型 Provider、积分扣费和资产版本比较仍未接入。
 - Mock 任务不调用真实 Seedance 2.5，不扣积分；真实 Provider、Redis 队列、MinIO 和 FFmpeg 属于后续阶段。
+
+## ECS 部署就绪阶段
+
+- Dockerfile 已切换为生产构建：镜像构建时执行 `npm run build`，容器启动执行迁移后使用 `next start`。
+- Compose 增加环境变量覆盖、PostgreSQL/Redis 健康检查和服务依赖顺序，可直接上传 ECS 后启动。
+- 新增 `.env.example`，明确数据库、Redis、S3、Cookie 和外部服务配置项。
+- 新增 `/api/integrations`、`/api/credits`、`/api/payments/create`、`/api/sms/send` 接口边界；积分、支付、短信当前为安全的未配置占位，不会产生真实扣费或发送。
+- ESLint 已排除 `.open-next` 和 `dist` 部署生成目录。
+- 生产 Compose 已移除源码挂载，并将 PostgreSQL、Redis、MinIO 管理端口限制为 ECS 本机回环地址，避免直接暴露公网。
+- 本阶段验证：`npm run lint`、`npx tsc --noEmit`、`npm run test:unit`、`npm run build`、`docker compose config --quiet` 均通过；未执行真实 Docker 镜像构建（当前 Docker 引擎未启动）。
+- 已新增项目成员 API（查询、添加、角色修改、移除），并限制只有项目所有者可管理成员。
+- 已新增资产版本 API，支持按版本组查询和上传新版本；已新增 FFmpeg 合成 API，将项目内多个视频资产合成为 MP4 并回存对象存储。
+- 工作流模板现可直接创建运行记录并批量提交项目节点到 Mock Worker，不再只是草稿。
+- 单元测试扩展为 2 项，覆盖任务状态机和外部服务默认未配置行为。
+- 已将参考仓库 Fork 到用户账号：`https://github.com/keepper-max/infinite-canvas`；当前项目不直接复制其代码。
+- 画布已增加本地撤销/重做历史、Delete 删除选中节点、Ctrl/Cmd+D 复制节点、Ctrl/Cmd+Z/Y 快捷键，并保留服务端画布持久化与导出能力。
+- 已从 Fork 的 `infinite-canvas` 参考其画布产品能力（项目导入导出、节点操作、快捷键和可扩展节点思路），在现有 React Flow + PostgreSQL 架构中完成对应交互移植；未复制原仓库源码。
+- 画布顶部新增“重做、导入画布、复制节点、删除节点”入口，导入 JSON 后会走现有防抖保存接口。
+- 本次验证：`npm run lint`、`npx tsc --noEmit`、`npm run test:unit`、`npm run build` 均通过。
+- 已完成 AI 画布助手、插件节点、提示词库和自定义模型脚本的服务端与工作台入口移植：助手读取选中节点生成生产建议；插件可项目级安装/启停；提示词按角色/场景/视频分类；模型配置使用环境变量引用 Key。
+- 新增迁移 `0004_canvas_extensions.sql` 及对应表 `project_plugins`、`prompt_templates`、`model_configs`。
+- 进一步借鉴 Fork 仓库完成模型运行器：支持 OpenAI 兼容 `/chat/completions` 测试调用，API Key 只从 ECS 环境变量读取；助手会优先调用项目模型配置。
+- 提示词库增加分类、关键词查询和删除接口；插件 API 支持项目级内置节点 manifest；工作台新增画布助手、提示词库、插件节点和模型脚本四个入口。
+- 本阶段验证：`npm run lint`、`npx tsc --noEmit`、`npm run test:unit`、`npm run build` 均通过。
+- 继续开发完成：团队成员前端入口、积分账户/账本表和余额接口、工作流拓扑排序、提示词库搜索/分类、插件节点管理和 Seedance Skill 画布助手入口。
+- 新增迁移 `0005_credits.sql`；单元测试扩展到 3 项，增加工作流拓扑排序校验。
+- 已将 Seedance 2.0 提示词 Skill 的生产规则提炼为网站侧 `lib/seedance-skill.ts`，接入画布助手；不携带 Codex 工具路由，只保留可在网页中执行的提示词编排规则。
