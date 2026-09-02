@@ -486,7 +486,7 @@ export function normalizeLocalProxyUrl(value: string) {
     return /^https?:\/\//i.test(trimmed) ? trimmed : `http://${trimmed}`;
 }
 
-/** Prefix an outgoing provider request with the local forwarding proxy so the browser is not blocked by CORS. */
+/** Prefix an outgoing request with the local forwarding proxy so the browser is not blocked by CORS. */
 export function withLocalProxy(url: string) {
     const { proxyEnabled, proxyUrl } = useConfigStore.getState().config;
     if (!proxyEnabled || !/^https?:\/\//i.test(url)) return url;

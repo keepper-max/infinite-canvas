@@ -383,11 +383,11 @@ export default {
         },
         proxy: {
             title: "Local proxy",
-            description: "Forward provider requests (models, image, video, text, audio) through a proxy running on your machine to avoid browser CORS errors.",
+            description: "Forward provider requests (models, image, video, text, audio) and WebDAV sync through a proxy running on your machine to avoid browser CORS errors.",
             startHint: "Run this in a terminal first, and keep it running while you use the canvas:",
             address: "Proxy address",
             addressDescription: "Must match the address printed by the command above.",
-            channelHint: "Keep the provider's real endpoint in your provider settings — never the proxy address. Turning the switch off restores direct requests.",
+            channelHint: "Keep the real endpoint in Providers and WebDAV — never the proxy address. Turning the switch off restores direct requests.",
             test: "Test connection",
             available: "Local proxy is reachable ({{proxy}})",
             missingUrl: "Enter the local proxy address first.",
@@ -577,7 +577,7 @@ export default {
         },
         webdav: {
             title: "WebDAV sync",
-            description: "Sync canvases, assets, generation history, and local media files. AI API keys are excluded; the browser connects directly to WebDAV.",
+            description: "Sync canvases, assets, generation history, and local media files. AI API keys are excluded. Requests go through the local proxy when it is on; otherwise the browser connects to WebDAV directly.",
             lastSynced: "Last synced {{time}}",
             neverSynced: "Not synced yet",
             url: "WebDAV URL",

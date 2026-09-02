@@ -383,11 +383,11 @@ export default {
         },
         proxy: {
             title: "本地代理",
-            description: "开启后，拉取模型列表、生图、生视频、生成文本、生成音频等请求都会先发给本机代理再转发出去，用来绕开浏览器跨域限制。",
+            description: "开启后，拉取模型列表、生图、生视频、生成文本、生成音频和 WebDAV 同步等请求都会先发给本机代理再转发出去，用来绕开浏览器跨域限制。",
             startHint: "先在终端运行下面的命令，并在使用画布期间保持运行：",
             address: "代理地址",
             addressDescription: "需要和上面命令启动后打印的地址一致。",
-            channelHint: "渠道里仍然填写接口的真实地址，不要填代理地址；关闭开关即可恢复直连。",
+            channelHint: "渠道和 WebDAV 仍填写真实地址，不要填代理地址；关闭开关即可恢复直连。",
             test: "测试连接",
             available: "本地代理连接正常（{{proxy}}）",
             missingUrl: "请先填写本地代理地址。",
@@ -577,7 +577,7 @@ export default {
         },
         webdav: {
             title: "WebDAV 同步",
-            description: "同步画布、我的资产、生成记录和本地媒体文件，不包含 AI API Key；浏览器会直接连接 WebDAV 服务。",
+            description: "同步画布、我的资产、生成记录和本地媒体文件，不包含 AI API Key。开启本地代理时经本机代理转发，否则浏览器直连 WebDAV。",
             lastSynced: "上次同步 {{time}}",
             neverSynced: "尚未同步",
             url: "WebDAV 地址",
