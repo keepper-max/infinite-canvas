@@ -3,6 +3,7 @@ import { nanoid } from "nanoid";
 
 import i18n from "@/i18n";
 import { dataUrlToFile, readFileAsDataUrl } from "@/lib/image-utils";
+import { clampVideoSeconds, computeVideoSize, inferVideoRatio } from "@/lib/media-size";
 import { getMediaBlob, resolveMediaUrl, uploadMediaFile, type UploadedFile } from "@/services/file-storage";
 import { imageToDataUrl } from "@/services/image-storage";
 import { boolConfig, buildApiUrl, modelOptionName, resolveModelRequestConfig, resolveModelScript, type AiConfig } from "@/stores/use-config-store";
@@ -106,9 +107,9 @@ async function createPluginVideoTask(config: AiConfig, model: string, script: st
             audios,
             params: {
                 seconds: normalizeVideoSeconds(config.videoSeconds),
-                size: normalizeVideoSize(config.size),
+                size: normalizeVideoSize(config.size, config.vquality),
                 resolution: normalizeVideoResolution(config.vquality),
-                ratio: config.size,
+                ratio: videoAspectRatio(config.size),
                 generateAudio: boolConfig(config.videoGenerateAudio, true),
                 watermark: boolConfig(config.videoWatermark, false),
                 mode: resolveVideoMode(config.videoMode, refs.length),
@@ -154,7 +155,7 @@ async function createOpenAIVideoTask(config: AiConfig, model: string, prompt: st
     body.append("model", modelOptionName(model));
     body.append("prompt", prompt);
     body.append("seconds", normalizeVideoSeconds(config.videoSeconds));
-    body.append("size", normalizeVideoSize(config.size) || "1280x720");
+    body.append("size", normalizeVideoSize(config.size, config.vquality) || "1280x720");
     body.append("resolution_name", normalizeVideoResolution(config.vquality));
     body.append("generate_audio", String(boolConfig(config.videoGenerateAudio, true)));
     body.append("watermark", String(boolConfig(config.videoWatermark, false)));
@@ -222,7 +223,7 @@ async function createGeminiVideoTask(config: AiConfig, model: string, prompt: st
         const created = unwrapEnvelope((await axios.post<ApiEnvelope<GeminiVideoOperation>>(geminiVideoUrl(config, model, "predictLongRunning"), {
             instances: [instance],
             parameters: {
-                aspectRatio: geminiVideoAspectRatio(config.size),
+                aspectRatio: videoAspectRatio(config.size),
                 durationSeconds: Number(normalizeVideoSeconds(config.videoSeconds)) || 8,
                 resolution: normalizeVideoResolution(config.vquality),
                 generateAudio: boolConfig(config.videoGenerateAudio, true),
@@ -274,15 +275,9 @@ function geminiVideoHeaders(config: Pick<AiConfig, "apiKey">) {
     return { "x-goog-api-key": config.apiKey, "Content-Type": "application/json" };
 }
 
-function geminiVideoAspectRatio(size: string) {
-    const aspectRatioMap: Record<string, string> = {
-        "1280x720": "16:9",
-        "1920x1080": "16:9",
-        "720x1280": "9:16",
-        "1080x1920": "9:16",
-    };
-    const value = size === "auto" ? "16:9" : size || "16:9";
-    return aspectRatioMap[value] || value;
+function videoAspectRatio(size: string) {
+    const ratio = inferVideoRatio(size);
+    return ratio === "auto" ? "16:9" : ratio;
 }
 
 function parseDataUrlInline(dataUrl: string, fallbackType = "image/png"): GeminiInlineData {
@@ -311,8 +306,7 @@ async function referenceMediaToFile(item: { name: string; type?: string; url?: s
 }
 
 function normalizeVideoSeconds(value: string) {
-    const seconds = Math.floor(Number(value) || 6);
-    return String(Math.max(1, Math.min(20, seconds)));
+    return clampVideoSeconds(value);
 }
 
 function resolveVideoMode(mode: string | undefined, imageCount: number) {
@@ -320,11 +314,12 @@ function resolveVideoMode(mode: string | undefined, imageCount: number) {
     return "frames";
 }
 
-function normalizeVideoSize(value: string) {
+function normalizeVideoSize(value: string, resolution?: string) {
     if (value === "auto") return null;
-    const size = value || "1280x720";
-    if (/^\d+x\d+$/.test(size)) return size;
-    return ["9:16", "2:3", "3:4"].includes(size) ? "720x1280" : "1280x720";
+    if (/^\d+x\d+$/.test(value || "")) return value;
+    const ratio = inferVideoRatio(value || "16:9");
+    if (ratio === "auto") return null;
+    return computeVideoSize(resolution || "720", ratio);
 }
 
 function normalizeVideoResolution(value: string) {
