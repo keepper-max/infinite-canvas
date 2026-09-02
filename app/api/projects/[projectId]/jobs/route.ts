@@ -1,6 +1,6 @@
 import { and, desc, eq, inArray } from "drizzle-orm";
 import { NextResponse } from "next/server";
-import { canvasNodes, generationJobs } from "@/db/schema";
+import { assets, canvasNodes, generationJobs } from "@/db/schema";
 import { getCurrentUser } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { getMockQueue } from "@/lib/queue";
@@ -32,7 +32,11 @@ export async function POST(request: Request, context: { params: Promise<{ projec
   const [job] = await db.insert(generationJobs).values({ projectId, nodeId: body.nodeId, provider, modelId, mode: body.mode ?? "edit", prompt: body.prompt ?? String((node.data as { description?: string })?.description ?? ""), input: body.input ?? { node }, parameters: body.parameters ?? {} }).returning();
   if (isRealVideo) {
     try {
-      const handle = await new Token360VideoProvider().createJob({ projectId, nodeId: body.nodeId, mode: (body.mode ?? "T2V") as "T2V", prompt: job.prompt, references: [], modelId, duration: Number((body.parameters as { duration?: number }).duration ?? 5), aspectRatio: String((body.parameters as { aspectRatio?: string }).aspectRatio ?? "16:9") });
+      const rawRefs = Array.isArray((body.input as { references?: unknown })?.references) ? (body.input as { references: Array<{ assetId?: string; role?: string }> }).references : [];
+      const refIds = rawRefs.map((ref) => ref.assetId).filter((id): id is string => Boolean(id));
+      const refRows = refIds.length ? await db.select().from(assets).where(and(eq(assets.projectId, projectId), inArray(assets.id, refIds))) : [];
+      const references = rawRefs.flatMap((ref) => { const asset = refRows.find((row) => row.id === ref.assetId); return asset ? [{ assetId: asset.id, role: ref.role ?? "reference", uri: `${process.env.PUBLIC_BASE_URL ?? ""}/api/assets/${asset.id}/content` }] : []; });
+      const handle = await new Token360VideoProvider().createJob({ projectId, nodeId: body.nodeId, mode: (body.mode ?? "T2V") as "T2V", prompt: job.prompt, references, modelId, duration: Number((body.parameters as { duration?: number }).duration ?? 5), aspectRatio: String((body.parameters as { aspectRatio?: string }).aspectRatio ?? "16:9") });
       await db.update(generationJobs).set({ parameters: { ...(job.parameters as object), remoteId: handle.remoteId }, updatedAt: new Date() }).where(eq(generationJobs.id, job.id));
     } catch (error) {
       const reason = error instanceof Error ? error.message : "Token360 任务创建失败";

@@ -8,7 +8,7 @@ export type VideoJobInput = {
   nodeId: string;
   mode: VideoMode;
   prompt: string;
-  references: Array<{ assetId: string; role: string }>;
+  references: Array<{ assetId: string; role: string; uri?: string }>;
   modelId: string;
   duration?: number;
   aspectRatio?: string;
@@ -72,6 +72,10 @@ export class Token360VideoProvider implements VideoProvider {
       generate_audio: true,
       metadata: { project_id: input.projectId, node_id: input.nodeId, mode: input.mode },
     };
+    const frames = input.references.filter((ref) => ref.uri && (ref.role === "first_frame" || ref.role === "last_frame"));
+    if (frames.length) body.frame_images = frames.map((ref) => ({ type: "image_url", frame_type: ref.role, image_url: { url: ref.uri } }));
+    const refs = input.references.filter((ref) => ref.uri && ref.role !== "first_frame" && ref.role !== "last_frame");
+    if (refs.length) body.input_references = refs.map((ref) => ({ type: "image_url", role: ref.role, image_url: { url: ref.uri } }));
     const response = await fetch(`${this.base}/videos`, { method: "POST", headers: this.headers(), body: JSON.stringify(body) });
     const payload = await response.json().catch(() => ({})) as { id?: string; error?: { message?: string } };
     if (!response.ok || !payload.id) throw new Error(payload.error?.message ?? `Token360 视频任务创建失败（${response.status}）`);
