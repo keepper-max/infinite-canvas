@@ -376,9 +376,22 @@ export default {
         modalDescription: "Providers, default models, sync, and local storage",
         tabs: {
             channels: "Providers",
+            localProxy: "Local proxy",
             preferences: "Preferences",
             promptSources: "Prompt sources",
             localStorage: "Local storage",
+        },
+        proxy: {
+            title: "Local proxy",
+            description: "Forward provider requests (models, image, video, text, audio) through a proxy running on your machine to avoid browser CORS errors.",
+            startHint: "Run this in a terminal first, and keep it running while you use the canvas:",
+            address: "Proxy address",
+            addressDescription: "Must match the address printed by the command above.",
+            channelHint: "Keep the provider's real endpoint in your provider settings — never the proxy address. Turning the switch off restores direct requests.",
+            test: "Test connection",
+            available: "Local proxy is reachable ({{proxy}})",
+            missingUrl: "Enter the local proxy address first.",
+            unreachable: "Local proxy is unreachable. Make sure the command is running and the address is correct.",
         },
         localStorage: {
             title: "IndexedDB storage usage",
