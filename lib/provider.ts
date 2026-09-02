@@ -1,4 +1,5 @@
-import type { CanvasNodeType, GenerationJob } from "./types";
+type CanvasNodeType = "prompt" | "character" | "scene" | "panorama" | "composition_3d" | "keyframe" | "image_edit" | "style_polish" | "video" | "audio" | "output";
+type GenerationJob = { id: string; nodeId: string; nodeLabel: string; provider: string; model: string; status: "pending" | "running" | "completed" | "failed"; progress: number; createdAt: string; error?: string; outputUrl?: string };
 
 export type VideoMode = "T2V" | "I2V" | "R2V" | "FLF2V" | "edit";
 
