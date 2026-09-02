@@ -197,11 +197,16 @@ function getVideoConfig() {
             resolution: config.vquality || "720",
             generateAudio: config.videoGenerateAudio !== "false",
             watermark: config.videoWatermark === "true",
+            mode: config.videoMode === "reference" ? "reference" : "frames",
         },
         models: selectableModelsByCapability(config, "video").map((value) => ({ value, label: modelOptionLabel(config, value) })),
         sizeOptions: videoSizeOptions,
         secondsOptions: videoSecondOptions,
         resolutionOptions: videoResolutionOptions,
+        modeOptions: [
+            { value: "frames", label: i18n.t("settingsPanels.video.modes.frames") },
+            { value: "reference", label: i18n.t("settingsPanels.video.modes.reference") },
+        ],
     };
 }
 
@@ -232,6 +237,10 @@ function runVideoWorkbench(input: SiteToolInput, navigate: NavigateFunction) {
     if (typeof input.watermark === "boolean") {
         configStore.updateConfig("videoWatermark", String(input.watermark));
         applied.watermark = input.watermark;
+    }
+    if (input.mode === "frames" || input.mode === "reference") {
+        configStore.updateConfig("videoMode", input.mode);
+        applied.mode = input.mode;
     }
     const prompt = typeof input.prompt === "string" ? input.prompt : undefined;
     const run = input.run !== false;
