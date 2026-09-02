@@ -83,10 +83,16 @@ input:focus,textarea:focus { border-color:#a59ce5; box-shadow:0 0 0 3px rgba(118
 .toolbar-subtitle { margin-left:15px; color:#aaa49a; font-size:11px; }
 .toolbar-actions { display:flex; gap:8px; }
 .flow-canvas { flex:1; min-height:600px; background:#f1eee7; }
+.catalog-strip { margin-top:18px; padding:14px 16px; border:1px solid var(--line); border-radius:14px; background:#f8f6f1; display:flex; align-items:center; justify-content:space-between; gap:16px; flex-wrap:wrap; }
+.catalog-filters { display:flex; gap:7px; flex-wrap:wrap; }
+.filter-chip { border:1px solid var(--line); background:#fff; color:var(--muted); border-radius:999px; padding:6px 11px; cursor:pointer; font:inherit; font-size:12px; }
+.filter-chip.active { color:#fff; border-color:#272727; background:#272727; }
+.real-toggle { display:flex; align-items:center; gap:8px; margin:14px 0; color:var(--ink); font-size:12px; }
+.real-toggle input { accent-color:#272727; }
 .react-flow__attribution { display:none; }
 .react-flow__controls { border:1px solid #d9d4ca; box-shadow:none; }
 .react-flow__controls-button { background:#fbfaf7; border-color:#ded9cf; }
-.studio-node { position:relative; min-width:216px; max-width:230px; border:1px solid #dad5cc; border-left:3px solid var(--node-accent); background:rgba(255,253,249,.96); border-radius:12px; box-shadow:0 7px 18px rgba(77,66,45,.08); overflow:hidden; }
+.studio-node { position:relative; min-width:216px; max-width:230px; border:1px solid #dad5cc; border-left:3px solid var(--node-accent); background:rgba(255,253,249,.96); border-radius:12px; box-shadow:0 7px 18px rgba(77,66,45,.08); overflow:visible; }
 .studio-node.selected { border-color:var(--node-accent); box-shadow:0 0 0 3px color-mix(in srgb,var(--node-accent),transparent 77%),0 10px 22px rgba(77,66,45,.12); }
 .node-head { display:flex; align-items:center; gap:8px; padding:11px 11px 9px; font-weight:800; font-size:12px; }
 .node-icon { width:23px; height:23px; display:grid; place-items:center; color:var(--node-accent); background:color-mix(in srgb,var(--node-accent),white 85%); border-radius:7px; }

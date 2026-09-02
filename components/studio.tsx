@@ -25,31 +25,123 @@ import {
   Layers3,
   LogIn,
   MoreHorizontal,
+  MessageCircle,
+  Puzzle,
+  BookOpen,
+  Settings2,
   Play,
   Plus,
   RotateCcw,
+  RotateCw,
+  Upload,
   Send,
   Sparkles,
   UserRound,
+  UsersRound,
   WandSparkles,
   Workflow,
 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
-import { NODE_TYPES, type CanvasNodeData, type CanvasNodeType, type GenerationJob, type Project } from "@/lib/types";
+import {
+  NODE_TYPES,
+  type CanvasNodeData,
+  type CanvasNodeType,
+  type GenerationJob,
+  type Project,
+} from "@/lib/types";
 import { providerForNode } from "@/lib/provider";
 
-const palette: Record<CanvasNodeType, { accent: string; icon: typeof Sparkles }> = {
-  prompt: { accent: "#9b8cff", icon: Sparkles }, character: { accent: "#f0b45c", icon: UserRound }, scene: { accent: "#62c7a7", icon: ImageIcon }, panorama: { accent: "#56a7e8", icon: Layers3 }, composition_3d: { accent: "#d68de7", icon: WandSparkles }, keyframe: { accent: "#e47e9b", icon: Film }, image_edit: { accent: "#efad6a", icon: WandSparkles }, style_polish: { accent: "#8e9de7", icon: Sparkles }, video: { accent: "#f4799c", icon: Film }, audio: { accent: "#68c8ca", icon: Sparkles }, output: { accent: "#bca36f", icon: Download },
+const palette: Record<
+  CanvasNodeType,
+  { accent: string; icon: typeof Sparkles }
+> = {
+  prompt: { accent: "#9b8cff", icon: Sparkles },
+  character: { accent: "#f0b45c", icon: UserRound },
+  scene: { accent: "#62c7a7", icon: ImageIcon },
+  panorama: { accent: "#56a7e8", icon: Layers3 },
+  composition_3d: { accent: "#d68de7", icon: WandSparkles },
+  keyframe: { accent: "#e47e9b", icon: Film },
+  image_edit: { accent: "#efad6a", icon: WandSparkles },
+  style_polish: { accent: "#8e9de7", icon: Sparkles },
+  video: { accent: "#f4799c", icon: Film },
+  audio: { accent: "#68c8ca", icon: Sparkles },
+  output: { accent: "#bca36f", icon: Download },
 };
 
-const node = (id: string, label: string, description: string, x: number, y: number, extra: Partial<CanvasNodeData> = {}): Node<CanvasNodeData> => ({ id, type: "studio", position: { x, y }, data: { label, description, status: "idle", ...extra } });
+const node = (
+  id: string,
+  label: string,
+  description: string,
+  x: number,
+  y: number,
+  extra: Partial<CanvasNodeData> = {},
+): Node<CanvasNodeData> => ({
+  id,
+  type: "studio",
+  position: { x, y },
+  data: { label, description, status: "idle", ...extra },
+});
 
 const initialNodes: Node<CanvasNodeData>[] = [
-  node("prompt", "创意提示词", "故事意图、风格与镜头目标", 40, 220), node("character", "角色三视图", "锁定身份、服装与姿态", 330, 40, { locked: true }), node("scene", "场景候选", "MJ 抽卡后的场景母版", 330, 260), node("panorama", "全景环境", "补足镜头移动空间", 620, 260), node("composition", "3D 构图", "机位、站位、比例与视线", 900, 260), node("keyframe", "关键帧", "将布局落成可用首帧", 1180, 260), node("edit", "局部修复", "Nano Banana 2 补全与修图", 1460, 260), node("polish", "风格优化", "保持构图的最后抛光", 1740, 260), node("video", "Seedance 2.5", "动作、运镜、声音与连续性", 2020, 260), node("output", "成片预览", "播放、复盘与下载", 2300, 260),
+  node("prompt", "创意提示词", "故事意图、风格与镜头目标", 40, 220),
+  node("character", "角色三视图", "锁定身份、服装与姿态", 330, 40, {
+    locked: true,
+  }),
+  node("scene", "场景候选", "MJ 抽卡后的场景母版", 330, 260),
+  node("panorama", "全景环境", "补足镜头移动空间", 620, 260),
+  node("composition", "3D 构图", "机位、站位、比例与视线", 900, 260),
+  node("keyframe", "关键帧", "将布局落成可用首帧", 1180, 260),
+  node("edit", "局部修复", "Nano Banana 2 补全与修图", 1460, 260),
+  node("polish", "风格优化", "保持构图的最后抛光", 1740, 260),
+  node("video", "Seedance 2.5", "动作、运镜、声音与连续性", 2020, 260),
+  node("output", "成片预览", "播放、复盘与下载", 2300, 260),
 ];
 
 const initialEdges: Edge[] = [
-  { id: "e-p-c", source: "prompt", target: "character", label: "身份提示", animated: true }, { id: "e-p-s", source: "prompt", target: "scene", label: "场景提示", animated: true }, { id: "e-s-p", source: "scene", target: "panorama", label: "环境参考" }, { id: "e-c-c", source: "character", target: "composition", label: "角色参考" }, { id: "e-p-c2", source: "panorama", target: "composition", label: "空间参考" }, { id: "e-c-k", source: "composition", target: "keyframe", label: "构图" }, { id: "e-k-e", source: "keyframe", target: "edit", label: "局部修复" }, { id: "e-e-p", source: "edit", target: "polish", label: "风格保持" }, { id: "e-p-v", source: "polish", target: "video", label: "I2V / R2V", animated: true }, { id: "e-v-o", source: "video", target: "output", label: "视频结果", animated: true },
+  {
+    id: "e-p-c",
+    source: "prompt",
+    target: "character",
+    label: "身份提示",
+    animated: true,
+  },
+  {
+    id: "e-p-s",
+    source: "prompt",
+    target: "scene",
+    label: "场景提示",
+    animated: true,
+  },
+  { id: "e-s-p", source: "scene", target: "panorama", label: "环境参考" },
+  {
+    id: "e-c-c",
+    source: "character",
+    target: "composition",
+    label: "角色参考",
+  },
+  {
+    id: "e-p-c2",
+    source: "panorama",
+    target: "composition",
+    label: "空间参考",
+  },
+  { id: "e-c-k", source: "composition", target: "keyframe", label: "构图" },
+  { id: "e-k-e", source: "keyframe", target: "edit", label: "局部修复" },
+  { id: "e-e-p", source: "edit", target: "polish", label: "风格保持" },
+  {
+    id: "e-p-v",
+    source: "polish",
+    target: "video",
+    label: "I2V / R2V",
+    animated: true,
+  },
+  {
+    id: "e-v-o",
+    source: "video",
+    target: "output",
+    label: "视频结果",
+    animated: true,
+  },
 ];
 
 function nodeTypeForLabel(label: string): CanvasNodeType {
@@ -69,8 +161,34 @@ function StudioNode({ data, selected }: NodeProps) {
   const nodeData = data as CanvasNodeData;
   const style = palette[nodeTypeForLabel(nodeData.label)];
   const Icon = style.icon;
-  const statusLabel = nodeData.status === "running" ? "生成中" : nodeData.status === "completed" ? "已完成" : nodeData.status === "failed" ? "失败" : nodeData.locked ? "身份母版" : "待处理";
-  return <div className={`studio-node ${selected ? "selected" : ""}`} style={{ "--node-accent": style.accent } as React.CSSProperties}><Handle type="target" position={Position.Left} /><div className="node-head"><span className="node-icon"><Icon size={15} /></span><span>{nodeData.label}</span><span className={`node-status ${nodeData.status}`}>{statusLabel}</span></div><div className="node-body">{nodeData.description}</div>{nodeData.output && <div className="node-output">{nodeData.output}</div>}<Handle type="source" position={Position.Right} /></div>;
+  const statusLabel =
+    nodeData.status === "running"
+      ? "生成中"
+      : nodeData.status === "completed"
+        ? "已完成"
+        : nodeData.status === "failed"
+          ? "失败"
+          : nodeData.locked
+            ? "身份母版"
+            : "待处理";
+  return (
+    <div
+      className={`studio-node ${selected ? "selected" : ""}`}
+      style={{ "--node-accent": style.accent } as React.CSSProperties}
+    >
+      <Handle type="target" position={Position.Left} />
+      <div className="node-head">
+        <span className="node-icon">
+          <Icon size={15} />
+        </span>
+        <span>{nodeData.label}</span>
+        <span className={`node-status ${nodeData.status}`}>{statusLabel}</span>
+      </div>
+      <div className="node-body">{nodeData.description}</div>
+      {nodeData.output && <div className="node-output">{nodeData.output}</div>}
+      <Handle type="source" position={Position.Right} />
+    </div>
+  );
 }
 
 const nodeTypes = { studio: StudioNode };
@@ -80,27 +198,177 @@ function AuthScreen({ onDone }: { onDone: (email: string) => void }) {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
-  const submit = async (event: React.FormEvent) => { event.preventDefault(); setError(""); const endpoint = mode === "register" ? "/api/auth/register" : "/api/auth/login"; const response = await fetch(endpoint, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ email, password }) }); const payload = await response.json().catch(() => ({})); if (!response.ok) { setError(payload.error ?? "操作失败"); return; } onDone(payload.user.email); };
-  return <main className="auth-shell"><div className="auth-card"><div className="brand-mark">镜</div><p className="eyebrow">JINGJIE STUDIO</p><h1>{mode === "register" ? "创建你的工作区" : "欢迎回到镜界"}</h1><p className="auth-copy">登录后创建项目，保存每一次画布和 Mock 任务。</p><form onSubmit={submit} className="auth-form"><label>邮箱<input type="email" placeholder="you@example.com" value={email} onChange={(event) => setEmail(event.target.value)} required /></label><label>密码<input type="password" placeholder="至少 6 位" value={password} onChange={(event) => setPassword(event.target.value)} minLength={6} required /></label>{error && <p className="form-error">{error}</p>}<button className="primary-button" type="submit"><LogIn size={17} />{mode === "register" ? "注册并继续" : "登录工作区"}</button></form><button className="link-button" onClick={() => setMode(mode === "register" ? "login" : "register")}>{mode === "register" ? "已有账号？登录" : "还没有账号？注册"}</button></div></main>;
+  const submit = async (event: React.FormEvent) => {
+    event.preventDefault();
+    setError("");
+    const endpoint =
+      mode === "register" ? "/api/auth/register" : "/api/auth/login";
+    const response = await fetch(endpoint, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email, password }),
+    });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      setError(payload.error ?? "操作失败");
+      return;
+    }
+    onDone(payload.user.email);
+  };
+  return (
+    <main className="auth-shell">
+      <div className="auth-card">
+        <div className="brand-mark">镜</div>
+        <p className="eyebrow">JINGJIE STUDIO</p>
+        <h1>{mode === "register" ? "创建你的工作区" : "欢迎回到镜界"}</h1>
+        <p className="auth-copy">
+          登录后创建项目，保存每一次画布和 Mock 任务。
+        </p>
+        <form onSubmit={submit} className="auth-form">
+          <label>
+            邮箱
+            <input
+              type="email"
+              placeholder="you@example.com"
+              value={email}
+              onChange={(event) => setEmail(event.target.value)}
+              required
+            />
+          </label>
+          <label>
+            密码
+            <input
+              type="password"
+              placeholder="至少 6 位"
+              value={password}
+              onChange={(event) => setPassword(event.target.value)}
+              minLength={6}
+              required
+            />
+          </label>
+          {error && <p className="form-error">{error}</p>}
+          <button className="primary-button" type="submit">
+            <LogIn size={17} />
+            {mode === "register" ? "注册并继续" : "登录工作区"}
+          </button>
+        </form>
+        <button
+          className="link-button"
+          onClick={() => setMode(mode === "register" ? "login" : "register")}
+        >
+          {mode === "register" ? "已有账号？登录" : "还没有账号？注册"}
+        </button>
+      </div>
+    </main>
+  );
 }
 
-function ProjectCreateScreen({ onCreated }: { onCreated: (project: Project) => void }) {
+function ProjectCreateScreen({
+  onCreated,
+}: {
+  onCreated: (project: Project) => void;
+}) {
   const [title, setTitle] = useState("");
   const [error, setError] = useState("");
-  const create = async (event: React.FormEvent) => { event.preventDefault(); setError(""); const response = await fetch("/api/projects", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name: title }) }); const payload = await response.json().catch(() => ({})); if (!response.ok) { setError(payload.error ?? "项目创建失败"); return; } onCreated({ ...payload.project, nodeCount: initialNodes.length, status: "draft" }); };
-  return <main className="welcome-shell"><div className="welcome-top"><div className="brand-lockup"><span className="brand-mark small">镜</span><span>镜界工坊</span></div></div><section className="welcome-content compact-create"><p className="eyebrow">NEW PROJECT</p><h1>创建一个漫剧项目</h1><p>从角色母版开始，把整条生产链放进可回溯的画布。</p><form className="new-project-card" onSubmit={create}><input value={title} onChange={(event) => setTitle(event.target.value)} placeholder="例如：雨夜的最后一班车" required /><button className="primary-button" type="submit"><Plus size={18} />创建项目</button>{error && <span className="form-error">{error}</span>}</form></section></main>;
+  const create = async (event: React.FormEvent) => {
+    event.preventDefault();
+    setError("");
+    const response = await fetch("/api/projects", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name: title }),
+    });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      setError(payload.error ?? "项目创建失败");
+      return;
+    }
+    onCreated({
+      ...payload.project,
+      nodeCount: initialNodes.length,
+      status: "draft",
+    });
+  };
+  return (
+    <main className="welcome-shell">
+      <div className="welcome-top">
+        <div className="brand-lockup">
+          <span className="brand-mark small">镜</span>
+          <span>镜界工坊</span>
+        </div>
+      </div>
+      <section className="welcome-content compact-create">
+        <p className="eyebrow">NEW PROJECT</p>
+        <h1>创建一个漫剧项目</h1>
+        <p>从角色母版开始，把整条生产链放进可回溯的画布。</p>
+        <form className="new-project-card" onSubmit={create}>
+          <input
+            value={title}
+            onChange={(event) => setTitle(event.target.value)}
+            placeholder="例如：雨夜的最后一班车"
+            required
+          />
+          <button className="primary-button" type="submit">
+            <Plus size={18} />
+            创建项目
+          </button>
+          {error && <span className="form-error">{error}</span>}
+        </form>
+      </section>
+    </main>
+  );
 }
 
-function ProjectEmpty({ activeView, onCanvas }: { activeView: string; onCanvas: () => void }) {
-  const title = activeView === "tasks" ? "任务会出现在这里" : activeView === "assets" ? "资产库正在等待你的第一张图" : "项目概览";
-  return <div className="empty-view"><div className="empty-icon"><Layers3 size={28} /></div><h2>{title}</h2><p>当前 MVP 已把画布生产链准备好，切回“生产画布”即可继续。</p><button className="primary-button" onClick={onCanvas}>回到生产画布</button></div>;
+function ProjectEmpty({
+  activeView,
+  onCanvas,
+}: {
+  activeView: string;
+  onCanvas: () => void;
+}) {
+  const title =
+    activeView === "tasks"
+      ? "任务会出现在这里"
+      : activeView === "assets"
+        ? "资产库正在等待你的第一张图"
+        : "项目概览";
+  return (
+    <div className="empty-view">
+      <div className="empty-icon">
+        <Layers3 size={28} />
+      </div>
+      <h2>{title}</h2>
+      <p>当前 MVP 已把画布生产链准备好，切回“生产画布”即可继续。</p>
+      <button className="primary-button" onClick={onCanvas}>
+        回到生产画布
+      </button>
+    </div>
+  );
 }
 
 function toClientJob(job: Record<string, unknown>): GenerationJob {
-  return { id: String(job.id), nodeId: String(job.nodeId ?? ""), nodeLabel: String(job.nodeLabel ?? job.nodeId ?? "Mock 任务"), provider: String(job.provider ?? "mock"), model: String(job.model ?? job.modelId ?? "mock-seedance-2.5"), status: (job.status as GenerationJob["status"]) ?? "pending", progress: Number(job.progress ?? 0), createdAt: String(job.createdAt ?? new Date().toISOString()), error: job.errorReason ? String(job.errorReason) : undefined };
+  return {
+    id: String(job.id),
+    nodeId: String(job.nodeId ?? ""),
+    nodeLabel: String(job.nodeLabel ?? job.nodeId ?? "Mock 任务"),
+    provider: String(job.provider ?? "mock"),
+    model: String(job.model ?? job.modelId ?? "mock-seedance-2.5"),
+    status: (job.status as GenerationJob["status"]) ?? "pending",
+    progress: Number(job.progress ?? 0),
+    createdAt: String(job.createdAt ?? new Date().toISOString()),
+    error: job.errorReason ? String(job.errorReason) : undefined,
+  };
 }
 
-type AssetRecord = { id: string; name: string; kind: string; mimeType: string; size: number; contentUrl: string; createdAt: string };
+type AssetRecord = {
+  id: string;
+  name: string;
+  kind: string;
+  mimeType: string;
+  size: number;
+  contentUrl: string;
+  createdAt: string;
+};
 
 function formatAssetSize(size: number) {
   if (size < 1024) return `${size} B`;
@@ -116,54 +384,685 @@ function AssetLibrary({ projectId }: { projectId: string }) {
 
   useEffect(() => {
     let cancelled = false;
-    fetch(`/api/projects/${projectId}/assets`).then(async (response) => {
-      const payload = await response.json().catch(() => ({}));
-      if (!response.ok) throw new Error(payload.error ?? "资产加载失败");
-      if (!cancelled) setItems(payload.assets ?? []);
-    }).catch((reason) => { if (!cancelled) setError(reason instanceof Error ? reason.message : "资产加载失败"); }).finally(() => { if (!cancelled) setLoading(false); });
-    return () => { cancelled = true; };
+    fetch(`/api/projects/${projectId}/assets`)
+      .then(async (response) => {
+        const payload = await response.json().catch(() => ({}));
+        if (!response.ok) throw new Error(payload.error ?? "资产加载失败");
+        if (!cancelled) setItems(payload.assets ?? []);
+      })
+      .catch((reason) => {
+        if (!cancelled)
+          setError(reason instanceof Error ? reason.message : "资产加载失败");
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
   }, [projectId]);
 
   const upload = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     event.target.value = "";
     if (!file) return;
-    setError(""); setUploading(true);
+    setError("");
+    setUploading(true);
     try {
-      const form = new FormData(); form.append("file", file);
-      const response = await fetch(`/api/projects/${projectId}/assets`, { method: "POST", body: form });
+      const form = new FormData();
+      form.append("file", file);
+      const response = await fetch(`/api/projects/${projectId}/assets`, {
+        method: "POST",
+        body: form,
+      });
       const payload = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(payload.error ?? "上传失败");
       setItems((current) => [payload.asset, ...current]);
-    } catch (reason) { setError(reason instanceof Error ? reason.message : "上传失败"); } finally { setUploading(false); }
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : "上传失败");
+    } finally {
+      setUploading(false);
+    }
   };
 
   const remove = async (asset: AssetRecord) => {
     if (!window.confirm(`确定删除“${asset.name}”吗？`)) return;
-    const response = await fetch(`/api/assets/${asset.id}`, { method: "DELETE" });
-    if (!response.ok) { setError("删除失败，请稍后重试"); return; }
+    const response = await fetch(`/api/assets/${asset.id}`, {
+      method: "DELETE",
+    });
+    if (!response.ok) {
+      setError("删除失败，请稍后重试");
+      return;
+    }
     setItems((current) => current.filter((item) => item.id !== asset.id));
   };
 
-  return <div className="asset-library"><div className="asset-toolbar"><div><span className="eyebrow">PROJECT ASSETS</span><h2>资产库</h2><p>上传角色、场景、关键帧和音频，作为画布节点的可复用参考。</p></div><label className="primary-button asset-upload-button"><Plus size={16} />{uploading ? "上传中…" : "上传资产"}<input type="file" accept="image/jpeg,image/png,image/webp,image/gif,video/mp4,audio/mpeg,audio/wav" onChange={upload} disabled={uploading} /></label></div>{error && <p className="form-error">{error}</p>}{loading ? <div className="asset-loading">正在读取资产…</div> : items.length === 0 ? <div className="asset-empty"><div className="empty-icon"><Layers3 size={25} /></div><h3>还没有资产</h3><p>先上传一张角色三视图或场景参考图。</p></div> : <div className="asset-grid">{items.map((asset) => <article className="asset-card" key={asset.id}><div className="asset-thumb">{asset.mimeType.startsWith("image/") ? <Image src={asset.contentUrl} alt={asset.name} width={260} height={160} unoptimized /> : <div className="asset-file-icon"><Film size={27} /><span>{asset.kind.toUpperCase()}</span></div>}</div><div className="asset-card-body"><strong title={asset.name}>{asset.name}</strong><span>{formatAssetSize(asset.size)} · {new Date(asset.createdAt).toLocaleDateString("zh-CN")}</span></div><button className="asset-delete" onClick={() => void remove(asset)} aria-label={`删除 ${asset.name}`}>删除</button></article>)}</div>}</div>;
+  return (
+    <div className="asset-library">
+      <div className="asset-toolbar">
+        <div>
+          <span className="eyebrow">PROJECT ASSETS</span>
+          <h2>资产库</h2>
+          <p>上传角色、场景、关键帧和音频，作为画布节点的可复用参考。</p>
+        </div>
+        <label className="primary-button asset-upload-button">
+          <Plus size={16} />
+          {uploading ? "上传中…" : "上传资产"}
+          <input
+            type="file"
+            accept="image/jpeg,image/png,image/webp,image/gif,video/mp4,audio/mpeg,audio/wav"
+            onChange={upload}
+            disabled={uploading}
+          />
+        </label>
+      </div>
+      {error && <p className="form-error">{error}</p>}
+      {loading ? (
+        <div className="asset-loading">正在读取资产…</div>
+      ) : items.length === 0 ? (
+        <div className="asset-empty">
+          <div className="empty-icon">
+            <Layers3 size={25} />
+          </div>
+          <h3>还没有资产</h3>
+          <p>先上传一张角色三视图或场景参考图。</p>
+        </div>
+      ) : (
+        <div className="asset-grid">
+          {items.map((asset) => (
+            <article className="asset-card" key={asset.id}>
+              <div className="asset-thumb">
+                {asset.mimeType.startsWith("image/") ? (
+                  <Image
+                    src={asset.contentUrl}
+                    alt={asset.name}
+                    width={260}
+                    height={160}
+                    unoptimized
+                  />
+                ) : (
+                  <div className="asset-file-icon">
+                    <Film size={27} />
+                    <span>{asset.kind.toUpperCase()}</span>
+                  </div>
+                )}
+              </div>
+              <div className="asset-card-body">
+                <strong title={asset.name}>{asset.name}</strong>
+                <span>
+                  {formatAssetSize(asset.size)} ·{" "}
+                  {new Date(asset.createdAt).toLocaleDateString("zh-CN")}
+                </span>
+              </div>
+              <button
+                className="asset-delete"
+                onClick={() => void remove(asset)}
+                aria-label={`删除 ${asset.name}`}
+              >
+                删除
+              </button>
+            </article>
+          ))}
+        </div>
+      )}
+    </div>
+  );
 }
 
-type PlatformData = { outline: { title?: string; content?: string }; agents: Array<{ id: string; name: string; kind: string; enabled: number }>; automations: Array<{ id: string; template: string; status: string; createdAt: string }> };
+type PlatformData = {
+  outline: { title?: string; content?: string };
+  agents: Array<{ id: string; name: string; kind: string; enabled: number }>;
+  automations: Array<{
+    id: string;
+    template: string;
+    status: string;
+    createdAt: string;
+  }>;
+};
 
-function PlatformPanel({ projectId, view }: { projectId: string; view: "outline" | "workflows" | "agents" }) {
-  const [data, setData] = useState<PlatformData>({ outline: {}, agents: [], automations: [] });
-  const [title, setTitle] = useState(""); const [content, setContent] = useState(""); const [notice, setNotice] = useState("");
-  const load = async () => { const response = await fetch(`/api/projects/${projectId}/platform`); const payload = await response.json().catch(() => ({})); if (response.ok) { setData(payload); setTitle(payload.outline?.title ?? ""); setContent(payload.outline?.content ?? ""); } };
+function PlatformPanel({
+  projectId,
+  view,
+}: {
+  projectId: string;
+  view: "outline" | "workflows" | "agents";
+}) {
+  const [data, setData] = useState<PlatformData>({
+    outline: {},
+    agents: [],
+    automations: [],
+  });
+  const [title, setTitle] = useState("");
+  const [content, setContent] = useState("");
+  const [notice, setNotice] = useState("");
+  const load = async () => {
+    const response = await fetch(`/api/projects/${projectId}/platform`);
+    const payload = await response.json().catch(() => ({}));
+    if (response.ok) {
+      setData(payload);
+      setTitle(payload.outline?.title ?? "");
+      setContent(payload.outline?.content ?? "");
+    }
+  };
   // The platform panel hydrates its form fields from the server after mount.
-  // eslint-disable-next-line react-hooks/set-state-in-effect, react-hooks/exhaustive-deps
-  useEffect(() => { void load(); }, [projectId]);
-  const saveOutline = async () => { const response = await fetch(`/api/projects/${projectId}/platform`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ title, content }) }); setNotice(response.ok ? "大纲已保存" : "保存失败"); };
-  const addAgent = async () => { const name = window.prompt("输入 Agent / Skill 名称", "分镜拆解 Agent"); if (!name) return; const response = await fetch(`/api/projects/${projectId}/platform`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ type: "agent", name, kind: name.toLowerCase().includes("skill") ? "skill" : "agent" }) }); if (response.ok) await load(); };
-  const runWorkflow = async (template: string) => { const response = await fetch(`/api/projects/${projectId}/platform`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ template }) }); setNotice(response.ok ? "流水线草稿已创建，可在画布中继续执行" : "创建失败"); if (response.ok) await load(); };
-  const toggleAgent = async (id: string, enabled: number) => { await fetch(`/api/projects/${projectId}/platform`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ agentId: id, enabled: !enabled }) }); await load(); };
-  if (view === "outline") return <div className="platform-panel"><div className="platform-head"><div><span className="eyebrow">STORY LIBRARY</span><h2>大纲库</h2><p>把故事设定、人物关系和分集目标沉淀下来，作为画布提示词的长期底稿。</p></div><button className="primary-button" onClick={() => void saveOutline()}><Download size={16} />保存大纲</button></div><div className="outline-form"><input value={title} onChange={(event) => setTitle(event.target.value)} placeholder="大纲标题，例如：雨夜的最后一班车" /><textarea value={content} onChange={(event) => setContent(event.target.value)} placeholder="写下故事梗概、角色动机、分集节奏和视觉基调…" />{notice && <span className="save-hint">{notice}</span>}</div></div>;
-  if (view === "workflows") return <div className="platform-panel"><div className="platform-head"><div><span className="eyebrow">WORKFLOW LIBRARY</span><h2>工作流模板</h2><p>用预设生产链快速搭建项目，真实模型接入后只需替换 Provider。</p></div></div><div className="workflow-grid">{[{ name: "角色到视频", desc: "角色三视图 → 场景 → 构图 → 关键帧 → Mock 视频", count: "10 节点" }, { name: "关键帧修复", desc: "关键帧 → 局部修复 → 风格优化 → 输出", count: "4 节点" }, { name: "大纲到分镜", desc: "故事大纲 → 分集拆解 → 分镜提示 → 画布", count: "规划中" }].map((item) => <article className="workflow-card" key={item.name}><div className="workflow-card-top"><span className="workflow-number">01</span><span>{item.count}</span></div><h3>{item.name}</h3><p>{item.desc}</p><button className="ghost-button" onClick={() => void runWorkflow(item.name)}>使用模板 <Send size={14} /></button></article>)}</div>{notice && <span className="save-hint">{notice}</span>}</div>;
-  return <div className="platform-panel"><div className="platform-head"><div><span className="eyebrow">AGENT / SKILL</span><h2>Agent 与 Skill</h2><p>为项目配置编剧、角色提取、分镜拆解等能力；这里只保存配置，不调用真实模型。</p></div><button className="primary-button" onClick={() => void addAgent()}><Plus size={16} />添加能力</button></div><div className="agent-list">{data.agents.length === 0 ? <div className="platform-empty"><Sparkles size={24} /><p>还没有配置能力，先添加一个分镜拆解 Agent。</p></div> : data.agents.map((agent) => <div className="agent-row" key={agent.id}><div><strong>{agent.name}</strong><span>{agent.kind === "skill" ? "Skill" : "Agent"}</span></div><button className={agent.enabled ? "toggle on" : "toggle"} onClick={() => void toggleAgent(agent.id, agent.enabled)}>{agent.enabled ? "已启用" : "已停用"}</button></div>)}</div></div>;
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    void load();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [projectId]);
+  const saveOutline = async () => {
+    const response = await fetch(`/api/projects/${projectId}/platform`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ title, content }),
+    });
+    setNotice(response.ok ? "大纲已保存" : "保存失败");
+  };
+  const addAgent = async () => {
+    const name = window.prompt("输入 Agent / Skill 名称", "分镜拆解 Agent");
+    if (!name) return;
+    const response = await fetch(`/api/projects/${projectId}/platform`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        type: "agent",
+        name,
+        kind: name.toLowerCase().includes("skill") ? "skill" : "agent",
+      }),
+    });
+    if (response.ok) await load();
+  };
+  const runWorkflow = async (template: string) => {
+    const response = await fetch(`/api/projects/${projectId}/platform`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action: "execute", template }),
+    });
+    setNotice(
+      response.ok ? "流水线已提交，任务中心将显示执行进度" : "创建失败",
+    );
+    if (response.ok) await load();
+  };
+  const toggleAgent = async (id: string, enabled: number) => {
+    await fetch(`/api/projects/${projectId}/platform`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ agentId: id, enabled: !enabled }),
+    });
+    await load();
+  };
+  if (view === "outline")
+    return (
+      <div className="platform-panel">
+        <div className="platform-head">
+          <div>
+            <span className="eyebrow">STORY LIBRARY</span>
+            <h2>大纲库</h2>
+            <p>
+              把故事设定、人物关系和分集目标沉淀下来，作为画布提示词的长期底稿。
+            </p>
+          </div>
+          <button className="primary-button" onClick={() => void saveOutline()}>
+            <Download size={16} />
+            保存大纲
+          </button>
+        </div>
+        <div className="outline-form">
+          <input
+            value={title}
+            onChange={(event) => setTitle(event.target.value)}
+            placeholder="大纲标题，例如：雨夜的最后一班车"
+          />
+          <textarea
+            value={content}
+            onChange={(event) => setContent(event.target.value)}
+            placeholder="写下故事梗概、角色动机、分集节奏和视觉基调…"
+          />
+          {notice && <span className="save-hint">{notice}</span>}
+        </div>
+      </div>
+    );
+  if (view === "workflows")
+    return (
+      <div className="platform-panel">
+        <div className="platform-head">
+          <div>
+            <span className="eyebrow">WORKFLOW LIBRARY</span>
+            <h2>工作流模板</h2>
+            <p>用预设生产链快速搭建项目，真实模型接入后只需替换 Provider。</p>
+          </div>
+        </div>
+        <div className="workflow-grid">
+          {[
+            {
+              name: "角色到视频",
+              desc: "角色三视图 → 场景 → 构图 → 关键帧 → Mock 视频",
+              count: "10 节点",
+            },
+            {
+              name: "关键帧修复",
+              desc: "关键帧 → 局部修复 → 风格优化 → 输出",
+              count: "4 节点",
+            },
+            {
+              name: "大纲到分镜",
+              desc: "故事大纲 → 分集拆解 → 分镜提示 → 画布",
+              count: "规划中",
+            },
+          ].map((item) => (
+            <article className="workflow-card" key={item.name}>
+              <div className="workflow-card-top">
+                <span className="workflow-number">01</span>
+                <span>{item.count}</span>
+              </div>
+              <h3>{item.name}</h3>
+              <p>{item.desc}</p>
+              <button
+                className="ghost-button"
+                onClick={() => void runWorkflow(item.name)}
+              >
+                使用模板 <Send size={14} />
+              </button>
+            </article>
+          ))}
+        </div>
+        {notice && <span className="save-hint">{notice}</span>}
+      </div>
+    );
+  return (
+    <div className="platform-panel">
+      <div className="platform-head">
+        <div>
+          <span className="eyebrow">AGENT / SKILL</span>
+          <h2>Agent 与 Skill</h2>
+          <p>
+            为项目配置编剧、角色提取、分镜拆解等能力；这里只保存配置，不调用真实模型。
+          </p>
+        </div>
+        <button className="primary-button" onClick={() => void addAgent()}>
+          <Plus size={16} />
+          添加能力
+        </button>
+      </div>
+      <div className="agent-list">
+        {data.agents.length === 0 ? (
+          <div className="platform-empty">
+            <Sparkles size={24} />
+            <p>还没有配置能力，先添加一个分镜拆解 Agent。</p>
+          </div>
+        ) : (
+          data.agents.map((agent) => (
+            <div className="agent-row" key={agent.id}>
+              <div>
+                <strong>{agent.name}</strong>
+                <span>{agent.kind === "skill" ? "Skill" : "Agent"}</span>
+              </div>
+              <button
+                className={agent.enabled ? "toggle on" : "toggle"}
+                onClick={() => void toggleAgent(agent.id, agent.enabled)}
+              >
+                {agent.enabled ? "已启用" : "已停用"}
+              </button>
+            </div>
+          ))
+        )}
+      </div>
+    </div>
+  );
+}
+
+function AssistantPanel({
+  projectId,
+  node,
+}: {
+  projectId: string;
+  node?: Node<CanvasNodeData>;
+}) {
+  const [prompt, setPrompt] = useState("");
+  const [answer, setAnswer] = useState("");
+  const [loading, setLoading] = useState(false);
+  const ask = async () => {
+    setLoading(true);
+    const response = await fetch(`/api/projects/${projectId}/assistant`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ prompt, node: node?.data, upstream: [] }),
+    });
+    const payload = await response.json().catch(() => ({}));
+    setAnswer(response.ok ? payload.answer : (payload.error ?? "助手暂不可用"));
+    setLoading(false);
+  };
+  return (
+    <div className="platform-panel">
+      <div className="platform-head">
+        <div>
+          <span className="eyebrow">AI CANVAS ASSISTANT</span>
+          <h2>画布助手</h2>
+          <p>基于当前选中节点，生成角色、场景、镜头和 Seedance 提示词建议。</p>
+        </div>
+        <MessageCircle size={24} />
+      </div>
+      <div className="assistant-context">
+        当前节点：{node?.data.label ?? "未选择节点"}
+      </div>
+      <textarea
+        className="outline-form textarea"
+        value={prompt}
+        onChange={(event) => setPrompt(event.target.value)}
+        placeholder="例如：把这个关键帧改成雨夜追逐镜头…"
+      />
+      <button
+        className="primary-button"
+        onClick={() => void ask()}
+        disabled={loading}
+      >
+        {loading ? "分析中…" : "询问助手"}
+      </button>
+      {answer && (
+        <div className="result-box">
+          <span>Mock Assistant</span>
+          <strong>{answer}</strong>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function PromptLibraryPanel({ projectId }: { projectId: string }) {
+  const [items, setItems] = useState<
+    Array<{ id: string; title: string; category: string; content: string }>
+  >([]);
+  const [selected, setSelected] = useState("");
+  useEffect(() => {
+    void fetch(`/api/projects/${projectId}/prompts`)
+      .then((response) => response.json())
+      .then((payload) => setItems(payload.prompts ?? []));
+  }, [projectId]);
+  return (
+    <div className="platform-panel">
+      <div className="platform-head">
+        <div>
+          <span className="eyebrow">PROMPT LIBRARY</span>
+          <h2>提示词库</h2>
+          <p>按漫剧生产节点复用角色、场景和视频提示词。</p>
+        </div>
+        <BookOpen size={24} />
+      </div>
+      <div className="workflow-grid">
+        {items.map((item) => (
+          <article
+            className="workflow-card"
+            key={item.id}
+            onClick={() => setSelected(item.content)}
+          >
+            <div className="workflow-card-top">
+              <span className="workflow-number">{item.category}</span>
+            </div>
+            <h3>{item.title}</h3>
+            <p>{item.content}</p>
+            <button
+              className="ghost-button"
+              onClick={() => void navigator.clipboard?.writeText(item.content)}
+            >
+              复制提示词
+            </button>
+          </article>
+        ))}
+      </div>
+      {selected && (
+        <div className="result-box">
+          <span>已选择提示词</span>
+          <strong>{selected}</strong>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function PluginPanel({ projectId }: { projectId: string }) {
+  const [data, setData] = useState<{
+    builtins: Array<{ slug: string; name: string; config: unknown }>;
+    plugins: Array<{ id: string; slug: string; name: string; enabled: number }>;
+  }>({ builtins: [], plugins: [] });
+  const load = () =>
+    void fetch(`/api/projects/${projectId}/plugins`)
+      .then((response) => response.json())
+      .then(setData);
+  useEffect(load, [projectId]);
+  const install = (item: { slug: string; name: string; config: unknown }) =>
+    void fetch(`/api/projects/${projectId}/plugins`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(item),
+    }).then(load);
+  return (
+    <div className="platform-panel">
+      <div className="platform-head">
+        <div>
+          <span className="eyebrow">PLUGIN NODES</span>
+          <h2>插件节点</h2>
+          <p>把角色、提示词和 Seedance 能力作为可启停的画布节点。</p>
+        </div>
+        <Puzzle size={24} />
+      </div>
+      <div className="agent-list">
+        {data.builtins.map((item) => (
+          <div className="agent-row" key={item.slug}>
+            <div>
+              <strong>{item.name}</strong>
+              <span>
+                {data.plugins.some((plugin) => plugin.slug === item.slug)
+                  ? "已安装"
+                  : "内置插件"}
+              </span>
+            </div>
+            <button className="toggle on" onClick={() => void install(item)}>
+              安装 / 更新
+            </button>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function ModelConfigPanel({ projectId }: { projectId: string }) {
+  const [configs, setConfigs] = useState<
+    Array<{
+      id: string;
+      name: string;
+      baseUrl: string;
+      model: string;
+      apiKeyEnv: string;
+    }>
+  >([]);
+  const [catalog, setCatalog] = useState<Array<{ name: string; displayName: string; type: string; tags: unknown[] }>>([]);
+  const [catalogType, setCatalogType] = useState("all");
+  const [form, setForm] = useState({
+    name: "Seedance 适配器",
+    baseUrl: "https://api.example.com/v1",
+    model: "qwen3.8-flash",
+    apiKeyEnv: "TOKEN360_API_KEY",
+  });
+  const load = () =>
+    void fetch(`/api/projects/${projectId}/models`)
+      .then((response) => response.json())
+      .then((payload) => setConfigs(payload.configs ?? []));
+  useEffect(load, [projectId]);
+  useEffect(() => {
+    void fetch("/api/models/catalog")
+      .then((response) => response.json())
+      .then((payload) => setCatalog(payload.models ?? []));
+  }, []);
+  const save = async () => {
+    await fetch(`/api/projects/${projectId}/models`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(form),
+    });
+    await load();
+  };
+  return (
+    <div className="platform-panel">
+      <div className="platform-head">
+        <div>
+          <span className="eyebrow">MODEL SCRIPTS</span>
+          <h2>自定义模型脚本</h2>
+          <p>
+            保存 OpenAI 兼容接口、模型名和服务端环境变量引用，不保存明文 Key。
+          </p>
+        </div>
+        <Settings2 size={24} />
+      </div>
+      <div className="outline-form">
+        <input
+          value={form.name}
+          onChange={(event) => setForm({ ...form, name: event.target.value })}
+          placeholder="配置名称"
+        />
+        <input
+          value={form.baseUrl}
+          onChange={(event) =>
+            setForm({ ...form, baseUrl: event.target.value })
+          }
+          placeholder="Base URL"
+        />
+        <select
+          value={form.model}
+          onChange={(event) => setForm({ ...form, model: event.target.value })}
+          aria-label="模型 ID"
+        >
+          <option value={form.model}>{form.model}（当前）</option>
+          {catalog
+            .filter((item) => catalogType === "all" || item.type === catalogType)
+            .filter((item, index, all) => all.findIndex((candidate) => candidate.name === item.name) === index)
+            .map((item) => <option value={item.name} key={item.name}>{item.displayName} · {item.name}</option>)}
+        </select>
+        <input
+          value={form.apiKeyEnv}
+          onChange={(event) =>
+            setForm({ ...form, apiKeyEnv: event.target.value })
+          }
+          placeholder="API Key 环境变量名"
+        />
+        <button className="primary-button" onClick={() => void save()}>
+          保存模型配置
+        </button>
+      </div>
+      <div className="catalog-strip">
+        <span className="eyebrow">TOKEN360 CATALOG · {catalog.length || "…"} MODELS</span>
+        <div className="catalog-filters">
+          {[['all', '全部'], ['LLM', '文本'], ['VIDEO_GENERATION', '视频'], ['IMAGE_GENERATION', '图片'], ['AUDIO_GENERATION', '音频']].map(([value, label]) => (
+            <button key={value} className={catalogType === value ? "filter-chip active" : "filter-chip"} onClick={() => setCatalogType(value)}>{label}</button>
+          ))}
+        </div>
+      </div>
+      <div className="agent-list">
+        {configs.map((config) => (
+          <div className="agent-row" key={config.id}>
+            <div>
+              <strong>{config.name}</strong>
+              <span>
+                {config.model} · {config.apiKeyEnv || "未配置 Key"}
+              </span>
+            </div>
+            <span>{config.baseUrl}</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function MembersPanel({ projectId }: { projectId: string }) {
+  const [members, setMembers] = useState<
+    Array<{ userId: string; email: string; role: string }>
+  >([]);
+  const [email, setEmail] = useState("");
+  const [notice, setNotice] = useState("");
+  const load = () =>
+    void fetch(`/api/projects/${projectId}/members`)
+      .then((response) => response.json())
+      .then((payload) => setMembers(payload.members ?? []));
+  useEffect(load, [projectId]);
+  const add = async () => {
+    const response = await fetch(`/api/projects/${projectId}/members`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email, role: "editor" }),
+    });
+    const payload = await response.json().catch(() => ({}));
+    setNotice(response.ok ? "成员已添加" : (payload.error ?? "添加失败"));
+    if (response.ok) {
+      setEmail("");
+      await load();
+    }
+  };
+  const updateRole = async (userId: string, role: string) => {
+    await fetch(`/api/projects/${projectId}/members/${userId}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ role }),
+    });
+    await load();
+  };
+  const remove = async (userId: string) => {
+    if (!window.confirm("确定移除该成员吗？")) return;
+    await fetch(`/api/projects/${projectId}/members/${userId}`, {
+      method: "DELETE",
+    });
+    await load();
+  };
+  return (
+    <div className="platform-panel">
+      <div className="platform-head">
+        <div>
+          <span className="eyebrow">PROJECT TEAM</span>
+          <h2>团队成员</h2>
+          <p>管理项目协作者和只读访问权限。</p>
+        </div>
+        <UsersRound size={24} />
+      </div>
+      <div className="field-row">
+        <input
+          value={email}
+          onChange={(event) => setEmail(event.target.value)}
+          placeholder="已注册用户邮箱"
+        />
+        <button className="primary-button" onClick={() => void add()}>
+          添加成员
+        </button>
+      </div>
+      {notice && <p className="save-hint">{notice}</p>}
+      <div className="agent-list">
+        {members.map((member) => (
+          <div className="agent-row" key={member.userId}>
+            <div>
+              <strong>{member.email}</strong>
+              <span>{member.role === "viewer" ? "只读" : "可编辑"}</span>
+            </div>
+            <div>
+              <select
+                value={member.role}
+                onChange={(event) =>
+                  void updateRole(member.userId, event.target.value)
+                }
+              >
+                <option value="editor">可编辑</option>
+                <option value="viewer">只读</option>
+              </select>
+              <button
+                className="ghost-button"
+                onClick={() => void remove(member.userId)}
+              >
+                移除
+              </button>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
 }
 
 export default function Studio() {
@@ -178,10 +1077,42 @@ export default function Studio() {
   const [ready, setReady] = useState(false);
   const [canvasReady, setCanvasReady] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
+  const [useRealVideo, setUseRealVideo] = useState(false);
+  const [creditBalance, setCreditBalance] = useState(1000);
+  const [, setHistoryTick] = useState(0);
+  const historyRef = useRef<{
+    past: Array<{ nodes: Node<CanvasNodeData>[]; edges: Edge[] }>;
+    future: Array<{ nodes: Node<CanvasNodeData>[]; edges: Edge[] }>;
+    lastKey: string;
+    applying: boolean;
+  }>({ past: [], future: [], lastKey: "", applying: false });
+  const importRef = useRef<HTMLInputElement>(null);
   const projectLoadRef = useRef(false);
-  const updateNode = (id: string, patch: Partial<CanvasNodeData>) => setNodes((current) => current.map((item) => item.id === id ? { ...item, data: { ...item.data, ...patch } } : item));
+  const updateNode = (id: string, patch: Partial<CanvasNodeData>) =>
+    setNodes((current) =>
+      current.map((item) =>
+        item.id === id ? { ...item, data: { ...item.data, ...patch } } : item,
+      ),
+    );
 
-  useEffect(() => { fetch("/api/auth/me").then((response) => response.ok ? response.json() : null).then((payload) => { setSession(payload?.user?.email ?? null); setReady(true); }).catch(() => setReady(true)); }, []);
+  useEffect(() => {
+    fetch("/api/auth/me")
+      .then((response) => (response.ok ? response.json() : null))
+      .then((payload) => {
+        setSession(payload?.user?.email ?? null);
+        setReady(true);
+      })
+      .catch(() => setReady(true));
+  }, []);
+  useEffect(() => {
+    if (!session) return;
+    void fetch("/api/credits")
+      .then((response) => (response.ok ? response.json() : null))
+      .then((payload) => {
+        if (payload?.balance !== undefined)
+          setCreditBalance(Number(payload.balance));
+      });
+  }, [session]);
 
   useEffect(() => {
     if (!session) return;
@@ -192,56 +1123,771 @@ export default function Studio() {
       const response = await fetch("/api/projects");
       const payload = response.ok ? await response.json() : { projects: [] };
       const first = payload.projects?.[0];
-      if (first) { if (!cancelled) setProject({ ...first, nodeCount: initialNodes.length, status: "draft" }); return; }
-      const createdResponse = await fetch("/api/projects", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name: "我的漫剧工作台", description: "Seedance 2.5 漫剧短片" }) });
+      if (first) {
+        if (!cancelled)
+          setProject({
+            ...first,
+            nodeCount: initialNodes.length,
+            status: "draft",
+          });
+        return;
+      }
+      const createdResponse = await fetch("/api/projects", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: "我的漫剧工作台",
+          description: "Seedance 2.5 漫剧短片",
+        }),
+      });
       const createdPayload = await createdResponse.json().catch(() => ({}));
-      if (!cancelled && createdResponse.ok && createdPayload.project) setProject({ ...createdPayload.project, nodeCount: initialNodes.length, status: "draft" });
+      if (!cancelled && createdResponse.ok && createdPayload.project)
+        setProject({
+          ...createdPayload.project,
+          nodeCount: initialNodes.length,
+          status: "draft",
+        });
     };
     void loadProject();
-    return () => { cancelled = true; };
+    return () => {
+      cancelled = true;
+    };
   }, [session]);
 
   useEffect(() => {
     if (!project) return;
-    Promise.all([fetch(`/api/projects/${project.id}/canvas`).then((response) => response.json()), fetch(`/api/projects/${project.id}/jobs`).then((response) => response.json())]).then(([canvas, jobPayload]) => {
-      if (Array.isArray(canvas.nodes) && canvas.nodes.length) setNodes(canvas.nodes);
+    Promise.all([
+      fetch(`/api/projects/${project.id}/canvas`).then((response) =>
+        response.json(),
+      ),
+      fetch(`/api/projects/${project.id}/jobs`).then((response) =>
+        response.json(),
+      ),
+    ]).then(([canvas, jobPayload]) => {
+      if (Array.isArray(canvas.nodes) && canvas.nodes.length)
+        setNodes(canvas.nodes);
       if (Array.isArray(canvas.edges)) setEdges(canvas.edges);
       setJobs((jobPayload.jobs ?? []).map(toClientJob));
       setCanvasReady(true);
     });
     const events = new EventSource(`/api/projects/${project.id}/events`);
-    events.addEventListener("job", (event) => { const payload = JSON.parse((event as MessageEvent).data); const item = payload.event ?? payload; setJobs((current) => { const next = toClientJob(item); const previous = current.find((job) => job.id === next.id); if (item.status === "completed" && (item.nodeId ?? previous?.nodeId)) setNodes((nodesCurrent) => nodesCurrent.map((nodeItem) => nodeItem.id === String(item.nodeId ?? previous?.nodeId) ? { ...nodeItem, data: { ...nodeItem.data, status: "completed", output: "mock-video.svg · 可预览" } } : nodeItem)); return current.some((job) => job.id === next.id) ? current.map((job) => job.id === next.id ? { ...job, ...next } : job) : [next, ...current]; }); });
+    events.addEventListener("job", (event) => {
+      const payload = JSON.parse((event as MessageEvent).data);
+      const item = payload.event ?? payload;
+      setJobs((current) => {
+        const next = toClientJob(item);
+        const previous = current.find((job) => job.id === next.id);
+        if (item.status === "completed" && (item.nodeId ?? previous?.nodeId))
+          setNodes((nodesCurrent) =>
+            nodesCurrent.map((nodeItem) =>
+              nodeItem.id === String(item.nodeId ?? previous?.nodeId)
+                ? {
+                    ...nodeItem,
+                    data: {
+                      ...nodeItem.data,
+                      status: "completed",
+                      output: "mock-video.svg · 可预览",
+                    },
+                  }
+                : nodeItem,
+            ),
+          );
+        return current.some((job) => job.id === next.id)
+          ? current.map((job) =>
+              job.id === next.id ? { ...job, ...next } : job,
+            )
+          : [next, ...current];
+      });
+    });
     return () => events.close();
   }, [project, setEdges, setNodes]);
 
   useEffect(() => {
     if (!project || !canvasReady) return;
-    const timer = window.setTimeout(() => { void fetch(`/api/projects/${project.id}/canvas`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ nodes, edges }) }); }, 700);
+    const timer = window.setTimeout(() => {
+      void fetch(`/api/projects/${project.id}/canvas`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ nodes, edges }),
+      });
+    }, 700);
     return () => window.clearTimeout(timer);
   }, [nodes, edges, project, canvasReady]);
 
+  useEffect(() => {
+    if (!canvasReady) return;
+    const key = JSON.stringify({ nodes, edges });
+    const history = historyRef.current;
+    if (!history.lastKey) {
+      history.lastKey = key;
+      return;
+    }
+    if (history.lastKey === key) return;
+    if (history.applying) {
+      history.applying = false;
+      history.lastKey = key;
+      return;
+    }
+    const previous = JSON.parse(history.lastKey) as {
+      nodes: Node<CanvasNodeData>[];
+      edges: Edge[];
+    };
+    history.past = [...history.past.slice(-30), previous];
+    history.future = [];
+    history.lastKey = key;
+    setHistoryTick((tick) => tick + 1);
+  }, [nodes, edges, canvasReady]);
+
   const selectedNode = nodes.find((item) => item.id === selectedId);
-  const completedCount = nodes.filter((item) => item.data.status === "completed").length;
-  const pendingCount = nodes.filter((item) => item.data.status === "idle").length;
+  const completedCount = nodes.filter(
+    (item) => item.data.status === "completed",
+  ).length;
+  const pendingCount = nodes.filter(
+    (item) => item.data.status === "idle",
+  ).length;
   const runNode = async (nodeId: string) => {
     if (!project) return;
-    const currentNode = nodes.find((item) => item.id === nodeId); if (!currentNode || currentNode.data.status === "running") return;
+    const currentNode = nodes.find((item) => item.id === nodeId);
+    if (!currentNode || currentNode.data.status === "running") return;
     updateNode(nodeId, { status: "running" });
-    const response = await fetch(`/api/projects/${project.id}/jobs`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ nodeId, mode: nodeId === "video" ? "I2V" : "edit" }) });
+    const response = await fetch(`/api/projects/${project.id}/jobs`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        nodeId,
+        mode: currentNode.type === "video" ? "I2V" : "edit",
+        parameters: currentNode.type === "video" ? { real: useRealVideo, modelId: "seedance-2.5", duration: 5, aspectRatio: "16:9" } : {},
+      }),
+    });
     const payload = await response.json().catch(() => ({}));
-    if (response.ok && payload.job) setJobs((items) => { const next = toClientJob(payload.job); return items.some((job) => job.id === next.id) ? items : [next, ...items]; });
+    if (response.ok && payload.job)
+      setJobs((items) => {
+        const next = toClientJob(payload.job);
+        return items.some((job) => job.id === next.id)
+          ? items
+          : [next, ...items];
+      });
     if (!response.ok) updateNode(nodeId, { status: "failed" });
   };
-  const runPending = () => nodes.filter((item) => item.data.status === "idle").slice(0, 3).forEach((item, index) => window.setTimeout(() => runNode(item.id), index * 240));
-  const addNode = () => { const type = NODE_TYPES[addIndex % NODE_TYPES.length]; const label = type === "composition_3d" ? "3D 构图" : type === "image_edit" ? "局部修复" : type === "style_polish" ? "风格优化" : type === "video" ? "Seedance 2.5" : type; setNodes((current) => [...current, node(`${type}-${Date.now()}`, label, "新增节点，可连接到已有生产链", 380 + (addIndex % 3) * 300, 620 + Math.floor(addIndex / 3) * 150)]); setAddIndex((value) => value + 1); };
-  const exportManifest = () => { const payload = JSON.stringify({ app: "镜界工坊", project, nodes, edges, jobs, exportedAt: new Date().toISOString() }, null, 2); const url = URL.createObjectURL(new Blob([payload], { type: "application/json" })); const anchor = document.createElement("a"); anchor.href = url; anchor.download = `${project?.title ?? "jingjie-project"}.json`; anchor.click(); URL.revokeObjectURL(url); };
-  const miniMapColor = (item: Node<CanvasNodeData>) => palette[nodeTypeForLabel(item.data.label)].accent;
-  const onConnect = (connection: Connection) => setEdges((current) => addEdge({ ...connection, animated: true }, current));
+  const runPending = () =>
+    nodes
+      .filter((item) => item.data.status === "idle")
+      .slice(0, 3)
+      .forEach((item, index) =>
+        window.setTimeout(() => runNode(item.id), index * 240),
+      );
+  const addNode = () => {
+    const type = NODE_TYPES[addIndex % NODE_TYPES.length];
+    const label =
+      type === "composition_3d"
+        ? "3D 构图"
+        : type === "image_edit"
+          ? "局部修复"
+          : type === "style_polish"
+            ? "风格优化"
+            : type === "video"
+              ? "Seedance 2.5"
+              : type;
+    setNodes((current) => [
+      ...current,
+      node(
+        `${type}-${Date.now()}`,
+        label,
+        "新增节点，可连接到已有生产链",
+        380 + (addIndex % 3) * 300,
+        620 + Math.floor(addIndex / 3) * 150,
+      ),
+    ]);
+    setAddIndex((value) => value + 1);
+  };
+  const exportManifest = () => {
+    const payload = JSON.stringify(
+      {
+        app: "镜界工坊",
+        project,
+        nodes,
+        edges,
+        jobs,
+        exportedAt: new Date().toISOString(),
+      },
+      null,
+      2,
+    );
+    const url = URL.createObjectURL(
+      new Blob([payload], { type: "application/json" }),
+    );
+    const anchor = document.createElement("a");
+    anchor.href = url;
+    anchor.download = `${project?.title ?? "jingjie-project"}.json`;
+    anchor.click();
+    URL.revokeObjectURL(url);
+  };
+  const undo = () => {
+    const history = historyRef.current;
+    const previous = history.past.pop();
+    if (!previous) return;
+    history.future.push({ nodes, edges });
+    history.applying = true;
+    setNodes(previous.nodes);
+    setEdges(previous.edges);
+    setHistoryTick((tick) => tick + 1);
+  };
+  const redo = () => {
+    const history = historyRef.current;
+    const next = history.future.pop();
+    if (!next) return;
+    history.past.push({ nodes, edges });
+    history.applying = true;
+    setNodes(next.nodes);
+    setEdges(next.edges);
+    setHistoryTick((tick) => tick + 1);
+  };
+  const duplicateSelected = () => {
+    const current = nodes.find((item) => item.id === selectedId);
+    if (!current) return;
+    const id = `${current.id}-copy-${Date.now()}`;
+    setNodes((items) => [
+      ...items,
+      {
+        ...current,
+        id,
+        position: { x: current.position.x + 40, y: current.position.y + 40 },
+        selected: true,
+      },
+    ]);
+    setSelectedId(id);
+  };
+  const deleteSelected = () => {
+    if (!selectedId) return;
+    setNodes((items) => items.filter((item) => item.id !== selectedId));
+    setEdges((items) =>
+      items.filter(
+        (item) => item.source !== selectedId && item.target !== selectedId,
+      ),
+    );
+    setSelectedId("");
+  };
+  const importManifest = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    event.target.value = "";
+    if (!file) return;
+    try {
+      const payload = JSON.parse(await file.text()) as {
+        nodes?: Node<CanvasNodeData>[];
+        edges?: Edge[];
+      };
+      if (!Array.isArray(payload.nodes) || !Array.isArray(payload.edges))
+        throw new Error("文件格式不正确");
+      setNodes(payload.nodes);
+      setEdges(payload.edges);
+      setSelectedId(payload.nodes[0]?.id ?? "");
+    } catch (error) {
+      window.alert(error instanceof Error ? error.message : "导入失败");
+    }
+  };
+  useEffect(() => {
+    const handler = (event: KeyboardEvent) => {
+      if (
+        event.target instanceof HTMLInputElement ||
+        event.target instanceof HTMLTextAreaElement
+      )
+        return;
+      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "z") {
+        event.preventDefault();
+        event.shiftKey ? redo() : undo();
+      } else if (
+        (event.ctrlKey || event.metaKey) &&
+        event.key.toLowerCase() === "y"
+      ) {
+        event.preventDefault();
+        redo();
+      } else if (event.key === "Delete" || event.key === "Backspace")
+        deleteSelected();
+      else if (
+        (event.ctrlKey || event.metaKey) &&
+        event.key.toLowerCase() === "d"
+      ) {
+        event.preventDefault();
+        duplicateSelected();
+      }
+    };
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+  });
+  const miniMapColor = (item: Node<CanvasNodeData>) =>
+    palette[nodeTypeForLabel(item.data.label)].accent;
+  const onConnect = (connection: Connection) =>
+    setEdges((current) => addEdge({ ...connection, animated: true }, current));
 
   if (!ready) return <div className="loading-screen">加载镜界工坊…</div>;
   if (!session) return <AuthScreen onDone={setSession} />;
   if (!project) return <div className="loading-screen">正在准备工作台…</div>;
 
-  const inspectorProvider = selectedNode ? providerForNode(selectedNode.id === "video" ? "video" : "prompt") : "Mock Studio";
-  return <main className="app-shell"><aside className="sidebar"><div className="brand-lockup"><span className="brand-mark small">镜</span><span>镜界工坊</span></div><div className="workspace-switch"><span className="workspace-dot" /><span>{project.title}</span><button className="workspace-menu-trigger" aria-label="打开项目菜单" onClick={() => setMenuOpen((open) => !open)}><MoreHorizontal size={16} /></button>{menuOpen && <div className="workspace-menu"><button onClick={() => { setActiveView("overview"); setMenuOpen(false); }}>项目设置</button><button onClick={() => { void navigator.clipboard?.writeText(project.id); setMenuOpen(false); }}>复制项目 ID</button><button onClick={() => { exportManifest(); setMenuOpen(false); }}>导出项目</button><button className="danger-menu-item" onClick={async () => { if (!window.confirm("确定删除这个项目吗？项目画布、任务和产物记录都会被删除。")) return; const response = await fetch(`/api/projects/${project.id}`, { method: "DELETE" }); if (response.ok) { setMenuOpen(false); window.location.reload(); } }}>删除项目</button></div>}</div><nav><p className="nav-label">WORKSPACE</p><button className={activeView === "overview" ? "nav-item active" : "nav-item"} onClick={() => setActiveView("overview")}><FolderKanban size={17} />项目概览</button><button className={activeView === "canvas" ? "nav-item active" : "nav-item"} onClick={() => setActiveView("canvas")}><Workflow size={17} />生产画布<span className="nav-count">{nodes.length}</span></button><button className={activeView === "assets" ? "nav-item active" : "nav-item"} onClick={() => setActiveView("assets")}><Layers3 size={17} />资产库</button><button className={activeView === "tasks" ? "nav-item active" : "nav-item"} onClick={() => setActiveView("tasks")}><Film size={17} />任务中心<span className="nav-count">{jobs.length}</span></button><p className="nav-label second">LIBRARY</p><button className={activeView === "outline" ? "nav-item active" : "nav-item"} onClick={() => setActiveView("outline")}><Sparkles size={17} />大纲库</button><button className={activeView === "agents" ? "nav-item active" : "nav-item"} onClick={() => setActiveView("agents")}><WandSparkles size={17} />Agent / Skill</button><button className={activeView === "workflows" ? "nav-item active" : "nav-item"} onClick={() => setActiveView("workflows")}><Workflow size={17} />工作流模板</button></nav><div className="sidebar-bottom"><div className="credit-card"><span>MOCK CREDITS</span><strong>1,000</strong><small>真实生成接入后启用账本</small></div><button className="user-row" onClick={() => { void fetch("/api/auth/logout", { method: "POST" }); setSession(null); }}><span className="avatar">{session[0]?.toUpperCase()}</span><span><b>{session.split("@")[0]}</b><small>服务端 Session</small></span><LogIn size={15} /></button></div></aside><section className="main-panel"><header className="topbar"><div><p className="eyebrow">PROJECT / {project.title.toUpperCase()}</p><h1>{activeView === "canvas" ? "生产画布" : activeView === "tasks" ? "任务中心" : activeView === "assets" ? "资产库" : activeView === "outline" ? "大纲库" : activeView === "agents" ? "Agent / Skill" : activeView === "workflows" ? "工作流模板" : "项目概览"}</h1></div><div className="top-actions"><span className="save-status"><span className="save-dot" />已自动保存</span><button className="icon-button" title="撤销"><RotateCcw size={16} /></button><button className="secondary-button" onClick={exportManifest}><Download size={16} />导出项目</button><button className="primary-button compact" onClick={runPending}><Play size={16} />运行待处理</button></div></header>{activeView === "assets" && <AssetLibrary projectId={project.id} />}{(activeView === "outline" || activeView === "agents" || activeView === "workflows") && <PlatformPanel projectId={project.id} view={activeView} />}{activeView !== "canvas" && activeView !== "assets" && activeView !== "outline" && activeView !== "agents" && activeView !== "workflows" && <ProjectEmpty activeView={activeView} onCanvas={() => setActiveView("canvas")} />}{activeView === "canvas" && <div className="canvas-layout"><div className="canvas-wrap"><div className="canvas-toolbar"><div><span className="toolbar-title">EPISODE 01 / KEYFRAME MODE</span><span className="toolbar-subtitle">{completedCount}/{nodes.length} 节点完成 · {pendingCount} 待处理</span></div><div className="toolbar-actions"><button className="ghost-button" onClick={addNode}><Plus size={15} />添加节点</button><button className="ghost-button" onClick={runPending}><Send size={15} />批量生成</button></div></div><div className="flow-canvas"><ReactFlow nodes={nodes} edges={edges} nodeTypes={nodeTypes} onNodesChange={onNodesChange} onEdgesChange={onEdgesChange} onConnect={onConnect} onNodeClick={(_, item) => setSelectedId(item.id)} fitView minZoom={0.25} maxZoom={1.5}><Background color="#d9d4ca" gap={24} size={1} /><Controls position="bottom-left" /><MiniMap position="bottom-right" nodeColor={miniMapColor} pannable zoomable /></ReactFlow></div></div><aside className="inspector"><div className="inspector-head"><span className="eyebrow">NODE INSPECTOR</span><button className="icon-button"><MoreHorizontal size={16} /></button></div>{selectedNode ? <><div className="selected-preview" style={{ "--node-accent": palette[nodeTypeForLabel(selectedNode.data.label)].accent } as React.CSSProperties}><div className="preview-icon"><Sparkles size={22} /></div><div><span>{selectedNode.data.status === "completed" ? "已完成" : "待处理"}</span><strong>{selectedNode.data.label}</strong></div></div><label className="field-label">节点说明<textarea value={selectedNode.data.description} onChange={(event) => updateNode(selectedNode.id, { description: event.target.value })} /></label><div className="field-row"><div><span className="field-label">Provider</span><div className="select-like">{inspectorProvider}</div></div><div><span className="field-label">状态</span><div className="select-like">{selectedNode.data.status}</div></div></div>{selectedNode.data.output && <div className="result-box"><span>最新输出</span><strong>{selectedNode.data.output}</strong>{selectedNode.id === "video" && <Image src="/demo/mock-video.svg" alt="Mock Seedance 2.5 预览" width={240} height={135} />}</div>}<button className="primary-button full" onClick={() => runNode(selectedNode.id)}><Play size={16} />{selectedNode.id === "video" ? "运行 Mock Seedance 2.5" : "运行此节点"}</button><p className="inspector-note">真实 Provider 接入后，这里会显示模型、参考资产、时长、比例和任务费用。</p></> : <p className="empty-copy">选择一个节点开始编辑。</p>}</aside></div>}{activeView === "canvas" && <footer className="statusbar"><span><span className="status-dot green" />系统正常</span><span>Mock Provider</span><span>PostgreSQL / Redis / MinIO 已在 Docker 编排中预留</span><span className="status-right">v0.1 MVP</span></footer>}</section></main>;
+  const inspectorProvider = selectedNode
+    ? providerForNode(selectedNode.id === "video" ? "video" : "prompt")
+    : "Mock Studio";
+  return (
+    <main className="app-shell">
+      <aside className="sidebar">
+        <div className="brand-lockup">
+          <span className="brand-mark small">镜</span>
+          <span>镜界工坊</span>
+        </div>
+        <div className="workspace-switch">
+          <span className="workspace-dot" />
+          <span>{project.title}</span>
+          <button
+            className="workspace-menu-trigger"
+            aria-label="打开项目菜单"
+            onClick={() => setMenuOpen((open) => !open)}
+          >
+            <MoreHorizontal size={16} />
+          </button>
+          {menuOpen && (
+            <div className="workspace-menu">
+              <button
+                onClick={() => {
+                  setActiveView("overview");
+                  setMenuOpen(false);
+                }}
+              >
+                项目设置
+              </button>
+              <button
+                onClick={() => {
+                  void navigator.clipboard?.writeText(project.id);
+                  setMenuOpen(false);
+                }}
+              >
+                复制项目 ID
+              </button>
+              <button
+                onClick={() => {
+                  exportManifest();
+                  setMenuOpen(false);
+                }}
+              >
+                导出项目
+              </button>
+              <button
+                className="danger-menu-item"
+                onClick={async () => {
+                  if (
+                    !window.confirm(
+                      "确定删除这个项目吗？项目画布、任务和产物记录都会被删除。",
+                    )
+                  )
+                    return;
+                  const response = await fetch(`/api/projects/${project.id}`, {
+                    method: "DELETE",
+                  });
+                  if (response.ok) {
+                    setMenuOpen(false);
+                    window.location.reload();
+                  }
+                }}
+              >
+                删除项目
+              </button>
+            </div>
+          )}
+        </div>
+        <nav>
+          <p className="nav-label">WORKSPACE</p>
+          <button
+            className={
+              activeView === "overview" ? "nav-item active" : "nav-item"
+            }
+            onClick={() => setActiveView("overview")}
+          >
+            <FolderKanban size={17} />
+            项目概览
+          </button>
+          <button
+            className={activeView === "canvas" ? "nav-item active" : "nav-item"}
+            onClick={() => setActiveView("canvas")}
+          >
+            <Workflow size={17} />
+            生产画布<span className="nav-count">{nodes.length}</span>
+          </button>
+          <button
+            className={activeView === "assets" ? "nav-item active" : "nav-item"}
+            onClick={() => setActiveView("assets")}
+          >
+            <Layers3 size={17} />
+            资产库
+          </button>
+          <button
+            className={activeView === "tasks" ? "nav-item active" : "nav-item"}
+            onClick={() => setActiveView("tasks")}
+          >
+            <Film size={17} />
+            任务中心<span className="nav-count">{jobs.length}</span>
+          </button>
+          <p className="nav-label second">LIBRARY</p>
+          <button
+            className={
+              activeView === "outline" ? "nav-item active" : "nav-item"
+            }
+            onClick={() => setActiveView("outline")}
+          >
+            <Sparkles size={17} />
+            大纲库
+          </button>
+          <button
+            className={activeView === "agents" ? "nav-item active" : "nav-item"}
+            onClick={() => setActiveView("agents")}
+          >
+            <WandSparkles size={17} />
+            Agent / Skill
+          </button>
+          <button
+            className={
+              activeView === "workflows" ? "nav-item active" : "nav-item"
+            }
+            onClick={() => setActiveView("workflows")}
+          >
+            <Workflow size={17} />
+            工作流模板
+          </button>
+          <button
+            className={
+              activeView === "assistant" ? "nav-item active" : "nav-item"
+            }
+            onClick={() => setActiveView("assistant")}
+          >
+            <MessageCircle size={17} />
+            画布助手
+          </button>
+          <button
+            className={
+              activeView === "prompts" ? "nav-item active" : "nav-item"
+            }
+            onClick={() => setActiveView("prompts")}
+          >
+            <BookOpen size={17} />
+            提示词库
+          </button>
+          <button
+            className={
+              activeView === "plugins" ? "nav-item active" : "nav-item"
+            }
+            onClick={() => setActiveView("plugins")}
+          >
+            <Puzzle size={17} />
+            插件节点
+          </button>
+          <button
+            className={activeView === "models" ? "nav-item active" : "nav-item"}
+            onClick={() => setActiveView("models")}
+          >
+            <Settings2 size={17} />
+            模型脚本
+          </button>
+          <button
+            className={
+              activeView === "members" ? "nav-item active" : "nav-item"
+            }
+            onClick={() => setActiveView("members")}
+          >
+            <UsersRound size={17} />
+            团队成员
+          </button>
+        </nav>
+        <div className="sidebar-bottom">
+          <div className="credit-card">
+            <span>MOCK CREDITS</span>
+            <strong>{creditBalance.toLocaleString()}</strong>
+            <small>真实生成接入后启用账本</small>
+          </div>
+          <button
+            className="user-row"
+            onClick={() => {
+              void fetch("/api/auth/logout", { method: "POST" });
+              setSession(null);
+            }}
+          >
+            <span className="avatar">{session[0]?.toUpperCase()}</span>
+            <span>
+              <b>{session.split("@")[0]}</b>
+              <small>服务端 Session</small>
+            </span>
+            <LogIn size={15} />
+          </button>
+        </div>
+      </aside>
+      <section className="main-panel">
+        <header className="topbar">
+          <div>
+            <p className="eyebrow">PROJECT / {project.title.toUpperCase()}</p>
+            <h1>
+              {activeView === "canvas"
+                ? "生产画布"
+                : activeView === "tasks"
+                  ? "任务中心"
+                  : activeView === "assets"
+                    ? "资产库"
+                    : activeView === "outline"
+                      ? "大纲库"
+                      : activeView === "agents"
+                        ? "Agent / Skill"
+                        : activeView === "workflows"
+                          ? "工作流模板"
+                          : activeView === "assistant"
+                            ? "画布助手"
+                            : activeView === "prompts"
+                              ? "提示词库"
+                              : activeView === "plugins"
+                                ? "插件节点"
+                                : activeView === "models"
+                                  ? "模型脚本"
+                                  : activeView === "members"
+                                    ? "团队成员"
+                                    : "项目概览"}
+            </h1>
+          </div>
+          <div className="top-actions">
+            <span className="save-status">
+              <span className="save-dot" />
+              已自动保存
+            </span>
+            <button className="icon-button" title="撤销" onClick={undo}>
+              <RotateCcw size={16} />
+            </button>
+            <button className="icon-button" title="重做" onClick={redo}>
+              <RotateCw size={16} />
+            </button>
+            <button className="secondary-button" onClick={exportManifest}>
+              <Download size={16} />
+              导出项目
+            </button>
+            <button
+              className="secondary-button"
+              onClick={() => importRef.current?.click()}
+            >
+              <Upload size={16} />
+              导入画布
+            </button>
+            <input
+              ref={importRef}
+              type="file"
+              accept="application/json"
+              hidden
+              onChange={importManifest}
+            />
+            <button className="primary-button compact" onClick={runPending}>
+              <Play size={16} />
+              运行待处理
+            </button>
+          </div>
+        </header>
+        {activeView === "assets" && <AssetLibrary projectId={project.id} />}
+        {(activeView === "outline" ||
+          activeView === "agents" ||
+          activeView === "workflows") && (
+          <PlatformPanel projectId={project.id} view={activeView} />
+        )}
+        {activeView === "assistant" && (
+          <AssistantPanel projectId={project.id} node={selectedNode} />
+        )}
+        {activeView === "prompts" && (
+          <PromptLibraryPanel projectId={project.id} />
+        )}
+        {activeView === "plugins" && <PluginPanel projectId={project.id} />}
+        {activeView === "models" && <ModelConfigPanel projectId={project.id} />}
+        {activeView === "members" && <MembersPanel projectId={project.id} />}
+        {activeView !== "canvas" &&
+          activeView !== "assets" &&
+          activeView !== "outline" &&
+          activeView !== "agents" &&
+          activeView !== "workflows" &&
+          activeView !== "assistant" &&
+          activeView !== "prompts" &&
+          activeView !== "plugins" &&
+          activeView !== "models" &&
+          activeView !== "members" && (
+            <ProjectEmpty
+              activeView={activeView}
+              onCanvas={() => setActiveView("canvas")}
+            />
+          )}
+        {activeView === "canvas" && (
+          <div className="canvas-layout">
+            <div className="canvas-wrap">
+              <div className="canvas-toolbar">
+                <div>
+                  <span className="toolbar-title">
+                    EPISODE 01 / KEYFRAME MODE
+                  </span>
+                  <span className="toolbar-subtitle">
+                    {completedCount}/{nodes.length} 节点完成 · {pendingCount}{" "}
+                    待处理
+                  </span>
+                </div>
+                <div className="toolbar-actions">
+                  {edges.length === 0 && (
+                    <button
+                      className="ghost-button"
+                      onClick={() => setEdges(initialEdges)}
+                      title="恢复生产链的默认节点连线"
+                    >
+                      恢复默认连线
+                    </button>
+                  )}
+                  <button className="ghost-button" onClick={addNode}>
+                    <Plus size={15} />
+                    添加节点
+                  </button>
+                  <button className="ghost-button" onClick={runPending}>
+                    <Send size={15} />
+                    批量生成
+                  </button>
+                  {selectedNode?.type === "video" && (
+                    <label className="real-toggle">
+                      <input type="checkbox" checked={useRealVideo} onChange={(event) => setUseRealVideo(event.target.checked)} />
+                      <span>使用 Token360 真实视频（会消耗额度）</span>
+                    </label>
+                  )}
+                  <button
+                    className="ghost-button"
+                    onClick={duplicateSelected}
+                    disabled={!selectedNode}
+                  >
+                    复制节点
+                  </button>
+                  <button
+                    className="ghost-button"
+                    onClick={deleteSelected}
+                    disabled={!selectedNode}
+                  >
+                    删除节点
+                  </button>
+                </div>
+              </div>
+              <div className="flow-canvas">
+                <ReactFlow
+                  nodes={nodes}
+                  edges={edges}
+                  nodeTypes={nodeTypes}
+                  onNodesChange={onNodesChange}
+                  onEdgesChange={onEdgesChange}
+                  onConnect={onConnect}
+                  onNodeClick={(_, item) => setSelectedId(item.id)}
+                  fitView
+                  minZoom={0.25}
+                  maxZoom={1.5}
+                >
+                  <Background color="#d9d4ca" gap={24} size={1} />
+                  <Controls position="bottom-left" />
+                  <MiniMap
+                    position="bottom-right"
+                    nodeColor={miniMapColor}
+                    pannable
+                    zoomable
+                  />
+                </ReactFlow>
+              </div>
+            </div>
+            <aside className="inspector">
+              <div className="inspector-head">
+                <span className="eyebrow">NODE INSPECTOR</span>
+                <button className="icon-button">
+                  <MoreHorizontal size={16} />
+                </button>
+              </div>
+              {selectedNode ? (
+                <>
+                  <div
+                    className="selected-preview"
+                    style={
+                      {
+                        "--node-accent":
+                          palette[nodeTypeForLabel(selectedNode.data.label)]
+                            .accent,
+                      } as React.CSSProperties
+                    }
+                  >
+                    <div className="preview-icon">
+                      <Sparkles size={22} />
+                    </div>
+                    <div>
+                      <span>
+                        {selectedNode.data.status === "completed"
+                          ? "已完成"
+                          : "待处理"}
+                      </span>
+                      <strong>{selectedNode.data.label}</strong>
+                    </div>
+                  </div>
+                  <label className="field-label">
+                    节点说明
+                    <textarea
+                      value={selectedNode.data.description}
+                      onChange={(event) =>
+                        updateNode(selectedNode.id, {
+                          description: event.target.value,
+                        })
+                      }
+                    />
+                  </label>
+                  <div className="field-row">
+                    <div>
+                      <span className="field-label">Provider</span>
+                      <div className="select-like">{inspectorProvider}</div>
+                    </div>
+                    <div>
+                      <span className="field-label">状态</span>
+                      <div className="select-like">
+                        {selectedNode.data.status}
+                      </div>
+                    </div>
+                  </div>
+                  {selectedNode.data.output && (
+                    <div className="result-box">
+                      <span>最新输出</span>
+                      <strong>{selectedNode.data.output}</strong>
+                      {selectedNode.id === "video" && (
+                        <Image
+                          src="/demo/mock-video.svg"
+                          alt="Mock Seedance 2.5 预览"
+                          width={240}
+                          height={135}
+                        />
+                      )}
+                    </div>
+                  )}
+                  <button
+                    className="primary-button full"
+                    onClick={() => runNode(selectedNode.id)}
+                  >
+                    <Play size={16} />
+                    {selectedNode.type === "video"
+                      ? useRealVideo ? "运行真实 Seedance 2.5" : "运行 Mock Seedance 2.5"
+                      : "运行此节点"}
+                  </button>
+                  <p className="inspector-note">
+                    真实 Provider
+                    接入后，这里会显示模型、参考资产、时长、比例和任务费用。
+                  </p>
+                </>
+              ) : (
+                <p className="empty-copy">选择一个节点开始编辑。</p>
+              )}
+            </aside>
+          </div>
+        )}
+        {activeView === "canvas" && (
+          <footer className="statusbar">
+            <span>
+              <span className="status-dot green" />
+              系统正常
+            </span>
+            <span>Mock Provider</span>
+            <span>PostgreSQL / Redis / MinIO 已在 Docker 编排中预留</span>
+            <span className="status-right">v0.1 MVP</span>
+          </footer>
+        )}
+      </section>
+    </main>
+  );
 }

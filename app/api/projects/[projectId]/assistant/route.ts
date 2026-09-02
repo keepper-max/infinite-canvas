@@ -4,7 +4,7 @@ import { getProjectForUser } from "@/lib/project-access";
 import { desc, eq } from "drizzle-orm";
 import { modelConfigs } from "@/db/schema";
 import { db } from "@/lib/db";
-import { runChatModel } from "@/lib/model-runner";
+import { envModelConfig, runChatModel } from "@/lib/model-runner";
 import { buildSeedancePrompt } from "@/lib/seedance-skill";
 
 export async function POST(
@@ -31,12 +31,13 @@ export async function POST(
     .orderBy(desc(modelConfigs.updatedAt))
     .limit(1);
   const fullPrompt = `你是 AI 漫剧导演助手。\n${buildSeedancePrompt({ nodeLabel, prompt, upstream: contextText ? [contextText] : [] })}`;
-  if (config) {
+  const activeConfig = config ?? envModelConfig();
+  if (activeConfig) {
     try {
-      const result = await runChatModel(config, fullPrompt);
+      const result = await runChatModel(activeConfig, fullPrompt);
       if (result.configured)
         return NextResponse.json({
-          provider: config.name,
+          provider: activeConfig.name,
           answer: result.text,
           suggestions: [],
           mode: "remote",

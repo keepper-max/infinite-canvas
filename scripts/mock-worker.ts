@@ -4,6 +4,7 @@ import { canvasNodes, generationJobs, jobArtifacts } from "@/db/schema";
 import { db } from "@/lib/db";
 import { recordJobEvent } from "@/lib/job-events";
 import { getRedis } from "@/lib/redis";
+import { Token360VideoProvider } from "@/lib/provider";
 
 type MockPayload = { jobId: string; projectId: string; nodeId: string };
 const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -18,6 +19,28 @@ async function processJob(job: Job<MockPayload>) {
   const { jobId, projectId, nodeId } = job.data;
   const [existing] = await db.select().from(generationJobs).where(eq(generationJobs.id, jobId)).limit(1);
   if (!existing || existing.status === "failed") return;
+  if (existing.provider === "token360") {
+    const remoteId = (existing.parameters as { remoteId?: string })?.remoteId;
+    if (!remoteId) throw new Error("Token360 任务缺少远程 ID");
+    const provider = new Token360VideoProvider();
+    await update(jobId, projectId, "running", 10, "Token360 视频任务已提交");
+    for (let attempt = 0; attempt < 120; attempt++) {
+      await wait(5000);
+      const current = await db.select({ status: generationJobs.status }).from(generationJobs).where(eq(generationJobs.id, jobId)).limit(1);
+      if (!current[0] || current[0].status === "failed") return;
+      const remote = await provider.getJob({ provider: "token360", remoteId });
+      if (remote.status === "failed") throw new Error(remote.error ?? "Token360 视频生成失败");
+      if (remote.status === "completed") {
+        const artifact = await provider.downloadResult({ provider: "token360", remoteId });
+        await db.insert(jobArtifacts).values({ jobId, uri: artifact.url, mimeType: artifact.mimeType, metadata: { provider: "token360", remoteId, model: existing.modelId } });
+        await db.update(canvasNodes).set({ status: "completed", data: { output: artifact.url, provider: "token360", model: existing.modelId }, updatedAt: new Date() }).where(and(eq(canvasNodes.id, nodeId), eq(canvasNodes.projectId, projectId)));
+        await update(jobId, projectId, "completed", 100, "Token360 视频已完成");
+        return;
+      }
+      await update(jobId, projectId, "running", Math.min(95, 10 + Math.floor(attempt * 85 / 120)), "Token360 视频生成中");
+    }
+    throw new Error("Token360 视频任务轮询超时");
+  }
   await update(jobId, projectId, "running", 5, "Mock Worker 已开始执行");
   for (const progress of [25, 50, 75]) {
     await wait(450);

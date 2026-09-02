@@ -2,6 +2,23 @@ import type { modelConfigs } from "@/db/schema";
 
 type ModelConfig = typeof modelConfigs.$inferSelect;
 
+/** Server-side default for an OpenAI-compatible gateway (Token360, etc.). */
+export function envModelConfig(): ModelConfig | null {
+  const key = process.env.TOKEN360_API_KEY;
+  if (!key) return null;
+  return {
+    id: "env-token360",
+    projectId: "env",
+    name: "Token360",
+    baseUrl: process.env.ASSISTANT_BASE_URL ?? "https://api.token360.ai/v1",
+    model: process.env.ASSISTANT_MODEL ?? "qwen3.8-flash",
+    script: "",
+    apiKeyEnv: "TOKEN360_API_KEY",
+    enabled: 1,
+    updatedAt: new Date(),
+  } as ModelConfig;
+}
+
 export async function runChatModel(config: ModelConfig, prompt: string) {
   const key = config.apiKeyEnv ? process.env[config.apiKeyEnv] : undefined;
   if (!key)
