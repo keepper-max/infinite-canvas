@@ -113,6 +113,7 @@ export default {
         copyText: "Copy text",
         downloadImage: "Download image",
         downloadVideo: "Download video",
+        downloadFailed: "Download failed. Please try again.",
     },
     notFound: {
         title: "Page not found",
