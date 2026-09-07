@@ -101,6 +101,7 @@ export function AppConfigPanel({ showDoneButton = false, initialTab = "channels"
     };
 
     const deleteChannel = (id: string) => {
+        if (config.channels.find((channel) => channel.id === id)?.managed) return;
         if (config.channels.length <= 1) {
             message.warning(t("config.channels.keepOne"));
             return;
@@ -109,6 +110,7 @@ export function AppConfigPanel({ showDoneButton = false, initialTab = "channels"
     };
 
     const saveChannel = (channel: ModelChannel) => {
+        if (channel.managed) return;
         updateChannels(config.channels.map((item) => (item.id === channel.id ? channel : item)));
     };
 
@@ -197,15 +199,15 @@ export function AppConfigPanel({ showDoneButton = false, initialTab = "channels"
                                             <div className="min-w-0">
                                                 <div className="truncate text-sm font-semibold">{channel.name || t("config.channels.unnamed")}</div>
                                                 <div className="mt-1 truncate text-xs text-stone-500">
-                                                    {apiFormatLabel(channel.apiFormat)} · {t("config.channels.modelCount", { count: channel.models.length })} · {channel.baseUrl || t("config.channels.missingUrl")}
+                                                    {channel.managed ? t("config.channels.modelCount", { count: channel.models.length }) : `${apiFormatLabel(channel.apiFormat)} · ${t("config.channels.modelCount", { count: channel.models.length })} · ${channel.baseUrl || t("config.channels.missingUrl")}`}
                                                 </div>
                                             </div>
-                                            <div className="flex shrink-0 gap-2">
+                                            {!channel.managed ? <div className="flex shrink-0 gap-2">
                                                 <Button size="small" icon={<Pencil className="size-3.5" />} onClick={() => setEditingChannelId(channel.id)}>
                                                     {t("common.edit")}
                                                 </Button>
                                                 <Button size="small" danger icon={<Trash2 className="size-3.5" />} onClick={() => deleteChannel(channel.id)} />
-                                            </div>
+                                            </div> : null}
                                         </div>
                                     ))}
                                 </div>

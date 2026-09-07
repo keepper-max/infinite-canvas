@@ -3,8 +3,9 @@ import { useEffect, useRef } from "react";
 import { App } from "antd";
 import { useTranslation } from "react-i18next";
 
-import { useConfigStore } from "@/stores/use-config-store";
+import { modelOptionsFromChannels, useConfigStore } from "@/stores/use-config-store";
 import { usePromptSourceScheduler } from "@/hooks/use-prompt-source-scheduler";
+import { fetchManagedModelCatalog } from "@/services/api/image";
 
 export function ClientRootInit({ children }: { children: ReactNode }) {
     const { message } = App.useApp();
@@ -14,6 +15,20 @@ export function ClientRootInit({ children }: { children: ReactNode }) {
     const openConfigDialog = useConfigStore((state) => state.openConfigDialog);
 
     usePromptSourceScheduler();
+
+    useEffect(() => {
+        const state = useConfigStore.getState();
+        const managed = state.config.channels.find((channel) => channel.managed);
+        if (!managed) return;
+        void fetchManagedModelCatalog(managed)
+            .then((models) => {
+                if (!models.length) return;
+                const current = useConfigStore.getState().config;
+                const channels = current.channels.map((channel) => (channel.managed ? { ...channel, models } : channel));
+                useConfigStore.setState({ config: { ...current, channels, models: modelOptionsFromChannels(channels) } });
+            })
+            .catch(() => undefined);
+    }, []);
 
     useEffect(() => {
         if (handledConfigParams.current) return;

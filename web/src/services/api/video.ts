@@ -6,7 +6,7 @@ import { dataUrlToFile, readFileAsDataUrl } from "@/lib/image-utils";
 import { clampVideoSeconds, computeVideoSize, inferVideoRatio } from "@/lib/media-size";
 import { getMediaBlob, resolveMediaUrl, uploadMediaFile, type UploadedFile } from "@/services/file-storage";
 import { imageToDataUrl } from "@/services/image-storage";
-import { boolConfig, buildApiUrl, modelOptionName, resolveModelRequestConfig, resolveModelScript, withLocalProxy, type AiConfig } from "@/stores/use-config-store";
+import { boolConfig, buildApiUrl, isServerManagedConfig, modelDefinitionOf, modelOptionName, resolveModelRequestConfig, resolveModelScript, withLocalProxy, type AiConfig } from "@/stores/use-config-store";
 import { runModelPlugin } from "./model-plugin";
 import type { ReferenceImage } from "@/types/image";
 import type { ReferenceAudio, ReferenceVideo } from "@/types/media";
@@ -76,6 +76,7 @@ export async function createVideoGenerationTask(config: AiConfig, prompt: string
     if (script) return createPluginVideoTask(requestConfig, selectedModel, script, prompt, references, options);
     assertVideoConfig(requestConfig, requestConfig.model);
     if (requestConfig.apiFormat === "gemini") return createGeminiVideoTask(requestConfig, selectedModel, prompt, references, options);
+    if (isServerManagedConfig(requestConfig)) return createManagedVideoTask(requestConfig, selectedModel, prompt, references, options);
     return createOpenAIVideoTask(requestConfig, selectedModel, prompt, references, options);
 }
 
@@ -170,6 +171,42 @@ async function createOpenAIVideoTask(config: AiConfig, model: string, prompt: st
     audios.forEach((file) => body.append("audio[]", file));
     try {
         const created = unwrapVideoResponse((await axios.post<ApiVideoResponse>(aiApiUrl(config, "/videos"), body, { headers: aiHeaders(config), signal: options?.signal })).data);
+        if (!created.id) throw new Error(apiText("noVideoTaskId"));
+        return { id: created.id, provider: "openai", model };
+    } catch (error) {
+        throw new Error(readAxiosError(error, apiText("videoTaskCreateFailed")));
+    }
+}
+
+/** The managed video gateway uses JSON and maps reference media by generation mode. */
+async function createManagedVideoTask(config: AiConfig, model: string, prompt: string, references: ReferenceImage[], options?: VideoMediaOptions): Promise<VideoGenerationTask> {
+    const images = await Promise.all(references.map((image) => imageToDataUrl(image)));
+    const videos = await Promise.all((options?.videos || []).map(async (video) => readFileAsDataUrl(await referenceMediaToFile(video, "ref.mp4", "invalidReferenceVideo", options))));
+    const audios = await Promise.all((options?.audios || []).map(async (audio) => readFileAsDataUrl(await referenceMediaToFile(audio, "ref.mp3", "invalidReferenceAudio", options))));
+    const mode = resolveVideoMode(config.videoMode, images.length);
+    const supported = new Set(modelDefinitionOf(config, model)?.supportedParameters || []);
+    const accepts = (name: string) => !supported.size || supported.has(name);
+    const body: Record<string, unknown> = {
+        model: modelOptionName(model),
+        prompt,
+    };
+    if (accepts("duration")) body.duration = Number(normalizeVideoSeconds(config.videoSeconds));
+    if (accepts("resolution")) body.resolution = normalizeVideoResolution(config.vquality);
+    if (accepts("aspect_ratio")) body.aspect_ratio = videoAspectRatio(config.size);
+    if (accepts("generate_audio")) body.generate_audio = boolConfig(config.videoGenerateAudio, true);
+    if (accepts("watermark")) body.watermark = boolConfig(config.videoWatermark, false);
+    if (accepts("output_format")) body.output_format = "mp4";
+    if (mode === "frames") {
+        if (images.length && accepts("frame_images")) body.frame_images = images.slice(0, 2);
+    } else {
+        const inputReferences = [...images, ...videos, ...audios];
+        if (inputReferences.length && accepts("input_references")) {
+            body.input_references = inputReferences;
+            if (accepts("omni_reference_task_type")) body.omni_reference_task_type = "reference";
+        }
+    }
+    try {
+        const created = unwrapVideoResponse((await axios.post<ApiVideoResponse>(aiApiUrl(config, "/videos"), body, { headers: aiHeaders(config, "application/json"), signal: options?.signal })).data);
         if (!created.id) throw new Error(apiText("noVideoTaskId"));
         return { id: created.id, provider: "openai", model };
     } catch (error) {

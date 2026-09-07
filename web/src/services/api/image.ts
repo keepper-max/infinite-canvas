@@ -1,7 +1,7 @@
 import axios from "axios";
 
 import i18n from "@/i18n";
-import { buildApiUrl, resolveModelRequestConfig, resolveModelScript, withLocalProxy, type AiConfig, type ModelChannel } from "@/stores/use-config-store";
+import { buildApiUrl, guessCapability, resolveModelRequestConfig, resolveModelScript, withLocalProxy, type AiConfig, type ChannelModel, type ModelCapability, type ModelChannel } from "@/stores/use-config-store";
 import { normalizePluginImages, runModelPlugin } from "./model-plugin";
 import { nanoid } from "nanoid";
 import { dataUrlToFile } from "@/lib/image-utils";
@@ -910,6 +910,15 @@ export async function fetchImageModels(config: Pick<AiConfig, "baseUrl" | "apiKe
 
 export async function fetchChannelModels(channel: ModelChannel) {
     return fetchImageModels({ baseUrl: channel.baseUrl, apiKey: channel.apiKey, apiFormat: channel.apiFormat });
+}
+
+export async function fetchManagedModelCatalog(channel: ModelChannel): Promise<ChannelModel[]> {
+    const response = await axios.get<{ data?: Array<{ id?: string; capability?: ModelCapability; supportedParameters?: string[] }> }>(buildApiUrl(channel.baseUrl, "/models"), {
+        headers: { Authorization: `Bearer ${channel.apiKey}` },
+    });
+    return (response.data.data || [])
+        .filter((model): model is { id: string; capability?: ModelCapability; supportedParameters?: string[] } => Boolean(model.id))
+        .map((model) => ({ name: model.id, capability: model.capability || guessCapability(model.id), supportedParameters: model.supportedParameters }));
 }
 
 const defaultGeminiConfig: Pick<AiConfig, "baseUrl" | "apiKey" | "apiFormat" | "model" | "systemPrompt"> = {

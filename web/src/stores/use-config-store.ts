@@ -13,6 +13,7 @@ export type ChannelModel = {
     name: string;
     capability: ModelCapability;
     script?: string;
+    supportedParameters?: string[];
 };
 
 export type ModelChannel = {
@@ -22,6 +23,8 @@ export type ModelChannel = {
     apiKey: string;
     apiFormat: ApiCallFormat;
     models: ChannelModel[];
+    /** Server-managed channels keep their real credential outside the browser. */
+    managed?: boolean;
 };
 
 export type AiConfig = {
@@ -74,34 +77,42 @@ export const CONFIG_STORE_KEY = "infinite-canvas:ai_config_store";
 const CHANNEL_MODEL_SEPARATOR = "::";
 const OPENAI_BASE_URL = "https://api.openai.com";
 const GEMINI_BASE_URL = "https://generativelanguage.googleapis.com";
+const MANAGED_CHANNEL_ID = "managed";
+const MANAGED_API_BASE_URL = "/api/token360";
+const MANAGED_API_KEY = "server-managed";
 export const LOCAL_PROXY_PACKAGE = "@basketikun/canvas-proxy";
 export const DEFAULT_LOCAL_PROXY_URL = "http://127.0.0.1:23210";
 
+const managedChannel: ModelChannel = {
+    id: MANAGED_CHANNEL_ID,
+    name: "内置模型",
+    baseUrl: MANAGED_API_BASE_URL,
+    apiKey: MANAGED_API_KEY,
+    apiFormat: "openai",
+    managed: true,
+    models: [
+        { name: "nano-banana-2", capability: "image" },
+        { name: "seedance-2.5", capability: "video" },
+        { name: "gpt-5.5", capability: "text" },
+        { name: "seed-audio-1.0", capability: "audio" },
+    ],
+};
+
 export const defaultConfig: AiConfig = {
     channelMode: "local",
-    baseUrl: OPENAI_BASE_URL,
-    apiKey: "",
+    baseUrl: MANAGED_API_BASE_URL,
+    apiKey: MANAGED_API_KEY,
     apiFormat: "openai",
     channels: [
         {
-            id: "default",
-            name: i18n.t("config.channels.defaultName"),
-            baseUrl: OPENAI_BASE_URL,
-            apiKey: "",
-            apiFormat: "openai",
-            models: [
-                { name: "gpt-image-2", capability: "image" },
-                { name: "grok-imagine-video", capability: "video" },
-                { name: "gpt-5.5", capability: "text" },
-                { name: "gpt-4o-mini-tts", capability: "audio" },
-            ],
+            ...managedChannel,
         },
     ],
-    model: "default::gpt-image-2",
-    imageModel: "default::gpt-image-2",
-    videoModel: "default::grok-imagine-video",
-    textModel: "default::gpt-5.5",
-    audioModel: "default::gpt-4o-mini-tts",
+    model: `${MANAGED_CHANNEL_ID}::nano-banana-2`,
+    imageModel: `${MANAGED_CHANNEL_ID}::nano-banana-2`,
+    videoModel: `${MANAGED_CHANNEL_ID}::seedance-2.5`,
+    textModel: `${MANAGED_CHANNEL_ID}::gpt-5.5`,
+    audioModel: `${MANAGED_CHANNEL_ID}::seed-audio-1.0`,
     audioVoice: "alloy",
     audioFormat: "mp3",
     audioSpeed: "1",
@@ -113,7 +124,12 @@ export const defaultConfig: AiConfig = {
     videoMode: "frames",
     systemPrompt: "",
     reasoningEffort: "auto",
-    models: ["default::gpt-image-2", "default::grok-imagine-video", "default::gpt-5.5", "default::gpt-4o-mini-tts"],
+    models: [
+        `${MANAGED_CHANNEL_ID}::nano-banana-2`,
+        `${MANAGED_CHANNEL_ID}::seedance-2.5`,
+        `${MANAGED_CHANNEL_ID}::gpt-5.5`,
+        `${MANAGED_CHANNEL_ID}::seed-audio-1.0`,
+    ],
     quality: "auto",
     size: "1:1",
     background: "",
@@ -173,6 +189,10 @@ function findChannelModel(config: AiConfig, value: string): { channel: ModelChan
 
 export function modelCapabilityOf(config: AiConfig, value: string): ModelCapability | undefined {
     return findChannelModel(config, value)?.model.capability;
+}
+
+export function modelDefinitionOf(config: AiConfig, value: string): ChannelModel | undefined {
+    return findChannelModel(config, value)?.model;
 }
 
 export function modelMatchesCapability(config: AiConfig, value: string, capability?: ModelCapability) {
@@ -256,10 +276,11 @@ export const useConfigStore = create<ConfigStore>()(
                         apiFormat: normalizeApiFormat(config.apiFormat),
                         channels,
                         models,
-                        imageModel: normalizeModelOptionValue(config.imageModel || config.model, channels),
-                        videoModel: normalizeModelOptionValue(config.videoModel, channels),
-                        textModel: normalizeModelOptionValue(config.textModel || config.model, channels),
-                        audioModel: normalizeModelOptionValue(config.audioModel || defaultConfig.audioModel, channels),
+                        model: normalizeModelOptionValue(config.model, channels) || defaultConfig.model,
+                        imageModel: normalizeModelOptionValue(config.imageModel || config.model, channels) || defaultConfig.imageModel,
+                        videoModel: normalizeModelOptionValue(config.videoModel, channels) || defaultConfig.videoModel,
+                        textModel: normalizeModelOptionValue(config.textModel || config.model, channels) || defaultConfig.textModel,
+                        audioModel: normalizeModelOptionValue(config.audioModel || defaultConfig.audioModel, channels) || defaultConfig.audioModel,
                         audioVoice: config.audioVoice || defaultConfig.audioVoice,
                         audioFormat: config.audioFormat || defaultConfig.audioFormat,
                         audioSpeed: config.audioSpeed || defaultConfig.audioSpeed,
@@ -295,7 +316,8 @@ export function normalizeChannelModels(models: Array<string | ChannelModel> | un
         seen.add(name);
         const capability = typeof item === "string" ? guessCapability(name) : item.capability || guessCapability(name);
         const script = typeof item === "string" ? undefined : item.script?.trim() || undefined;
-        result.push({ name, capability, script });
+        const supportedParameters = typeof item === "string" || !Array.isArray(item.supportedParameters) ? undefined : Array.from(new Set(item.supportedParameters.map((value) => value.trim()).filter(Boolean)));
+        result.push({ name, capability, script, supportedParameters });
     }
     return result;
 }
@@ -309,6 +331,7 @@ export function createModelChannel(channel?: Partial<ModelChannel>): ModelChanne
         apiKey: channel?.apiKey || "",
         apiFormat,
         models: normalizeChannelModels(channel?.models),
+        managed: Boolean(channel?.managed),
     };
 }
 
@@ -397,8 +420,7 @@ export function modelOptionName(value: string) {
 export function modelOptionLabel(config: AiConfig, value: string) {
     const decoded = decodeChannelModel(value);
     if (!decoded) return value;
-    const channel = config.channels.find((item) => item.id === decoded.channelId);
-    return channel ? `${decoded.model}（${channel.name}）` : decoded.model;
+    return decoded.model;
 }
 
 export function modelOptionsFromChannels(channels: ModelChannel[]) {
@@ -435,9 +457,15 @@ export function resolveModelRequestConfig(config: AiConfig, value: string) {
     };
 }
 
+export function isServerManagedConfig(config: Pick<AiConfig, "baseUrl" | "apiKey">) {
+    return config.baseUrl === MANAGED_API_BASE_URL && config.apiKey === MANAGED_API_KEY;
+}
+
 function normalizeChannels(config: AiConfig) {
     const persistedChannels = Array.isArray(config.channels) ? config.channels : [];
-    const channels = persistedChannels.map((channel, index) =>
+    const channels = persistedChannels
+        .filter((channel) => channel.id !== MANAGED_CHANNEL_ID && !channel.managed && channel.baseUrl?.replace(/\/+$/, "") !== MANAGED_API_BASE_URL)
+        .map((channel, index) =>
         createModelChannel({
             ...channel,
             id: channel.id || (index === 0 ? "default" : `channel-${index + 1}`),
@@ -445,18 +473,7 @@ function normalizeChannels(config: AiConfig) {
             models: normalizeChannelModels(channel.models),
         }),
     );
-    if (!channels.length) {
-        channels.push(
-            createModelChannel({
-                id: "default",
-                name: i18n.t("config.channels.defaultName"),
-                baseUrl: config.baseUrl || defaultConfig.baseUrl,
-                apiKey: config.apiKey || "",
-                apiFormat: config.apiFormat || defaultConfig.apiFormat,
-                models: normalizeChannelModels([config.model, config.imageModel, config.videoModel, config.textModel, config.audioModel].map(modelOptionName)),
-            }),
-        );
-    }
+    channels.unshift({ ...managedChannel, models: managedChannel.models.map((model) => ({ ...model })) });
     return channels;
 }
 

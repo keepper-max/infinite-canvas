@@ -24,6 +24,14 @@ export function createPromptSource(source?: Partial<PromptSource>): PromptSource
 }
 
 export const DEFAULT_PROMPT_SOURCES: PromptSource[] = [
+    {
+        id: "seedance-drama-templates",
+        name: "Seedance 2.0 漫剧模板库",
+        url: "/seedance-prompts.json",
+        homepage: "",
+        enabled: true,
+        builtIn: true,
+    },
     registrySource("banana-prompt-quicker", "Banana Prompt Quicker", "https://glidea.github.io/banana-prompt-quicker/"),
     registrySource("davidwu-gpt-image2-prompts", "DavidWu GPT Image 2", "https://github.com/davidwuw0811-boop/awesome-gpt-image2-prompts"),
     registrySource("freestylefly-gpt-image-2", "Freestylefly GPT Image 2", "https://github.com/freestylefly/awesome-gpt-image-2"),
