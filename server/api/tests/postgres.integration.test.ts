@@ -2,10 +2,12 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import { createApp } from "../src/app.js";
+import { PostgresAssetService } from "../src/asset-service.js";
 import type { ApiConfig } from "../src/config.js";
 import { createDatabase } from "../src/db/client.js";
 import { applyMigrations } from "../src/db/migrate.js";
 import { PostgresPlatformRepository } from "../src/repository.js";
+import type { ObjectStorage, StoredObject } from "../src/object-storage.js";
 
 const databaseUrl = process.env.TEST_DATABASE_URL;
 
@@ -14,8 +16,10 @@ test("PostgreSQL persists sessions, default workspace, and project isolation", {
     try {
         await applyMigrations(pool);
         const repository = new PostgresPlatformRepository(db);
-        const config: ApiConfig = { port: 3002, databaseUrl: databaseUrl!, cookieName: "integration_session", cookieSecure: false, sessionDays: 14, trustedOrigins: [] };
-        const firstApp = createApp(repository, config);
+        const objectStorage = new MemoryObjectStorage();
+        const assetService = new PostgresAssetService(db, objectStorage);
+        const config: ApiConfig = { port: 3002, databaseUrl: databaseUrl!, cookieName: "integration_session", cookieSecure: false, sessionDays: 14, trustedOrigins: [], objectStorage: { endpoint: "http://unused", publicEndpoint: "http://unused", region: "us-east-1", bucket: "test", accessKeyId: "test", secretAccessKey: "test", forcePathStyle: true, autoCreateBucket: false } };
+        const firstApp = createApp(repository, config, assetService);
         const suffix = crypto.randomUUID();
         const firstEmail = `db-a-${suffix}@example.com`;
         const secondEmail = `db-b-${suffix}@example.com`;
@@ -27,7 +31,7 @@ test("PostgreSQL persists sessions, default workspace, and project isolation", {
         const defaults = await pool.query<{ count: string }>("select count(*)::text as count from projects where owner_id = (select id from users where email = $1) and is_default = true", [firstEmail]);
         assert.equal(defaults.rows[0]?.count, "1");
 
-        const restartedApp = createApp(new PostgresPlatformRepository(db), config);
+        const restartedApp = createApp(new PostgresPlatformRepository(db), config, assetService);
         assert.equal((await restartedApp.request("/api/auth/me", { headers: { cookie: first.cookie } })).status, 200);
         assert.equal((await restartedApp.request(`/api/projects/${second.workspaceId}`, { headers: { cookie: first.cookie } })).status, 403);
         assert.equal((await restartedApp.request(`/api/projects/${first.workspaceId}`, { headers: { cookie: first.cookie } })).status, 200);
@@ -58,6 +62,43 @@ test("PostgreSQL persists sessions, default workspace, and project isolation", {
         assert.deepEqual(migrated.body.data.report.pendingResourceRefs, ["image:pending"]);
         const repeated = await postJson(restartedApp, `/api/projects/${migrationProject.workspaceId}/canvas/migrations/indexeddb`, migrationProject.cookie, migrationBody);
         assert.equal(repeated.body.data.alreadyMigrated, true);
+
+        const firstUpload = await postJson(restartedApp, `/api/projects/${first.workspaceId}/assets/uploads`, first.cookie, { ...assetUpload("frame.png"), thumbnail: { mimeType: "image/webp", bytes: 4, sha256: "b".repeat(64) } });
+        objectStorage.put(firstUpload.body.data.upload.storageKey, { bytes: 4, mimeType: "image/png", sha256: "a".repeat(64) });
+        const thumbnailStorageKey = firstUpload.body.data.upload.thumbnailUpload.url.replace("https://storage.test/upload/", "");
+        objectStorage.put(thumbnailStorageKey, { bytes: 4, mimeType: "image/webp", sha256: "b".repeat(64) });
+        const firstVersion = await postJson(restartedApp, `/api/projects/${first.workspaceId}/assets/uploads/${firstUpload.body.data.upload.uploadId}/complete`, first.cookie, {});
+        assert.equal(firstVersion.body.data.asset.versions[0].version, 1);
+        assert.match(firstVersion.body.data.asset.versions[0].thumbnailUrl, /\/download\/projects\//);
+        const assetId = firstVersion.body.data.asset.id;
+        const firstVersionId = firstVersion.body.data.asset.currentVersionId;
+
+        const secondUpload = await postJson(restartedApp, `/api/projects/${first.workspaceId}/assets/uploads`, first.cookie, { ...assetUpload("frame-v2.png"), assetId, parentVersionIds: [firstVersionId], provenance: { modelId: "test-image-model", skillId: "test-skill" } });
+        objectStorage.put(secondUpload.body.data.upload.storageKey, { bytes: 4, mimeType: "image/png", sha256: "a".repeat(64) });
+        const secondAssetVersion = await postJson(restartedApp, `/api/projects/${first.workspaceId}/assets/uploads/${secondUpload.body.data.upload.uploadId}/complete`, first.cookie, {});
+        assert.deepEqual(secondAssetVersion.body.data.asset.versions.map((version: any) => version.version), [2, 1]);
+        assert.deepEqual(secondAssetVersion.body.data.asset.versions[0].parentVersionIds, [firstVersionId]);
+        assert.deepEqual(secondAssetVersion.body.data.asset.versions[0].provenance, { modelId: "test-image-model", skillId: "test-skill" });
+        const secondVersionId = secondAssetVersion.body.data.asset.currentVersionId;
+
+        const canvasWithPinnedVersion = canvasWrite(3, "固定素材版本");
+        canvasWithPinnedVersion.nodes[0].metadata = { assetId, assetVersionId: firstVersionId };
+        assert.equal((await putCanvas(restartedApp, first.workspaceId, first.cookie, canvasWithPinnedVersion)).response.status, 200);
+        const link = await pool.query<{ asset_version_id: string }>("select asset_version_id from asset_links where project_id = $1 and node_id = 'story'", [first.workspaceId]);
+        assert.equal(link.rows[0]?.asset_version_id, firstVersionId);
+
+        const switched = await patchJson(restartedApp, `/api/assets/${assetId}/current-version`, first.cookie, { versionId: firstVersionId });
+        assert.equal(switched.body.data.asset.currentVersionId, firstVersionId);
+        assert.notEqual(firstVersionId, secondVersionId);
+        assert.equal((await pool.query<{ asset_version_id: string }>("select asset_version_id from asset_links where project_id = $1 and node_id = 'story'", [first.workspaceId])).rows[0]?.asset_version_id, firstVersionId);
+
+        const firstDownload = await restartedApp.request(`/api/asset-versions/${firstVersionId}/download`, { headers: { cookie: first.cookie } });
+        const secondDownload = await restartedApp.request(`/api/asset-versions/${firstVersionId}/download`, { headers: { cookie: first.cookie } });
+        assert.notEqual(((await firstDownload.json()) as any).data.url, ((await secondDownload.json()) as any).data.url);
+        assert.equal((await restartedApp.request(`/api/asset-versions/${firstVersionId}/download`, { headers: { cookie: second.cookie } })).status, 404);
+
+        assert.equal((await postJson(restartedApp, `/api/assets/${assetId}/trash`, first.cookie, { reason: "integration" })).body.data.asset.status, "trashed");
+        assert.equal((await postJson(restartedApp, `/api/assets/${assetId}/restore`, first.cookie, {})).body.data.asset.status, "active");
     } finally {
         await pool.end();
     }
@@ -95,4 +136,40 @@ async function putCanvas(app: ReturnType<typeof createApp>, projectId: string, c
 async function postJson(app: ReturnType<typeof createApp>, path: string, cookie: string, body: unknown) {
     const response = await app.request(path, { method: "POST", headers: { cookie, "content-type": "application/json" }, body: JSON.stringify(body) });
     return { response, body: await response.json() as any };
+}
+
+async function patchJson(app: ReturnType<typeof createApp>, path: string, cookie: string, body: unknown) {
+    const response = await app.request(path, { method: "PATCH", headers: { cookie, "content-type": "application/json" }, body: JSON.stringify(body) });
+    return { response, body: await response.json() as any };
+}
+
+function assetUpload(name: string) {
+    return { kind: "image", name, mimeType: "image/png", bytes: 4, sha256: "a".repeat(64), source: "upload", parentVersionIds: [], provenance: {} };
+}
+
+class MemoryObjectStorage implements ObjectStorage {
+    private readonly objects = new Map<string, StoredObject>();
+    private signature = 0;
+
+    put(key: string, object: StoredObject) {
+        this.objects.set(key, object);
+    }
+
+    async ensureReady() {}
+
+    async createUploadUrl(storageKey: string, mimeType: string, sha256: string) {
+        return { url: `https://storage.test/upload/${storageKey}`, headers: { "content-type": mimeType, "x-amz-meta-sha256": sha256 } };
+    }
+
+    async createDownloadUrl(storageKey: string) {
+        return `https://storage.test/download/${storageKey}?signature=${++this.signature}`;
+    }
+
+    async stat(storageKey: string) {
+        return this.objects.get(storageKey) || null;
+    }
+
+    async delete(storageKey: string) {
+        this.objects.delete(storageKey);
+    }
 }

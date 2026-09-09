@@ -10,6 +10,8 @@ API 启动时会按文件名顺序执行 `db/migrations` 中尚未应用的 SQL�
 
 `0007_canvas_persistence.sql` 增加结构化节点、端口连线、画布设置、历史快照和旧数据迁移台账。保存接口使用 `expectedRevision` 做乐观并发控制，冲突返回 `CANVAS_REVISION_CONFLICT`，不会覆盖较新的云端版本。
 
+`0008_asset_versions.sql` 在兼容旧 `assets` 表的前提下增加不可变版本、画布引用、上传台账和回收站。旧资产文件字段会迁移为 v1，旧列保留但不再作为新链路的权威来源。
+
 画布接口：
 
 - `GET/PUT /api/projects/:projectId/canvas`
@@ -19,9 +21,20 @@ API 启动时会按文件名顺序执行 `db/migrations` 中尚未应用的 SQL�
 
 旧 IndexedDB 迁移只上传结构化 JSON。内嵌图片、视频、音频数据以及 API Key、Token、渠道、代理和 WebDAV 配置会被排除，原 IndexedDB 数据不会自动删除。
 
+资产接口：
+
+- `GET /api/projects/:projectId/assets`
+- `POST /api/projects/:projectId/assets/uploads`
+- `POST /api/projects/:projectId/assets/uploads/:uploadId/complete`
+- `GET /api/asset-versions/:versionId/download`
+- `PATCH /api/assets/:assetId/current-version`
+- `POST /api/assets/:assetId/trash`、`POST /api/assets/:assetId/restore`
+
+浏览器通过短期签名地址直传对象存储，服务端完成时核验文件大小、类型和 SHA-256。数据库只保存对象键，不保存会过期的下载 URL。开发环境把 `OBJECT_STORAGE_ENDPOINT` 指向 Compose 内的 MinIO，把 `OBJECT_STORAGE_PUBLIC_ENDPOINT` 指向浏览器可访问地址；生产 OSS 使用其 S3 兼容 endpoint，并将 `OBJECT_STORAGE_FORCE_PATH_STYLE=false`、`OBJECT_STORAGE_AUTO_CREATE_BUCKET=false`。
+
 ## 回滚
 
-推荐恢复部署前的完整数据库备份，这是包含数据状态的可靠回滚路径。仅需撤回新增结构时，可在确认备份有效后按逆序手动执行 `db/rollback/0007_canvas_persistence.down.sql` 和 `db/rollback/0006_platform_api_auth.down.sql`。
+推荐恢复部署前的完整数据库备份，这是包含数据状态的可靠回滚路径。仅需撤回新增结构时，可在确认备份有效后按逆序手动执行 `db/rollback/0008_asset_versions.down.sql`、`db/rollback/0007_canvas_persistence.down.sql` 和 `db/rollback/0006_platform_api_auth.down.sql`。
 
 回滚脚本会删除 `canvases` 表及本次新增的项目字段和索引，因此不得由应用自动执行，也不能在没有新备份时直接运行。
 

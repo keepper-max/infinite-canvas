@@ -2,6 +2,8 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import { createApp } from "../src/app.js";
+import type { AssetDocument, BeginAssetUpload } from "../src/asset-contract.js";
+import type { AssetServicePort } from "../src/asset-service.js";
 import type { CanvasDocument, CanvasMigrationReport, CanvasSnapshotSummary, CanvasWrite } from "../src/canvas-contract.js";
 import { DomainError, type PlatformRepository, type PlatformUser, type ProjectSummary, type Workspace } from "../src/domain.js";
 import type { ApiConfig } from "../src/config.js";
@@ -13,6 +15,7 @@ const config: ApiConfig = {
     cookieSecure: false,
     sessionDays: 14,
     trustedOrigins: [],
+    objectStorage: { endpoint: "http://unused", publicEndpoint: "http://unused", region: "us-east-1", bucket: "test", accessKeyId: "test", secretAccessKey: "test", forcePathStyle: true, autoCreateBucket: false },
 };
 
 test("register creates one workspace and subsequent login reuses it", async () => {
@@ -117,9 +120,45 @@ test("canvas migration is idempotent and project scoped", async () => {
     assert.equal(forbidden.status, 403);
 });
 
+test("asset routes keep immutable versions, regenerate downloads, and isolate projects", async () => {
+    const repository = new MemoryRepository();
+    const assets = new MemoryAssetService(repository);
+    const app = createApp(repository, config, assets);
+    const first = await jsonRequest(app, "/api/auth/register", { email: "asset-owner@example.com", password: "password-123" });
+    const second = await jsonRequest(app, "/api/auth/register", { email: "asset-other@example.com", password: "password-123" });
+    const projectId = first.body.data.workspace.projectId;
+    const firstCookie = cookieFrom(first.response);
+    const upload = await postJson(app, `/api/projects/${projectId}/assets/uploads`, firstCookie, uploadInput("first.png"));
+    assert.equal(upload.response.status, 201);
+    const completed = await postJson(app, `/api/projects/${projectId}/assets/uploads/${upload.body.data.upload.uploadId}/complete`, firstCookie, {});
+    assert.equal(completed.body.data.asset.versions[0].version, 1);
+
+    const listed = await app.request(`/api/projects/${projectId}/assets`, { headers: { cookie: firstCookie } });
+    assert.equal(((await listed.json()) as any).data.assets.length, 1);
+    const forbidden = await app.request(`/api/projects/${projectId}/assets`, { headers: { cookie: cookieFrom(second.response) } });
+    assert.equal(forbidden.status, 403);
+
+    const versionId = completed.body.data.asset.currentVersionId;
+    const download = await app.request(`/api/asset-versions/${versionId}/download`, { headers: { cookie: firstCookie } });
+    assert.match(((await download.json()) as any).data.url, /signed\/asset-version/);
+    const trashed = await postJson(app, `/api/assets/${completed.body.data.asset.id}/trash`, firstCookie, { reason: "test" });
+    assert.equal(trashed.body.data.asset.status, "trashed");
+    const restored = await postJson(app, `/api/assets/${completed.body.data.asset.id}/restore`, firstCookie, {});
+    assert.equal(restored.body.data.asset.status, "active");
+});
+
 async function jsonRequest(app: ReturnType<typeof createApp>, path: string, body: unknown) {
     const response = await app.request(path, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
     return { response, body: await response.json() as any };
+}
+
+async function postJson(app: ReturnType<typeof createApp>, path: string, cookie: string, body: unknown) {
+    const response = await app.request(path, { method: "POST", headers: { cookie, "content-type": "application/json" }, body: JSON.stringify(body) });
+    return { response, body: await response.json() as any };
+}
+
+function uploadInput(name: string) {
+    return { kind: "image", name, mimeType: "image/png", bytes: 4, sha256: "a".repeat(64), source: "upload", parentVersionIds: [], provenance: {} };
 }
 
 function cookieFrom(response: Response) {
@@ -224,7 +263,7 @@ class MemoryRepository implements PlatformRepository {
         return workspace;
     }
 
-    private owns(projectId: string, userId: string) {
+    owns(projectId: string, userId: string) {
         return this.workspaces.get(userId)?.projectId === projectId;
     }
 
@@ -235,6 +274,94 @@ class MemoryRepository implements PlatformRepository {
         const canvas: CanvasDocument = { projectId, canvasId: workspace.canvasId, revision: 0, contractVersion: 1, nodes: [], edges: [], viewport: { x: 0, y: 0, k: 1 }, settings: { backgroundMode: "lines", showImageInfo: false }, updatedAt: workspace.updatedAt };
         this.canvases.set(projectId, canvas);
         return canvas;
+    }
+}
+
+class MemoryAssetService implements AssetServicePort {
+    private readonly assets = new Map<string, AssetDocument>();
+    private readonly uploads = new Map<string, { projectId: string; userId: string; input: BeginAssetUpload; assetId: string }>();
+
+    constructor(private readonly repository: MemoryRepository) {}
+
+    async list(projectId: string, userId: string, includeTrashed = false) {
+        if (!this.repository.owns(projectId, userId)) return null;
+        return [...this.assets.values()].filter((asset) => asset.projectId === projectId && (includeTrashed || asset.status === "active"));
+    }
+
+    async beginUpload(projectId: string, userId: string, input: BeginAssetUpload) {
+        if (!this.repository.owns(projectId, userId)) throw new DomainError("PROJECT_FORBIDDEN", "无权访问该项目", 403);
+        const uploadId = crypto.randomUUID();
+        const assetId = input.assetId || crypto.randomUUID();
+        this.uploads.set(uploadId, { projectId, userId, input, assetId });
+        return { uploadId, assetId, storageKey: `projects/${projectId}/${uploadId}`, uploadUrl: "https://signed/upload", headers: { "content-type": input.mimeType } };
+    }
+
+    async completeUpload(projectId: string, uploadId: string, userId: string) {
+        if (!this.repository.owns(projectId, userId)) return null;
+        const upload = this.uploads.get(uploadId);
+        if (!upload || upload.projectId !== projectId || upload.userId !== userId) throw new DomainError("ASSET_UPLOAD_NOT_FOUND", "找不到该上传任务", 404);
+        const existing = this.assets.get(upload.assetId);
+        const now = new Date().toISOString();
+        const version = {
+            id: crypto.randomUUID(),
+            assetId: upload.assetId,
+            version: (existing?.versions.length || 0) + 1,
+            storageKey: `projects/${projectId}/${uploadId}`,
+            mimeType: upload.input.mimeType,
+            bytes: upload.input.bytes,
+            width: upload.input.width ?? null,
+            height: upload.input.height ?? null,
+            durationMs: upload.input.durationMs ?? null,
+            sha256: upload.input.sha256,
+            source: upload.input.source,
+            sourceJobId: null,
+            parentVersionIds: upload.input.parentVersionIds,
+            provenance: upload.input.provenance,
+            createdAt: now,
+        };
+        const item: AssetDocument = {
+            id: upload.assetId,
+            projectId,
+            kind: upload.input.kind,
+            name: upload.input.name,
+            currentVersionId: version.id,
+            status: "active",
+            createdBy: userId,
+            createdAt: existing?.createdAt || now,
+            updatedAt: now,
+            trashedAt: null,
+            versions: [version as AssetDocument["versions"][number], ...(existing?.versions || [])],
+        };
+        this.assets.set(item.id, item);
+        return item;
+    }
+
+    async createDownloadUrl(versionId: string, userId: string) {
+        const asset = [...this.assets.values()].find((item) => item.versions.some((version) => version.id === versionId));
+        return asset && this.repository.owns(asset.projectId, userId) ? { url: `https://signed/asset-version/${versionId}` } : null;
+    }
+
+    async setCurrentVersion(assetId: string, versionId: string, userId: string) {
+        const asset = this.assets.get(assetId);
+        if (!asset || !this.repository.owns(asset.projectId, userId)) return null;
+        asset.currentVersionId = versionId;
+        return asset;
+    }
+
+    async trash(assetId: string, userId: string) {
+        const asset = this.assets.get(assetId);
+        if (!asset || !this.repository.owns(asset.projectId, userId)) return null;
+        asset.status = "trashed";
+        asset.trashedAt = new Date().toISOString();
+        return asset;
+    }
+
+    async restore(assetId: string, userId: string) {
+        const asset = this.assets.get(assetId);
+        if (!asset || !this.repository.owns(asset.projectId, userId)) return null;
+        asset.status = "active";
+        asset.trashedAt = null;
+        return asset;
     }
 }
 

@@ -1,9 +1,9 @@
-import { readConfig } from "../config.js";
 import { createDatabase } from "./client.js";
 import { applyMigrations } from "./migrate.js";
 
-const config = readConfig();
-const { pool } = createDatabase(config.databaseUrl);
+const databaseUrl = process.env.DATABASE_URL?.trim();
+if (!databaseUrl) throw new Error("DATABASE_URL is required");
+const { pool } = createDatabase(databaseUrl);
 
 try {
     await applyMigrations(pool);

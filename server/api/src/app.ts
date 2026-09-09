@@ -4,6 +4,8 @@ import { Hono, type Context } from "hono";
 import { z } from "zod";
 
 import { createSessionToken, hashPassword, hashSessionToken, normalizeEmail, passwordPolicy, verifyPassword } from "./auth.js";
+import { beginAssetUploadSchema, completeAssetUploadSchema, setCurrentVersionSchema, trashAssetSchema } from "./asset-contract.js";
+import type { AssetServicePort } from "./asset-service.js";
 import { parseCanvasWrite } from "./canvas-contract.js";
 import type { ApiConfig } from "./config.js";
 import { DomainError, type PlatformRepository, type PlatformUser } from "./domain.js";
@@ -11,7 +13,7 @@ import { DomainError, type PlatformRepository, type PlatformUser } from "./domai
 type Variables = { requestId: string };
 type AppEnv = { Variables: Variables };
 
-export function createApp(repository: PlatformRepository, config: ApiConfig) {
+export function createApp(repository: PlatformRepository, config: ApiConfig, assetService?: AssetServicePort) {
     const app = new Hono<AppEnv>();
 
     app.use("*", async (context, next) => {
@@ -116,6 +118,59 @@ export function createApp(repository: PlatformRepository, config: ApiConfig) {
         return context.json(success(context, result));
     });
 
+    app.get("/api/projects/:projectId/assets", async (context) => {
+        const user = await requireUser(context.req.raw, repository, config);
+        const assets = await requireAssetService(assetService).list(context.req.param("projectId"), user.id, context.req.query("status") === "all");
+        if (!assets) throw new DomainError("PROJECT_FORBIDDEN", "无权访问该项目", 403);
+        return context.json(success(context, { assets }));
+    });
+
+    app.post("/api/projects/:projectId/assets/uploads", async (context) => {
+        const user = await requireUser(context.req.raw, repository, config);
+        const input = beginAssetUploadSchema.parse(await readJson(context.req.raw));
+        const upload = await requireAssetService(assetService).beginUpload(context.req.param("projectId"), user.id, input);
+        return context.json(success(context, { upload }), 201);
+    });
+
+    app.post("/api/projects/:projectId/assets/uploads/:uploadId/complete", async (context) => {
+        const user = await requireUser(context.req.raw, repository, config);
+        completeAssetUploadSchema.parse(await readJson(context.req.raw));
+        const asset = await requireAssetService(assetService).completeUpload(context.req.param("projectId"), context.req.param("uploadId"), user.id);
+        if (!asset) throw new DomainError("PROJECT_FORBIDDEN", "无权访问该项目", 403);
+        return context.json(success(context, { asset }));
+    });
+
+    app.get("/api/asset-versions/:versionId/download", async (context) => {
+        const user = await requireUser(context.req.raw, repository, config);
+        const download = await requireAssetService(assetService).createDownloadUrl(context.req.param("versionId"), user.id);
+        if (!download) throw new DomainError("ASSET_VERSION_NOT_FOUND", "找不到该素材版本", 404);
+        return context.json(success(context, download));
+    });
+
+    app.patch("/api/assets/:assetId/current-version", async (context) => {
+        const user = await requireUser(context.req.raw, repository, config);
+        const input = setCurrentVersionSchema.parse(await readJson(context.req.raw));
+        const asset = await requireAssetService(assetService).setCurrentVersion(context.req.param("assetId"), input.versionId, user.id);
+        if (!asset) throw new DomainError("ASSET_NOT_FOUND", "找不到该素材", 404);
+        return context.json(success(context, { asset }));
+    });
+
+    app.post("/api/assets/:assetId/trash", async (context) => {
+        const user = await requireUser(context.req.raw, repository, config);
+        const input = trashAssetSchema.parse(await readJson(context.req.raw));
+        const asset = await requireAssetService(assetService).trash(context.req.param("assetId"), user.id, input.reason);
+        if (!asset) throw new DomainError("ASSET_NOT_FOUND", "找不到该素材", 404);
+        return context.json(success(context, { asset }));
+    });
+
+    app.post("/api/assets/:assetId/restore", async (context) => {
+        const user = await requireUser(context.req.raw, repository, config);
+        completeAssetUploadSchema.parse(await readJson(context.req.raw));
+        const asset = await requireAssetService(assetService).restore(context.req.param("assetId"), user.id);
+        if (!asset) throw new DomainError("ASSET_NOT_FOUND", "找不到该素材", 404);
+        return context.json(success(context, { asset }));
+    });
+
     app.notFound((context) => apiError(context, new DomainError("NOT_FOUND", "接口不存在", 404)));
     app.onError((error, context) => {
         if (error instanceof z.ZodError) {
@@ -127,6 +182,11 @@ export function createApp(repository: PlatformRepository, config: ApiConfig) {
     });
 
     return app;
+}
+
+function requireAssetService(service?: AssetServicePort) {
+    if (!service) throw new DomainError("ASSET_SERVICE_UNAVAILABLE", "素材服务暂时不可用", 503, true);
+    return service;
 }
 
 const emailSchema = z.string().trim().email("请输入有效邮箱").max(254, "邮箱过长");

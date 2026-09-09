@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, gt } from "drizzle-orm";
+import { and, asc, desc, eq, gt, inArray, sql } from "drizzle-orm";
 import type { NodePgDatabase, NodePgTransaction } from "drizzle-orm/node-postgres";
 import type { ExtractTablesWithRelations } from "drizzle-orm";
 
@@ -250,9 +250,45 @@ async function saveCanvasInTransaction(db: Transaction, projectId: string, userI
             })),
         );
     }
+    await syncAssetLinks(db, projectId, write.nodes, write.edges);
     await db.insert(tables.canvasSnapshots).values({ projectId, version: canvas.revision, contractVersion: write.contractVersion, nodes: write.nodes, edges: write.edges, viewport: write.viewport, settings: write.settings, source, restoredFromVersion });
     await db.update(tables.projects).set({ updatedAt: now, lastOpenedAt: now }).where(eq(tables.projects.id, projectId));
     return { projectId, canvasId: canvas.canvasId, revision: canvas.revision, contractVersion: write.contractVersion, nodes: write.nodes, edges: write.edges, viewport: write.viewport, settings: write.settings, updatedAt: now.toISOString() };
+}
+
+async function syncAssetLinks(db: Transaction, projectId: string, nodes: CanvasNode[], edges: CanvasEdge[]) {
+    const links = [
+        ...nodes.flatMap((node) => collectAssetVersionReferences(node.metadata).map((reference) => ({ ...reference, nodeId: node.id }))),
+        ...edges.flatMap((edge) => collectAssetVersionReferences(edge.metadata).map((reference) => ({ ...reference, nodeId: edge.toNodeId, role: edge.role || reference.role }))),
+    ];
+    const unique = [...new Map(links.map((link) => [`${link.nodeId}:${link.assetVersionId}:${link.role}`, link])).values()];
+    if (unique.length) {
+        const ids = [...new Set(unique.map((link) => link.assetVersionId))];
+        const owned = await db
+            .select({ id: tables.assetVersions.id })
+            .from(tables.assetVersions)
+            .innerJoin(tables.assets, eq(tables.assets.id, tables.assetVersions.assetId))
+            .where(and(eq(tables.assets.projectId, projectId), inArray(tables.assetVersions.id, ids)));
+        if (owned.length !== ids.length) throw new DomainError("ASSET_VERSION_FORBIDDEN", "画布引用了不属于当前项目的素材版本", 422);
+    }
+    await db.delete(tables.assetLinks).where(and(eq(tables.assetLinks.projectId, projectId), sql`${tables.assetLinks.nodeId} is not null`));
+    if (unique.length) await db.insert(tables.assetLinks).values(unique.map((link) => ({ projectId, assetVersionId: link.assetVersionId, nodeId: link.nodeId, role: link.role })));
+}
+
+function collectAssetVersionReferences(value: unknown, role = "reference", output: Array<{ assetVersionId: string; role: string }> = []) {
+    if (!value || typeof value !== "object") return output;
+    if (Array.isArray(value)) {
+        value.forEach((item) => collectAssetVersionReferences(item, role, output));
+        return output;
+    }
+    for (const [key, item] of Object.entries(value)) {
+        const normalized = key.replace(/[-_\s]/g, "").toLowerCase();
+        const nextRole = normalized.includes("firstframe") ? "first_frame" : normalized.includes("lastframe") ? "last_frame" : normalized.includes("audio") ? "audio_input" : normalized.includes("identity") || normalized.includes("character") ? "identity" : normalized.includes("scene") || normalized.includes("environment") ? "environment" : role;
+        if (normalized === "assetversionid" && typeof item === "string" && /^[0-9a-f-]{36}$/i.test(item)) output.push({ assetVersionId: item, role: nextRole });
+        else if (normalized === "assetversionids" && Array.isArray(item)) item.filter((id): id is string => typeof id === "string" && /^[0-9a-f-]{36}$/i.test(id)).forEach((assetVersionId) => output.push({ assetVersionId, role: nextRole }));
+        else collectAssetVersionReferences(item, nextRole, output);
+    }
+    return output;
 }
 
 function deserializeNode(row: typeof tables.canvasNodes.$inferSelect): CanvasNode {
