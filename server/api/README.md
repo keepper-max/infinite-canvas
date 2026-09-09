@@ -8,9 +8,20 @@ API 启动时会按文件名顺序执行 `db/migrations` 中尚未应用的 SQL�
 
 `0006_platform_api_auth.sql` 是增量迁移：保留原有业务表和数据，补齐默认项目字段、项目成员关系和每项目唯一画布记录。生产执行前必须再次完成 PostgreSQL 全库备份。
 
+`0007_canvas_persistence.sql` 增加结构化节点、端口连线、画布设置、历史快照和旧数据迁移台账。保存接口使用 `expectedRevision` 做乐观并发控制，冲突返回 `CANVAS_REVISION_CONFLICT`，不会覆盖较新的云端版本。
+
+画布接口：
+
+- `GET/PUT /api/projects/:projectId/canvas`
+- `GET /api/projects/:projectId/canvas/snapshots`
+- `POST /api/projects/:projectId/canvas/snapshots/:version/restore`
+- `POST /api/projects/:projectId/canvas/migrations/indexeddb`
+
+旧 IndexedDB 迁移只上传结构化 JSON。内嵌图片、视频、音频数据以及 API Key、Token、渠道、代理和 WebDAV 配置会被排除，原 IndexedDB 数据不会自动删除。
+
 ## 回滚
 
-推荐恢复部署前的完整数据库备份，这是包含数据状态的可靠回滚路径。仅需撤回本次新增结构时，可在确认备份有效后手动执行 `db/rollback/0006_platform_api_auth.down.sql`。
+推荐恢复部署前的完整数据库备份，这是包含数据状态的可靠回滚路径。仅需撤回新增结构时，可在确认备份有效后按逆序手动执行 `db/rollback/0007_canvas_persistence.down.sql` 和 `db/rollback/0006_platform_api_auth.down.sql`。
 
 回滚脚本会删除 `canvases` 表及本次新增的项目字段和索引，因此不得由应用自动执行，也不能在没有新备份时直接运行。
 

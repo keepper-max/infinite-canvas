@@ -8,6 +8,7 @@ import { useTranslation } from "react-i18next";
 import { requestEdit, requestGeneration, requestImageQuestion } from "@/services/api/image";
 import { requestAudioGeneration, storeGeneratedAudio } from "@/services/api/audio";
 import { createVideoGenerationTask, isVideoTaskFailed, storeGeneratedVideo, waitForVideoGenerationTask } from "@/services/api/video";
+import { createCanvasDraft, type CanvasDraft } from "@/services/api/canvas";
 import { defaultConfig, useConfigStore, useEffectiveConfig } from "@/stores/use-config-store";
 import { uploadImage } from "@/services/image-storage";
 import { uploadMediaFile, type UploadedFile } from "@/services/file-storage";
@@ -46,6 +47,7 @@ import { useAgentStore } from "@/stores/use-agent-store";
 import { useCanvasStore } from "@/stores/canvas/use-canvas-store";
 import { useAgentBridge } from "@/pages/canvas/hooks/use-agent-bridge";
 import { usePluginHost } from "@/pages/canvas/hooks/use-plugin-host";
+import { useCloudCanvasPersistence } from "@/pages/canvas/hooks/use-cloud-canvas-persistence";
 import { buildNodeMentionReferences, getGroupResourceNodes, isCanvasReferenceNode, type CanvasResourceReference } from "@/lib/canvas/canvas-resource-references";
 import { exportCanvasProjects } from "@/lib/canvas/canvas-export";
 import { applyNodeConfigPatch, audioMetadata, buildAudioGenerationMetadata, buildImageGenerationMetadata, createCanvasNode, imageMetadata, videoMetadata } from "@/lib/canvas/canvas-node-factory";
@@ -271,6 +273,31 @@ function InfiniteCanvasPage() {
     const generationRequestsRef = useRef(new Map<string, CanvasGenerationRequest>());
     const videoPollIdsRef = useRef(new Set<string>());
 
+    const applyPersistedCanvas = useCallback(
+        async (draft: CanvasDraft) => {
+            const restoredNodes = await hydrateCanvasImages(resetInterruptedGeneration(draft.nodes));
+            nodesRef.current = restoredNodes;
+            connectionsRef.current = draft.edges;
+            viewportRef.current = draft.viewport;
+            setNodes(restoredNodes);
+            setConnections(draft.edges);
+            setBackgroundMode(draft.settings.backgroundMode);
+            setShowImageInfo(draft.settings.showImageInfo);
+            setViewport(draft.viewport);
+            updateProject(projectId, {
+                nodes: restoredNodes,
+                connections: draft.edges,
+                backgroundMode: draft.settings.backgroundMode,
+                showImageInfo: draft.settings.showImageInfo,
+                viewport: draft.viewport,
+            });
+            historyRef.current = { past: [], future: [] };
+            setHistoryState({ canUndo: false, canRedo: false });
+        },
+        [projectId, updateProject],
+    );
+    const canvasPersistence = useCloudCanvasPersistence(projectId, applyPersistedCanvas);
+
     const createHistoryEntry = useCallback(
         (): CanvasHistoryEntry => ({
             nodes: nodesRef.current,
@@ -433,33 +460,39 @@ function InfiniteCanvasPage() {
         }
 
         const restore = async () => {
-            const restoredNodes = await hydrateCanvasImages(resetInterruptedGeneration(project.nodes));
             const restoredSessions = await hydrateAssistantImages(project.chatSessions || []);
-            setNodes(restoredNodes);
-            setConnections(project.connections);
             setChatSessions(restoredSessions);
             setActiveChatId(project.activeChatId || null);
-            setBackgroundMode(project.backgroundMode);
-            setShowImageInfo(project.showImageInfo || false);
-            setViewport(project.viewport);
+            const sanitizedDraft = createCanvasDraft(project.nodes, project.connections, project.viewport, { backgroundMode: project.backgroundMode, showImageInfo: project.showImageInfo || false });
+            const localView: CanvasDraft = { ...sanitizedDraft, nodes: project.nodes, edges: project.connections };
+            await canvasPersistence.load(sanitizedDraft, localView);
             historyRef.current = { past: [], future: [] };
             if (historyCommitTimerRef.current) {
                 clearTimeout(historyCommitTimerRef.current);
                 historyCommitTimerRef.current = null;
             }
             lastHistoryRef.current = {
-                nodes: restoredNodes,
-                connections: project.connections,
+                nodes: nodesRef.current,
+                connections: connectionsRef.current,
                 chatSessions: restoredSessions,
                 activeChatId: project.activeChatId || null,
-                backgroundMode: project.backgroundMode,
-                showImageInfo: project.showImageInfo || false,
+                backgroundMode: sanitizedDraft.settings.backgroundMode,
+                showImageInfo: sanitizedDraft.settings.showImageInfo,
             };
             setHistoryState({ canUndo: false, canRedo: false });
             setProjectLoaded(true);
         };
-        void restore();
-    }, [hydrated, navigate, openProject, projectId]);
+        void restore().catch((error) => {
+            message.error(error instanceof Error ? error.message : "画布加载失败");
+            navigate("/canvas", { replace: true });
+        });
+    }, [canvasPersistence.load, hydrated, message, navigate, openProject, projectId]);
+
+    useEffect(() => {
+        if (!canvasPersistence.migrationReport) return;
+        const report = canvasPersistence.migrationReport;
+        message.success(`画布迁移完成：${report.nodeCount} 个节点、${report.edgeCount} 条连线`);
+    }, [canvasPersistence.migrationReport, message]);
 
     useEffect(() => {
         if (!projectLoaded) return;
@@ -511,6 +544,11 @@ function InfiniteCanvasPage() {
         if (!projectLoaded || historyPausedRef.current) return;
         updateProject(projectId, { nodes, connections, chatSessions, activeChatId, backgroundMode, showImageInfo });
     }, [activeChatId, backgroundMode, chatSessions, connections, nodes, projectId, projectLoaded, showImageInfo, updateProject]);
+
+    useEffect(() => {
+        if (!projectLoaded || historyPausedRef.current) return;
+        canvasPersistence.queueSave(createCanvasDraft(nodes, connections, viewport, { backgroundMode, showImageInfo }));
+    }, [backgroundMode, canvasPersistence.queueSave, connections, nodes, projectLoaded, showImageInfo, viewport]);
 
     useEffect(() => {
         if (!dialogNodeId) setNodeImageSettingsOpen(false);
@@ -3103,6 +3141,8 @@ function InfiniteCanvasPage() {
                     agentOpen={agentPanelOpen}
                     compactAgentStatus={{ connected: localAgentConnected, enabled: localAgentEnabled, activity: localAgentActivity }}
                     onToggleAgent={toggleAgentPanel}
+                    syncStatus={canvasPersistence.status}
+                    onSyncClick={canvasPersistence.reopenMigration}
                 />
 
                 <InfiniteCanvas
@@ -3329,6 +3369,36 @@ function InfiniteCanvasPage() {
 
                 <CanvasNodeInfoModal node={infoNode} open={Boolean(infoNode)} onClose={() => setInfoNodeId(null)} />
                 <CanvasPluginManagerModal open={pluginManagerOpen} onClose={() => setPluginManagerOpen(false)} />
+
+                <Modal
+                    title="发现本机旧画布"
+                    open={Boolean(canvasPersistence.migrationDraft)}
+                    centered
+                    closable={false}
+                    maskClosable={false}
+                    okText="上传画布结构"
+                    cancelText="暂不迁移"
+                    onOk={() => void canvasPersistence.confirmMigration()}
+                    onCancel={canvasPersistence.dismissMigration}
+                >
+                    <p className="text-sm opacity-70">可将当前节点、连线和视图上传到账号云端。图片和视频文件、API Key、代理及 WebDAV 凭据不会上传，本机原数据会继续保留。</p>
+                </Modal>
+
+                <Modal
+                    title="画布版本冲突"
+                    open={Boolean(canvasPersistence.conflictDraft)}
+                    centered
+                    closable={false}
+                    maskClosable={false}
+                    footer={
+                        <>
+                            <Button onClick={() => void canvasPersistence.resolveConflict("cloud")}>载入云端版本</Button>
+                            <Button type="primary" onClick={() => void canvasPersistence.resolveConflict("local")}>保留本地版本</Button>
+                        </>
+                    }
+                >
+                    <p className="text-sm opacity-70">另一个页面已更新该画布。请选择载入云端内容，或明确用当前本地内容创建一个新版本。</p>
+                </Modal>
 
                 {cropNode?.metadata?.content ? <CanvasNodeCropDialog dataUrl={cropNode.metadata.content} open={Boolean(cropNode)} onClose={() => setCropNodeId(null)} onConfirm={(crop) => void cropImageNode(cropNode!, crop)} /> : null}
 

@@ -4,6 +4,7 @@ import { Hono, type Context } from "hono";
 import { z } from "zod";
 
 import { createSessionToken, hashPassword, hashSessionToken, normalizeEmail, passwordPolicy, verifyPassword } from "./auth.js";
+import { parseCanvasWrite } from "./canvas-contract.js";
 import type { ApiConfig } from "./config.js";
 import { DomainError, type PlatformRepository, type PlatformUser } from "./domain.js";
 
@@ -76,6 +77,45 @@ export function createApp(repository: PlatformRepository, config: ApiConfig) {
         return context.json(success(context, { project }));
     });
 
+    app.get("/api/projects/:projectId/canvas", async (context) => {
+        const user = await requireUser(context.req.raw, repository, config);
+        const canvas = await repository.getCanvasForUser(context.req.param("projectId"), user.id);
+        if (!canvas) throw new DomainError("PROJECT_FORBIDDEN", "无权访问该项目", 403);
+        return context.json(success(context, { canvas }));
+    });
+
+    app.put("/api/projects/:projectId/canvas", async (context) => {
+        const user = await requireUser(context.req.raw, repository, config);
+        const { write } = parseCanvasWrite(await readJson(context.req.raw));
+        const canvas = await repository.saveCanvasForUser(context.req.param("projectId"), user.id, write);
+        return context.json(success(context, { canvas }));
+    });
+
+    app.get("/api/projects/:projectId/canvas/snapshots", async (context) => {
+        const user = await requireUser(context.req.raw, repository, config);
+        const snapshots = await repository.listCanvasSnapshots(context.req.param("projectId"), user.id);
+        if (!snapshots) throw new DomainError("PROJECT_FORBIDDEN", "无权访问该项目", 403);
+        return context.json(success(context, { snapshots }));
+    });
+
+    app.post("/api/projects/:projectId/canvas/snapshots/:version/restore", async (context) => {
+        const user = await requireUser(context.req.raw, repository, config);
+        const version = positiveInteger.parse(context.req.param("version"));
+        const { expectedRevision } = restoreInput.parse(await readJson(context.req.raw));
+        const canvas = await repository.restoreCanvasSnapshot(context.req.param("projectId"), user.id, version, expectedRevision);
+        if (!canvas) throw new DomainError("PROJECT_FORBIDDEN", "无权访问该项目", 403);
+        return context.json(success(context, { canvas }));
+    });
+
+    app.post("/api/projects/:projectId/canvas/migrations/indexeddb", async (context) => {
+        const user = await requireUser(context.req.raw, repository, config);
+        const raw = migrationInput.parse(await readJson(context.req.raw));
+        const { migrationKey, ...canvasInput } = raw;
+        const { write, report } = parseCanvasWrite(canvasInput);
+        const result = await repository.migrateCanvasForUser(context.req.param("projectId"), user.id, migrationKey, write, report);
+        return context.json(success(context, result));
+    });
+
     app.notFound((context) => apiError(context, new DomainError("NOT_FOUND", "接口不存在", 404)));
     app.onError((error, context) => {
         if (error instanceof z.ZodError) {
@@ -93,6 +133,9 @@ const emailSchema = z.string().trim().email("请输入有效邮箱").max(254, "�
 const passwordSchema = z.string().min(passwordPolicy.minLength, `密码至少 ${passwordPolicy.minLength} 位`).max(passwordPolicy.maxLength, `密码最多 ${passwordPolicy.maxLength} 位`);
 const authInput = z.object({ email: emailSchema, password: passwordSchema }).strict();
 const loginInput = z.object({ email: emailSchema, password: z.string().min(1, "请输入密码").max(passwordPolicy.maxLength, "密码过长") }).strict();
+const positiveInteger = z.coerce.number().int().min(1);
+const restoreInput = z.object({ expectedRevision: z.number().int().min(0) }).strict();
+const migrationInput = z.object({ migrationKey: z.string().min(8).max(200) }).catchall(z.unknown());
 
 async function issueSession(context: Context<AppEnv>, repository: PlatformRepository, config: ApiConfig, userId: string) {
     const token = createSessionToken();
@@ -126,7 +169,7 @@ function success<T>(context: Context<AppEnv>, data: T) {
 }
 
 function apiError(context: Context<AppEnv>, error: DomainError) {
-    return context.json({ error: { code: error.code, message: error.message, retryable: error.retryable }, meta: { requestId: context.get("requestId") } }, error.status);
+    return context.json({ error: { code: error.code, message: error.message, retryable: error.retryable, ...(error.details ? { details: error.details } : {}) }, meta: { requestId: context.get("requestId") } }, error.status);
 }
 
 function publicUser(user: PlatformUser & { passwordHash?: string }): PlatformUser {

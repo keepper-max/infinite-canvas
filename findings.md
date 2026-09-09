@@ -23,6 +23,13 @@
 - 第 1 部分完成后，平台 API 已成为账号与项目边界；画布节点、连线和媒体内容仍以 IndexedDB 为权威，必须由第 2、3 部分分别迁移，不能把项目壳同步误认为云端画布持久化。
 - ECS 使用旧式 Docker builder 且无法稳定直连 Docker Hub；镜像阶段已按 API、模型代理、前端顺序组织，PostgreSQL 镜像支持通过 `POSTGRES_IMAGE` 覆盖，生产部署时应使用主机可达的可信镜像源。
 - 第 0 部分 PostgreSQL 备份已在隔离容器成功恢复，并能应用第 1 部分增量迁移；原 19 张业务表和数据未被重建或覆盖。
+- 第 2 部分审计确认：画布详情页用组件内 `nodes`、`connections`、`viewport` 作为运行态，并通过两个 effect 写回 Zustand；Zustand 再以 400ms 防抖写入统一 localForage 键 `infinite-canvas:canvas_store`。
+- 当前 `CanvasNodeData` 和 metadata 包含运行态 URL、storageKey、远端任务 ID、插件字段及多媒体引用；第 2 部分只能保存 JSON 结构和待转存引用，不能把 Blob、`blob:` URL 或密钥配置当作云端资产上传。
+- 旧工作区已有 `canvas_nodes`、`canvas_edges`、`canvas_snapshots` 及画布 API，可借鉴事务替换和组合主键语义；新实现必须叠加独立 `canvases.revision`、端口/角色字段和显式冲突响应，不能原样复制旧的无并发控制保存逻辑。
+- 现有 WebDAV 同步会合并项目及媒体文件，属于用户主动配置的另一条同步链；第 2 部分不得破坏它，但平台云端画布必须优先于 WebDAV/localForage，并把二者降级为迁移/导出来源。
+- 第 2 部分最终采用 800ms 防抖和串行保存：服务端 revision 控制并发，浏览器缓存最近成功快照与未同步草稿；任何 409 冲突都要求用户明确选择。
+- 旧 IndexedDB 不自动删除。迁移前保留本地原数据，只上传清洗后的节点、连线、视口和设置；媒体 Data URL/Blob、API Key/Token、渠道、代理与 WebDAV 配置均排除。
+- ECS 隔离恢复旧数据库后，0007 增量迁移、真实 PostgreSQL 集成、同源读写、版本冲突与 API 重启恢复均通过，生产容器未变更。
 
 ### ECS 运行基线（2026-09-08）
 

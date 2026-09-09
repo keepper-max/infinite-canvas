@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { BookOpen, Bot, Download, Home, Images, Menu, PanelLeftClose, PanelLeftOpen, Plus, Redo2, Trash2, Undo2, Upload } from "lucide-react";
+import { BookOpen, Bot, Cloud, CloudOff, Download, Home, Images, LoaderCircle, Menu, PanelLeftClose, PanelLeftOpen, Plus, Redo2, Trash2, Undo2, Upload } from "lucide-react";
 import { Button, Dropdown, Modal, Tooltip } from "antd";
 import { useTranslation } from "react-i18next";
 
@@ -8,6 +8,7 @@ import { canvasThemes } from "@/lib/canvas-theme";
 import { useCanvasSidePanelStore } from "@/stores/use-canvas-side-panel-store";
 import { useThemeStore } from "@/stores/use-theme-store";
 import { DOCS_URL } from "@/constant/env";
+import type { CanvasSyncStatus } from "@/pages/canvas/hooks/use-cloud-canvas-persistence";
 
 export function CanvasTopBar({
     title,
@@ -31,6 +32,8 @@ export function CanvasTopBar({
     agentOpen,
     compactAgentStatus,
     onToggleAgent,
+    syncStatus,
+    onSyncClick,
 }: {
     title: string;
     titleDraft: string;
@@ -53,6 +56,8 @@ export function CanvasTopBar({
     agentOpen: boolean;
     compactAgentStatus: { connected: boolean; enabled: boolean; activity: string };
     onToggleAgent: () => void;
+    syncStatus: CanvasSyncStatus;
+    onSyncClick: () => void;
 }) {
     const colorTheme = useThemeStore((state) => state.theme);
     const { t } = useTranslation();
@@ -135,6 +140,7 @@ export function CanvasTopBar({
                             </button>
                         )}
                     </div>
+                    <CanvasSyncIndicator status={syncStatus} onClick={onSyncClick} />
                     <CompactAgentStatus status={compactAgentStatus} onClick={onToggleAgent} />
                 </div>
 
@@ -172,6 +178,18 @@ export function CanvasTopBar({
                 </div>
             </Modal>
         </>
+    );
+}
+
+function CanvasSyncIndicator({ status, onClick }: { status: CanvasSyncStatus; onClick: () => void }) {
+    const labels: Record<CanvasSyncStatus, string> = { loading: "正在读取", saving: "正在保存", synced: "已同步", unsynced: "未同步", conflict: "版本冲突" };
+    const color = status === "synced" ? "#16a34a" : status === "unsynced" || status === "conflict" ? "#dc2626" : "#d97706";
+    const Icon = status === "synced" ? Cloud : status === "unsynced" || status === "conflict" ? CloudOff : LoaderCircle;
+    return (
+        <button type="button" className="flex h-8 items-center gap-1.5 text-xs transition hover:opacity-75" style={{ color }} title={labels[status]} onClick={onClick}>
+            <Icon className={`size-3.5 ${status === "loading" || status === "saving" ? "animate-spin" : ""}`} />
+            <span>{labels[status]}</span>
+        </button>
     );
 }
 

@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import { createApp } from "../src/app.js";
+import type { CanvasDocument, CanvasMigrationReport, CanvasSnapshotSummary, CanvasWrite } from "../src/canvas-contract.js";
 import { DomainError, type PlatformRepository, type PlatformUser, type ProjectSummary, type Workspace } from "../src/domain.js";
 import type { ApiConfig } from "../src/config.js";
 
@@ -75,6 +76,47 @@ test("cross-site state changes are rejected", async () => {
     assert.equal(response.status, 403);
 });
 
+test("canvas endpoints persist structure and expose revision conflicts", async () => {
+    const repository = new MemoryRepository();
+    const app = createApp(repository, config);
+    const registered = await jsonRequest(app, "/api/auth/register", { email: "canvas@example.com", password: "password-123" });
+    const projectId = registered.body.data.workspace.projectId;
+    const cookie = cookieFrom(registered.response);
+    const write = canvasWrite(0);
+    const saved = await app.request(`/api/projects/${projectId}/canvas`, { method: "PUT", headers: { cookie, "content-type": "application/json" }, body: JSON.stringify(write) });
+    assert.equal(saved.status, 200);
+    assert.equal(((await saved.json()) as any).data.canvas.revision, 1);
+
+    const restored = await app.request(`/api/projects/${projectId}/canvas`, { headers: { cookie } });
+    assert.equal(restored.status, 200);
+    assert.equal(((await restored.json()) as any).data.canvas.nodes[0].title, "故事");
+
+    const stale = await app.request(`/api/projects/${projectId}/canvas`, { method: "PUT", headers: { cookie, "content-type": "application/json" }, body: JSON.stringify(write) });
+    const staleBody = await stale.json() as any;
+    assert.equal(stale.status, 409);
+    assert.equal(staleBody.error.code, "CANVAS_REVISION_CONFLICT");
+    assert.equal(staleBody.error.details.currentRevision, 1);
+});
+
+test("canvas migration is idempotent and project scoped", async () => {
+    const repository = new MemoryRepository();
+    const app = createApp(repository, config);
+    const first = await jsonRequest(app, "/api/auth/register", { email: "owner@example.com", password: "password-123" });
+    const second = await jsonRequest(app, "/api/auth/register", { email: "other@example.com", password: "password-123" });
+    const projectId = first.body.data.workspace.projectId;
+    const migration = { migrationKey: "indexeddb-v7-owner", ...canvasWrite(0), nodes: [{ ...canvasWrite(0).nodes[0], metadata: { apiKey: "must-not-persist", storageKey: "image:one" } }] };
+    const migrated = await app.request(`/api/projects/${projectId}/canvas/migrations/indexeddb`, { method: "POST", headers: { cookie: cookieFrom(first.response), "content-type": "application/json" }, body: JSON.stringify(migration) });
+    const migratedBody = await migrated.json() as any;
+    assert.equal(migrated.status, 200);
+    assert.equal(migratedBody.data.canvas.nodes[0].metadata.apiKey, undefined);
+    assert.deepEqual(migratedBody.data.report.pendingResourceRefs, ["image:one"]);
+
+    const duplicate = await app.request(`/api/projects/${projectId}/canvas/migrations/indexeddb`, { method: "POST", headers: { cookie: cookieFrom(first.response), "content-type": "application/json" }, body: JSON.stringify(migration) });
+    assert.equal(((await duplicate.json()) as any).data.alreadyMigrated, true);
+    const forbidden = await app.request(`/api/projects/${projectId}/canvas`, { headers: { cookie: cookieFrom(second.response) } });
+    assert.equal(forbidden.status, 403);
+});
+
 async function jsonRequest(app: ReturnType<typeof createApp>, path: string, body: unknown) {
     const response = await app.request(path, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
     return { response, body: await response.json() as any };
@@ -90,6 +132,9 @@ class MemoryRepository implements PlatformRepository {
     users = new Map<string, PlatformUser & { passwordHash: string }>();
     sessions = new Map<string, { userId: string; expiresAt: Date }>();
     workspaces = new Map<string, Workspace>();
+    canvases = new Map<string, CanvasDocument>();
+    snapshots = new Map<string, CanvasSnapshotSummary[]>();
+    migrations = new Map<string, CanvasMigrationReport>();
 
     async createUserWithWorkspace(email: string, passwordHash: string) {
         if ([...this.users.values()].some((user) => user.email === email)) throw new DomainError("EMAIL_ALREADY_REGISTERED", "邮箱已注册", 409);
@@ -131,6 +176,41 @@ class MemoryRepository implements PlatformRepository {
         return workspace?.projectId === projectId ? { ...workspace, role: "owner" } : null;
     }
 
+    async getCanvasForUser(projectId: string, userId: string) {
+        return this.owns(projectId, userId) ? this.canvasFor(projectId, userId) : null;
+    }
+
+    async saveCanvasForUser(projectId: string, userId: string, write: CanvasWrite, source = "save", restoredFromVersion?: number) {
+        if (!this.owns(projectId, userId)) throw new DomainError("PROJECT_FORBIDDEN", "无权访问该项目", 403);
+        const current = this.canvasFor(projectId, userId);
+        if (current.revision !== write.expectedRevision) throw new DomainError("CANVAS_REVISION_CONFLICT", "云端画布已更新", 409, false, { details: { currentRevision: current.revision } });
+        const canvas = { ...current, ...write, revision: current.revision + 1, updatedAt: new Date().toISOString() };
+        this.canvases.set(projectId, canvas);
+        this.snapshots.set(projectId, [{ version: canvas.revision, source, restoredFromVersion: restoredFromVersion ?? null, createdAt: canvas.updatedAt }, ...(this.snapshots.get(projectId) || [])]);
+        return canvas;
+    }
+
+    async listCanvasSnapshots(projectId: string, userId: string) {
+        return this.owns(projectId, userId) ? this.snapshots.get(projectId) || [] : null;
+    }
+
+    async restoreCanvasSnapshot(projectId: string, userId: string, version: number, expectedRevision: number) {
+        if (!this.owns(projectId, userId)) return null;
+        const current = this.canvasFor(projectId, userId);
+        if (!(this.snapshots.get(projectId) || []).some((snapshot) => snapshot.version === version)) throw new DomainError("CANVAS_SNAPSHOT_NOT_FOUND", "找不到该画布历史版本", 404);
+        return this.saveCanvasForUser(projectId, userId, { ...current, expectedRevision } as CanvasWrite, "restore", version);
+    }
+
+    async migrateCanvasForUser(projectId: string, userId: string, migrationKey: string, write: CanvasWrite, report: CanvasMigrationReport) {
+        if (!this.owns(projectId, userId)) throw new DomainError("PROJECT_FORBIDDEN", "无权访问该项目", 403);
+        const key = `${projectId}:${userId}:${migrationKey}`;
+        const existing = this.migrations.get(key);
+        if (existing) return { canvas: this.canvasFor(projectId, userId), report: existing, alreadyMigrated: true };
+        const canvas = await this.saveCanvasForUser(projectId, userId, write, "migration");
+        this.migrations.set(key, report);
+        return { canvas, report, alreadyMigrated: false };
+    }
+
     async isReady() {
         return true;
     }
@@ -143,4 +223,28 @@ class MemoryRepository implements PlatformRepository {
         this.workspaces.set(userId, workspace);
         return workspace;
     }
+
+    private owns(projectId: string, userId: string) {
+        return this.workspaces.get(userId)?.projectId === projectId;
+    }
+
+    private canvasFor(projectId: string, userId: string): CanvasDocument {
+        const existing = this.canvases.get(projectId);
+        if (existing) return existing;
+        const workspace = this.workspaceFor(userId);
+        const canvas: CanvasDocument = { projectId, canvasId: workspace.canvasId, revision: 0, contractVersion: 1, nodes: [], edges: [], viewport: { x: 0, y: 0, k: 1 }, settings: { backgroundMode: "lines", showImageInfo: false }, updatedAt: workspace.updatedAt };
+        this.canvases.set(projectId, canvas);
+        return canvas;
+    }
+}
+
+function canvasWrite(expectedRevision: number): CanvasWrite {
+    return {
+        expectedRevision,
+        contractVersion: 1,
+        nodes: [{ id: "story", type: "text", title: "故事", position: { x: 12, y: 24 }, width: 320, height: 180, metadata: {}, definitionId: "core.text", definitionVersion: 1, workflowKind: "generic", locked: false }],
+        edges: [],
+        viewport: { x: 10, y: 20, k: 1.2 },
+        settings: { backgroundMode: "dots", showImageInfo: true },
+    };
 }

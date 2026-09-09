@@ -95,12 +95,22 @@ export type CanvasNodeData = {
     width: number;
     height: number;
     metadata?: CanvasNodeMetadata;
+    definitionId?: string;
+    definitionVersion?: number;
+    workflowKind?: string;
+    locked?: boolean;
 };
 
 export type CanvasConnection = {
     id: string;
     fromNodeId: string;
     toNodeId: string;
+    sourcePortId?: string;
+    targetPortId?: string;
+    resourceType?: "text" | "prompt" | "image" | "video" | "audio" | "json" | "asset" | "timeline";
+    role?: "data" | "identity" | "environment" | "composition" | "motion" | "first_frame" | "last_frame" | "video_input" | "audio_input" | "mask";
+    order?: number;
+    metadata?: Record<string, unknown>;
 };
 
 export type CanvasAssistantReference = {

@@ -13,7 +13,7 @@ export type AuthSession = { user: PlatformUser; workspace: Workspace; sessionExp
 export type ProjectSummary = Workspace & { role: string };
 
 type ApiSuccess<T> = { data: T; meta?: { requestId?: string } };
-type ApiFailure = { error?: { code?: string; message?: string; retryable?: boolean }; meta?: { requestId?: string } };
+type ApiFailure = { error?: { code?: string; message?: string; retryable?: boolean; details?: Record<string, unknown> }; meta?: { requestId?: string } };
 
 export class PlatformApiError extends Error {
     constructor(
@@ -21,6 +21,7 @@ export class PlatformApiError extends Error {
         public readonly status: number,
         public readonly code: string,
         public readonly retryable: boolean,
+        public readonly details?: Record<string, unknown>,
     ) {
         super(message);
         this.name = "PlatformApiError";
@@ -28,30 +29,30 @@ export class PlatformApiError extends Error {
 }
 
 export function register(email: string, password: string) {
-    return request<AuthSession>("/api/auth/register", { method: "POST", body: JSON.stringify({ email, password }) });
+    return platformRequest<AuthSession>("/api/auth/register", { method: "POST", body: JSON.stringify({ email, password }) });
 }
 
 export function login(email: string, password: string) {
-    return request<AuthSession>("/api/auth/login", { method: "POST", body: JSON.stringify({ email, password }) });
+    return platformRequest<AuthSession>("/api/auth/login", { method: "POST", body: JSON.stringify({ email, password }) });
 }
 
 export function getCurrentSession(signal?: AbortSignal) {
-    return request<AuthSession>("/api/auth/me", { signal });
+    return platformRequest<AuthSession>("/api/auth/me", { signal });
 }
 
 export function logout() {
-    return request<{ ok: true }>("/api/auth/logout", { method: "POST" });
+    return platformRequest<{ ok: true }>("/api/auth/logout", { method: "POST" });
 }
 
 export async function listProjects(signal?: AbortSignal) {
-    return (await request<{ projects: ProjectSummary[] }>("/api/projects", { signal })).projects;
+    return (await platformRequest<{ projects: ProjectSummary[] }>("/api/projects", { signal })).projects;
 }
 
 export async function getProject(projectId: string, signal?: AbortSignal) {
-    return (await request<{ project: ProjectSummary }>(`/api/projects/${encodeURIComponent(projectId)}`, { signal })).project;
+    return (await platformRequest<{ project: ProjectSummary }>(`/api/projects/${encodeURIComponent(projectId)}`, { signal })).project;
 }
 
-async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
+export async function platformRequest<T>(path: string, init: RequestInit = {}): Promise<T> {
     let response: Response;
     try {
         response = await fetch(path, {
@@ -66,7 +67,7 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
     const payload = (await response.json().catch(() => null)) as ApiSuccess<T> | ApiFailure | null;
     if (!response.ok) {
         const failure = payload as ApiFailure | null;
-        throw new PlatformApiError(failure?.error?.message || "请求失败", response.status, failure?.error?.code || "REQUEST_FAILED", Boolean(failure?.error?.retryable));
+        throw new PlatformApiError(failure?.error?.message || "请求失败", response.status, failure?.error?.code || "REQUEST_FAILED", Boolean(failure?.error?.retryable), failure?.error?.details);
     }
     if (!payload || !("data" in payload)) throw new PlatformApiError("服务返回了无法识别的数据", response.status, "INVALID_RESPONSE", false);
     return payload.data;
