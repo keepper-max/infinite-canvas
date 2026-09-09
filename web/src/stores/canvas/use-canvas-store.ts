@@ -6,6 +6,7 @@ import i18n from "@/i18n";
 import { localForageStorage } from "@/lib/localforage-storage";
 import type { CanvasBackgroundMode } from "@/lib/canvas-theme";
 import type { CanvasAssistantSession, CanvasConnection, CanvasNodeData, ViewportTransform } from "@/types/canvas";
+import type { Workspace } from "@/services/api/platform";
 
 export type CanvasProject = {
     id: string;
@@ -31,6 +32,7 @@ type CanvasStore = {
     projects: CanvasProject[];
     deletedProjects: CanvasDeletedProject[];
     createProject: (title?: string) => string;
+    ensureProjectShell: (workspace: Workspace) => string;
     importProject: (project: Partial<CanvasProject>) => string;
     openProject: (id: string) => CanvasProject | null;
     renameProject: (id: string, title: string) => void;
@@ -90,6 +92,30 @@ export const useCanvasStore = create<CanvasStore>()(
                 };
                 set((state) => ({ projects: [project, ...state.projects] }));
                 return id;
+            },
+            ensureProjectShell: (workspace) => {
+                const existing = get().projects.find((project) => project.id === workspace.projectId);
+                if (existing) {
+                    if (existing.title !== workspace.projectTitle) {
+                        set((state) => ({ projects: state.projects.map((project) => (project.id === workspace.projectId ? { ...project, title: workspace.projectTitle, updatedAt: workspace.updatedAt } : project)) }));
+                    }
+                    return existing.id;
+                }
+                const project: CanvasProject = {
+                    id: workspace.projectId,
+                    title: workspace.projectTitle,
+                    createdAt: workspace.updatedAt,
+                    updatedAt: workspace.updatedAt,
+                    nodes: [],
+                    connections: [],
+                    chatSessions: [],
+                    activeChatId: null,
+                    backgroundMode: "lines",
+                    showImageInfo: false,
+                    viewport: initialViewport,
+                };
+                set((state) => ({ projects: [project, ...state.projects] }));
+                return project.id;
             },
             importProject: (source) => {
                 const now = new Date().toISOString();

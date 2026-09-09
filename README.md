@@ -92,10 +92,16 @@ bun run dev
 ```bash
 git clone git@github.com:basketikun/infinite-canvas.git
 cd infinite-canvas
+cp .env.example .env
+# 在 .env 中设置强随机 POSTGRES_PASSWORD；生产 HTTPS 同时设置 COOKIE_SECURE=true。
 docker compose up -d
 ```
 
 运行后默认端口3000，可访问 `http://localhost:3000`。
+
+首次访问先注册邮箱账号。系统会自动创建唯一的“未命名项目”并直接进入画布，不要求用户先手动创建项目。页面、账号 API 和模型接口均通过同一站点入口访问；全局托管模型的 API Key 只保存在服务器 `.env` 中。
+
+如果服务器无法访问 Docker Hub，可在 `.env` 中通过 `POSTGRES_IMAGE` 指向可信的 PostgreSQL 16 镜像仓库。数据库迁移和回滚说明见 [平台 API 说明](server/api/README.md)。
 
 首次打开后进入右上角配置，填入自己的 OpenAI 兼容 `Base URL` 和 `API Key`。
 

@@ -1,0 +1,156 @@
+import { randomUUID } from "node:crypto";
+import { deleteCookie, getCookie, setCookie } from "hono/cookie";
+import { Hono, type Context } from "hono";
+import { z } from "zod";
+
+import { createSessionToken, hashPassword, hashSessionToken, normalizeEmail, passwordPolicy, verifyPassword } from "./auth.js";
+import type { ApiConfig } from "./config.js";
+import { DomainError, type PlatformRepository, type PlatformUser } from "./domain.js";
+
+type Variables = { requestId: string };
+type AppEnv = { Variables: Variables };
+
+export function createApp(repository: PlatformRepository, config: ApiConfig) {
+    const app = new Hono<AppEnv>();
+
+    app.use("*", async (context, next) => {
+        const requestId = context.req.header("x-request-id")?.slice(0, 128) || randomUUID();
+        context.set("requestId", requestId);
+        context.header("x-request-id", requestId);
+        await next();
+    });
+
+    app.use("/api/*", async (context, next) => {
+        if (isUnsafeMethod(context.req.method) && !isTrustedRequest(context.req.raw, config.trustedOrigins)) {
+            return apiError(context, new DomainError("UNTRUSTED_ORIGIN", "请求来源不受信任", 403));
+        }
+        await next();
+    });
+
+    app.get("/api/health/live", (context) => context.json({ data: { ok: true }, meta: { requestId: context.get("requestId") } }));
+    app.get("/api/health/ready", async (context) => {
+        await repository.isReady();
+        return context.json({ data: { ok: true }, meta: { requestId: context.get("requestId") } });
+    });
+
+    app.post("/api/auth/register", async (context) => {
+        const input = authInput.parse(await readJson(context.req.raw));
+        const email = normalizeEmail(input.email);
+        const passwordHash = await hashPassword(input.password);
+        const result = await repository.createUserWithWorkspace(email, passwordHash);
+        const expiresAt = await issueSession(context, repository, config, result.user.id);
+        return context.json(success(context, { ...result, sessionExpiresAt: expiresAt.toISOString() }), 201);
+    });
+
+    app.post("/api/auth/login", async (context) => {
+        const input = loginInput.parse(await readJson(context.req.raw));
+        const user = await repository.findUserByEmail(normalizeEmail(input.email));
+        if (!user || !(await verifyPassword(user.passwordHash, input.password))) throw new DomainError("INVALID_CREDENTIALS", "邮箱或密码错误", 401);
+        const workspace = await repository.ensureDefaultWorkspace(user.id);
+        const expiresAt = await issueSession(context, repository, config, user.id);
+        return context.json(success(context, { user: publicUser(user), workspace, sessionExpiresAt: expiresAt.toISOString() }));
+    });
+
+    app.get("/api/auth/me", async (context) => {
+        const user = await requireUser(context.req.raw, repository, config);
+        const workspace = await repository.ensureDefaultWorkspace(user.id);
+        return context.json(success(context, { user, workspace }));
+    });
+
+    app.post("/api/auth/logout", async (context) => {
+        const token = getCookie(context, config.cookieName);
+        if (token) await repository.deleteSession(hashSessionToken(token));
+        deleteCookie(context, config.cookieName, { path: "/", secure: config.cookieSecure, sameSite: "Lax" });
+        return context.json(success(context, { ok: true }));
+    });
+
+    app.get("/api/projects", async (context) => {
+        const user = await requireUser(context.req.raw, repository, config);
+        return context.json(success(context, { projects: await repository.listProjects(user.id) }));
+    });
+
+    app.get("/api/projects/:projectId", async (context) => {
+        const user = await requireUser(context.req.raw, repository, config);
+        const project = await repository.getProjectForUser(context.req.param("projectId"), user.id);
+        if (!project) throw new DomainError("PROJECT_FORBIDDEN", "无权访问该项目", 403);
+        return context.json(success(context, { project }));
+    });
+
+    app.notFound((context) => apiError(context, new DomainError("NOT_FOUND", "接口不存在", 404)));
+    app.onError((error, context) => {
+        if (error instanceof z.ZodError) {
+            const fieldErrors = Object.fromEntries(error.issues.map((issue) => [issue.path.join(".") || "body", issue.message]));
+            return context.json({ error: { code: "VALIDATION_ERROR", message: "提交内容格式不正确", retryable: false, fieldErrors }, meta: { requestId: context.get("requestId") } }, 422);
+        }
+        if (error instanceof SyntaxError) return apiError(context, new DomainError("INVALID_JSON", "请求内容不是有效 JSON", 400));
+        return apiError(context, error instanceof DomainError ? error : new DomainError("INTERNAL_ERROR", "服务暂时不可用", 500, true, { cause: error }));
+    });
+
+    return app;
+}
+
+const emailSchema = z.string().trim().email("请输入有效邮箱").max(254, "邮箱过长");
+const passwordSchema = z.string().min(passwordPolicy.minLength, `密码至少 ${passwordPolicy.minLength} 位`).max(passwordPolicy.maxLength, `密码最多 ${passwordPolicy.maxLength} 位`);
+const authInput = z.object({ email: emailSchema, password: passwordSchema }).strict();
+const loginInput = z.object({ email: emailSchema, password: z.string().min(1, "请输入密码").max(passwordPolicy.maxLength, "密码过长") }).strict();
+
+async function issueSession(context: Context<AppEnv>, repository: PlatformRepository, config: ApiConfig, userId: string) {
+    const token = createSessionToken();
+    const expiresAt = new Date(Date.now() + config.sessionDays * 86_400_000);
+    await repository.createSession(userId, hashSessionToken(token), expiresAt);
+    setCookie(context, config.cookieName, token, {
+        httpOnly: true,
+        secure: config.cookieSecure,
+        sameSite: "Lax",
+        path: "/",
+        expires: expiresAt,
+    });
+    return expiresAt;
+}
+
+async function requireUser(request: Request, repository: PlatformRepository, config: ApiConfig) {
+    const cookie = request.headers.get("cookie") || "";
+    const token = readCookie(cookie, config.cookieName);
+    if (!token) throw new DomainError("UNAUTHENTICATED", "请先登录", 401);
+    const user = await repository.findUserBySession(hashSessionToken(token), new Date());
+    if (!user) throw new DomainError("UNAUTHENTICATED", "登录已失效，请重新登录", 401);
+    return user;
+}
+
+function readCookie(cookieHeader: string, name: string) {
+    return cookieHeader.split(";").map((part) => part.trim()).find((part) => part.startsWith(`${name}=`))?.slice(name.length + 1);
+}
+
+function success<T>(context: Context<AppEnv>, data: T) {
+    return { data, meta: { requestId: context.get("requestId") } };
+}
+
+function apiError(context: Context<AppEnv>, error: DomainError) {
+    return context.json({ error: { code: error.code, message: error.message, retryable: error.retryable }, meta: { requestId: context.get("requestId") } }, error.status);
+}
+
+function publicUser(user: PlatformUser & { passwordHash?: string }): PlatformUser {
+    return { id: user.id, email: user.email };
+}
+
+function isUnsafeMethod(method: string) {
+    return !["GET", "HEAD", "OPTIONS"].includes(method.toUpperCase());
+}
+
+function isTrustedRequest(request: Request, trustedOrigins: string[]) {
+    if (request.headers.get("sec-fetch-site") === "cross-site") return false;
+    const origin = request.headers.get("origin");
+    if (!origin) return true;
+    if (trustedOrigins.includes(origin)) return true;
+    try {
+        return new URL(origin).host === new URL(request.url).host;
+    } catch {
+        return false;
+    }
+}
+
+async function readJson(request: Request) {
+    const contentType = request.headers.get("content-type") || "";
+    if (!contentType.toLowerCase().includes("application/json")) throw new DomainError("UNSUPPORTED_MEDIA_TYPE", "请使用 JSON 提交", 415);
+    return request.json();
+}
