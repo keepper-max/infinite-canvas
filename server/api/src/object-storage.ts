@@ -23,6 +23,7 @@ export interface ObjectStorage {
   ): Promise<{ url: string; headers: Record<string, string> }>;
   createDownloadUrl(storageKey: string, fileName?: string): Promise<string>;
   stat(storageKey: string): Promise<StoredObject | null>;
+  get(storageKey: string): Promise<Uint8Array>;
   delete(storageKey: string): Promise<void>;
   put(
     storageKey: string,
@@ -124,6 +125,15 @@ export class S3ObjectStorage implements ObjectStorage {
       if (status === 404) return null;
       throw error;
     }
+  }
+
+  async get(storageKey: string) {
+    const result = await this.internalClient.send(
+      new GetObjectCommand({ Bucket: this.config.bucket, Key: storageKey }),
+    );
+    if (!result.Body)
+      throw new DomainError("OBJECT_NOT_FOUND", "素材文件不存在", 404);
+    return result.Body.transformToByteArray();
   }
 
   async delete(storageKey: string) {

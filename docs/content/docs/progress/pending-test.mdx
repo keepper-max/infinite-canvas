@@ -5,6 +5,8 @@ description: Implemented changes that still need manual verification
 
 # Pending Tests
 
+- Drama composition: generate at least two video shots plus dialogue, effects, and music in the default template. Build subtitles and a timeline, edit clip duration/fades, audio start/volume, subtitle timing, and output size, then submit the episode. The dedicated worker must continue after the page closes, recover or retry after refresh, store a playable/downloadable immutable asset with a cover, honor cancellation, clean temporary files, and reject cross-project asset references.
+
 - Canvas productization: verify six-way alignment, horizontal/vertical distribution, grouping, and bulk locking all participate in undo/redo; locked nodes must resist dragging, resizing, auto layout, and bulk deletion. Alignment guides should appear near peer edges and centers. Selecting a node or edge should open the inspector with generation metadata, references, task/version details, or edge roles; incompatible roles must be rejected, while disconnect and reconnect work. Assets should drag to an exact canvas position, focus mode should hide surrounding chrome, and performance mode should keep 80+ media nodes navigable.
 
 The current release needs manual verification in these areas:

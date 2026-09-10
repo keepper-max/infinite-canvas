@@ -22,6 +22,12 @@ const layout: Array<{ key: TemplateKey; x: number; y: number }> = [
     { key: "firstFrame", x: 2820, y: 180 },
     { key: "lastFrame", x: 3300, y: 180 },
     { key: "video", x: 3820, y: 420 },
+    { key: "voice", x: 3360, y: 840 },
+    { key: "sfx", x: 3820, y: 840 },
+    { key: "music", x: 3820, y: 1140 },
+    { key: "subtitles", x: 3360, y: 1180 },
+    { key: "timeline", x: 4300, y: 520 },
+    { key: "output", x: 4960, y: 520 },
 ];
 
 type Link = { from: TemplateKey; to: TemplateKey; role: NonNullable<CanvasConnection["role"]>; resourceType: NonNullable<CanvasConnection["resourceType"]> };
@@ -51,6 +57,17 @@ const links: Link[] = [
     { from: "composition", to: "video", role: "composition", resourceType: "image" },
     { from: "firstFrame", to: "video", role: "first_frame", resourceType: "image" },
     { from: "lastFrame", to: "video", role: "last_frame", resourceType: "image" },
+    { from: "storyboard", to: "voice", role: "data", resourceType: "json" },
+    { from: "character", to: "voice", role: "data", resourceType: "json" },
+    { from: "storyboard", to: "sfx", role: "data", resourceType: "json" },
+    { from: "storyboard", to: "music", role: "data", resourceType: "json" },
+    { from: "storyboard", to: "subtitles", role: "data", resourceType: "json" },
+    { from: "video", to: "timeline", role: "video_input", resourceType: "video" },
+    { from: "voice", to: "timeline", role: "audio_input", resourceType: "audio" },
+    { from: "sfx", to: "timeline", role: "audio_input", resourceType: "audio" },
+    { from: "music", to: "timeline", role: "audio_input", resourceType: "audio" },
+    { from: "subtitles", to: "timeline", role: "data", resourceType: "timeline" },
+    { from: "timeline", to: "output", role: "data", resourceType: "timeline" },
 ];
 
 export function buildDramaTemplate(origin: Position): { nodes: CanvasNodeData[]; connections: CanvasConnection[] } {

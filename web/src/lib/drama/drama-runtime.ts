@@ -2,6 +2,8 @@ import { artifactUrl, createManagedJob, waitForManagedJob, type ManagedJobTrace,
 import type { CanvasNodeContext } from "@/types/canvas-plugin";
 import type { CanvasConnection, CanvasNodeData } from "@/types/canvas";
 import type { DramaNodeState, DramaWorkflowKind, SeedanceSkillResult } from "@/types/drama";
+import type { DramaTimeline } from "@/types/drama";
+import { compositionOutputUrl, createCompositionJob, getCompositionJob, retryCompositionJob, waitForCompositionJob } from "@/services/api/compositions";
 import {
     buildDramaInputSnapshot,
     dramaSystemPrompt,
@@ -17,6 +19,7 @@ import {
 } from "@/lib/drama/seedance-skill";
 
 const IMAGE_KINDS = new Set<DramaWorkflowKind>(["character.turnaround", "scene.candidate", "scene.panorama", "prop.image", "composition.3d", "frame.first", "frame.last"]);
+const AUDIO_KINDS = new Set<DramaWorkflowKind>(["audio.voice", "audio.sfx", "audio.music"]);
 
 export async function executeDramaNode(ctx: CanvasNodeContext) {
     const kind = ctx.node.workflowKind as DramaWorkflowKind;
@@ -28,6 +31,10 @@ export async function executeDramaNode(ctx: CanvasNodeContext) {
     try {
         if (IMAGE_KINDS.has(kind)) await executeImageNode(ctx, kind, snapshot, inputHash);
         else if (kind === "video.seedance") await executeVideoNode(ctx, snapshot, inputHash);
+        else if (AUDIO_KINDS.has(kind)) await executeAudioNode(ctx, kind, snapshot, inputHash);
+        else if (kind === "subtitle.track") executeSubtitleNode(ctx, snapshot, inputHash);
+        else if (kind === "timeline.compose") executeTimelineNode(ctx, snapshot, inputHash);
+        else if (kind === "output.episode") await executeOutputNode(ctx, snapshot, inputHash);
         else await executeTextNode(ctx, kind, snapshot, inputHash);
         markDramaDescendantsStale(ctx, ctx.node.id);
     } catch (error) {
@@ -67,7 +74,11 @@ export function dramaExecutionOrder(nodes: CanvasNodeData[], connections: Canvas
             node.workflowKind?.startsWith("prompt.") ||
             node.workflowKind?.startsWith("frame.") ||
             node.workflowKind?.startsWith("skill.") ||
-            node.workflowKind?.startsWith("video.seedance"),
+            node.workflowKind?.startsWith("video.seedance") ||
+            node.workflowKind?.startsWith("audio.") ||
+            node.workflowKind?.startsWith("subtitle.") ||
+            node.workflowKind?.startsWith("timeline.") ||
+            node.workflowKind?.startsWith("output."),
     );
     const ids = new Set(candidates.map((node) => node.id));
     const allowed = requestedIds || ids;
@@ -232,6 +243,190 @@ async function executeVideoNode(ctx: CanvasNodeContext, snapshot: ReturnType<typ
             userModified: false,
         }),
     });
+}
+
+async function executeAudioNode(ctx: CanvasNodeContext, kind: DramaWorkflowKind, snapshot: ReturnType<typeof buildDramaInputSnapshot>, inputHash: string) {
+    const model = ctx.ai.defaultModel("audio");
+    const shots = ctx.getUpstream().flatMap((node) => node.metadata?.drama?.shots || []);
+    const explicitPrompt = ctx.node.metadata?.drama?.brief?.trim();
+    const promptItems =
+        kind === "audio.voice" && shots.some((shot) => shot.dialogue.trim())
+            ? shots.flatMap((shot, index) => (shot.dialogue.trim() ? [{ text: shot.dialogue.trim(), startMs: shots.slice(0, index).reduce((total, item) => total + item.durationSec * 1_000, 0) }] : []))
+            : [
+                  {
+                      text:
+                          explicitPrompt ||
+                          snapshot.inputs
+                              .map((item) => (typeof item.value === "string" ? item.value : ""))
+                              .filter(Boolean)
+                              .join("\n"),
+                      startMs: 0,
+                  },
+              ];
+    if (!promptItems[0]?.text) throw new Error(kind === "audio.voice" ? "请填写对白或连接分镜节点" : "请填写声音生成要求");
+    const boundVoice = ctx
+        .getUpstream()
+        .map((node) => node.metadata?.drama?.character?.voiceBinding)
+        .find(Boolean);
+    const generated = [] as Array<{ artifact: NonNullable<Awaited<ReturnType<typeof waitForManagedJob>>["artifacts"]>[number]; startMs: number }>;
+    for (let index = 0; index < promptItems.length; index++) {
+        const item = promptItems[index]!;
+        const job = await waitForManagedJob(
+            (
+                await createManagedJob(
+                    {
+                        model,
+                        capability: "audio",
+                        mode: "tts",
+                        prompt: item.text,
+                        parameters: {
+                            voice: boundVoice || ctx.node.metadata?.audioVoice || "alloy",
+                            format: ctx.node.metadata?.audioFormat || "mp3",
+                            speed: Number(ctx.node.metadata?.audioSpeed || 1),
+                            instructions: kind === "audio.voice" ? "自然漫剧对白，情绪与文本一致" : kind === "audio.sfx" ? "生成匹配镜头的短音效" : "生成不抢对白的背景音乐",
+                        },
+                        trace: { ...traceFor(ctx, inputHash, snapshot, false), assetKind: "audio", assetName: `${ctx.node.title}-${index + 1}` },
+                    },
+                    { projectId: ctx.projectId, nodeId: ctx.node.id, idempotencyKey: `${ctx.node.id}:${kind}:${inputHash}:${index}` },
+                )
+            ).id,
+        );
+        const artifact = job.artifacts?.find((entry) => entry.assetVersionId);
+        if (!artifact?.assetVersionId) throw new Error("音频任务没有返回素材版本");
+        generated.push({ artifact, startMs: item.startMs });
+    }
+    const primary = generated[0]!.artifact;
+    const url = await artifactUrl(primary);
+    const role = kind === "audio.music" ? "music" : kind === "audio.sfx" ? "sound_effect" : "dialogue";
+    ctx.updateMetadata({
+        content: url,
+        assetId: primary.assetId,
+        assetVersionId: primary.assetVersionId,
+        mimeType: primary.mimeType || "audio/mpeg",
+        model,
+        status: "success",
+        errorDetails: undefined,
+        drama: mergeDrama(ctx.node, {
+            audioClips: generated.map(({ artifact, startMs }) => ({ assetId: artifact.assetId, assetVersionId: artifact.assetVersionId!, startMs, role })),
+            inputSnapshot: snapshot,
+            inputHash,
+            outputHash: hashDramaInput(generated.map((item) => item.artifact.assetVersionId)),
+            stale: false,
+            lastRunAt: new Date().toISOString(),
+            userModified: false,
+        }),
+    });
+}
+
+function executeSubtitleNode(ctx: CanvasNodeContext, snapshot: ReturnType<typeof buildDramaInputSnapshot>, inputHash: string) {
+    const shots = ctx.getUpstream().flatMap((node) => node.metadata?.drama?.shots || []);
+    let cursor = 0;
+    const subtitles = shots.flatMap((shot) => {
+        const startMs = cursor;
+        cursor += shot.durationSec * 1_000;
+        return shot.dialogue.trim() ? [{ startMs, endMs: cursor, text: shot.dialogue.trim() }] : [];
+    });
+    if (!subtitles.length && ctx.node.metadata?.drama?.timeline?.subtitles?.length) subtitles.push(...ctx.node.metadata.drama.timeline.subtitles);
+    if (!subtitles.length) throw new Error("请连接包含对白的分镜表，或在字幕节点中添加字幕");
+    const timeline: DramaTimeline = ctx.node.metadata?.drama?.timeline || { video: [], audio: [], subtitles: [], output: defaultOutput(ctx.node.metadata?.size) };
+    timeline.subtitles = subtitles;
+    ctx.updateMetadata({
+        content: subtitles.map((item) => `${formatTime(item.startMs)} ${item.text}`).join("\n"),
+        status: "success",
+        errorDetails: undefined,
+        drama: mergeDrama(ctx.node, { timeline, output: subtitles, inputSnapshot: snapshot, inputHash, outputHash: hashDramaInput(subtitles), stale: false, lastRunAt: new Date().toISOString() }),
+    });
+}
+
+function executeTimelineNode(ctx: CanvasNodeContext, snapshot: ReturnType<typeof buildDramaInputSnapshot>, inputHash: string) {
+    const incoming = ctx
+        .getConnections()
+        .filter((edge) => edge.toNodeId === ctx.node.id)
+        .sort((left, right) => (left.order || 0) - (right.order || 0))
+        .map((edge) => ({ edge, node: ctx.getNode(edge.fromNodeId) }))
+        .filter((item): item is { edge: CanvasConnection; node: CanvasNodeData } => Boolean(item.node));
+    const existing = ctx.node.metadata?.drama?.timeline;
+    const video = incoming.flatMap(({ node }) => {
+        if (!node.metadata?.assetVersionId || !String(node.metadata.mimeType || "").startsWith("video/")) return [];
+        const previous = existing?.video.find((item) => item.assetVersionId === node.metadata!.assetVersionId);
+        return [previous || { assetVersionId: node.metadata.assetVersionId, durationMs: Number(node.metadata.durationMs || Number(node.metadata.seconds || 5) * 1_000), trimStartMs: 0, volume: 1, transition: "cut" as const, transitionMs: 0 }];
+    });
+    const audio = incoming.flatMap(({ node }) => {
+        if (node.metadata?.drama?.audioClips?.length) {
+            return node.metadata.drama.audioClips.map((item) => {
+                const previous = existing?.audio.find((entry) => entry.assetVersionId === item.assetVersionId);
+                return previous || { assetVersionId: item.assetVersionId, role: item.role, startMs: item.startMs, trimStartMs: 0, volume: item.role === "music" ? 0.35 : 1 };
+            });
+        }
+        if (!node.metadata?.assetVersionId || !String(node.metadata.mimeType || "").startsWith("audio/")) return [];
+        const previous = existing?.audio.find((item) => item.assetVersionId === node.metadata!.assetVersionId);
+        const role: DramaTimeline["audio"][number]["role"] = node.workflowKind === "audio.music" ? "music" : node.workflowKind === "audio.sfx" ? "sound_effect" : "dialogue";
+        return [previous || { assetVersionId: node.metadata.assetVersionId, role, startMs: 0, trimStartMs: 0, volume: role === "music" ? 0.35 : 1 }];
+    });
+    const subtitles = incoming.flatMap(({ node }) => node.metadata?.drama?.timeline?.subtitles || []);
+    if (!video.length) throw new Error("请至少连接一个已生成的视频素材");
+    const timeline: DramaTimeline = { video, audio, subtitles: subtitles.length ? subtitles : existing?.subtitles || [], output: existing?.output || defaultOutput(ctx.node.metadata?.size) };
+    ctx.updateMetadata({
+        content: `${video.length} 段视频 · ${audio.length} 条音轨 · ${timeline.subtitles.length} 条字幕`,
+        status: "success",
+        errorDetails: undefined,
+        drama: mergeDrama(ctx.node, { timeline, output: timeline, inputSnapshot: snapshot, inputHash, outputHash: hashDramaInput(timeline), stale: false, lastRunAt: new Date().toISOString() }),
+    });
+}
+
+async function executeOutputNode(ctx: CanvasNodeContext, snapshot: ReturnType<typeof buildDramaInputSnapshot>, inputHash: string) {
+    const timeline =
+        ctx
+            .getUpstream()
+            .map((node) => node.metadata?.drama?.timeline)
+            .find((value) => value?.video.length) || ctx.node.metadata?.drama?.timeline;
+    if (!timeline?.video.length) throw new Error("请连接已经整理好的成片时间线");
+    let created = ctx.node.metadata?.drama?.compositionJobId ? await getCompositionJob(ctx.node.metadata.drama.compositionJobId).catch(() => null) : null;
+    if (created?.status === "failed" && created.retryable) created = await retryCompositionJob(created.id);
+    if (!created || created.status === "failed" || created.status === "cancelled") created = await createCompositionJob(ctx.projectId, ctx.node.id, ctx.node.title || "漫剧成片", timeline, `${ctx.node.id}:composition:${inputHash}`);
+    ctx.updateMetadata({
+        status: "loading",
+        errorDetails: `成片任务已提交 · ${created.progress}%`,
+        drama: mergeDrama(ctx.node, { timeline, compositionJobId: created.id, compositionStatus: created.status, compositionProgress: created.progress, inputSnapshot: snapshot, inputHash }),
+    });
+    const completed = await waitForCompositionJob(created.id, undefined, (job) => {
+        ctx.updateMetadata({
+            status: "loading",
+            errorDetails: `成片合成中 · ${job.progress}%`,
+            drama: mergeDrama(ctx.node, { timeline, compositionJobId: job.id, compositionStatus: job.status, compositionProgress: job.progress, inputSnapshot: snapshot, inputHash }),
+        });
+    });
+    const url = await compositionOutputUrl(completed);
+    ctx.updateMetadata({
+        content: url,
+        assetId: completed.outputAssetId,
+        assetVersionId: completed.outputAssetVersionId,
+        mimeType: "video/mp4",
+        status: "success",
+        errorDetails: undefined,
+        drama: mergeDrama(ctx.node, {
+            timeline,
+            compositionJobId: completed.id,
+            compositionStatus: completed.status,
+            compositionProgress: 100,
+            inputSnapshot: snapshot,
+            inputHash,
+            outputHash: hashDramaInput(completed.outputAssetVersionId),
+            stale: false,
+            lastRunAt: new Date().toISOString(),
+            userModified: false,
+        }),
+    });
+}
+
+function defaultOutput(size?: string): DramaTimeline["output"] {
+    const match = size?.match(/(\d+)\s*[x×]\s*(\d+)/i);
+    return { width: Number(match?.[1] || 1280), height: Number(match?.[2] || 720), fps: 25, subtitleFontSize: 36 };
+}
+
+function formatTime(ms: number) {
+    const total = Math.floor(ms / 1_000);
+    return `${String(Math.floor(total / 60)).padStart(2, "0")}:${String(total % 60).padStart(2, "0")}`;
 }
 
 function validateStoryNode(ctx: CanvasNodeContext) {

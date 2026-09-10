@@ -1,11 +1,12 @@
 import { useState, type ReactNode } from "react";
 import { App, Button, Input, InputNumber, Select, Tag } from "antd";
-import { BookOpen, Box, Camera, Clapperboard, FileJson, Film, Image as ImageIcon, LayoutList, Map, Package, PanelsTopLeft, Sparkles, UserRound, WandSparkles } from "lucide-react";
+import { BookOpen, Box, Camera, Captions, Clapperboard, Download, FileJson, Film, Image as ImageIcon, LayoutList, Map, Mic2, Music2, Package, PanelsTopLeft, Rows3, Sparkles, UserRound, Volume2, WandSparkles } from "lucide-react";
 
 import { executeDramaNode, markDramaDescendantsStale } from "@/lib/drama/drama-runtime";
+import { cancelCompositionJob } from "@/services/api/compositions";
 import { registerNodeDefinitions } from "@/lib/canvas/node-registry";
 import type { CanvasNodeContext, CanvasNodeDefinition, CanvasNodeResource } from "@/types/canvas-plugin";
-import type { DramaCharacterCard, DramaNodeState, DramaStoryboardShot, DramaWorkflowKind, SeedanceSkillResult } from "@/types/drama";
+import type { DramaCharacterCard, DramaNodeState, DramaStoryboardShot, DramaTimeline, DramaWorkflowKind, SeedanceSkillResult } from "@/types/drama";
 
 export const DRAMA_NODE_TYPES = {
     story: "drama:story",
@@ -23,6 +24,12 @@ export const DRAMA_NODE_TYPES = {
     lastFrame: "drama:last-frame",
     skill: "drama:seedance-skill",
     video: "drama:seedance-video",
+    voice: "drama:voice",
+    sfx: "drama:sfx",
+    music: "drama:music",
+    subtitles: "drama:subtitles",
+    timeline: "drama:timeline",
+    output: "drama:episode-output",
 } as const;
 
 type DramaDefinitionInput = Omit<CanvasNodeDefinition, "Content" | "Panel" | "defaultMetadata" | "definitionVersion"> & {
@@ -47,10 +54,16 @@ const definitions: DramaDefinitionInput[] = [
     node(DRAMA_NODE_TYPES.lastFrame, "尾帧", "frame.last", <Camera />, "#db2777", "锁定当前镜头动作终点"),
     node(DRAMA_NODE_TYPES.skill, "Seedance 漫剧 Skill", "skill.seedance", <Clapperboard />, "#f43f5e", "编译镜头、动作、连续性和声音"),
     node(DRAMA_NODE_TYPES.video, "Seedance 视频", "video.seedance", <Film />, "#ef4444", "按首帧、尾帧或多参考生成视频"),
+    node(DRAMA_NODE_TYPES.voice, "角色配音", "audio.voice", <Mic2 />, "#22c55e", "按角色声音绑定生成对白"),
+    node(DRAMA_NODE_TYPES.sfx, "镜头音效", "audio.sfx", <Volume2 />, "#10b981", "生成或接入镜头动作音效"),
+    node(DRAMA_NODE_TYPES.music, "背景音乐", "audio.music", <Music2 />, "#14b8a6", "生成或接入整集背景音乐"),
+    node(DRAMA_NODE_TYPES.subtitles, "字幕轨", "subtitle.track", <Captions />, "#06b6d4", "从分镜对白生成并校对字幕时间"),
+    node(DRAMA_NODE_TYPES.timeline, "成片时间线", "timeline.compose", <Rows3 />, "#3b82f6", "排列镜头、音轨、字幕和转场"),
+    node(DRAMA_NODE_TYPES.output, "成片输出", "output.episode", <Download />, "#8b5cf6", "后台合成、转码并保存完整成片"),
 ];
 
 function node(type: string, title: string, workflowKind: DramaWorkflowKind, icon: ReactNode, tone: string, description: string, defaultBrief = ""): DramaDefinitionInput {
-    const media = ["character.turnaround", "scene.candidate", "scene.panorama", "prop.image", "composition.3d", "frame.first", "frame.last", "video.seedance"].includes(workflowKind);
+    const media = ["character.turnaround", "scene.candidate", "scene.panorama", "prop.image", "composition.3d", "frame.first", "frame.last", "video.seedance", "audio.voice", "audio.sfx", "audio.music", "output.episode"].includes(workflowKind);
     return {
         type,
         title,
@@ -59,11 +72,24 @@ function node(type: string, title: string, workflowKind: DramaWorkflowKind, icon
         tone,
         description,
         defaultBrief,
-        defaultSize: workflowKind === "storyboard.plan" ? { width: 560, height: 320 } : media ? { width: 360, height: 240 } : { width: 380, height: 250 },
+        defaultSize: ["storyboard.plan", "timeline.compose", "subtitle.track"].includes(workflowKind) ? { width: 560, height: 320 } : media ? { width: 360, height: 240 } : { width: 380, height: 250 },
         minimapColor: tone,
         autoOpenPanel: true,
         resource: dramaResource,
-        execution: { capability: workflowKind === "story.idea" ? "none" : workflowKind === "video.seedance" ? "video" : media ? "image" : "text" },
+        execution: {
+            capability:
+                workflowKind === "story.idea"
+                    ? "none"
+                    : workflowKind === "video.seedance"
+                      ? "video"
+                      : workflowKind.startsWith("audio.")
+                        ? "audio"
+                        : ["subtitle.track", "timeline.compose", "output.episode"].includes(workflowKind)
+                          ? "compose"
+                          : media
+                            ? "image"
+                            : "text",
+        },
         execute: executeDramaNode,
         ports: dramaPorts(workflowKind),
     };
@@ -72,13 +98,17 @@ function node(type: string, title: string, workflowKind: DramaWorkflowKind, icon
 function dramaPorts(kind: DramaWorkflowKind): NonNullable<CanvasNodeDefinition["ports"]> {
     const allRoles = ["data", "identity", "environment", "composition", "motion", "first_frame", "last_frame", "video_input", "audio_input"] as const;
     const outputType =
-        kind === "video.seedance"
+        kind === "video.seedance" || kind === "output.episode"
             ? "video"
-            : ["character.turnaround", "scene.candidate", "scene.panorama", "prop.image", "composition.3d", "frame.first", "frame.last"].includes(kind)
-              ? "image"
-              : kind === "skill.seedance" || kind === "prompt.optimize"
-                ? "prompt"
-                : "json";
+            : kind.startsWith("audio.")
+              ? "audio"
+              : kind === "timeline.compose" || kind === "subtitle.track"
+                ? "timeline"
+                : ["character.turnaround", "scene.candidate", "scene.panorama", "prop.image", "composition.3d", "frame.first", "frame.last"].includes(kind)
+                  ? "image"
+                  : kind === "skill.seedance" || kind === "prompt.optimize"
+                    ? "prompt"
+                    : "json";
     return [
         ...(kind === "story.idea"
             ? []
@@ -99,7 +129,9 @@ function dramaPorts(kind: DramaWorkflowKind): NonNullable<CanvasNodeDefinition["
 function dramaResource(nodeData: Parameters<NonNullable<CanvasNodeDefinition["resource"]>>[0]): CanvasNodeResource | null {
     const kind = nodeData.workflowKind || "";
     const content = nodeData.metadata?.content;
-    if (kind === "video.seedance" && content) return { kind: "video", url: content };
+    if ((kind === "video.seedance" || kind === "output.episode") && content) return { kind: "video", url: content };
+    if (kind.startsWith("audio.") && content) return { kind: "audio", url: content };
+    if ((kind === "timeline.compose" || kind === "subtitle.track") && content) return { kind: "text", text: content };
     if (["character.turnaround", "scene.candidate", "scene.panorama", "prop.image", "composition.3d", "frame.first", "frame.last"].includes(kind) && content) return { kind: "image", url: content };
     if (content) return { kind: "text", text: content };
     return null;
@@ -113,7 +145,12 @@ export function registerDramaNodes() {
         definitions.map(({ tone, defaultBrief, ...definition }) => ({
             ...definition,
             definitionVersion: 1,
-            defaultMetadata: { status: "idle", drama: { schemaVersion: 1, brief: defaultBrief }, ...(definition.workflowKind === "video.seedance" ? { seconds: "5", vquality: "720p", size: "1280x720", generateAudio: "true" } : {}) },
+            defaultMetadata: {
+                status: "idle",
+                drama: { schemaVersion: 1, brief: defaultBrief },
+                ...(["video.seedance", "timeline.compose", "output.episode"].includes(definition.workflowKind) ? { seconds: "5", vquality: "720p", size: "1280x720", generateAudio: "true" } : {}),
+                ...(definition.workflowKind.startsWith("audio.") ? { audioVoice: "alloy", audioFormat: "mp3", audioSpeed: "1" } : {}),
+            },
             Content: DramaNodeContent,
             Panel: DramaNodePanel,
         })),
@@ -126,7 +163,10 @@ function DramaNodeContent({ ctx }: { ctx: CanvasNodeContext }) {
     const kind = ctx.node.workflowKind || "";
     const tone = definitions.find((item) => item.type === ctx.node.type)?.tone || "#8b5cf6";
     const content = ctx.node.metadata?.content;
-    if (kind === "video.seedance" && content) return <video src={content} className="h-full w-full object-cover" muted controls />;
+    if ((kind === "video.seedance" || kind === "output.episode") && content) return <video src={content} className="h-full w-full object-cover" muted controls />;
+    if (kind.startsWith("audio.") && content) return <audio src={content} className="w-full p-4" controls />;
+    if (kind === "timeline.compose" && drama?.timeline) return <TimelinePreview value={drama.timeline} tone={tone} />;
+    if (kind === "subtitle.track" && drama?.timeline?.subtitles.length) return <SubtitlePreview value={drama.timeline.subtitles} tone={tone} />;
     if (["character.turnaround", "scene.candidate", "scene.panorama", "prop.image", "composition.3d", "frame.first", "frame.last"].includes(kind) && content) return <img src={content} alt={ctx.node.title} className="h-full w-full object-cover" />;
     if (kind === "storyboard.plan" && drama?.shots?.length) return <StoryboardPreview rows={drama.shots} tone={tone} />;
     if (kind === "character.profile" && drama?.character) return <CharacterPreview card={drama.character} tone={tone} />;
@@ -169,6 +209,17 @@ function DramaNodePanel({ ctx, onClose }: { ctx: CanvasNodeContext; onClose: () 
             setRunning(false);
         }
     };
+    const cancelComposition = async () => {
+        const jobId = drama.compositionJobId;
+        if (!jobId) return;
+        try {
+            const job = await cancelCompositionJob(jobId);
+            ctx.updateMetadata({ status: "error", errorDetails: "成片任务已取消", drama: { ...drama, compositionStatus: job.status, compositionProgress: job.progress } });
+            message.success("已取消成片任务");
+        } catch (error) {
+            message.error(error instanceof Error ? error.message : "取消任务失败");
+        }
+    };
     return (
         <div className="rounded-2xl border p-4 shadow-2xl" data-canvas-no-zoom style={{ background: ctx.theme.node.panel, borderColor: ctx.theme.node.stroke, color: ctx.theme.node.text }} onPointerDown={(event) => event.stopPropagation()}>
             <div className="mb-4 flex items-center justify-between">
@@ -183,7 +234,9 @@ function DramaNodePanel({ ctx, onClose }: { ctx: CanvasNodeContext; onClose: () 
             {kind === "character.profile" ? <CharacterEditor value={drama.character} onChange={(character) => update({ character, output: character }, { content: JSON.stringify(character, null, 2) })} /> : null}
             {kind === "storyboard.plan" ? <StoryboardEditor rows={drama.shots || []} onChange={(shots) => update({ shots, output: { shots } }, { content: JSON.stringify({ shots }, null, 2) })} /> : null}
             {kind === "skill.seedance" ? <SkillEditor value={drama.skillResult} onChange={(skillResult) => update({ skillResult, output: skillResult }, { content: skillResult.prompt, prompt: skillResult.prompt })} /> : null}
-            {!["character.profile", "storyboard.plan", "skill.seedance"].includes(kind) ? (
+            {kind === "subtitle.track" ? <SubtitleEditor value={drama.timeline} onChange={(timeline) => update({ timeline, output: timeline.subtitles }, { content: timeline.subtitles.map((item) => item.text).join("\n") })} /> : null}
+            {kind === "timeline.compose" ? <TimelineEditor value={drama.timeline} onChange={(timeline) => update({ timeline, output: timeline })} /> : null}
+            {!["character.profile", "storyboard.plan", "skill.seedance", "subtitle.track", "timeline.compose"].includes(kind) ? (
                 <div className="grid gap-3">
                     <label className="text-xs opacity-60">创作要求</label>
                     <Input.TextArea
@@ -211,14 +264,29 @@ function DramaNodePanel({ ctx, onClose }: { ctx: CanvasNodeContext; onClose: () 
                     <Select value={ctx.node.metadata?.size || "1280x720"} options={["1280x720", "720x1280", "1024x1024"].map((value) => ({ value, label: value }))} onChange={(value) => ctx.updateMetadata({ size: value })} />
                 </div>
             ) : null}
+            {kind.startsWith("audio.") ? (
+                <div className="mt-3 grid grid-cols-3 gap-2">
+                    <Input value={ctx.node.metadata?.audioVoice || "alloy"} placeholder="声音 ID" onChange={(event) => ctx.updateMetadata({ audioVoice: event.target.value })} />
+                    <Select value={ctx.node.metadata?.audioFormat || "mp3"} options={["mp3", "wav", "aac"].map((value) => ({ value, label: value }))} onChange={(value) => ctx.updateMetadata({ audioFormat: value })} />
+                    <InputNumber min={0.5} max={2} step={0.1} value={Number(ctx.node.metadata?.audioSpeed || 1)} addonAfter="倍速" onChange={(value) => ctx.updateMetadata({ audioSpeed: String(value || 1) })} />
+                </div>
+            ) : null}
             <div className="mt-4 flex items-center justify-between">
                 <div className="text-xs opacity-55">
                     {drama.inputHash ? `输入 ${drama.inputHash}` : "尚未执行"}
                     {drama.skillVersion ? ` · Skill ${drama.skillVersion}` : ""}
+                    {kind === "output.episode" && drama.compositionStatus ? ` · ${drama.compositionStatus} ${drama.compositionProgress || 0}%` : ""}
                 </div>
-                <Button type="primary" loading={running} onClick={() => void run()}>
-                    {kind === "story.idea" ? "确认故事" : "执行此节点"}
-                </Button>
+                <div className="flex gap-2">
+                    {kind === "output.episode" && drama.compositionJobId && !["completed", "failed", "cancelled"].includes(drama.compositionStatus || "") ? (
+                        <Button danger onClick={() => void cancelComposition()}>
+                            取消任务
+                        </Button>
+                    ) : null}
+                    <Button type="primary" loading={running} onClick={() => void run()}>
+                        {kind === "story.idea" ? "确认故事" : kind === "output.episode" && drama.compositionStatus === "failed" ? "重试合成" : "执行此节点"}
+                    </Button>
+                </div>
             </div>
         </div>
     );
@@ -339,6 +407,117 @@ function SkillEditor({ value, onChange }: { value?: SeedanceSkillResult; onChang
             <Input value={skill.negative.join("；")} placeholder="负面约束" onChange={(event) => onChange({ ...skill, negative: event.target.value.split("；").filter(Boolean) })} />
         </div>
     );
+}
+
+function TimelinePreview({ value, tone }: { value: DramaTimeline; tone: string }) {
+    return (
+        <div className="h-full overflow-hidden p-4">
+            <div className="mb-3 flex items-center gap-2 text-sm font-semibold">
+                <Rows3 className="size-4" style={{ color: tone }} />
+                {value.video.length} 段镜头
+            </div>
+            <div className="flex h-10 gap-1">
+                {value.video.map((item, index) => (
+                    <div key={`${item.assetVersionId}-${index}`} className="min-w-8 rounded-md" style={{ background: `${tone}${index % 2 ? "88" : "bb"}`, flex: item.durationMs }} title={`${Math.round(item.durationMs / 100) / 10} 秒`} />
+                ))}
+            </div>
+            <div className="mt-3 text-xs opacity-60">
+                {value.audio.length} 条音轨 · {value.subtitles.length} 条字幕 · {value.output.width}×{value.output.height}
+            </div>
+        </div>
+    );
+}
+
+function SubtitlePreview({ value, tone }: { value: DramaTimeline["subtitles"]; tone: string }) {
+    return (
+        <div className="h-full overflow-auto p-4">
+            <div className="mb-2 flex items-center gap-2 text-xs font-semibold">
+                <Captions className="size-4" style={{ color: tone }} />
+                {value.length} 条字幕
+            </div>
+            {value.slice(0, 6).map((item, index) => (
+                <div key={`${item.startMs}-${index}`} className="truncate border-t py-1.5 text-[10px] opacity-70">
+                    <b className="mr-2">{formatMillis(item.startMs)}</b>
+                    {item.text}
+                </div>
+            ))}
+        </div>
+    );
+}
+
+function SubtitleEditor({ value, onChange }: { value?: DramaTimeline; onChange: (value: DramaTimeline) => void }) {
+    const timeline = value || emptyTimeline();
+    const update = (index: number, patch: Partial<DramaTimeline["subtitles"][number]>) => onChange({ ...timeline, subtitles: timeline.subtitles.map((item, itemIndex) => (itemIndex === index ? { ...item, ...patch } : item)) });
+    return (
+        <div className="grid max-h-[420px] gap-2 overflow-auto">
+            {timeline.subtitles.map((item, index) => (
+                <div key={`${item.startMs}-${index}`} className="grid grid-cols-[95px_95px_1fr] gap-2">
+                    <InputNumber min={0} value={item.startMs} addonAfter="ms" onChange={(startMs) => update(index, { startMs: startMs || 0 })} />
+                    <InputNumber min={1} value={item.endMs} addonAfter="ms" onChange={(endMs) => update(index, { endMs: endMs || 1 })} />
+                    <Input value={item.text} onChange={(event) => update(index, { text: event.target.value })} />
+                </div>
+            ))}
+            <Button onClick={() => onChange({ ...timeline, subtitles: [...timeline.subtitles, { startMs: 0, endMs: 2_000, text: "新字幕" }] })}>添加字幕</Button>
+        </div>
+    );
+}
+
+function TimelineEditor({ value, onChange }: { value?: DramaTimeline; onChange: (value: DramaTimeline) => void }) {
+    const timeline = value || emptyTimeline();
+    const updateVideo = (index: number, patch: Partial<DramaTimeline["video"][number]>) => onChange({ ...timeline, video: timeline.video.map((item, itemIndex) => (itemIndex === index ? { ...item, ...patch } : item)) });
+    const updateAudio = (index: number, patch: Partial<DramaTimeline["audio"][number]>) => onChange({ ...timeline, audio: timeline.audio.map((item, itemIndex) => (itemIndex === index ? { ...item, ...patch } : item)) });
+    return (
+        <div className="grid max-h-[480px] gap-3 overflow-auto">
+            <b className="text-xs">视频轨</b>
+            {timeline.video.length ? (
+                timeline.video.map((item, index) => (
+                    <div key={`${item.assetVersionId}-${index}`} className="grid grid-cols-[1fr_110px_100px_100px] gap-2 rounded-lg border p-2">
+                        <span className="truncate text-xs opacity-60">
+                            镜头 {index + 1} · {item.assetVersionId.slice(0, 8)}
+                        </span>
+                        <InputNumber min={1} value={item.durationMs} addonAfter="ms" onChange={(durationMs) => updateVideo(index, { durationMs: durationMs || 1 })} />
+                        <Select
+                            value={item.transition}
+                            options={[
+                                { value: "cut", label: "直接切换" },
+                                { value: "fade", label: "淡入淡出" },
+                            ]}
+                            onChange={(transition) => updateVideo(index, { transition })}
+                        />
+                        <InputNumber min={0} value={item.transitionMs} addonAfter="ms" onChange={(transitionMs) => updateVideo(index, { transitionMs: transitionMs || 0 })} />
+                    </div>
+                ))
+            ) : (
+                <span className="text-xs opacity-50">执行节点后自动读取已连接的视频。</span>
+            )}
+            <b className="text-xs">音轨</b>
+            {timeline.audio.map((item, index) => (
+                <div key={`${item.assetVersionId}-${index}`} className="grid grid-cols-[1fr_110px_100px] gap-2 rounded-lg border p-2">
+                    <span className="truncate text-xs opacity-60">
+                        {item.role} · {item.assetVersionId.slice(0, 8)}
+                    </span>
+                    <InputNumber min={0} value={item.startMs} addonAfter="ms" onChange={(startMs) => updateAudio(index, { startMs: startMs || 0 })} />
+                    <InputNumber min={0} max={2} step={0.05} value={item.volume} addonAfter="音量" onChange={(volume) => updateAudio(index, { volume: volume ?? 1 })} />
+                </div>
+            ))}
+            <b className="text-xs">输出</b>
+            <div className="grid grid-cols-4 gap-2">
+                <InputNumber min={16} step={2} value={timeline.output.width} addonBefore="宽" onChange={(width) => onChange({ ...timeline, output: { ...timeline.output, width: width || 1280 } })} />
+                <InputNumber min={16} step={2} value={timeline.output.height} addonBefore="高" onChange={(height) => onChange({ ...timeline, output: { ...timeline.output, height: height || 720 } })} />
+                <InputNumber min={1} value={timeline.output.fps} addonAfter="fps" onChange={(fps) => onChange({ ...timeline, output: { ...timeline.output, fps: fps || 25 } })} />
+                <InputNumber min={12} value={timeline.output.subtitleFontSize} addonAfter="字号" onChange={(subtitleFontSize) => onChange({ ...timeline, output: { ...timeline.output, subtitleFontSize: subtitleFontSize || 36 } })} />
+            </div>
+        </div>
+    );
+}
+
+function emptyTimeline(): DramaTimeline {
+    return { video: [], audio: [], subtitles: [], output: { width: 1280, height: 720, fps: 25, subtitleFontSize: 36 } };
+}
+
+function formatMillis(ms: number) {
+    const seconds = Math.floor(ms / 1_000);
+    return `${String(Math.floor(seconds / 60)).padStart(2, "0")}:${String(seconds % 60).padStart(2, "0")}`;
 }
 
 function splitList(value: string) {

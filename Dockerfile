@@ -24,6 +24,17 @@ FROM node:22-bookworm-slim AS api
 
 ENV NODE_ENV=production
 WORKDIR /app
+RUN sed -i \
+      -e 's|deb.debian.org/debian|mirrors.aliyun.com/debian|g' \
+      -e 's|security.debian.org/debian-security|mirrors.aliyun.com/debian-security|g' \
+      /etc/apt/sources.list.d/debian.sources \
+    && apt-get -o Acquire::Retries=5 update \
+    && apt-get -o Acquire::Retries=5 install -y --no-install-recommends ffmpeg \
+    && rm -rf /var/lib/apt/lists/*
+RUN node -e "fetch('http://mirrors.aliyun.com/debian/pool/main/f/fonts-wqy-zenhei/fonts-wqy-zenhei_0.9.45-8_all.deb').then((response) => { if (!response.ok) throw new Error(String(response.status)); return response.arrayBuffer(); }).then((body) => require('node:fs').writeFileSync('/tmp/fonts-wqy-zenhei.deb', Buffer.from(body)))" \
+    && echo "cfed2c29164ff2f133e40ed2046610b172b8618d174840936ac4ec9b6fd668e7  /tmp/fonts-wqy-zenhei.deb" | sha256sum --check --strict \
+    && dpkg --install /tmp/fonts-wqy-zenhei.deb \
+    && rm /tmp/fonts-wqy-zenhei.deb
 COPY --from=api-build /app/package.json /app/package-lock.json ./
 COPY --from=api-prod-deps /app/node_modules ./node_modules
 COPY --from=api-build /app/dist ./dist

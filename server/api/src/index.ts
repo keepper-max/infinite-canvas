@@ -10,6 +10,8 @@ import { S3ObjectStorage } from "./object-storage.js";
 import { JobService } from "./job-service.js";
 import { ModelGateway } from "./model-gateway.js";
 import { createQueue } from "./queue.js";
+import { CompositionService } from "./composition-service.js";
+import { createCompositionQueue } from "./queue.js";
 
 const config = readConfig();
 const { db, pool } = createDatabase(config.databaseUrl);
@@ -34,12 +36,20 @@ const jobService = new JobService(
   config.jobs,
   jobQueue.publish,
 );
+const compositionQueue = createCompositionQueue(config.jobs);
+const compositionService = new CompositionService(
+  pool,
+  compositionQueue.port,
+  config.jobs,
+  compositionQueue.publish,
+);
 const app = createApp(
   new PostgresPlatformRepository(db),
   config,
   new PostgresAssetService(db, objectStorage),
   jobService,
   modelGateway,
+  compositionService,
 );
 
 const server = serve({ fetch: app.fetch, port: config.port }, (info) => {
@@ -50,6 +60,8 @@ async function shutdown() {
   server.close();
   await jobQueue.queue.close();
   await jobQueue.connection.quit();
+  await compositionQueue.queue.close();
+  await compositionQueue.connection.quit();
   await pool.end();
 }
 

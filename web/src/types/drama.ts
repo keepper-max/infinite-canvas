@@ -13,7 +13,20 @@ export type DramaWorkflowKind =
     | "frame.first"
     | "frame.last"
     | "skill.seedance"
-    | "video.seedance";
+    | "video.seedance"
+    | "audio.voice"
+    | "audio.sfx"
+    | "audio.music"
+    | "subtitle.track"
+    | "timeline.compose"
+    | "output.episode";
+
+export type DramaTimeline = {
+    video: Array<{ assetVersionId: string; durationMs: number; trimStartMs: number; volume: number; transition: "cut" | "fade"; transitionMs: number }>;
+    audio: Array<{ assetVersionId: string; role: "dialogue" | "sound_effect" | "music"; startMs: number; trimStartMs: number; durationMs?: number; volume: number }>;
+    subtitles: Array<{ startMs: number; endMs: number; text: string }>;
+    output: { width: number; height: number; fps: number; subtitleFontSize: number };
+};
 
 export type DramaAssetBinding = {
     role: "identity" | "environment" | "composition" | "motion" | "first_frame" | "last_frame" | "video_input" | "audio_input";
@@ -75,4 +88,9 @@ export type DramaNodeState = {
     textModel?: string;
     userModified?: boolean;
     lastRunAt?: string;
+    timeline?: DramaTimeline;
+    compositionJobId?: string;
+    compositionStatus?: "pending" | "queued" | "preparing" | "rendering" | "uploading" | "retrying" | "cancel_requested" | "cancelled" | "failed" | "completed";
+    compositionProgress?: number;
+    audioClips?: Array<{ assetId?: string; assetVersionId: string; startMs: number; role: "dialogue" | "sound_effect" | "music" }>;
 };

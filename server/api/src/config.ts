@@ -13,6 +13,9 @@ export type ApiConfig = {
 export type JobConfig = {
   redisUrl: string;
   queueName: string;
+  compositionQueueName: string;
+  compositionWorkerConcurrency: number;
+  ffmpegPath: string;
   workerConcurrency: number;
   maxAttempts: number;
   submitTimeoutMs: number;
@@ -50,6 +53,16 @@ export function readConfig(env: NodeJS.ProcessEnv = process.env): ApiConfig {
   const jobs = {
     redisUrl: env.REDIS_URL?.trim() || "redis://redis:6379",
     queueName: env.JOB_QUEUE_NAME?.trim() || "generation-jobs",
+    compositionQueueName:
+      env.COMPOSITION_QUEUE_NAME?.trim() || "composition-jobs",
+    compositionWorkerConcurrency: readInteger(
+      env.COMPOSITION_WORKER_CONCURRENCY,
+      1,
+      1,
+      4,
+      "COMPOSITION_WORKER_CONCURRENCY",
+    ),
+    ffmpegPath: env.FFMPEG_PATH?.trim() || "ffmpeg",
     workerConcurrency: readInteger(
       env.WORKER_CONCURRENCY,
       2,

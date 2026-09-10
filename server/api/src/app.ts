@@ -20,6 +20,8 @@ import {
 } from "./asset-contract.js";
 import type { AssetServicePort } from "./asset-service.js";
 import { parseCanvasWrite } from "./canvas-contract.js";
+import { createCompositionJobSchema } from "./composition-contract.js";
+import type { CompositionService } from "./composition-service.js";
 import type { ApiConfig } from "./config.js";
 import {
   DomainError,
@@ -39,6 +41,7 @@ export function createApp(
   assetService?: AssetServicePort,
   jobService?: JobService,
   modelGateway?: ModelGateway,
+  compositionService?: CompositionService,
 ) {
   const app = new Hono<AppEnv>();
 
@@ -325,6 +328,90 @@ export function createApp(
     });
   });
 
+  app.get("/api/projects/:projectId/compositions", async (context) => {
+    const user = await requireUser(context.req.raw, repository, config);
+    const jobs = await requireCompositionService(compositionService).list(
+      context.req.param("projectId"),
+      user.id,
+    );
+    return context.json(success(context, { jobs }));
+  });
+
+  app.post("/api/projects/:projectId/compositions", async (context) => {
+    const user = await requireUser(context.req.raw, repository, config);
+    const input = createCompositionJobSchema.parse(
+      await readJson(context.req.raw),
+    );
+    const job = await requireCompositionService(compositionService).create(
+      context.req.param("projectId"),
+      user.id,
+      input,
+    );
+    return context.json(success(context, { job }), 202);
+  });
+
+  app.get("/api/compositions/:jobId", async (context) => {
+    const user = await requireUser(context.req.raw, repository, config);
+    const job = await requireCompositionService(compositionService).get(
+      context.req.param("jobId"),
+      user.id,
+    );
+    if (!job)
+      throw new DomainError("COMPOSITION_NOT_FOUND", "找不到成片任务", 404);
+    return context.json(success(context, { job }));
+  });
+
+  app.post("/api/compositions/:jobId/retry", async (context) => {
+    const user = await requireUser(context.req.raw, repository, config);
+    const job = await requireCompositionService(compositionService).retry(
+      context.req.param("jobId"),
+      user.id,
+    );
+    if (!job)
+      throw new DomainError("COMPOSITION_NOT_FOUND", "找不到成片任务", 404);
+    return context.json(success(context, { job }), 202);
+  });
+
+  app.post("/api/compositions/:jobId/cancel", async (context) => {
+    const user = await requireUser(context.req.raw, repository, config);
+    const job = await requireCompositionService(compositionService).cancel(
+      context.req.param("jobId"),
+      user.id,
+    );
+    if (!job)
+      throw new DomainError("COMPOSITION_NOT_FOUND", "找不到成片任务", 404);
+    return context.json(success(context, { job }), 202);
+  });
+
+  app.get("/api/projects/:projectId/composition-events", async (context) => {
+    const user = await requireUser(context.req.raw, repository, config);
+    const service = requireCompositionService(compositionService);
+    const projectId = context.req.param("projectId");
+    let cursor = Number(
+      context.req.header("last-event-id") || context.req.query("after") || 0,
+    );
+    await service.events(projectId, user.id, cursor);
+    return streamSSE(context, async (stream) => {
+      while (!stream.aborted) {
+        const events = await service.events(projectId, user.id, cursor);
+        for (const event of events) {
+          cursor = event.id;
+          await stream.writeSSE({
+            id: String(event.id),
+            event: event.type,
+            data: JSON.stringify(event),
+          });
+        }
+        if (!events.length)
+          await stream.writeSSE({
+            event: "heartbeat",
+            data: JSON.stringify({ at: new Date().toISOString() }),
+          });
+        await stream.sleep(events.length ? 50 : 1_000);
+      }
+    });
+  });
+
   app.post("/api/projects/:projectId/assets/uploads", async (context) => {
     const user = await requireUser(context.req.raw, repository, config);
     const input = beginAssetUploadSchema.parse(await readJson(context.req.raw));
@@ -458,6 +545,17 @@ function requireJobService(service?: JobService) {
     throw new DomainError(
       "JOB_SERVICE_UNAVAILABLE",
       "任务服务暂时不可用",
+      503,
+      true,
+    );
+  return service;
+}
+
+function requireCompositionService(service?: CompositionService) {
+  if (!service)
+    throw new DomainError(
+      "COMPOSITION_SERVICE_UNAVAILABLE",
+      "成片服务暂时不可用",
       503,
       true,
     );
