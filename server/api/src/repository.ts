@@ -125,6 +125,7 @@ export class PostgresPlatformRepository implements PlatformRepository {
     async restoreCanvasSnapshot(projectId: string, userId: string, version: number, expectedRevision: number) {
         return this.db.transaction(async (tx) => {
             if (!(await hasProjectAccess(tx, projectId, userId))) return null;
+            if (!(await hasProjectEditAccess(tx, projectId, userId))) throw new DomainError("PROJECT_READ_ONLY", "当前成员只有查看权限", 403);
             const [snapshot] = await tx
                 .select({ contractVersion: tables.canvasSnapshots.contractVersion, nodes: tables.canvasSnapshots.nodes, edges: tables.canvasSnapshots.edges, viewport: tables.canvasSnapshots.viewport, settings: tables.canvasSnapshots.settings })
                 .from(tables.canvasSnapshots)
@@ -170,6 +171,15 @@ async function hasProjectAccess(db: Executor, projectId: string, userId: string)
     return Boolean(member);
 }
 
+async function hasProjectEditAccess(db: Executor, projectId: string, userId: string) {
+    const [member] = await db
+        .select({ role: tables.projectMembers.role })
+        .from(tables.projectMembers)
+        .where(and(eq(tables.projectMembers.projectId, projectId), eq(tables.projectMembers.userId, userId), inArray(tables.projectMembers.role, ["owner", "admin", "editor"])))
+        .limit(1);
+    return Boolean(member);
+}
+
 async function readCanvas(db: Executor, projectId: string, userId: string): Promise<CanvasDocument | null> {
     const [canvas] = await db
         .select({ canvasId: tables.canvases.id, revision: tables.canvases.revision, contractVersion: tables.canvases.contractVersion, viewport: tables.canvases.viewport, settings: tables.canvases.settings, updatedAt: tables.canvases.updatedAt })
@@ -199,6 +209,7 @@ async function readCanvas(db: Executor, projectId: string, userId: string): Prom
 
 async function saveCanvasInTransaction(db: Transaction, projectId: string, userId: string, write: CanvasWrite, source: "save" | "migration" | "restore", restoredFromVersion?: number): Promise<CanvasDocument> {
     if (!(await hasProjectAccess(db, projectId, userId))) throw new DomainError("PROJECT_FORBIDDEN", "无权访问该项目", 403);
+    if (!(await hasProjectEditAccess(db, projectId, userId))) throw new DomainError("PROJECT_READ_ONLY", "当前成员只有查看权限", 403);
     const now = new Date();
     const [canvas] = await db
         .update(tables.canvases)

@@ -14,6 +14,7 @@ import NotFound from "@/pages/not-found";
 import PromptsPage from "@/pages/prompts";
 import VideoPage from "@/pages/video";
 import WorkspaceEntryPage from "@/pages/workspace-entry";
+import OperationsPage from "@/pages/operations";
 
 export const router = createBrowserRouter([
     { path: "/login", element: <AuthPage mode="login" /> },
@@ -37,6 +38,7 @@ export const router = createBrowserRouter([
             { path: "/canvas", element: <CanvasPage /> },
             { path: "/canvas/:id", element: <CanvasProjectPage /> },
             { path: "/config", element: <ConfigPage /> },
+            { path: "/operations", element: <OperationsPage /> },
         ],
     },
     { path: "*", element: <NotFound /> },

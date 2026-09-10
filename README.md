@@ -75,7 +75,7 @@
 
 ## 快速开始
 
-AI API Key 与 Base URL 仍按渠道配置保存在浏览器本地；平台托管模型的密钥只存在服务器。登录项目的画布结构以 PostgreSQL 为权威，浏览器仅保留最近成功快照、未同步草稿和待确认的旧 IndexedDB 数据；媒体资产仍在本地，后续迁移至 OSS。
+自定义渠道的 AI API Key 与 Base URL 仍可保存在浏览器本地；平台托管模型的密钥只存在服务器。登录项目的画布结构以 PostgreSQL 为权威，浏览器仅保留最近成功快照、未同步草稿和待确认的旧 IndexedDB 数据；云端项目媒体进入 MinIO/OSS 不可变版本库。
 
 ### 本地开发
 
@@ -102,6 +102,8 @@ docker compose up -d
 首次访问先注册邮箱账号。系统会自动创建唯一的“未命名项目”并直接进入画布，不要求用户先手动创建项目。页面、账号 API 和模型接口均通过同一站点入口访问；全局托管模型的 API Key 只保存在服务器 `.env` 中。
 
 如果服务器无法访问 Docker Hub，可在 `.env` 中通过 `POSTGRES_IMAGE` 指向可信的 PostgreSQL 16 镜像仓库。数据库迁移和回滚说明见 [平台 API 说明](server/api/README.md)。
+
+生产发布前先按[生产发布与恢复手册](ops/PRODUCTION_RUNBOOK.zh-CN.md)完成只读预检、备份校验、隔离迁移和回滚准备。短信、积分扣费与支付接口默认关闭，不会产生真实业务操作。
 
 首次打开后进入右上角配置，填入自己的 OpenAI 兼容 `Base URL` 和 `API Key`。
 

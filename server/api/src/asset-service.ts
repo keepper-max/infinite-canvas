@@ -40,6 +40,7 @@ export class PostgresAssetService implements AssetServicePort {
         const thumbnailStorageKey = input.thumbnail ? `projects/${projectId}/thumbnails/${randomUUID()}` : undefined;
         const created = await this.db.transaction(async (tx) => {
             if (!(await hasProjectAccess(tx, projectId, userId))) throw new DomainError("PROJECT_FORBIDDEN", "无权访问该项目", 403);
+            if (!(await hasProjectEditAccess(tx, projectId, userId))) throw new DomainError("PROJECT_READ_ONLY", "当前成员只有查看权限", 403);
             let assetId = input.assetId;
             if (assetId) {
                 const [asset] = await tx.select({ id: tables.assets.id }).from(tables.assets).where(and(eq(tables.assets.id, assetId), eq(tables.assets.projectId, projectId), eq(tables.assets.status, "active"))).limit(1);
@@ -77,6 +78,7 @@ export class PostgresAssetService implements AssetServicePort {
 
     async completeUpload(projectId: string, uploadId: string, userId: string) {
         if (!(await hasProjectAccess(this.db, projectId, userId))) return null;
+        if (!(await hasProjectEditAccess(this.db, projectId, userId))) throw new DomainError("PROJECT_READ_ONLY", "当前成员只有查看权限", 403);
         const [upload] = await this.db.select().from(tables.assetUploads).where(and(eq(tables.assetUploads.id, uploadId), eq(tables.assetUploads.projectId, projectId), eq(tables.assetUploads.createdBy, userId))).limit(1);
         if (!upload) throw new DomainError("ASSET_UPLOAD_NOT_FOUND", "找不到该上传任务", 404);
         if (upload.completedAt) return this.readAsset(upload.assetId, userId);
@@ -125,6 +127,7 @@ export class PostgresAssetService implements AssetServicePort {
     }
 
     async setCurrentVersion(assetId: string, versionId: string, userId: string) {
+        await assertAssetEditAccess(this.db, assetId, userId);
         const asset = await this.readAsset(assetId, userId);
         if (!asset) return null;
         if (!asset.versions.some((version) => version.id === versionId)) throw new DomainError("ASSET_VERSION_NOT_FOUND", "该版本不属于当前素材", 422);
@@ -133,6 +136,7 @@ export class PostgresAssetService implements AssetServicePort {
     }
 
     async trash(assetId: string, userId: string, reason: string) {
+        await assertAssetEditAccess(this.db, assetId, userId);
         const asset = await this.readAsset(assetId, userId);
         if (!asset) return null;
         if (asset.status === "trashed") return asset;
@@ -144,6 +148,7 @@ export class PostgresAssetService implements AssetServicePort {
     }
 
     async restore(assetId: string, userId: string) {
+        await assertAssetEditAccess(this.db, assetId, userId);
         const asset = await this.readAsset(assetId, userId);
         if (!asset) return null;
         if (asset.status === "active") return asset;
@@ -185,6 +190,22 @@ export class PostgresAssetService implements AssetServicePort {
 async function hasProjectAccess(db: Executor, projectId: string, userId: string) {
     const [member] = await db.select({ projectId: tables.projectMembers.projectId }).from(tables.projectMembers).where(and(eq(tables.projectMembers.projectId, projectId), eq(tables.projectMembers.userId, userId))).limit(1);
     return Boolean(member);
+}
+
+async function hasProjectEditAccess(db: Executor, projectId: string, userId: string) {
+    const [member] = await db.select({ role: tables.projectMembers.role }).from(tables.projectMembers).where(and(eq(tables.projectMembers.projectId, projectId), eq(tables.projectMembers.userId, userId), inArray(tables.projectMembers.role, ["owner", "admin", "editor"]))).limit(1);
+    return Boolean(member);
+}
+
+async function assertAssetEditAccess(db: Executor, assetId: string, userId: string) {
+    const [member] = await db
+        .select({ role: tables.projectMembers.role })
+        .from(tables.assets)
+        .innerJoin(tables.projectMembers, eq(tables.projectMembers.projectId, tables.assets.projectId))
+        .where(and(eq(tables.assets.id, assetId), eq(tables.projectMembers.userId, userId)))
+        .limit(1);
+    if (!member) throw new DomainError("PROJECT_FORBIDDEN", "无权访问该项目", 403);
+    if (!["owner", "admin", "editor"].includes(member.role)) throw new DomainError("PROJECT_READ_ONLY", "当前成员只有查看权限", 403);
 }
 
 function serializeVersion(row: typeof tables.assetVersions.$inferSelect): AssetVersionDocument {

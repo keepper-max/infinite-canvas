@@ -8,7 +8,10 @@ export type ApiConfig = {
   objectStorage: ObjectStorageConfig;
   jobs: JobConfig;
   provider: ProviderConfig;
+  operations: OperationsConfig;
 };
+
+export type OperationsConfig = { adminEmails: string[] };
 
 export type JobConfig = {
   redisUrl: string;
@@ -109,6 +112,12 @@ export function readConfig(env: NodeJS.ProcessEnv = process.env): ApiConfig {
       env.TOKEN360_CATALOG_URL?.trim() ||
       "https://api.token360.ai/public/models?size=200&current=1",
   };
+  const operations = {
+    adminEmails: (env.ADMIN_EMAILS || "")
+      .split(",")
+      .map((value) => value.trim().toLowerCase())
+      .filter(Boolean),
+  };
   return {
     port,
     databaseUrl,
@@ -122,6 +131,7 @@ export function readConfig(env: NodeJS.ProcessEnv = process.env): ApiConfig {
     objectStorage,
     jobs,
     provider,
+    operations,
   };
 }
 

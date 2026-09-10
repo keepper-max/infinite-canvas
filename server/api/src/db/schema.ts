@@ -1,10 +1,11 @@
 import { sql } from "drizzle-orm";
-import { bigint, boolean, index, integer, jsonb, pgTable, primaryKey, text, timestamp, uniqueIndex, uuid } from "drizzle-orm/pg-core";
+import { bigint, bigserial, boolean, index, integer, jsonb, pgTable, primaryKey, text, timestamp, uniqueIndex, uuid } from "drizzle-orm/pg-core";
 
 export const users = pgTable("users", {
     id: uuid("id").defaultRandom().primaryKey(),
     email: text("email").notNull().unique(),
     passwordHash: text("password_hash").notNull(),
+    isAdmin: boolean("is_admin").default(false).notNull(),
     createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
 });
 
@@ -231,4 +232,108 @@ export const assetUploads = pgTable(
     (table) => [index("asset_uploads_project_created_idx").on(table.projectId, table.createdAt)],
 );
 
-export const schema = { users, sessions, projects, projectMembers, canvases, canvasNodes, canvasEdges, canvasSnapshots, canvasMigrations, assets, assetVersions, assetLinks, trashItems, assetUploads };
+export const smsVerificationRequests = pgTable("sms_verification_requests", {
+    id: uuid("id").defaultRandom().primaryKey(),
+    phone: text("phone").notNull(),
+    purpose: text("purpose").notNull(),
+    codeHash: text("code_hash"),
+    status: text("status").default("disabled").notNull(),
+    attempts: integer("attempts").default(0).notNull(),
+    expiresAt: timestamp("expires_at", { withTimezone: true }),
+    consumedAt: timestamp("consumed_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+});
+
+export const creditAccounts = pgTable("credit_accounts", {
+    id: uuid("id").defaultRandom().primaryKey(),
+    userId: uuid("user_id").notNull().unique().references(() => users.id, { onDelete: "cascade" }),
+    balance: bigint("balance", { mode: "number" }).default(0).notNull(),
+    reserved: bigint("reserved", { mode: "number" }).default(0).notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+});
+
+export const creditLedger = pgTable("credit_ledger", {
+    id: bigserial("id", { mode: "number" }).primaryKey(),
+    accountId: uuid("account_id").notNull().references(() => creditAccounts.id, { onDelete: "cascade" }),
+    entryType: text("entry_type").notNull(),
+    delta: bigint("delta", { mode: "number" }).notNull(),
+    balanceAfter: bigint("balance_after", { mode: "number" }).notNull(),
+    referenceType: text("reference_type"),
+    referenceId: text("reference_id"),
+    idempotencyKey: text("idempotency_key").notNull().unique(),
+    metadata: jsonb("metadata").default({}).notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+});
+
+export const billingPlans = pgTable("billing_plans", {
+    id: text("id").primaryKey(),
+    name: text("name").notNull(),
+    credits: bigint("credits", { mode: "number" }).default(0).notNull(),
+    priceCents: integer("price_cents").default(0).notNull(),
+    currency: text("currency").default("CNY").notNull(),
+    enabled: boolean("enabled").default(false).notNull(),
+    metadata: jsonb("metadata").default({}).notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+});
+
+export const paymentOrders = pgTable("payment_orders", {
+    id: uuid("id").defaultRandom().primaryKey(),
+    userId: uuid("user_id").notNull().references(() => users.id, { onDelete: "restrict" }),
+    planId: text("plan_id").references(() => billingPlans.id, { onDelete: "restrict" }),
+    amountCents: integer("amount_cents").default(0).notNull(),
+    currency: text("currency").default("CNY").notNull(),
+    provider: text("provider").notNull(),
+    providerOrderId: text("provider_order_id"),
+    status: text("status").default("disabled").notNull(),
+    idempotencyKey: text("idempotency_key").notNull(),
+    metadata: jsonb("metadata").default({}).notNull(),
+    paidAt: timestamp("paid_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+});
+
+export const paymentCallbackReceipts = pgTable("payment_callback_receipts", {
+    id: bigserial("id", { mode: "number" }).primaryKey(),
+    provider: text("provider").notNull(),
+    eventId: text("event_id").notNull(),
+    payloadSha256: text("payload_sha256").notNull(),
+    signatureValid: boolean("signature_valid").default(false).notNull(),
+    status: text("status").default("disabled").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+});
+
+export const teams = pgTable("teams", {
+    id: uuid("id").defaultRandom().primaryKey(),
+    name: text("name").notNull(),
+    ownerId: uuid("owner_id").notNull().references(() => users.id, { onDelete: "restrict" }),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+});
+
+export const teamMembers = pgTable("team_members", {
+    teamId: uuid("team_id").notNull().references(() => teams.id, { onDelete: "cascade" }),
+    userId: uuid("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+    role: text("role").default("member").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [primaryKey({ columns: [table.teamId, table.userId] })]);
+
+export const teamProjects = pgTable("team_projects", {
+    teamId: uuid("team_id").notNull().references(() => teams.id, { onDelete: "cascade" }),
+    projectId: uuid("project_id").notNull().unique().references(() => projects.id, { onDelete: "cascade" }),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [primaryKey({ columns: [table.teamId, table.projectId] })]);
+
+export const adminAuditLogs = pgTable("admin_audit_logs", {
+    id: bigserial("id", { mode: "number" }).primaryKey(),
+    actorUserId: uuid("actor_user_id").references(() => users.id, { onDelete: "set null" }),
+    action: text("action").notNull(),
+    targetType: text("target_type"),
+    targetId: text("target_id"),
+    requestId: text("request_id"),
+    metadata: jsonb("metadata").default({}).notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+});
+
+export const schema = { users, sessions, projects, projectMembers, canvases, canvasNodes, canvasEdges, canvasSnapshots, canvasMigrations, assets, assetVersions, assetLinks, trashItems, assetUploads, smsVerificationRequests, creditAccounts, creditLedger, billingPlans, paymentOrders, paymentCallbackReceipts, teams, teamMembers, teamProjects, adminAuditLogs };

@@ -352,6 +352,7 @@ export default {
         prompts: "提示词库",
         assets: "我的资产",
         config: "配置",
+        operations: "平台状态",
     },
     topNav: {
         openMenu: "打开导航菜单",

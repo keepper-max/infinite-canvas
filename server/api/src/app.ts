@@ -31,6 +31,15 @@ import {
 import { createJobSchema } from "./job-contract.js";
 import type { JobService } from "./job-service.js";
 import type { ModelGateway } from "./model-gateway.js";
+import {
+  paymentOrderSchema,
+  smsRequestSchema,
+  smsVerifySchema,
+  teamCreateSchema,
+  teamMemberSchema,
+  teamProjectSchema,
+} from "./operations-contract.js";
+import type { OperationsServicePort } from "./operations-service.js";
 
 type Variables = { requestId: string };
 type AppEnv = { Variables: Variables };
@@ -42,6 +51,7 @@ export function createApp(
   jobService?: JobService,
   modelGateway?: ModelGateway,
   compositionService?: CompositionService,
+  operationsService?: OperationsServicePort,
 ) {
   const app = new Hono<AppEnv>();
 
@@ -50,10 +60,23 @@ export function createApp(
       context.req.header("x-request-id")?.slice(0, 128) || randomUUID();
     context.set("requestId", requestId);
     context.header("x-request-id", requestId);
+    context.header("x-content-type-options", "nosniff");
+    context.header("x-frame-options", "DENY");
+    context.header("referrer-policy", "same-origin");
+    context.header(
+      "permissions-policy",
+      "camera=(), microphone=(), geolocation=()",
+    );
+    if (config.cookieSecure)
+      context.header(
+        "strict-transport-security",
+        "max-age=31536000; includeSubDomains",
+      );
     await next();
   });
 
   app.use("/api/*", async (context, next) => {
+    context.header("cache-control", "no-store");
     if (
       isUnsafeMethod(context.req.method) &&
       !isTrustedRequest(context.req.raw, config.trustedOrigins)
@@ -134,6 +157,147 @@ export function createApp(
       sameSite: "Lax",
     });
     return context.json(success(context, { ok: true }));
+  });
+
+  app.get("/api/operations/capabilities", async (context) => {
+    await requireUser(context.req.raw, repository, config);
+    return context.json(
+      success(
+        context,
+        requireOperationsService(operationsService).capabilities(),
+      ),
+    );
+  });
+
+  app.post("/api/auth/sms/request", async (context) => {
+    await requireOperationsService(operationsService).requestSms(
+      smsRequestSchema.parse(await readJson(context.req.raw)),
+    );
+  });
+
+  app.post("/api/auth/sms/verify", async (context) => {
+    await requireOperationsService(operationsService).verifySms(
+      smsVerifySchema.parse(await readJson(context.req.raw)),
+    );
+  });
+
+  app.get("/api/billing/account", async (context) => {
+    const user = await requireUser(context.req.raw, repository, config);
+    return context.json(
+      success(
+        context,
+        await requireOperationsService(operationsService).account(user.id),
+      ),
+    );
+  });
+
+  app.get("/api/billing/plans", async (context) => {
+    await requireUser(context.req.raw, repository, config);
+    return context.json(
+      success(context, {
+        plans: await requireOperationsService(operationsService).plans(),
+      }),
+    );
+  });
+
+  app.post("/api/payments/orders", async (context) => {
+    const user = await requireUser(context.req.raw, repository, config);
+    await requireOperationsService(operationsService).createPaymentOrder(
+      user.id,
+      paymentOrderSchema.parse(await readJson(context.req.raw)),
+    );
+  });
+
+  app.post("/api/payments/callbacks/:provider", async (context) => {
+    await requireOperationsService(operationsService).receivePaymentCallback(
+      z
+        .string()
+        .regex(/^[a-z0-9_-]{1,50}$/i)
+        .parse(context.req.param("provider")),
+    );
+  });
+
+  app.get("/api/teams", async (context) => {
+    const user = await requireUser(context.req.raw, repository, config);
+    return context.json(
+      success(context, {
+        teams: await requireOperationsService(operationsService).listTeams(
+          user.id,
+        ),
+      }),
+    );
+  });
+
+  app.post("/api/teams", async (context) => {
+    const user = await requireUser(context.req.raw, repository, config);
+    const team = await requireOperationsService(operationsService).createTeam(
+      user.id,
+      teamCreateSchema.parse(await readJson(context.req.raw)),
+    );
+    return context.json(success(context, { team }), 201);
+  });
+
+  app.get("/api/teams/:teamId/members", async (context) => {
+    const user = await requireUser(context.req.raw, repository, config);
+    const members = await requireOperationsService(
+      operationsService,
+    ).listTeamMembers(context.req.param("teamId"), user.id);
+    return context.json(success(context, { members }));
+  });
+
+  app.post("/api/teams/:teamId/members", async (context) => {
+    const user = await requireUser(context.req.raw, repository, config);
+    const member = await requireOperationsService(
+      operationsService,
+    ).addTeamMember(
+      context.req.param("teamId"),
+      user.id,
+      teamMemberSchema.parse(await readJson(context.req.raw)),
+    );
+    return context.json(success(context, { member }), 201);
+  });
+
+  app.post("/api/teams/:teamId/projects", async (context) => {
+    const user = await requireUser(context.req.raw, repository, config);
+    const input = teamProjectSchema.parse(await readJson(context.req.raw));
+    const project = await requireOperationsService(
+      operationsService,
+    ).attachTeamProject(context.req.param("teamId"), user.id, input.projectId);
+    return context.json(success(context, { project }), 201);
+  });
+
+  app.get("/api/admin/overview", async (context) => {
+    const user = await requireUser(context.req.raw, repository, config);
+    return context.json(
+      success(
+        context,
+        await requireOperationsService(operationsService).adminOverview(
+          user.id,
+        ),
+      ),
+    );
+  });
+
+  app.get("/api/admin/failures", async (context) => {
+    const user = await requireUser(context.req.raw, repository, config);
+    return context.json(
+      success(context, {
+        failures: await requireOperationsService(
+          operationsService,
+        ).adminFailures(user.id),
+      }),
+    );
+  });
+
+  app.get("/api/admin/models", async (context) => {
+    const user = await requireUser(context.req.raw, repository, config);
+    return context.json(
+      success(context, {
+        models: await requireOperationsService(operationsService).adminModels(
+          user.id,
+        ),
+      }),
+    );
   });
 
   app.get("/api/projects", async (context) => {
@@ -567,6 +731,17 @@ function requireModelGateway(service?: ModelGateway) {
     throw new DomainError(
       "MODEL_SERVICE_UNAVAILABLE",
       "模型目录暂时不可用",
+      503,
+      true,
+    );
+  return service;
+}
+
+function requireOperationsService(service?: OperationsServicePort) {
+  if (!service)
+    throw new DomainError(
+      "OPERATIONS_SERVICE_UNAVAILABLE",
+      "运营服务暂时不可用",
       503,
       true,
     );

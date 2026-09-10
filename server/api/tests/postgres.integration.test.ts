@@ -8,6 +8,7 @@ import { createDatabase } from "../src/db/client.js";
 import { applyMigrations } from "../src/db/migrate.js";
 import { PostgresPlatformRepository } from "../src/repository.js";
 import type { ObjectStorage, StoredObject } from "../src/object-storage.js";
+import { OperationsService } from "../src/operations-service.js";
 
 const databaseUrl = process.env.TEST_DATABASE_URL;
 
@@ -344,6 +345,121 @@ test(
         ).body.data.asset.status,
         "active",
       );
+
+      const firstUser = await pool.query<{ id: string }>(
+        "select id from users where email=$1",
+        [firstEmail],
+      );
+      const secondUser = await pool.query<{ id: string }>(
+        "select id from users where email=$1",
+        [secondEmail],
+      );
+      const operations = new OperationsService(pool, {
+        adminEmails: [firstEmail],
+      });
+      const account = (await operations.account(firstUser.rows[0]!.id)) as {
+        account: { balance: number };
+        enabled: boolean;
+      };
+      assert.equal(account.account.balance, 0);
+      assert.equal(account.enabled, false);
+      assert.deepEqual(operations.capabilities(), {
+        sms: false,
+        credits: false,
+        payments: false,
+        teams: true,
+        admin: true,
+      });
+      const team = (await operations.createTeam(firstUser.rows[0]!.id, {
+        name: "集成测试团队",
+      })) as { id: string; role: string };
+      assert.equal(team.role, "owner");
+      const member = (await operations.addTeamMember(
+        team.id,
+        firstUser.rows[0]!.id,
+        { email: secondEmail, role: "editor" },
+      )) as { role: string };
+      assert.equal(member.role, "editor");
+      assert.equal(
+        (await operations.listTeamMembers(team.id, firstUser.rows[0]!.id))
+          .length,
+        2,
+      );
+      await operations.attachTeamProject(
+        team.id,
+        firstUser.rows[0]!.id,
+        first.workspaceId,
+      );
+      assert.equal(
+        (
+          await restartedApp.request(`/api/projects/${first.workspaceId}`, {
+            headers: { cookie: second.cookie },
+          })
+        ).status,
+        200,
+      );
+      await operations.addTeamMember(team.id, firstUser.rows[0]!.id, {
+        email: secondEmail,
+        role: "viewer",
+      });
+      const viewerSave = await putCanvas(
+        restartedApp,
+        first.workspaceId,
+        second.cookie,
+        canvasWrite(4, "只读成员不应保存"),
+      );
+      assert.equal(viewerSave.response.status, 403);
+      assert.equal(viewerSave.body.error.code, "PROJECT_READ_ONLY");
+      assert.equal(
+        (
+          await postJson(
+            restartedApp,
+            `/api/assets/${assetId}/trash`,
+            second.cookie,
+            { reason: "forbidden" },
+          )
+        ).response.status,
+        403,
+      );
+      const bulkSaved = await putCanvas(
+        restartedApp,
+        first.workspaceId,
+        first.cookie,
+        bulkCanvasWrite(4, 80),
+      );
+      assert.equal(bulkSaved.response.status, 200);
+      const bulkRestored = await restartedApp.request(
+        `/api/projects/${first.workspaceId}/canvas`,
+        { headers: { cookie: first.cookie } },
+      );
+      const bulkRestoredBody = (await bulkRestored.json()) as any;
+      assert.equal(bulkRestoredBody.data.canvas.nodes.length, 80);
+      assert.equal(bulkRestoredBody.data.canvas.edges.length, 79);
+      assert.ok(
+        Number(
+          (
+            await pool.query(
+              "select count(*)::int as count from admin_audit_logs where actor_user_id=$1",
+              [firstUser.rows[0]!.id],
+            )
+          ).rows[0]?.count,
+        ) >= 3,
+      );
+      assert.ok(
+        Array.isArray(await operations.adminModels(firstUser.rows[0]!.id)),
+      );
+      assert.ok(
+        Array.isArray(await operations.adminFailures(firstUser.rows[0]!.id)),
+      );
+      await assert.rejects(
+        () => operations.adminOverview(secondUser.rows[0]!.id),
+        (error: any) => error?.code === "ADMIN_FORBIDDEN",
+      );
+      const overview = (await operations.adminOverview(
+        firstUser.rows[0]!.id,
+      )) as { users: number; projects: number };
+      assert.ok(overview.users >= 2);
+      assert.ok(overview.projects >= 2);
     } finally {
       await pool.end();
     }
@@ -383,6 +499,24 @@ function canvasWrite(expectedRevision: number, title: string) {
     edges: [],
     viewport: { x: 12, y: 24, k: 1.25 },
     settings: { backgroundMode: "dots", showImageInfo: true },
+  };
+}
+
+function bulkCanvasWrite(expectedRevision: number, count: number) {
+  const base = canvasWrite(expectedRevision, "批量节点 1");
+  return {
+    ...base,
+    nodes: Array.from({ length: count }, (_, index) => ({
+      ...base.nodes[0],
+      id: `bulk-${index + 1}`,
+      title: `批量节点 ${index + 1}`,
+      position: { x: (index % 10) * 360, y: Math.floor(index / 10) * 220 },
+    })),
+    edges: Array.from({ length: Math.max(0, count - 1) }, (_, index) => ({
+      id: `bulk-edge-${index + 1}`,
+      fromNodeId: `bulk-${index + 1}`,
+      toNodeId: `bulk-${index + 2}`,
+    })),
   };
 }
 

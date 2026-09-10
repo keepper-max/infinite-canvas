@@ -6,6 +6,7 @@ import { DomainError } from "./domain.js";
 import type { CreateJobInput } from "./job-contract.js";
 import { ModelGateway, type GenerationInput } from "./model-gateway.js";
 import type { ObjectStorage } from "./object-storage.js";
+import { assertProjectAccess } from "./project-access.js";
 import {
   ProviderError,
   Token360Provider,
@@ -31,7 +32,7 @@ export class JobService {
     const fingerprint = createHash("sha256")
       .update(JSON.stringify({ ...input, idempotencyKey: undefined }))
       .digest("hex");
-    await assertProjectAccess(this.pool, projectId, userId);
+    await assertProjectAccess(this.pool, projectId, userId, "edit");
     const duplicate = await this.pool.query(
       "select * from generation_jobs where project_id = $1 and idempotency_key = $2",
       [projectId, input.idempotencyKey],
@@ -50,7 +51,7 @@ export class JobService {
     let job: Record<string, unknown>;
     try {
       await client.query("begin");
-      await assertProjectAccess(client, projectId, userId);
+      await assertProjectAccess(client, projectId, userId, "edit");
       if (input.nodeId) {
         const node = await client.query(
           "select 1 from canvas_nodes where project_id = $1 and id = $2",
@@ -213,7 +214,7 @@ export class JobService {
   }
   async cancel(jobId: string, userId: string) {
     const result = await this.pool.query(
-      `update generation_jobs j set status='cancel_requested',cancel_requested_at=now(),updated_at=now() from project_members m where j.id=$1 and m.project_id=j.project_id and m.user_id=$2 and j.status in ('pending','queued','submitting','retrying','running','downloading','persisting') returning j.*`,
+      `update generation_jobs j set status='cancel_requested',cancel_requested_at=now(),updated_at=now() from project_members m where j.id=$1 and m.project_id=j.project_id and m.user_id=$2 and m.role in ('owner','admin','editor') and j.status in ('pending','queued','submitting','retrying','running','downloading','persisting') returning j.*`,
       [jobId, userId],
     );
     const row = result.rows[0];
@@ -233,6 +234,7 @@ export class JobService {
   async retry(jobId: string, userId: string) {
     const current = await this.get(jobId, userId);
     if (!current) return null;
+    await assertProjectAccess(this.pool, current.projectId, userId, "edit");
     if (current.status !== "failed" || !current.retryable)
       throw new DomainError("JOB_NOT_RETRYABLE", "当前任务不能重试", 409);
     await this.queue.remove(jobId);
@@ -661,18 +663,6 @@ export class JobExecutor {
   }
 }
 
-async function assertProjectAccess(
-  executor: Pick<Pool, "query"> | PoolClient,
-  projectId: string,
-  userId: string,
-) {
-  const result = await executor.query(
-    "select 1 from project_members where project_id=$1 and user_id=$2",
-    [projectId, userId],
-  );
-  if (!result.rowCount)
-    throw new DomainError("PROJECT_FORBIDDEN", "无权访问该项目", 403);
-}
 async function appendEvent(
   client: PoolClient,
   jobId: string,

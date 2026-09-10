@@ -352,6 +352,7 @@ export default {
         prompts: "Prompt Library",
         assets: "My Assets",
         config: "Settings",
+        operations: "Platform",
     },
     topNav: {
         openMenu: "Open navigation menu",

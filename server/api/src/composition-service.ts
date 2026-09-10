@@ -12,6 +12,7 @@ import type {
 import type { JobConfig } from "./config.js";
 import { DomainError } from "./domain.js";
 import type { ObjectStorage } from "./object-storage.js";
+import { assertProjectAccess } from "./project-access.js";
 
 export type CompositionQueuePort = {
   add(jobId: string, attempts: number): Promise<void>;
@@ -32,7 +33,7 @@ export class CompositionService {
     userId: string,
     input: CreateCompositionJobInput,
   ) {
-    await assertProjectAccess(this.pool, projectId, userId);
+    await assertProjectAccess(this.pool, projectId, userId, "edit");
     const fingerprint = createHash("sha256")
       .update(JSON.stringify({ ...input, idempotencyKey: undefined }))
       .digest("hex");
@@ -52,7 +53,7 @@ export class CompositionService {
     let row: Record<string, unknown>;
     try {
       await client.query("begin");
-      await assertProjectAccess(client, projectId, userId);
+      await assertProjectAccess(client, projectId, userId, "edit");
       const timelineResult = await client.query(
         `insert into timelines(project_id,node_key,name,created_by) values($1,$2,$3,$4)
          on conflict(project_id,node_key) do update set name=excluded.name,updated_at=now() returning *`,
@@ -190,6 +191,7 @@ export class CompositionService {
     const result = await this.pool.query(
       `update composition_jobs j set status='cancel_requested',cancel_requested_at=now(),updated_at=now()
        from project_members m where j.id=$1 and m.project_id=j.project_id and m.user_id=$2
+       and m.role in ('owner','admin','editor')
        and j.status in ('pending','queued','preparing','rendering','uploading','retrying') returning j.*`,
       [jobId, userId],
     );
@@ -209,6 +211,12 @@ export class CompositionService {
   async retry(jobId: string, userId: string) {
     const current = await this.get(jobId, userId);
     if (!current) return null;
+    await assertProjectAccess(
+      this.pool,
+      String(current.projectId),
+      userId,
+      "edit",
+    );
     if (current.status !== "failed" || !current.retryable)
       throw new DomainError(
         "COMPOSITION_NOT_RETRYABLE",
@@ -746,18 +754,6 @@ async function assertAssetVersions(
       "时间线包含不可用素材",
       422,
     );
-}
-async function assertProjectAccess(
-  executor: Pick<Pool, "query"> | PoolClient,
-  projectId: string,
-  userId: string,
-) {
-  const result = await executor.query(
-    "select 1 from project_members where project_id=$1 and user_id=$2",
-    [projectId, userId],
-  );
-  if (!result.rowCount)
-    throw new DomainError("PROJECT_FORBIDDEN", "无权访问该项目", 403);
 }
 async function appendEvent(
   client: PoolClient,

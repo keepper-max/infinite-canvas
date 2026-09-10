@@ -77,6 +77,9 @@ test("cross-site state changes are rejected", async () => {
         body: JSON.stringify({ email: "blocked@example.com", password: "password-123" }),
     });
     assert.equal(response.status, 403);
+    assert.equal(response.headers.get("x-content-type-options"), "nosniff");
+    assert.equal(response.headers.get("x-frame-options"), "DENY");
+    assert.match(response.headers.get("permissions-policy") || "", /camera=\(\)/);
 });
 
 test("canvas endpoints persist structure and expose revision conflicts", async () => {
@@ -130,6 +133,8 @@ test("asset routes keep immutable versions, regenerate downloads, and isolate pr
     const firstCookie = cookieFrom(first.response);
     const upload = await postJson(app, `/api/projects/${projectId}/assets/uploads`, firstCookie, uploadInput("first.png"));
     assert.equal(upload.response.status, 201);
+    const invalidMime = await postJson(app, `/api/projects/${projectId}/assets/uploads`, firstCookie, { ...uploadInput("not-an-image.txt"), mimeType: "text/plain" });
+    assert.equal(invalidMime.response.status, 422);
     const completed = await postJson(app, `/api/projects/${projectId}/assets/uploads/${upload.body.data.upload.uploadId}/complete`, firstCookie, {});
     assert.equal(completed.body.data.asset.versions[0].version, 1);
 

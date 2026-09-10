@@ -12,6 +12,7 @@ import { ModelGateway } from "./model-gateway.js";
 import { createQueue } from "./queue.js";
 import { CompositionService } from "./composition-service.js";
 import { createCompositionQueue } from "./queue.js";
+import { OperationsService } from "./operations-service.js";
 
 const config = readConfig();
 const { db, pool } = createDatabase(config.databaseUrl);
@@ -43,6 +44,7 @@ const compositionService = new CompositionService(
   config.jobs,
   compositionQueue.publish,
 );
+const operationsService = new OperationsService(pool, config.operations);
 const app = createApp(
   new PostgresPlatformRepository(db),
   config,
@@ -50,6 +52,7 @@ const app = createApp(
   jobService,
   modelGateway,
   compositionService,
+  operationsService,
 );
 
 const server = serve({ fetch: app.fetch, port: config.port }, (info) => {

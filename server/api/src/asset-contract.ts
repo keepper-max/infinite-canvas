@@ -21,7 +21,11 @@ export const beginAssetUploadSchema = z
         provenance: z.record(z.string(), z.unknown()).default({}),
         thumbnail: z.object({ mimeType: z.string().trim().min(1).max(200), bytes: z.number().int().positive(), sha256: sha256Schema }).strict().optional(),
     })
-    .strict();
+    .strict()
+    .superRefine((input, context) => {
+        if (!mimeMatchesKind(input.kind, input.mimeType)) context.addIssue({ code: "custom", path: ["mimeType"], message: "文件类型与素材类别不匹配" });
+        if (input.thumbnail && !input.thumbnail.mimeType.toLowerCase().startsWith("image/")) context.addIssue({ code: "custom", path: ["thumbnail", "mimeType"], message: "缩略图必须是图片" });
+    });
 
 export const completeAssetUploadSchema = z.object({}).strict();
 export const setCurrentVersionSchema = z.object({ versionId: z.string().uuid() }).strict();
@@ -66,3 +70,12 @@ export type AssetDocument = {
     trashedAt: string | null;
     versions: AssetVersionDocument[];
 };
+
+function mimeMatchesKind(kind: z.infer<typeof assetKindSchema>, mimeType: string) {
+    const normalized = mimeType.toLowerCase();
+    if (["character", "scene", "prop", "image"].includes(kind)) return normalized.startsWith("image/");
+    if (kind === "video") return normalized.startsWith("video/");
+    if (kind === "audio") return normalized.startsWith("audio/");
+    if (kind === "subtitle") return ["text/plain", "text/vtt", "application/x-subrip"].includes(normalized);
+    return ["application/json", "application/zip", "application/x-zip-compressed"].includes(normalized);
+}
