@@ -1,6 +1,6 @@
 services:
   web:
-    image: keepper-max/infinite-canvas-web:local
+    image: ${WEB_IMAGE:-keepper-max/infinite-canvas-web:local}
     build:
       context: .
       dockerfile: Dockerfile
@@ -19,7 +19,7 @@ services:
       retries: 10
 
   api:
-    image: keepper-max/infinite-canvas-api:local
+    image: ${API_IMAGE:-keepper-max/infinite-canvas-api:local}
     build:
       context: .
       dockerfile: Dockerfile
@@ -70,7 +70,7 @@ services:
       retries: 15
 
   worker:
-    image: keepper-max/infinite-canvas-api:local
+    image: ${API_IMAGE:-keepper-max/infinite-canvas-api:local}
     build:
       context: .
       dockerfile: Dockerfile

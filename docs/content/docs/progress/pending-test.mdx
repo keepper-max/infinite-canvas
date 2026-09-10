@@ -5,6 +5,8 @@ description: Implemented changes that still need manual verification
 
 # Pending Tests
 
+- Production release orchestration: preflight and deployment must stop before building or switching services when `.env` permissions are too broad, secure cookies/HTTPS origins are missing, the worktree is dirty, or the explicit confirmation token is absent, without printing secrets. The release must build separate commit-tagged Web and API images, migrate and switch API/Worker before Web, retain a verified backup and manifest on failure, and restore previous images from that manifest without dropping database structures.
+
 - Platform operations and permissions: new users should get a zero-balance credit account; SMS, credit charging, and payments must remain disabled. A team `editor` can edit an attached project, while a `viewer` can read it but cannot save the canvas, mutate assets, or create/retry/cancel generation and composition jobs. Non-admin users cannot access platform metrics, failures, or model health; admin-visible errors must not expose API keys. Before release, create and verify backups of source, environment, PostgreSQL, containers, and image identifiers, then exercise migrations and rollback in an isolated environment.
 
 - Drama composition: generate at least two video shots plus dialogue, effects, and music in the default template. Build subtitles and a timeline, edit clip duration/fades, audio start/volume, subtitle timing, and output size, then submit the episode. The dedicated worker must continue after the page closes, recover or retry after refresh, store a playable/downloadable immutable asset with a cover, honor cancellation, clean temporary files, and reject cross-project asset references.

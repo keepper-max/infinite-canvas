@@ -13,6 +13,7 @@
 7. `06-drama-workflow.md`
 8. `07-composition.md`
 9. `08-release-and-operations.md`
+10. `09-production-cutover.md`
 
 ## 每次执行前
 
@@ -29,4 +30,3 @@
 3. 更新根目录三份规划文件与任务包状态。
 4. 汇报完成内容、未执行检查、风险和下一任务包。
 5. 未收到明确指令时不 commit、不 push、不部署。
-
