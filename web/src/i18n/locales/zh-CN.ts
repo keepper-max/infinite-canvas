@@ -277,6 +277,7 @@ export default {
             select: "选择", pan: "移动", text: "文本", image: "图片", video: "视频", audio: "音频", config: "生成配置", group: "组", extensions: "扩展节点", upload: "上传资产", appearance: "画布外观", clear: "清空画布",
             themeMode: "主题模式", light: "浅色", dark: "深色", gridStyle: "网格样式", dots: "点", lines: "线", blank: "空白", imageInfo: "图片信息",
         },
+        productivity: { autoLayout: "自动整理", focusMode: "专注模式", performanceMode: "性能模式", locked: "节点已锁定", lockedSkipped: "已跳过锁定节点", invalidConnectionRole: "当前连线类型与来源资源不匹配", dragAsset: "拖到画布指定位置" },
         project: {
             untitled: "未命名画布", imported: "导入画布",
             select: "选择 {{name}}", stats: "{{nodes}} 个节点 · {{connections}} 条连线", updated: "更新于 {{date}}", saveName: "保存名称", cancelRename: "取消重命名", export: "导出", rename: "重命名", delete: "删除",

@@ -1,7 +1,7 @@
 import type { CSSProperties, MouseEvent as ReactMouseEvent, ReactNode, RefObject } from "react";
 import { useEffect, useRef, useState } from "react";
 import { Button, Segmented, Switch } from "antd";
-import { CircleDot, Eraser, Grid2x2, Group, Hand, Image as ImageIcon, Info, Moon, MousePointer2, Music2, Palette, Puzzle, Redo2, Settings2, Square, Sun, Trash2, Type, Undo2, Upload, Video } from "lucide-react";
+import { CircleDot, Eraser, Focus, Gauge, Grid2x2, Group, Hand, Image as ImageIcon, Info, LayoutDashboard, Moon, MousePointer2, Music2, Palette, Puzzle, Redo2, Settings2, Square, Sun, Trash2, Type, Undo2, Upload, Video } from "lucide-react";
 
 import { canvasThemes, type CanvasBackgroundMode, type CanvasColorTheme, type CanvasTheme } from "@/lib/canvas-theme";
 import { getNodePluginId, listNodeDefinitions, useNodeRegistryVersion } from "@/lib/canvas/node-registry";
@@ -16,6 +16,8 @@ export function CanvasToolbar({
     canRedo,
     backgroundMode,
     showImageInfo,
+    focusMode,
+    performanceMode,
     onAddImage,
     onAddVideo,
     onAddAudio,
@@ -31,6 +33,9 @@ export function CanvasToolbar({
     onCanvasToolChange,
     onBackgroundModeChange,
     onShowImageInfoChange,
+    onAutoLayout,
+    onToggleFocusMode,
+    onTogglePerformanceMode,
 }: {
     selectedCount: number;
     canvasTool: "select" | "pan";
@@ -38,6 +43,8 @@ export function CanvasToolbar({
     canRedo: boolean;
     backgroundMode: CanvasBackgroundMode;
     showImageInfo: boolean;
+    focusMode: boolean;
+    performanceMode: boolean;
     onAddImage: () => void;
     onAddVideo: () => void;
     onAddAudio: () => void;
@@ -53,6 +60,9 @@ export function CanvasToolbar({
     onCanvasToolChange: (tool: "select" | "pan") => void;
     onBackgroundModeChange: (mode: CanvasBackgroundMode) => void;
     onShowImageInfoChange: (show: boolean) => void;
+    onAutoLayout: () => void;
+    onToggleFocusMode: () => void;
+    onTogglePerformanceMode: () => void;
 }) {
     const wrapRef = useRef<HTMLDivElement>(null);
     const { t } = useTranslation();
@@ -88,10 +98,21 @@ export function CanvasToolbar({
     }, [extensionsOpen, appearanceOpen]);
 
     return (
-        <div ref={rootRef} className="pointer-events-none absolute bottom-5 z-50 flex justify-center" style={{ left: 300, right: 16 }}>
+        <div ref={rootRef} className="pointer-events-none absolute bottom-5 z-50 flex justify-center" style={{ left: focusMode ? 16 : 300, right: 16 }}>
             {tip ? <DockTip label={tip} x={tipX} theme={theme} /> : null}
             <div ref={wrapRef} className="thin-scrollbar pointer-events-auto flex h-14 max-w-full items-center gap-1 overflow-x-auto rounded-xl border px-2 shadow-lg backdrop-blur [&>*]:shrink-0" style={dockStyle}>
-                <ToolbarButton id={`tool-${canvasTool}`} label={t(`canvas.toolbar.${canvasTool}`)} active hovered={hovered} activeStyle={activeStyle} hoverStyle={hoverStyle} wrapRef={wrapRef} onTipX={setTipX} onHover={setHovered} onClick={() => onCanvasToolChange(canvasTool === "select" ? "pan" : "select")}>
+                <ToolbarButton
+                    id={`tool-${canvasTool}`}
+                    label={t(`canvas.toolbar.${canvasTool}`)}
+                    active
+                    hovered={hovered}
+                    activeStyle={activeStyle}
+                    hoverStyle={hoverStyle}
+                    wrapRef={wrapRef}
+                    onTipX={setTipX}
+                    onHover={setHovered}
+                    onClick={() => onCanvasToolChange(canvasTool === "select" ? "pan" : "select")}
+                >
                     {canvasTool === "select" ? <MousePointer2 className="size-4.5" /> : <Hand className="size-4.5" />}
                 </ToolbarButton>
                 <ToolbarButton id="tool-undo" label={t("canvas.undo")} disabled={!canUndo} hovered={hovered} hoverStyle={hoverStyle} wrapRef={wrapRef} onTipX={setTipX} onHover={setHovered} onClick={onUndo}>
@@ -99,6 +120,37 @@ export function CanvasToolbar({
                 </ToolbarButton>
                 <ToolbarButton id="tool-redo" label={t("canvas.redo")} disabled={!canRedo} hovered={hovered} hoverStyle={hoverStyle} wrapRef={wrapRef} onTipX={setTipX} onHover={setHovered} onClick={onRedo}>
                     <Redo2 className="size-4.5" />
+                </ToolbarButton>
+                <ToolbarButton id="tool-layout" label={t("canvas.productivity.autoLayout")} hovered={hovered} hoverStyle={hoverStyle} wrapRef={wrapRef} onTipX={setTipX} onHover={setHovered} onClick={onAutoLayout}>
+                    <LayoutDashboard className="size-4.5" />
+                </ToolbarButton>
+                <ToolbarButton
+                    id="tool-focus"
+                    label={t("canvas.productivity.focusMode")}
+                    active={focusMode}
+                    hovered={hovered}
+                    activeStyle={activeStyle}
+                    hoverStyle={hoverStyle}
+                    wrapRef={wrapRef}
+                    onTipX={setTipX}
+                    onHover={setHovered}
+                    onClick={onToggleFocusMode}
+                >
+                    <Focus className="size-4.5" />
+                </ToolbarButton>
+                <ToolbarButton
+                    id="tool-performance"
+                    label={t("canvas.productivity.performanceMode")}
+                    active={performanceMode}
+                    hovered={hovered}
+                    activeStyle={activeStyle}
+                    hoverStyle={hoverStyle}
+                    wrapRef={wrapRef}
+                    onTipX={setTipX}
+                    onHover={setHovered}
+                    onClick={onTogglePerformanceMode}
+                >
+                    <Gauge className="size-4.5" />
                 </ToolbarButton>
                 <Divider theme={theme} />
                 <ToolbarButton id="tool-text" label={t("canvas.toolbar.text")} hovered={hovered} hoverStyle={hoverStyle} wrapRef={wrapRef} onTipX={setTipX} onHover={setHovered} onClick={onAddText}>
@@ -232,7 +284,8 @@ export function CanvasToolbar({
                                 value: "dots",
                                 label: (
                                     <span className="inline-flex items-center gap-1.5">
-                                        <CircleDot className="size-4" />{t("canvas.toolbar.dots")}
+                                        <CircleDot className="size-4" />
+                                        {t("canvas.toolbar.dots")}
                                     </span>
                                 ),
                             },
@@ -240,7 +293,8 @@ export function CanvasToolbar({
                                 value: "lines",
                                 label: (
                                     <span className="inline-flex items-center gap-1.5">
-                                        <Grid2x2 className="size-4" />{t("canvas.toolbar.lines")}
+                                        <Grid2x2 className="size-4" />
+                                        {t("canvas.toolbar.lines")}
                                     </span>
                                 ),
                             },
@@ -356,6 +410,9 @@ function toolLabel(id: string, t: (key: string) => string) {
     if (id === "tool-pan") return t("canvas.toolbar.pan");
     if (id === "tool-undo") return t("canvas.undo");
     if (id === "tool-redo") return t("canvas.redo");
+    if (id === "tool-layout") return t("canvas.productivity.autoLayout");
+    if (id === "tool-focus") return t("canvas.productivity.focusMode");
+    if (id === "tool-performance") return t("canvas.productivity.performanceMode");
     if (id === "tool-text") return t("canvas.toolbar.text");
     if (id === "tool-image") return t("canvas.toolbar.image");
     if (id === "tool-video") return t("canvas.toolbar.video");

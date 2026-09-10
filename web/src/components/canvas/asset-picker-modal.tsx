@@ -7,6 +7,7 @@ import { cn } from "@/lib/utils";
 import { useAssetStore, type Asset } from "@/stores/use-asset-store";
 
 export type InsertAssetPayload = { kind: "text"; content: string; title: string } | { kind: "image"; dataUrl: string; title: string; storageKey?: string } | { kind: "video"; url: string; title: string; storageKey?: string; width?: number; height?: number };
+export const CANVAS_ASSET_DRAG_TYPE = "application/x-infinite-canvas-asset";
 
 type Props = {
     open: boolean;

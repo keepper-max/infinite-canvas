@@ -277,6 +277,7 @@ export default {
             select: "Select", pan: "Move", text: "Text", image: "Image", video: "Video", audio: "Audio", config: "Generation config", group: "Group", extensions: "Extension nodes", upload: "Upload assets", appearance: "Canvas appearance", clear: "Clear canvas",
             themeMode: "Theme", light: "Light", dark: "Dark", gridStyle: "Grid style", dots: "Dots", lines: "Lines", blank: "Blank", imageInfo: "Image info",
         },
+        productivity: { autoLayout: "Auto layout", focusMode: "Focus mode", performanceMode: "Performance mode", locked: "Node locked", lockedSkipped: "Locked nodes were skipped", invalidConnectionRole: "The connection role does not match the source resource", dragAsset: "Drag to a position on the canvas" },
         project: {
             untitled: "Untitled canvas", imported: "Imported canvas",
             select: "Select {{name}}", stats: "{{nodes}} nodes · {{connections}} connections", updated: "Updated {{date}}", saveName: "Save name", cancelRename: "Cancel rename", export: "Export", rename: "Rename", delete: "Delete",

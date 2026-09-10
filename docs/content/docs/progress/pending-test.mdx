@@ -5,6 +5,8 @@ description: Implemented changes that still need manual verification
 
 # Pending Tests
 
+- Canvas productization: verify six-way alignment, horizontal/vertical distribution, grouping, and bulk locking all participate in undo/redo; locked nodes must resist dragging, resizing, auto layout, and bulk deletion. Alignment guides should appear near peer edges and centers. Selecting a node or edge should open the inspector with generation metadata, references, task/version details, or edge roles; incompatible roles must be rejected, while disconnect and reconnect work. Assets should drag to an exact canvas position, focus mode should hide surrounding chrome, and performance mode should keep 80+ media nodes navigable.
+
 The current release needs manual verification in these areas:
 
 - Managed generation jobs: after signing in, start text, image, audio, and each Seedance video mode from the canvas. Progress should survive page refresh, duplicate clicks should not create duplicate jobs, successful files should enter cloud assets as immutable versions, failed jobs should allow retry, and a running cancellation must remain cancelled instead of later becoming completed. The browser must not expose the built-in API key or provider address.

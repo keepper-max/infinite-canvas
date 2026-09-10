@@ -3,10 +3,15 @@ import { readdir, readFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import type { Pool } from "pg";
 
+const MIGRATION_LOCK_ID = 1_226_914_126;
+
 export async function applyMigrations(pool: Pool, directory = resolve(process.cwd(), "db/migrations")) {
     const files = (await readdir(directory)).filter((name) => /^\d+.*\.sql$/.test(name)).sort();
     const client = await pool.connect();
     try {
+        // API and Worker can boot together on a fresh host. Serialize schema changes on
+        // the same PostgreSQL session so both processes never create the same objects.
+        await client.query("select pg_advisory_lock($1)", [MIGRATION_LOCK_ID]);
         await client.query(`
             create table if not exists platform_schema_migrations (
                 name text primary key,
@@ -33,6 +38,7 @@ export async function applyMigrations(pool: Pool, directory = resolve(process.cw
             }
         }
     } finally {
+        await client.query("select pg_advisory_unlock($1)", [MIGRATION_LOCK_ID]).catch(() => undefined);
         client.release();
     }
 }
