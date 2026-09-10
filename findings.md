@@ -90,6 +90,26 @@
 - 画布保存事务会同步确切的资产版本引用，并拒绝跨项目版本；因此后续任务和生成节点可绑定 `AssetVersion.id`，不会因主版本切换而漂移。
 - ECS 隔离环境已验证旧库恢复、0008 增量迁移、真实 PostgreSQL 版本链、MinIO 签名上传下载、画布版本绑定、跨用户隔离、回收站恢复和 API 重启恢复；生产容器未改动。
 
+## 第 4 部分补充发现（2026-09-09）
+
+- 当前托管模型代理不是独立 TypeScript 包，而是根目录 `token360-proxy.mjs`，由 Dockerfile 的 Bun 容器直接运行；平台 API 尚未包含模型注册、任务队列或 SSE。
+- 旧 PostgreSQL 已有基础 `generation_jobs`、`job_events`、`job_artifacts`，但缺少工作流/节点运行、幂等、尝试、事件序号、取消、心跳、输入快照和资产版本外键；第 4 部分必须用兼容 ALTER/补表迁移，不能重建旧任务表。
+- 前端图片、文本、视频和音频仍各自在浏览器调用 Provider；切换到后台任务需要先建立统一任务 DTO 和服务端编译器，再逐个替换调用入口，避免一次重写画布主文件。
+- 平台边界要求 PostgreSQL 先写事件再发布 Redis，Redis 只用于队列与短期通知；断线恢复必须以任务和事件表为准。
+- Token360 现有说明确认统一使用公开模型名，并分别通过聊天、图片和视频端点调用；模型可选参数随模型变化，因此公开目录必须与人工能力覆盖表合并，不能仅按名称或粗模态开放。
+- BullMQ 官方说明其任务语义是至少一次，Worker 崩溃或锁失效可能再次执行；数据库幂等键和阶段性副作用防重是必需条件，不能只依赖 Redis jobId。
+- BullMQ 官方建议生产者在 Redis 断线时快速失败、Worker 持续重连，并在部署时优雅关闭；当前 API 与 Worker 需要使用不同 Redis 连接策略。
+- BullMQ 的自动重试次数包含首次执行，取消活动任务需要 AbortSignal 协作；数据库仍应保留 `cancel_requested`，Worker 确认停止后再进入终态。
+- 新画布节点 ID 是文本且以项目组成复合主键，而旧 `generation_jobs.node_id` 是 UUID；新任务链应使用 `node_key text` 绑定当前画布节点，旧 `node_id` 只保留兼容读取。
+- 当前画布详情页已能取得路由 `projectId` 和执行节点 `nodeId`，可以把这两个上下文显式传给统一任务客户端，无需引入全局隐式项目变量。
+- 当前文本、图片、视频、音频调用均集中在 `web/src/services/api/`；托管模型可在这些服务入口分流到平台任务 API，用户自带渠道与插件继续走原有浏览器路径，从而减少回归面。
+- 模型目录同步必须是“发现而不自动开放”：未知模型会记录到 `model_catalog`，但只有具备人工能力覆盖、启用且健康的模型才返回前端，避免目录名称误判造成错误参数或计费风险。
+- Seedance 视频任务在 Worker 重试时必须优先查询已有 `provider_job_id`，避免上游已经接收任务后因本地超时再次提交并产生重复费用。
+- 任务最长运行时间按首次 `started_at` 计算，而不是每次重试重置；因此确认的 30 分钟是整项任务上限。
+- Token360 官方 API 文档确认视频工作流由 `frame_images[].frame_type`（首帧/尾帧）和 `input_references[]`（多模态参考）推断；`aspect_ratio` 是正式字段，`omni_reference_task_type` 只应在多参考场景发送。
+- Token360 视频查询完成后不保证任务详情直接带下载 URL；规范下载路径是 `GET /v1/videos/{id}/content`。Worker 已使用二进制模式兜底转存，避免把临时 Provider URL当成长期资产。
+- Token360 图片接口在同一 `POST /v1/images/generations` 支持文生图和带 `images[]` 的图生图，因此服务端能力映射将通用 `references` 转成 `images`。
+
 ## 资源索引
 
 - 总计划：`task_plan.md`
@@ -100,3 +120,7 @@
 - 当前画布主流程：`web/src/pages/canvas/project.tsx`
 - 当前浏览器持久化：`web/src/stores/canvas/use-canvas-store.ts`
 - 当前插件宿主：`web/src/pages/canvas/hooks/use-plugin-host.tsx`
+- Token360 当前视频接口文档明确要求可选参数按具体模型的 `parameter_schema`/`supported_parameters` 决定，示例包含 8 秒任务；因此不能把 Seedance 2.5 错误限制为仅 5/10 秒。
+- 生产端浏览器渠道已默认关闭并执行旧配置脱敏迁移；全局 Provider Key 只由 API/Worker 环境变量读取。
+- 本机隔离 Docker 验证证明服务端任务闭环可用：默认项目、动态模型目录、BullMQ、SSE、MinIO 资产版本、幂等、三次尝试与手动重试、四种视频模式均通过。
+- 运行中取消存在过一次真实竞态：Provider 提交返回后的无条件 `running` 写入会覆盖 `cancel_requested`。正确边界是提交、轮询前后和持久化前都重新读数据库状态，取消终态只允许由 `cancel_requested` 幂等转换。

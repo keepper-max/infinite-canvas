@@ -164,6 +164,8 @@ export function sourceNodeReferenceImages(node: CanvasNodeData | null) {
             type: node.metadata.mimeType || "image/png",
             dataUrl: node.metadata.content,
             storageKey: node.metadata.storageKey,
+            assetId: node.metadata.assetId,
+            assetVersionId: node.metadata.assetVersionId,
         },
     ];
 }
@@ -173,7 +175,12 @@ export function isAudioFile(file: File) {
 }
 
 export function buildAngleLabel(params: CanvasImageAngleParams) {
-    const horizontal = params.horizontalAngle === 0 ? i18n.t("canvas.generation.front") : params.horizontalAngle > 0 ? i18n.t("canvas.generation.rotateRight", { angle: params.horizontalAngle }) : i18n.t("canvas.generation.rotateLeft", { angle: Math.abs(params.horizontalAngle) });
+    const horizontal =
+        params.horizontalAngle === 0
+            ? i18n.t("canvas.generation.front")
+            : params.horizontalAngle > 0
+              ? i18n.t("canvas.generation.rotateRight", { angle: params.horizontalAngle })
+              : i18n.t("canvas.generation.rotateLeft", { angle: Math.abs(params.horizontalAngle) });
     const pitch = params.pitchAngle === 0 ? i18n.t("canvas.generation.level") : params.pitchAngle > 0 ? i18n.t("canvas.generation.topDown", { angle: params.pitchAngle }) : i18n.t("canvas.generation.lowAngle", { angle: Math.abs(params.pitchAngle) });
     return i18n.t("canvas.generation.angleLabel", { horizontal, pitch, distance: params.cameraDistance.toFixed(1), lens: i18n.t(params.wideAngle ? "canvas.editors.wide" : "canvas.editors.standard") });
 }

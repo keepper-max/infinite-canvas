@@ -7,6 +7,9 @@ import { createDatabase } from "./db/client.js";
 import { applyMigrations } from "./db/migrate.js";
 import { PostgresPlatformRepository } from "./repository.js";
 import { S3ObjectStorage } from "./object-storage.js";
+import { JobService } from "./job-service.js";
+import { ModelGateway } from "./model-gateway.js";
+import { createQueue } from "./queue.js";
 
 const config = readConfig();
 const { db, pool } = createDatabase(config.databaseUrl);
@@ -14,15 +17,40 @@ const { db, pool } = createDatabase(config.databaseUrl);
 await applyMigrations(pool);
 const objectStorage = new S3ObjectStorage(config.objectStorage);
 await objectStorage.ensureReady();
-const app = createApp(new PostgresPlatformRepository(db), config, new PostgresAssetService(db, objectStorage));
+const modelGateway = new ModelGateway(pool);
+await modelGateway
+  .refreshCatalog(config.provider.catalogUrl)
+  .catch((error) =>
+    console.warn(
+      "[platform-api] model catalog refresh skipped:",
+      error instanceof Error ? error.message : "unknown error",
+    ),
+  );
+const jobQueue = createQueue(config.jobs);
+const jobService = new JobService(
+  pool,
+  jobQueue.port,
+  modelGateway,
+  config.jobs,
+  jobQueue.publish,
+);
+const app = createApp(
+  new PostgresPlatformRepository(db),
+  config,
+  new PostgresAssetService(db, objectStorage),
+  jobService,
+  modelGateway,
+);
 
 const server = serve({ fetch: app.fetch, port: config.port }, (info) => {
-    console.log(`[platform-api] listening on ${info.port}`);
+  console.log(`[platform-api] listening on ${info.port}`);
 });
 
 async function shutdown() {
-    server.close();
-    await pool.end();
+  server.close();
+  await jobQueue.queue.close();
+  await jobQueue.connection.quit();
+  await pool.end();
 }
 
 process.once("SIGTERM", () => void shutdown());

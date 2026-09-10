@@ -11,6 +11,7 @@ export type ReasoningEffort = "auto" | "low" | "medium" | "high" | "xhigh";
 
 export type ChannelModel = {
     name: string;
+    displayName?: string;
     capability: ModelCapability;
     script?: string;
     supportedParameters?: string[];
@@ -80,6 +81,7 @@ const GEMINI_BASE_URL = "https://generativelanguage.googleapis.com";
 const MANAGED_CHANNEL_ID = "managed";
 const MANAGED_API_BASE_URL = "/api/token360";
 const MANAGED_API_KEY = "server-managed";
+export const BROWSER_PROVIDERS_ENABLED = import.meta.env.DEV && import.meta.env.VITE_ALLOW_BROWSER_PROVIDERS === "true";
 export const LOCAL_PROXY_PACKAGE = "@basketikun/canvas-proxy";
 export const DEFAULT_LOCAL_PROXY_URL = "http://127.0.0.1:23210";
 
@@ -91,10 +93,10 @@ const managedChannel: ModelChannel = {
     apiFormat: "openai",
     managed: true,
     models: [
-        { name: "nano-banana-2", capability: "image" },
-        { name: "seedance-2.5", capability: "video" },
-        { name: "gpt-5.5", capability: "text" },
-        { name: "seed-audio-1.0", capability: "audio" },
+        { name: "image.nano-banana-2", displayName: "Nano Banana 2", capability: "image" },
+        { name: "video.seedance-2-5", displayName: "Seedance 2.5", capability: "video" },
+        { name: "text.gpt-5-5", displayName: "GPT-5.5", capability: "text" },
+        { name: "audio.seed-audio-1", displayName: "Seed Audio 1.0", capability: "audio" },
     ],
 };
 
@@ -108,11 +110,11 @@ export const defaultConfig: AiConfig = {
             ...managedChannel,
         },
     ],
-    model: `${MANAGED_CHANNEL_ID}::nano-banana-2`,
-    imageModel: `${MANAGED_CHANNEL_ID}::nano-banana-2`,
-    videoModel: `${MANAGED_CHANNEL_ID}::seedance-2.5`,
-    textModel: `${MANAGED_CHANNEL_ID}::gpt-5.5`,
-    audioModel: `${MANAGED_CHANNEL_ID}::seed-audio-1.0`,
+    model: `${MANAGED_CHANNEL_ID}::image.nano-banana-2`,
+    imageModel: `${MANAGED_CHANNEL_ID}::image.nano-banana-2`,
+    videoModel: `${MANAGED_CHANNEL_ID}::video.seedance-2-5`,
+    textModel: `${MANAGED_CHANNEL_ID}::text.gpt-5-5`,
+    audioModel: `${MANAGED_CHANNEL_ID}::audio.seed-audio-1`,
     audioVoice: "alloy",
     audioFormat: "mp3",
     audioSpeed: "1",
@@ -124,12 +126,7 @@ export const defaultConfig: AiConfig = {
     videoMode: "frames",
     systemPrompt: "",
     reasoningEffort: "auto",
-    models: [
-        `${MANAGED_CHANNEL_ID}::nano-banana-2`,
-        `${MANAGED_CHANNEL_ID}::seedance-2.5`,
-        `${MANAGED_CHANNEL_ID}::gpt-5.5`,
-        `${MANAGED_CHANNEL_ID}::seed-audio-1.0`,
-    ],
+    models: [`${MANAGED_CHANNEL_ID}::image.nano-banana-2`, `${MANAGED_CHANNEL_ID}::video.seedance-2-5`, `${MANAGED_CHANNEL_ID}::text.gpt-5-5`, `${MANAGED_CHANNEL_ID}::audio.seed-audio-1`],
     quality: "auto",
     size: "1:1",
     background: "",
@@ -239,6 +236,7 @@ export const useConfigStore = create<ConfigStore>()(
                     },
                 })),
             importChannelCredentials: (input) => {
+                if (!BROWSER_PROVIDERS_ENABLED) return { status: "invalid-base-url" };
                 const currentConfig = get().config;
                 const result = upsertChannelCredentials(currentConfig, input);
                 if (result.config !== currentConfig) set({ config: result.config });
@@ -258,7 +256,16 @@ export const useConfigStore = create<ConfigStore>()(
         }),
         {
             name: CONFIG_STORE_KEY,
-            partialize: (state) => ({ config: state.config, webdav: state.webdav }),
+            version: 4,
+            migrate: (persisted) => {
+                const state = (persisted || {}) as Partial<ConfigStore>;
+                const config = { ...defaultConfig, ...((state.config || {}) as Partial<AiConfig>) };
+                return {
+                    config: sanitizeBrowserProviderConfig(config),
+                    webdav: { ...defaultWebdavSyncConfig, ...(state.webdav || {}) },
+                };
+            },
+            partialize: (state) => ({ config: sanitizeBrowserProviderConfig(state.config), webdav: state.webdav }),
             merge: (persisted, current) => {
                 const persistedState = (persisted || {}) as Partial<ConfigStore>;
                 const persistedConfig = (persistedState.config || {}) as Partial<AiConfig>;
@@ -273,6 +280,8 @@ export const useConfigStore = create<ConfigStore>()(
                     config: {
                         ...config,
                         channelMode: "local",
+                        baseUrl: BROWSER_PROVIDERS_ENABLED ? config.baseUrl : MANAGED_API_BASE_URL,
+                        apiKey: BROWSER_PROVIDERS_ENABLED ? config.apiKey : MANAGED_API_KEY,
                         apiFormat: normalizeApiFormat(config.apiFormat),
                         channels,
                         models,
@@ -317,7 +326,7 @@ export function normalizeChannelModels(models: Array<string | ChannelModel> | un
         const capability = typeof item === "string" ? guessCapability(name) : item.capability || guessCapability(name);
         const script = typeof item === "string" ? undefined : item.script?.trim() || undefined;
         const supportedParameters = typeof item === "string" || !Array.isArray(item.supportedParameters) ? undefined : Array.from(new Set(item.supportedParameters.map((value) => value.trim()).filter(Boolean)));
-        result.push({ name, capability, script, supportedParameters });
+        result.push({ name, capability, script, supportedParameters, displayName: typeof item === "string" ? undefined : item.displayName });
     }
     return result;
 }
@@ -335,10 +344,7 @@ export function createModelChannel(channel?: Partial<ModelChannel>): ModelChanne
     };
 }
 
-export function upsertChannelCredentials(
-    config: AiConfig,
-    input: { baseUrl?: string | null; apiKey?: string | null },
-): ChannelCredentialsImportResult & { config: AiConfig } {
+export function upsertChannelCredentials(config: AiConfig, input: { baseUrl?: string | null; apiKey?: string | null }): ChannelCredentialsImportResult & { config: AiConfig } {
     const rawBaseUrl = input.baseUrl?.trim() || "";
     if (!rawBaseUrl) return { status: "missing-base-url", config };
     if (!isHttpBaseUrl(rawBaseUrl)) return { status: "invalid-base-url", config };
@@ -420,7 +426,7 @@ export function modelOptionName(value: string) {
 export function modelOptionLabel(config: AiConfig, value: string) {
     const decoded = decodeChannelModel(value);
     if (!decoded) return value;
-    return decoded.model;
+    return findChannelModel(config, value)?.model.displayName || decoded.model;
 }
 
 export function modelOptionsFromChannels(channels: ModelChannel[]) {
@@ -443,7 +449,18 @@ export function resolveModelChannel(config: AiConfig, value: string) {
     const decoded = decodeChannelModel(value);
     const model = decoded?.model || value;
     const matched = decoded ? config.channels.find((channel) => channel.id === decoded.channelId) : config.channels.find((channel) => channel.models.some((item) => item.name === model));
-    return matched || config.channels[0] || createModelChannel({ id: "default", name: i18n.t("config.channels.defaultName"), baseUrl: config.baseUrl, apiKey: config.apiKey, apiFormat: config.apiFormat, models: config.models.map(modelOptionName).map((name) => ({ name, capability: guessCapability(name) })) });
+    return (
+        matched ||
+        config.channels[0] ||
+        createModelChannel({
+            id: "default",
+            name: i18n.t("config.channels.defaultName"),
+            baseUrl: config.baseUrl,
+            apiKey: config.apiKey,
+            apiFormat: config.apiFormat,
+            models: config.models.map(modelOptionName).map((name) => ({ name, capability: guessCapability(name) })),
+        })
+    );
 }
 
 export function resolveModelRequestConfig(config: AiConfig, value: string) {
@@ -463,18 +480,30 @@ export function isServerManagedConfig(config: Pick<AiConfig, "baseUrl" | "apiKey
 
 function normalizeChannels(config: AiConfig) {
     const persistedChannels = Array.isArray(config.channels) ? config.channels : [];
-    const channels = persistedChannels
+    const channels = (BROWSER_PROVIDERS_ENABLED ? persistedChannels : [])
         .filter((channel) => channel.id !== MANAGED_CHANNEL_ID && !channel.managed && channel.baseUrl?.replace(/\/+$/, "") !== MANAGED_API_BASE_URL)
         .map((channel, index) =>
-        createModelChannel({
-            ...channel,
-            id: channel.id || (index === 0 ? "default" : `channel-${index + 1}`),
-            name: channel.name || (index === 0 ? i18n.t("config.channels.defaultName") : i18n.t("config.channels.indexedName", { index: index + 1 })),
-            models: normalizeChannelModels(channel.models),
-        }),
-    );
+            createModelChannel({
+                ...channel,
+                id: channel.id || (index === 0 ? "default" : `channel-${index + 1}`),
+                name: channel.name || (index === 0 ? i18n.t("config.channels.defaultName") : i18n.t("config.channels.indexedName", { index: index + 1 })),
+                models: normalizeChannelModels(channel.models),
+            }),
+        );
     channels.unshift({ ...managedChannel, models: managedChannel.models.map((model) => ({ ...model })) });
     return channels;
+}
+
+function sanitizeBrowserProviderConfig(config: AiConfig): AiConfig {
+    if (BROWSER_PROVIDERS_ENABLED) return config;
+    const channels = normalizeChannels(config);
+    return {
+        ...config,
+        baseUrl: MANAGED_API_BASE_URL,
+        apiKey: MANAGED_API_KEY,
+        channels,
+        models: modelOptionsFromChannels(channels),
+    };
 }
 
 export function defaultBaseUrlForApiFormat(apiFormat: ApiCallFormat) {

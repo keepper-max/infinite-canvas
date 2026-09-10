@@ -11,6 +11,8 @@ export type UploadedImage = {
     height: number;
     bytes: number;
     mimeType: string;
+    assetId?: string;
+    assetVersionId?: string;
 };
 
 const store = localforage.createInstance({ name: "infinite-canvas", storeName: "image_files" });

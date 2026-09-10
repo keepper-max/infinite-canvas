@@ -12,8 +12,6 @@ services:
     depends_on:
       api:
         condition: service_healthy
-      model-proxy:
-        condition: service_healthy
     healthcheck:
       test: ["CMD", "wget", "-qO-", "http://127.0.0.1:3000/healthz"]
       interval: 10s
@@ -41,34 +39,88 @@ services:
       OBJECT_STORAGE_SECRET_ACCESS_KEY: ${OBJECT_STORAGE_SECRET_ACCESS_KEY:?set OBJECT_STORAGE_SECRET_ACCESS_KEY}
       OBJECT_STORAGE_FORCE_PATH_STYLE: ${OBJECT_STORAGE_FORCE_PATH_STYLE:-true}
       OBJECT_STORAGE_AUTO_CREATE_BUCKET: ${OBJECT_STORAGE_AUTO_CREATE_BUCKET:-true}
+      REDIS_URL: ${REDIS_URL:-redis://redis:6379}
+      JOB_QUEUE_NAME: ${JOB_QUEUE_NAME:-generation-jobs}
+      JOB_MAX_ATTEMPTS: ${JOB_MAX_ATTEMPTS:-3}
+      PROVIDER_SUBMIT_TIMEOUT_MS: ${PROVIDER_SUBMIT_TIMEOUT_MS:-60000}
+      VIDEO_POLL_INTERVAL_MS: ${VIDEO_POLL_INTERVAL_MS:-5000}
+      JOB_MAX_RUNTIME_MS: ${JOB_MAX_RUNTIME_MS:-1800000}
+      TOKEN360_API_KEY: ${TOKEN360_API_KEY:-}
+      TOKEN360_UPSTREAM: ${TOKEN360_UPSTREAM:-https://api.token360.ai}
+      TOKEN360_CATALOG_URL: ${TOKEN360_CATALOG_URL:-https://api.token360.ai/public/models?size=200&current=1}
     depends_on:
       db:
         condition: service_healthy
       minio:
         condition: service_started
+      redis:
+        condition: service_healthy
     healthcheck:
-      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3002/api/health/ready').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"]
+      test:
+        [
+          "CMD",
+          "node",
+          "-e",
+          "fetch('http://127.0.0.1:3002/api/health/ready').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))",
+        ]
       interval: 10s
       timeout: 4s
       retries: 15
 
-  model-proxy:
-    image: keepper-max/infinite-canvas-model-proxy:local
+  worker:
+    image: keepper-max/infinite-canvas-api:local
     build:
       context: .
       dockerfile: Dockerfile
-      target: model-proxy
+      target: api
+    command: ["node", "dist/worker.js"]
     restart: unless-stopped
     environment:
-      PORT: "3001"
+      DATABASE_URL: postgresql://${POSTGRES_USER:-studio}:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-jingjie}
+      OBJECT_STORAGE_ENDPOINT: ${OBJECT_STORAGE_ENDPOINT:-http://minio:9000}
+      OBJECT_STORAGE_PUBLIC_ENDPOINT: ${OBJECT_STORAGE_PUBLIC_ENDPOINT:?set OBJECT_STORAGE_PUBLIC_ENDPOINT}
+      OBJECT_STORAGE_REGION: ${OBJECT_STORAGE_REGION:-us-east-1}
+      OBJECT_STORAGE_BUCKET: ${OBJECT_STORAGE_BUCKET:-infinite-canvas-assets}
+      OBJECT_STORAGE_ACCESS_KEY_ID: ${OBJECT_STORAGE_ACCESS_KEY_ID:?set OBJECT_STORAGE_ACCESS_KEY_ID}
+      OBJECT_STORAGE_SECRET_ACCESS_KEY: ${OBJECT_STORAGE_SECRET_ACCESS_KEY:?set OBJECT_STORAGE_SECRET_ACCESS_KEY}
+      OBJECT_STORAGE_FORCE_PATH_STYLE: ${OBJECT_STORAGE_FORCE_PATH_STYLE:-true}
+      OBJECT_STORAGE_AUTO_CREATE_BUCKET: ${OBJECT_STORAGE_AUTO_CREATE_BUCKET:-true}
+      REDIS_URL: ${REDIS_URL:-redis://redis:6379}
+      JOB_QUEUE_NAME: ${JOB_QUEUE_NAME:-generation-jobs}
+      WORKER_CONCURRENCY: ${WORKER_CONCURRENCY:-2}
+      JOB_MAX_ATTEMPTS: ${JOB_MAX_ATTEMPTS:-3}
+      PROVIDER_SUBMIT_TIMEOUT_MS: ${PROVIDER_SUBMIT_TIMEOUT_MS:-60000}
+      VIDEO_POLL_INTERVAL_MS: ${VIDEO_POLL_INTERVAL_MS:-5000}
+      JOB_MAX_RUNTIME_MS: ${JOB_MAX_RUNTIME_MS:-1800000}
       TOKEN360_API_KEY: ${TOKEN360_API_KEY:-}
       TOKEN360_UPSTREAM: ${TOKEN360_UPSTREAM:-https://api.token360.ai}
       TOKEN360_CATALOG_URL: ${TOKEN360_CATALOG_URL:-https://api.token360.ai/public/models?size=200&current=1}
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      minio:
+        condition: service_started
+
+  redis:
+    image: ${REDIS_IMAGE:-redis:7-alpine}
+    restart: unless-stopped
+    command:
+      [
+        "redis-server",
+        "--appendonly",
+        "yes",
+        "--maxmemory-policy",
+        "noeviction",
+      ]
+    volumes:
+      - redis_data:/data
     healthcheck:
-      test: ["CMD", "bun", "-e", "fetch('http://127.0.0.1:3001/healthz').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"]
-      interval: 10s
-      timeout: 4s
-      retries: 10
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
 
   db:
     image: ${POSTGRES_IMAGE:-postgres:16-alpine}
@@ -101,3 +153,4 @@ services:
 volumes:
   postgres_data:
   minio_data:
+  redis_data:

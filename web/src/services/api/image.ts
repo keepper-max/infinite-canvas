@@ -1,7 +1,7 @@
 import axios from "axios";
 
 import i18n from "@/i18n";
-import { buildApiUrl, guessCapability, resolveModelRequestConfig, resolveModelScript, withLocalProxy, type AiConfig, type ChannelModel, type ModelCapability, type ModelChannel } from "@/stores/use-config-store";
+import { buildApiUrl, guessCapability, isServerManagedConfig, resolveModelRequestConfig, resolveModelScript, withLocalProxy, type AiConfig, type ChannelModel, type ModelCapability, type ModelChannel } from "@/stores/use-config-store";
 import { normalizePluginImages, runModelPlugin } from "./model-plugin";
 import { nanoid } from "nanoid";
 import { dataUrlToFile } from "@/lib/image-utils";
@@ -9,6 +9,8 @@ import { buildImageReferencePromptText } from "@/lib/image-reference-prompt";
 import { imageToDataUrl } from "@/services/image-storage";
 import { imageSizePresets, inferMediaScale } from "@/lib/media-size";
 import type { ReferenceImage } from "@/types/image";
+import { artifactUrl, createManagedJob, waitForManagedJob } from "./jobs";
+import { platformRequest } from "./platform";
 
 const apiText = (key: string, options?: Record<string, unknown>) => i18n.t(`apiErrors.${key}`, options);
 
@@ -24,10 +26,7 @@ type ResponseToolCall = {
     thoughtSignature?: string;
 };
 
-type ResponseInputMessage =
-    | AiTextMessage
-    | { type: "function_call"; call_id: string; name: string; arguments: string; thoughtSignature?: string }
-    | { role: "tool"; tool_call_id: string; content: string };
+type ResponseInputMessage = AiTextMessage | { type: "function_call"; call_id: string; name: string; arguments: string; thoughtSignature?: string } | { role: "tool"; tool_call_id: string; content: string };
 
 type ResponseFunctionTool = {
     type: "function";
@@ -47,10 +46,7 @@ type ToolResponseResult = {
 type ToolChoice = "auto" | "required" | { type: "function"; name: string };
 type ResponseMessageContent = AiTextMessage["content"] | string;
 type ResponseInputContent = { type: "input_text"; text: string } | { type: "input_image"; image_url: string };
-type ResponseInputItem =
-    | { role: "system" | "user" | "assistant"; content: string | ResponseInputContent[] }
-    | { type: "function_call"; call_id: string; name: string; arguments: string }
-    | { type: "function_call_output"; call_id: string; output: string };
+type ResponseInputItem = { role: "system" | "user" | "assistant"; content: string | ResponseInputContent[] } | { type: "function_call"; call_id: string; name: string; arguments: string } | { type: "function_call_output"; call_id: string; output: string };
 type ResponseApiToolDefinition = {
     type: "function";
     name: string;
@@ -58,9 +54,7 @@ type ResponseApiToolDefinition = {
     parameters: Record<string, unknown>;
     strict?: boolean;
 };
-type ResponseApiOutputItem =
-    | { type?: "message"; content?: Array<{ type?: string; text?: string }> }
-    | { type?: "function_call"; id?: string; call_id?: string; name?: string; arguments?: string };
+type ResponseApiOutputItem = { type?: "message"; content?: Array<{ type?: string; text?: string }> } | { type?: "function_call"; id?: string; call_id?: string; name?: string; arguments?: string };
 type ResponseApiPayload = {
     id?: string;
     output?: ResponseApiOutputItem[];
@@ -255,10 +249,7 @@ function parseImagePayload(payload: ImageApiResponse) {
         throw new Error(payload.msg || apiText("requestFailed"));
     }
     // Support data, images, and results response fields used by different APIs.
-    const imageList = payload.data
-        || (payload as Record<string, unknown>).images as Array<Record<string, unknown>> | undefined
-        || (payload as Record<string, unknown>).results as Array<Record<string, unknown>> | undefined
-        || [];
+    const imageList = payload.data || ((payload as Record<string, unknown>).images as Array<Record<string, unknown>> | undefined) || ((payload as Record<string, unknown>).results as Array<Record<string, unknown>> | undefined) || [];
     const images = imageList
         .map(resolveImageSource)
         .filter((value): value is string => Boolean(value))
@@ -267,9 +258,7 @@ function parseImagePayload(payload: ImageApiResponse) {
     if (images.length === 0) {
         // Check whether the response contains data in an unrecognized format.
         const rawKeys = Object.keys(payload).filter((k) => k !== "code" && k !== "msg" && k !== "error");
-        throw new Error(rawKeys.length > 0
-            ? apiText("unknownImageResponse", { fields: rawKeys.join(", ") })
-            : apiText("noImageReturned"));
+        throw new Error(rawKeys.length > 0 ? apiText("unknownImageResponse", { fields: rawKeys.join(", ") }) : apiText("noImageReturned"));
     }
 
     return images;
@@ -294,17 +283,8 @@ function readApiErrorMessage(value: unknown): string {
     if (typeof value !== "object") return "";
     const payload = value as { msg?: unknown; message?: unknown; error?: unknown; detail?: unknown };
     // error may be a string or an object containing a message.
-    const errorMsg =
-        typeof payload.error === "string"
-            ? payload.error
-            : (payload.error as { message?: unknown })?.message;
-    return (
-        readApiErrorMessage(payload.msg) ||
-        readApiErrorMessage(payload.message) ||
-        readApiErrorMessage(errorMsg) ||
-        readApiErrorMessage(payload.detail) ||
-        ""
-    );
+    const errorMsg = typeof payload.error === "string" ? payload.error : (payload.error as { message?: unknown })?.message;
+    return readApiErrorMessage(payload.msg) || readApiErrorMessage(payload.message) || readApiErrorMessage(errorMsg) || readApiErrorMessage(payload.detail) || "";
 }
 
 function readAxiosError(error: unknown, fallback: string) {
@@ -530,12 +510,7 @@ async function requestStreamingResponse(config: AiConfig, body: Record<string, u
 }
 
 function toGeminiBody(config: AiConfig, messages: ResponseInputMessage[], extra?: Record<string, unknown>) {
-    const systemText = [
-        config.systemPrompt.trim(),
-        ...messages.flatMap((message) => (!("type" in message) && message.role === "system" ? [geminiTextContent(message.content)] : [])),
-    ]
-        .filter(Boolean)
-        .join("\n\n");
+    const systemText = [config.systemPrompt.trim(), ...messages.flatMap((message) => (!("type" in message) && message.role === "system" ? [geminiTextContent(message.content)] : []))].filter(Boolean).join("\n\n");
     const contents = toGeminiContents(messages.filter((message) => ("type" in message ? true : message.role !== "system")));
     return {
         contents,
@@ -595,10 +570,7 @@ function toGeminiToolOptions(tools: ResponseFunctionTool[], toolChoice: ToolChoi
         description: tool.function.description,
         parameters: tool.function.parameters,
     }));
-    const functionCallingConfig =
-        typeof toolChoice === "object"
-            ? { mode: "ANY", allowedFunctionNames: [toolChoice.name] }
-            : { mode: toolChoice === "required" ? "ANY" : "AUTO" };
+    const functionCallingConfig = typeof toolChoice === "object" ? { mode: "ANY", allowedFunctionNames: [toolChoice.name] } : { mode: toolChoice === "required" ? "ANY" : "AUTO" };
     return {
         tools: [{ functionDeclarations }],
         toolConfig: { functionCallingConfig },
@@ -723,6 +695,33 @@ function parseGeminiImagePayload(payload: GeminiPayload) {
 export async function requestGeneration(config: AiConfig, prompt: string, options?: RequestOptions) {
     const requestConfig = resolveModelRequestConfig(config, config.model || config.imageModel);
     const n = Math.max(1, Math.min(15, Math.floor(Math.abs(Number(config.count)) || 1)));
+    if (isServerManagedConfig(requestConfig)) {
+        const job = await waitForManagedJob(
+            (
+                await createManagedJob(
+                    {
+                        model: requestConfig.model,
+                        capability: "image",
+                        mode: "t2i",
+                        prompt: withSystemPrompt(requestConfig, prompt),
+                        parameters: { count: n, size: resolveRequestSize(normalizeQuality(config.quality), config.size), quality: normalizeQuality(config.quality), background: normalizeBackground(config.background) },
+                    },
+                    { signal: options?.signal },
+                )
+            ).id,
+            options?.signal,
+        );
+        return Promise.all(
+            (job.artifacts || []).map(async (artifact) => ({
+                id: artifact.id || nanoid(),
+                dataUrl: await artifactUrl(artifact, options?.signal),
+                assetId: artifact.assetId,
+                assetVersionId: artifact.assetVersionId,
+                type: artifact.mimeType || "image/png",
+                name: "generated-image",
+            })),
+        );
+    }
     const script = resolveModelScript(config, config.model || config.imageModel);
     if (script) {
         const quality = normalizeQuality(config.quality);
@@ -783,6 +782,41 @@ export async function requestEdit(config: AiConfig, prompt: string, references: 
     const requestConfig = resolveModelRequestConfig(config, config.model || config.imageModel);
     const n = Math.max(1, Math.min(15, Math.floor(Math.abs(Number(config.count)) || 1)));
     const requestPrompt = buildImageReferencePromptText(prompt, references);
+    if (isServerManagedConfig(requestConfig)) {
+        const refs = await Promise.all(
+            references.map(async (image) => {
+                if (image.assetVersionId) return { role: "identity_reference" as const, assetVersionId: image.assetVersionId, mimeType: image.type };
+                const dataUrl = await imageToDataUrl(image);
+                return { role: "identity_reference" as const, dataUrl, mimeType: dataUrl.match(/^data:([^;,]+)/)?.[1] || image.type };
+            }),
+        );
+        const job = await waitForManagedJob(
+            (
+                await createManagedJob(
+                    {
+                        model: requestConfig.model,
+                        capability: "image",
+                        mode: "i2i",
+                        prompt: withSystemPrompt(requestConfig, requestPrompt),
+                        parameters: { count: n, size: resolveRequestSize(normalizeQuality(config.quality), config.size), quality: normalizeQuality(config.quality) },
+                        references: refs,
+                    },
+                    { signal: options?.signal },
+                )
+            ).id,
+            options?.signal,
+        );
+        return Promise.all(
+            (job.artifacts || []).map(async (artifact) => ({
+                id: artifact.id || nanoid(),
+                dataUrl: await artifactUrl(artifact, options?.signal),
+                assetId: artifact.assetId,
+                assetVersionId: artifact.assetVersionId,
+                type: artifact.mimeType || "image/png",
+                name: "generated-image",
+            })),
+        );
+    }
     const script = resolveModelScript(config, config.model || config.imageModel);
     if (script) {
         const quality = normalizeQuality(config.quality);
@@ -848,6 +882,18 @@ export async function requestEdit(config: AiConfig, prompt: string, references: 
 
 export async function requestImageQuestion(config: AiConfig, messages: AiTextMessage[], onDelta: (text: string) => void, options?: RequestOptions) {
     const requestConfig = resolveModelRequestConfig(config, config.model || config.textModel);
+    if (isServerManagedConfig(requestConfig)) {
+        const prompt = withSystemMessage(requestConfig, messages)
+            .map((message) => ("type" in message ? JSON.stringify(message) : `${message.role}: ${typeof message.content === "string" ? message.content : message.content.map((part) => (part.type === "text" ? part.text : part.image_url.url)).join("\n")}`))
+            .join("\n\n");
+        const job = await waitForManagedJob(
+            (await createManagedJob({ model: requestConfig.model, capability: "text", mode: "chat", prompt, parameters: { reasoningEffort: requestConfig.reasoningEffort } }, { signal: options?.signal })).id,
+            options?.signal,
+        );
+        const text = String(job.artifacts?.find((artifact) => artifact.text)?.text || apiText("noContent"));
+        onDelta(text);
+        return text;
+    }
     const script = resolveModelScript(config, config.model || config.textModel);
     if (script) {
         try {
@@ -872,11 +918,19 @@ export async function requestImageQuestion(config: AiConfig, messages: AiTextMes
             if (answer === apiText("noContent")) onDelta(answer);
             return answer;
         }
-        const answer = (await requestStreamingResponse(requestConfig, {
-            model: requestConfig.model,
-            input: toResponseInput(withSystemMessage(requestConfig, messages)),
-            ...(requestConfig.reasoningEffort === "auto" ? {} : { reasoning: { effort: requestConfig.reasoningEffort } }),
-        }, onDelta, options)).content || apiText("noContent");
+        const answer =
+            (
+                await requestStreamingResponse(
+                    requestConfig,
+                    {
+                        model: requestConfig.model,
+                        input: toResponseInput(withSystemMessage(requestConfig, messages)),
+                        ...(requestConfig.reasoningEffort === "auto" ? {} : { reasoning: { effort: requestConfig.reasoningEffort } }),
+                    },
+                    onDelta,
+                    options,
+                )
+            ).content || apiText("noContent");
         if (answer === apiText("noContent")) onDelta(answer);
         return answer;
     } catch (error) {
@@ -912,13 +966,9 @@ export async function fetchChannelModels(channel: ModelChannel) {
     return fetchImageModels({ baseUrl: channel.baseUrl, apiKey: channel.apiKey, apiFormat: channel.apiFormat });
 }
 
-export async function fetchManagedModelCatalog(channel: ModelChannel): Promise<ChannelModel[]> {
-    const response = await axios.get<{ data?: Array<{ id?: string; capability?: ModelCapability; supportedParameters?: string[] }> }>(buildApiUrl(channel.baseUrl, "/models"), {
-        headers: { Authorization: `Bearer ${channel.apiKey}` },
-    });
-    return (response.data.data || [])
-        .filter((model): model is { id: string; capability?: ModelCapability; supportedParameters?: string[] } => Boolean(model.id))
-        .map((model) => ({ name: model.id, capability: model.capability || guessCapability(model.id), supportedParameters: model.supportedParameters }));
+export async function fetchManagedModelCatalog(_channel: ModelChannel): Promise<ChannelModel[]> {
+    const response = await platformRequest<{ models: Array<{ id: string; displayName: string; capability: ModelCapability; acceptedParameters?: string[] }> }>("/api/models");
+    return response.models.map((model) => ({ name: model.id, displayName: model.displayName, capability: model.capability || guessCapability(model.id), supportedParameters: model.acceptedParameters }));
 }
 
 const defaultGeminiConfig: Pick<AiConfig, "baseUrl" | "apiKey" | "apiFormat" | "model" | "systemPrompt"> = {

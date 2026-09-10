@@ -3,7 +3,7 @@ import { useEffect, useRef } from "react";
 import { App } from "antd";
 import { useTranslation } from "react-i18next";
 
-import { modelOptionsFromChannels, useConfigStore } from "@/stores/use-config-store";
+import { BROWSER_PROVIDERS_ENABLED, modelOptionsFromChannels, useConfigStore } from "@/stores/use-config-store";
 import { usePromptSourceScheduler } from "@/hooks/use-prompt-source-scheduler";
 import { fetchManagedModelCatalog } from "@/services/api/image";
 
@@ -33,6 +33,14 @@ export function ClientRootInit({ children }: { children: ReactNode }) {
     useEffect(() => {
         if (handledConfigParams.current) return;
         const searchParams = new URLSearchParams(window.location.search);
+        if (!BROWSER_PROVIDERS_ENABLED) {
+            const hadCredentials = ["baseUrl", "baseurl", "apiKey", "apikey"].some((key) => searchParams.has(key));
+            if (!hadCredentials) return;
+            handledConfigParams.current = true;
+            ["baseUrl", "baseurl", "apiKey", "apikey"].forEach((key) => searchParams.delete(key));
+            window.history.replaceState(null, "", `${window.location.pathname}${searchParams.size ? `?${searchParams}` : ""}${window.location.hash}`);
+            return;
+        }
         const baseUrl = searchParams.get("baseUrl") || searchParams.get("baseurl");
         const apiKey = searchParams.get("apiKey") || searchParams.get("apikey");
         if (!baseUrl && !apiKey) return;

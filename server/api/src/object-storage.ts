@@ -1,4 +1,12 @@
-import { CreateBucketCommand, DeleteObjectCommand, GetObjectCommand, HeadBucketCommand, HeadObjectCommand, PutObjectCommand, S3Client } from "@aws-sdk/client-s3";
+import {
+  CreateBucketCommand,
+  DeleteObjectCommand,
+  GetObjectCommand,
+  HeadBucketCommand,
+  HeadObjectCommand,
+  PutObjectCommand,
+  S3Client,
+} from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 
 import type { ObjectStorageConfig } from "./config.js";
@@ -7,64 +15,138 @@ import { DomainError } from "./domain.js";
 export type StoredObject = { bytes: number; mimeType: string; sha256?: string };
 
 export interface ObjectStorage {
-    ensureReady(): Promise<void>;
-    createUploadUrl(storageKey: string, mimeType: string, sha256: string): Promise<{ url: string; headers: Record<string, string> }>;
-    createDownloadUrl(storageKey: string, fileName?: string): Promise<string>;
-    stat(storageKey: string): Promise<StoredObject | null>;
-    delete(storageKey: string): Promise<void>;
+  ensureReady(): Promise<void>;
+  createUploadUrl(
+    storageKey: string,
+    mimeType: string,
+    sha256: string,
+  ): Promise<{ url: string; headers: Record<string, string> }>;
+  createDownloadUrl(storageKey: string, fileName?: string): Promise<string>;
+  stat(storageKey: string): Promise<StoredObject | null>;
+  delete(storageKey: string): Promise<void>;
+  put(
+    storageKey: string,
+    body: Uint8Array,
+    mimeType: string,
+    sha256: string,
+  ): Promise<StoredObject>;
 }
 
 export class S3ObjectStorage implements ObjectStorage {
-    private readonly internalClient: S3Client;
-    private readonly publicClient: S3Client;
+  private readonly internalClient: S3Client;
+  private readonly publicClient: S3Client;
 
-    constructor(private readonly config: ObjectStorageConfig) {
-        const shared = {
-            region: config.region,
-            credentials: { accessKeyId: config.accessKeyId, secretAccessKey: config.secretAccessKey },
-            forcePathStyle: config.forcePathStyle,
-        };
-        this.internalClient = new S3Client({ ...shared, endpoint: config.endpoint });
-        this.publicClient = config.publicEndpoint === config.endpoint ? this.internalClient : new S3Client({ ...shared, endpoint: config.publicEndpoint });
-    }
+  constructor(private readonly config: ObjectStorageConfig) {
+    const shared = {
+      region: config.region,
+      credentials: {
+        accessKeyId: config.accessKeyId,
+        secretAccessKey: config.secretAccessKey,
+      },
+      forcePathStyle: config.forcePathStyle,
+    };
+    this.internalClient = new S3Client({
+      ...shared,
+      endpoint: config.endpoint,
+    });
+    this.publicClient =
+      config.publicEndpoint === config.endpoint
+        ? this.internalClient
+        : new S3Client({ ...shared, endpoint: config.publicEndpoint });
+  }
 
-    async ensureReady() {
-        try {
-            await this.internalClient.send(new HeadBucketCommand({ Bucket: this.config.bucket }));
-        } catch (error) {
-            if (!this.config.autoCreateBucket) throw new DomainError("OBJECT_STORAGE_UNAVAILABLE", "素材存储暂时不可用", 503, true, { cause: error });
-            await this.internalClient.send(new CreateBucketCommand({ Bucket: this.config.bucket }));
-        }
+  async ensureReady() {
+    try {
+      await this.internalClient.send(
+        new HeadBucketCommand({ Bucket: this.config.bucket }),
+      );
+    } catch (error) {
+      if (!this.config.autoCreateBucket)
+        throw new DomainError(
+          "OBJECT_STORAGE_UNAVAILABLE",
+          "素材存储暂时不可用",
+          503,
+          true,
+          { cause: error },
+        );
+      await this.internalClient.send(
+        new CreateBucketCommand({ Bucket: this.config.bucket }),
+      );
     }
+  }
 
-    async createUploadUrl(storageKey: string, mimeType: string, sha256: string) {
-        const command = new PutObjectCommand({ Bucket: this.config.bucket, Key: storageKey, ContentType: mimeType, Metadata: { sha256 } });
-        return {
-            url: await getSignedUrl(this.publicClient, command, {
-                unhoistableHeaders: new Set(["x-amz-meta-sha256"]),
-                signableHeaders: new Set(["content-type"]),
-            }),
-            headers: { "content-type": mimeType, "x-amz-meta-sha256": sha256 },
-        };
-    }
+  async createUploadUrl(storageKey: string, mimeType: string, sha256: string) {
+    const command = new PutObjectCommand({
+      Bucket: this.config.bucket,
+      Key: storageKey,
+      ContentType: mimeType,
+      Metadata: { sha256 },
+    });
+    return {
+      url: await getSignedUrl(this.publicClient, command, {
+        unhoistableHeaders: new Set(["x-amz-meta-sha256"]),
+        signableHeaders: new Set(["content-type"]),
+      }),
+      headers: { "content-type": mimeType, "x-amz-meta-sha256": sha256 },
+    };
+  }
 
-    async createDownloadUrl(storageKey: string, fileName?: string) {
-        const disposition = fileName ? `attachment; filename*=UTF-8''${encodeURIComponent(fileName)}` : undefined;
-        return getSignedUrl(this.publicClient, new GetObjectCommand({ Bucket: this.config.bucket, Key: storageKey, ResponseContentDisposition: disposition }));
-    }
+  async createDownloadUrl(storageKey: string, fileName?: string) {
+    const disposition = fileName
+      ? `attachment; filename*=UTF-8''${encodeURIComponent(fileName)}`
+      : undefined;
+    return getSignedUrl(
+      this.publicClient,
+      new GetObjectCommand({
+        Bucket: this.config.bucket,
+        Key: storageKey,
+        ResponseContentDisposition: disposition,
+      }),
+    );
+  }
 
-    async stat(storageKey: string): Promise<StoredObject | null> {
-        try {
-            const result = await this.internalClient.send(new HeadObjectCommand({ Bucket: this.config.bucket, Key: storageKey }));
-            return { bytes: result.ContentLength ?? 0, mimeType: result.ContentType || "application/octet-stream", sha256: result.Metadata?.sha256 };
-        } catch (error) {
-            const status = typeof error === "object" && error && "$metadata" in error ? (error as { $metadata?: { httpStatusCode?: number } }).$metadata?.httpStatusCode : undefined;
-            if (status === 404) return null;
-            throw error;
-        }
+  async stat(storageKey: string): Promise<StoredObject | null> {
+    try {
+      const result = await this.internalClient.send(
+        new HeadObjectCommand({ Bucket: this.config.bucket, Key: storageKey }),
+      );
+      return {
+        bytes: result.ContentLength ?? 0,
+        mimeType: result.ContentType || "application/octet-stream",
+        sha256: result.Metadata?.sha256,
+      };
+    } catch (error) {
+      const status =
+        typeof error === "object" && error && "$metadata" in error
+          ? (error as { $metadata?: { httpStatusCode?: number } }).$metadata
+              ?.httpStatusCode
+          : undefined;
+      if (status === 404) return null;
+      throw error;
     }
+  }
 
-    async delete(storageKey: string) {
-        await this.internalClient.send(new DeleteObjectCommand({ Bucket: this.config.bucket, Key: storageKey }));
-    }
+  async delete(storageKey: string) {
+    await this.internalClient.send(
+      new DeleteObjectCommand({ Bucket: this.config.bucket, Key: storageKey }),
+    );
+  }
+
+  async put(
+    storageKey: string,
+    body: Uint8Array,
+    mimeType: string,
+    sha256: string,
+  ) {
+    await this.internalClient.send(
+      new PutObjectCommand({
+        Bucket: this.config.bucket,
+        Key: storageKey,
+        Body: body,
+        ContentType: mimeType,
+        Metadata: { sha256 },
+      }),
+    );
+    return { bytes: body.byteLength, mimeType, sha256 };
+  }
 }

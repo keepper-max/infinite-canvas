@@ -148,9 +148,57 @@ function readNodeGenerationResource(node: CanvasNodeData): NodeGenerationResourc
     const audio = readReferenceAudio(node);
     if (audio) return [{ nodeId: node.id, type: "audio", title: node.title, audio }];
     const resource = getNodeDefinition(node.type)?.resource?.(node);
-    if (resource?.kind === "image" && resource.url) return [{ nodeId: node.id, type: "image", title: node.title, image: { id: node.id, name: `${node.title || node.id}.png`, type: node.metadata?.mimeType || "image/png", dataUrl: resource.url, storageKey: node.metadata?.storageKey } }];
-    if (resource?.kind === "video" && resource.url) return [{ nodeId: node.id, type: "video", title: node.title, video: { id: node.id, name: `${node.title || node.id}.mp4`, type: node.metadata?.mimeType || "video/mp4", url: resource.url, storageKey: node.metadata?.storageKey } }];
-    if (resource?.kind === "audio" && resource.url) return [{ nodeId: node.id, type: "audio", title: node.title, audio: { id: node.id, name: `${node.title || node.id}.mp3`, type: node.metadata?.mimeType || "audio/mpeg", url: resource.url, storageKey: node.metadata?.storageKey } }];
+    if (resource?.kind === "image" && resource.url)
+        return [
+            {
+                nodeId: node.id,
+                type: "image",
+                title: node.title,
+                image: {
+                    id: node.id,
+                    name: `${node.title || node.id}.png`,
+                    type: node.metadata?.mimeType || "image/png",
+                    dataUrl: resource.url,
+                    storageKey: node.metadata?.storageKey,
+                    assetId: node.metadata?.assetId,
+                    assetVersionId: node.metadata?.assetVersionId,
+                },
+            },
+        ];
+    if (resource?.kind === "video" && resource.url)
+        return [
+            {
+                nodeId: node.id,
+                type: "video",
+                title: node.title,
+                video: {
+                    id: node.id,
+                    name: `${node.title || node.id}.mp4`,
+                    type: node.metadata?.mimeType || "video/mp4",
+                    url: resource.url,
+                    storageKey: node.metadata?.storageKey,
+                    assetId: node.metadata?.assetId,
+                    assetVersionId: node.metadata?.assetVersionId,
+                },
+            },
+        ];
+    if (resource?.kind === "audio" && resource.url)
+        return [
+            {
+                nodeId: node.id,
+                type: "audio",
+                title: node.title,
+                audio: {
+                    id: node.id,
+                    name: `${node.title || node.id}.mp3`,
+                    type: node.metadata?.mimeType || "audio/mpeg",
+                    url: resource.url,
+                    storageKey: node.metadata?.storageKey,
+                    assetId: node.metadata?.assetId,
+                    assetVersionId: node.metadata?.assetVersionId,
+                },
+            },
+        ];
     if (resource?.kind === "text" && resource.text) return [{ nodeId: node.id, type: "text", title: node.title, text: resource.text }];
     const text = readNodeTextInput(node);
     return text ? [{ nodeId: node.id, type: "text", title: node.title, text }] : [];
@@ -171,7 +219,7 @@ export function buildNodeResponseMessages(context: NodeGenerationContext): AiTex
 
 export async function hydrateNodeGenerationContext(context: NodeGenerationContext) {
     const { imageToDataUrl } = await import("@/services/image-storage");
-    return { ...context, referenceImages: await Promise.all(context.referenceImages.map(async (image) => ({ ...image, dataUrl: await imageToDataUrl(image) }))) };
+    return { ...context, referenceImages: await Promise.all(context.referenceImages.map(async (image) => (image.assetVersionId ? image : { ...image, dataUrl: await imageToDataUrl(image) }))) };
 }
 
 function readNodeTextInput(node: CanvasNodeData) {

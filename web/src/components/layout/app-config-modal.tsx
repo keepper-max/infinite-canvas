@@ -14,7 +14,19 @@ import { exportAppConfig, importAppConfig } from "@/services/config-file";
 import { syncAppDataToWebdav, type AppSyncDomainKey, type AppSyncProgressEvent } from "@/services/app-sync";
 import { testWebdavConnection, WEBDAV_MANIFEST_FILE_NAME } from "@/services/webdav-sync";
 import { audioFormatOptions, audioVoiceOptions, normalizeAudioSpeedValue } from "@/lib/audio-generation";
-import { createModelChannel, modelOptionsFromChannels, normalizeModelOptionValue, selectableModelsByCapability, useConfigStore, type AiConfig, type ApiCallFormat, type ConfigTabKey, type ModelCapability, type ModelChannel } from "@/stores/use-config-store";
+import {
+    BROWSER_PROVIDERS_ENABLED,
+    createModelChannel,
+    modelOptionsFromChannels,
+    normalizeModelOptionValue,
+    selectableModelsByCapability,
+    useConfigStore,
+    type AiConfig,
+    type ApiCallFormat,
+    type ConfigTabKey,
+    type ModelCapability,
+    type ModelChannel,
+} from "@/stores/use-config-store";
 
 type ModelGroup = {
     capability: ModelCapability;
@@ -169,9 +181,11 @@ export function AppConfigPanel({ showDoneButton = false, initialTab = "channels"
             <div className="flex flex-wrap items-center justify-between gap-3 border-b border-stone-200 pb-3 dark:border-stone-800">
                 <div className="text-xs text-stone-500">{t("config.fileSecurity")}</div>
                 <div className="flex gap-2">
-                    <Button icon={<Upload className="size-4" />} onClick={() => configInputRef.current?.click()}>
-                        {t("config.import")}
-                    </Button>
+                    {BROWSER_PROVIDERS_ENABLED ? (
+                        <Button icon={<Upload className="size-4" />} onClick={() => configInputRef.current?.click()}>
+                            {t("config.import")}
+                        </Button>
+                    ) : null}
                     <Button icon={<Download className="size-4" />} onClick={exportAppConfig}>
                         {t("config.export")}
                     </Button>
@@ -189,9 +203,11 @@ export function AppConfigPanel({ showDoneButton = false, initialTab = "channels"
                             <div>
                                 <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
                                     <div className="text-xs text-stone-500">{t("config.channels.description")}</div>
-                                    <Button type="primary" icon={<Plus className="size-4" />} onClick={addChannel}>
-                                        {t("config.channels.add")}
-                                    </Button>
+                                    {BROWSER_PROVIDERS_ENABLED ? (
+                                        <Button type="primary" icon={<Plus className="size-4" />} onClick={addChannel}>
+                                            {t("config.channels.add")}
+                                        </Button>
+                                    ) : null}
                                 </div>
                                 <div className="space-y-2">
                                     {config.channels.map((channel) => (
@@ -199,26 +215,34 @@ export function AppConfigPanel({ showDoneButton = false, initialTab = "channels"
                                             <div className="min-w-0">
                                                 <div className="truncate text-sm font-semibold">{channel.name || t("config.channels.unnamed")}</div>
                                                 <div className="mt-1 truncate text-xs text-stone-500">
-                                                    {channel.managed ? t("config.channels.modelCount", { count: channel.models.length }) : `${apiFormatLabel(channel.apiFormat)} · ${t("config.channels.modelCount", { count: channel.models.length })} · ${channel.baseUrl || t("config.channels.missingUrl")}`}
+                                                    {channel.managed
+                                                        ? t("config.channels.modelCount", { count: channel.models.length })
+                                                        : `${apiFormatLabel(channel.apiFormat)} · ${t("config.channels.modelCount", { count: channel.models.length })} · ${channel.baseUrl || t("config.channels.missingUrl")}`}
                                                 </div>
                                             </div>
-                                            {!channel.managed ? <div className="flex shrink-0 gap-2">
-                                                <Button size="small" icon={<Pencil className="size-3.5" />} onClick={() => setEditingChannelId(channel.id)}>
-                                                    {t("common.edit")}
-                                                </Button>
-                                                <Button size="small" danger icon={<Trash2 className="size-3.5" />} onClick={() => deleteChannel(channel.id)} />
-                                            </div> : null}
+                                            {BROWSER_PROVIDERS_ENABLED && !channel.managed ? (
+                                                <div className="flex shrink-0 gap-2">
+                                                    <Button size="small" icon={<Pencil className="size-3.5" />} onClick={() => setEditingChannelId(channel.id)}>
+                                                        {t("common.edit")}
+                                                    </Button>
+                                                    <Button size="small" danger icon={<Trash2 className="size-3.5" />} onClick={() => deleteChannel(channel.id)} />
+                                                </div>
+                                            ) : null}
                                         </div>
                                     ))}
                                 </div>
                             </div>
                         ),
                     },
-                    {
-                        key: "local-proxy",
-                        label: t("config.tabs.localProxy"),
-                        children: <ConfigLocalProxy />,
-                    },
+                    ...(BROWSER_PROVIDERS_ENABLED
+                        ? [
+                              {
+                                  key: "local-proxy",
+                                  label: t("config.tabs.localProxy"),
+                                  children: <ConfigLocalProxy />,
+                              },
+                          ]
+                        : []),
                     {
                         key: "preferences",
                         label: t("config.tabs.preferences"),
@@ -334,7 +358,7 @@ export function AppConfigPanel({ showDoneButton = false, initialTab = "channels"
                     </Button>
                 </div>
             ) : null}
-            <ChannelEditorDrawer open={Boolean(editingChannel)} channel={editingChannel} onSave={saveChannel} onClose={() => setEditingChannelId("")} />
+            {BROWSER_PROVIDERS_ENABLED ? <ChannelEditorDrawer open={Boolean(editingChannel)} channel={editingChannel} onSave={saveChannel} onClose={() => setEditingChannelId("")} /> : null}
         </>
     );
 }

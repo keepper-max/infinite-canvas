@@ -2,11 +2,23 @@
 
 ## 当前状态
 
-- 当前任务包：第 3 部分已完成，等待执行第 4 部分。
-- 下一动作：收到 `执行第 4 部分` 后开始任务系统与全局模型网关；本轮不自动提交、推送或部署。
+- 当前任务包：第 4 部分任务系统与全局模型网关已完成。
+- 下一动作：等待用户指令执行第 5 部分画布产品化升级，或按明确口令提交当前修改。
 - 是否允许自动进入下一任务包：否；每个任务包完成后先汇报验证结果。
 - 是否允许提交或推送：否；等待用户明确说“提交修改”。
 - 是否允许生产部署：否；等待用户明确说“部署 ECS”。
+
+### 第 4 部分执行记录
+
+- 用户已确认运行默认值：Worker 并发 2、自动重试 2 次（最多 3 次尝试）、Provider 提交超时 60 秒、视频轮询 5 秒、任务最长运行 30 分钟；取消先进入 `cancel_requested`，待 Worker 停止或 Provider 确认后进入 `cancelled`，全部允许由环境变量覆盖。
+- 已安装并锁定 `bullmq@6.3.4` 与 `ioredis@6.0.0`，准备在现有平台 API 包内增加独立 Worker 入口。
+- 已复核当前云端 schema：画布节点使用 `(project_id, text id)` 复合主键，旧任务表的 UUID `node_id` 不能直接复用；兼容迁移将新增文本型 `node_key`，保留旧列供回滚。
+
+- 已重读总计划、第 4 部分任务包、资产任务契约和模型网关契约。
+- 已开始审计当前浏览器生成、服务端模型代理、旧任务表及 Compose 服务边界。
+- 已确认根目录 Bun 代理是当前托管模型入口，平台 API/Worker 需要渐进接管；旧任务表采用增量扩展，不删除历史数据。
+- 已核对 Token360 模型说明和 BullMQ 官方生产建议，确认能力白名单、数据库+队列双重幂等、API/Worker 分离 Redis 策略与协作取消是必要边界。
+- 用户已确认默认运行边界：Worker 并发 2、自动重试 2 次、提交超时 60 秒、视频轮询 5 秒、单任务最长 30 分钟，并全部支持环境变量覆盖。
 
 ### 第 3 部分执行记录
 
@@ -80,7 +92,7 @@
 | 1 | API、账号、默认草稿 | complete | 本地检查与 ECS 旧库恢复、迁移、四镜像和认证闭环验收通过 |
 | 2 | 云端画布与迁移 | complete | PostgreSQL 权威保存、快照/恢复、冲突与 IndexedDB 安全迁移均通过隔离验收 |
 | 3 | OSS 资产与版本 | complete | MinIO/OSS、不可变版本、来源、缩略图、精确画布引用、回收站及旧媒体迁移通过隔离验收 |
-| 4 | 任务与模型网关 | pending | 未开始 |
+| 4 | 任务与模型网关 | complete | Docker 隔离环境已验证 BullMQ Worker、模型网关、SSE、幂等、三次尝试/手动重试、运行中取消、四种视频模式与 MinIO 产物 |
 | 5 | 画布产品化 | pending | 未开始 |
 | 6 | 漫剧与 Seedance Skill | pending | 未开始 |
 | 7 | 声音字幕与 FFmpeg | pending | 未开始 |
@@ -123,6 +135,35 @@
 
 ## 错误记录
 
+- 读取迁移时误用了 `server/api/drizzle/0007_cloud_assets.sql`；实际迁移目录需重新定位。未改动文件，后续用目录枚举确认正确路径。
+- 一次 `rg` 包含不存在的 `web/src/contexts` 目录；有效结果已返回，后续限定到实际目录。
+- 第 4 部分首次 API typecheck 发现 3 个类型问题：Provider 状态含 `failed` 未先收敛、ioredis 6 默认导入不可构造（两处）。已改为先映射失败状态并使用具名 `Redis` 导入，等待复验。
+- 第 4 部分 API 第二次 typecheck 已通过。前端托管文本、图片、音频和视频入口已开始切换到平台任务 API；视频任务会保存 `managed` 来源，刷新后继续查询后台任务。
+- 已完成后台状态阶段：`pending → queued → submitting → running → downloading → persisting → completed`，失败自动进入 `retrying` 或 `failed`，取消保持两阶段语义。
+- 已增加项目 SSE 订阅和 PostgreSQL 事件补发，浏览器会自动重连；每次数据库事件写入后同时发布 Redis 变更通知，数据库仍是恢复权威。
+- 已增加模型目录同步：公开目录仅更新候选/健康信息，未知模型默认禁用；只有人工能力覆盖表启用的模型进入用户目录。
+- 已通过 API typecheck、17 项测试（另 1 项 PostgreSQL 环境测试按设计跳过）、前端 typecheck 和生产构建；现有 Vite 大包与动态/静态混合导入警告仍是基线警告，不阻塞构建。
+- `docker compose config --quiet` 与 `git diff --check` 已通过；Compose 已包含 PostgreSQL、Redis、MinIO、API、Worker 和 Web，旧浏览器模型代理从运行拓扑移除。
+- 隔离 Docker 全链路验证未能启动：本机 Docker Desktop Linux Engine 管道不存在，属于运行环境未启动，不是镜像构建失败；临时 Compose 覆盖文件已删除，未创建容器、卷或改动 ECS。
+- 已按 Token360 官方接口规范修正视频请求：首尾帧使用 `frame_images`，多参考使用 `input_references`，比例使用 `aspect_ratio`；任务详情无 URL 时从标准 content 端点下载二进制并转存对象存储。
+- 已按官方“可选参数以模型能力 Schema 为准”的规则移除 Seedance 2.5 的错误固定时长/分辨率白名单，避免合法的 6 秒、8 秒或其他目录允许值被本地误拒。
+- 已将云端生成视频的 `assetId`/`assetVersionId` 绑定回画布节点；刷新恢复时仍可定位同一不可变产物版本。
+- 已增加 Worker 执行前的资产版本归属校验和临时下载地址解析，跨项目或已回收的参考素材会在调用模型前拒绝。
+- 已增加生产端浏览器渠道清理：旧持久化 API Key 会在配置迁移时剔除，生产 UI 隐藏新增渠道和本地代理；仅开发环境可显式开启回退。
+- 已增加数据库事件序号触发器，消除 Worker、取消和重试并发写事件时的序号竞争。
+- 一次大范围前端补丁因匹配上下文漂移被安全拒绝，文件未被部分覆盖；已拆成小补丁，并发现/移除误插入到创建函数中的轮询分支。
+- 前端首次校验命令误写为不存在的 `npm run type-check`，并因工作目录已是 `web` 而多读了一层 `web/package.json`；未产生代码改动，已确认正确命令是 `npm run typecheck`。
+- 隔离 Docker 构建尝试连接 `dockerDesktopLinuxEngine` 失败（Docker Desktop 未运行）；没有创建或删除任何持久数据，后续需在 Docker 可用环境复验真实队列闭环。
+- Prettier 已格式化全部本轮 TypeScript/TSX/YAML 改动；它无法自动识别 `nginx.conf` 与 `.env.example` 的解析器，因此对这两个纯配置文件保留手工格式并继续用 `git diff --check` 校验。
+- 第 4 部分最终本地校验：API typecheck/build 通过，20 passed、1 skipped；前端 typecheck/build 通过。跳过项和完整队列闭环均依赖本机未启动的 Docker/PostgreSQL/Redis/MinIO。
+- 本机 Docker Desktop Linux Engine 已恢复：Docker 29.7.2、Compose 5.5.1 可用；当前仅运行另一个项目的 PostgreSQL，未占用本项目 Web、Redis 或 MinIO 端口。
+- 第 4 部分本机隔离验收准备了不消耗真实额度的模型替身；首次把进程检查与 Compose 启动合并执行时被主机命令策略拒绝，未启动容器、未改变数据，后续拆分为最小命令执行。
+- 第 4 部分隔离镜像构建及全链路成功：注册自动创建默认项目，模型目录发现 Seedance 2.5，任务经 Redis/BullMQ Worker 执行，SSE 收到完成事件，MinIO 产物写入不可变资产版本，重复请求只保留一个任务。
+- 首次运行中取消复验暴露状态竞态：Worker 在 Provider 返回后会把 `cancel_requested` 覆盖为 `running`。已在提交、轮询前后和转存前加入状态门禁，并把取消终态改成幂等更新。
+- 修复后运行中取消从 `cancel_requested` 正常进入并稳定保持 `cancelled`；成功任务、API/Worker 重启恢复、三次自动尝试失败、手动重试成功及 `t2v`、`i2v`、`flf2v`、`multiref` 均通过。
+- 一次资产版本统计查询误用了不存在的 `source_type` 列；实际列名为 `source`，未修改数据，后续按迁移定义修正查询。
+- 仅重建 API 容器后，既有 Nginx 暂存了旧容器地址而短暂返回 502；重启隔离 Web 入口后恢复。完整 Compose 部署会一并重建入口，本次未影响业务数据。
+
 | 错误 | 次数 | 处理方式 |
 |---|---:|---|
 | 批量补丁格式不支持同一路径 Delete + Add | 1 | 已确认未产生修改；备份后改为分批写入 |
@@ -148,11 +189,14 @@
 | 本机 Docker Desktop 未运行，无法执行本地 PostgreSQL 容器测试 | 1 | 改在 ECS 隔离网络恢复旧库并完成真实 PostgreSQL 与镜像验收，生产未改动 |
 | 完整 2.9MB 隔离验证包分块上传过慢 | 1 | 中止本地上传进程，改用已验证的第 1 部分基包加 58KB 增量覆盖包；远端临时分片仅位于隔离目录 |
 | 第 3 部分首次读取契约时使用了不存在的 `asset-task-contract.md` 文件名 | 1 | 通过契约索引定位为 `assets-and-jobs-contract.md`，不重复错误路径 |
+| 第 4 部分首次读取平台契约时使用了不存在的 `platform-api-contract.md` 文件名 | 1 | 改为枚举契约目录并按实际文件名读取，不重复错误路径 |
+| 第 4 部分首次按假设目录读取 `server/model-proxy`、根/`server` package 和 `server/index.ts` | 1 | 通过 Dockerfile 与文件索引确认实际代理为根 `token360-proxy.mjs`，API 仅在 `server/api`，不重复假设路径 |
+| 第 4 部分审计命令读取了不存在的根 `package.json`、`server/package.json` 和 `server/index.ts` | 1 | 以 Dockerfile 和 `server/api/package.json` 为实际服务边界，后续只使用已枚举路径 |
 
 ## 恢复上下文检查
 
-- 我在哪里：第 0、1、2、3 部分已完成；第 3 部分改动尚未提交。
+- 我在哪里：第 0 至第 4 部分已完成；第 4 部分尚未提交或推送。
 - 目标是什么：把当前 Infinite Canvas 推进为可完成一集漫剧的云端生产平台。
-- 下一步是什么：等待 `提交修改` 或 `执行第 4 部分`，不自动提交、推送或部署。
+- 下一步是什么：按用户口令提交第 4 部分，或执行第 5 部分画布产品化升级。
 - 已知事实在哪里：`findings.md`。
 - 已做工作在哪里：本文件和各任务包的完成记录。

@@ -3,10 +3,12 @@ import axios from "axios";
 import i18n from "@/i18n";
 import { audioMimeType, normalizeAudioFormatValue, normalizeAudioSpeedValue, normalizeAudioVoiceValue } from "@/lib/audio-generation";
 import { uploadMediaFile, type UploadedFile } from "@/services/file-storage";
-import { buildApiUrl, resolveModelRequestConfig, resolveModelScript, withLocalProxy, type AiConfig } from "@/stores/use-config-store";
+import { buildApiUrl, isServerManagedConfig, resolveModelRequestConfig, resolveModelScript, withLocalProxy, type AiConfig } from "@/stores/use-config-store";
 import { runModelPlugin } from "./model-plugin";
+import { artifactUrl, createManagedJob, waitForManagedJob } from "./jobs";
 
 type RequestOptions = { signal?: AbortSignal };
+type AudioGenerationResult = { blob: Blob; assetId?: string; assetVersionId?: string };
 const apiText = (key: string, options?: Record<string, unknown>) => i18n.t(`apiErrors.${key}`, options);
 
 function aiApiUrl(config: AiConfig, path: string) {
@@ -20,11 +22,27 @@ function aiHeaders(config: AiConfig) {
     };
 }
 
-export async function requestAudioGeneration(config: AiConfig, prompt: string, options?: RequestOptions): Promise<Blob> {
+export async function requestAudioGeneration(config: AiConfig, prompt: string, options?: RequestOptions): Promise<AudioGenerationResult> {
     const requestConfig = resolveModelRequestConfig(config, config.model || config.audioModel);
     const model = requestConfig.model.trim();
     const format = normalizeAudioFormatValue(config.audioFormat);
     const script = resolveModelScript(config, config.model || config.audioModel);
+    if (isServerManagedConfig(requestConfig)) {
+        const job = await waitForManagedJob(
+            (
+                await createManagedJob(
+                    { model, capability: "audio", mode: "tts", prompt, parameters: { voice: normalizeAudioVoiceValue(config.audioVoice), format, speed: Number(normalizeAudioSpeedValue(config.audioSpeed)), instructions: config.audioInstructions.trim() } },
+                    { signal: options?.signal },
+                )
+            ).id,
+            options?.signal,
+        );
+        const artifact = job.artifacts?.find((item) => item.assetVersionId);
+        if (!artifact) throw new Error(apiText("audioGenerationFailed"));
+        const response = await fetch(await artifactUrl(artifact, options?.signal), { signal: options?.signal });
+        if (!response.ok) throw new Error(apiText("audioGenerationFailed"));
+        return { blob: await response.blob(), assetId: artifact.assetId, assetVersionId: artifact.assetVersionId };
+    }
     if (script) {
         if (!model) throw new Error(apiText("audioModelRequired"));
         if (!requestConfig.baseUrl.trim()) throw new Error(apiText("baseUrlRequired"));
@@ -38,7 +56,7 @@ export async function requestAudioGeneration(config: AiConfig, prompt: string, o
                 params: { voice: normalizeAudioVoiceValue(config.audioVoice), format, speed: normalizeAudioSpeedValue(config.audioSpeed), instructions: config.audioInstructions.trim() },
                 signal: options?.signal,
             });
-            return await audioPluginBlob(result, format);
+            return { blob: await audioPluginBlob(result, format) };
         } catch (error) {
             throw new Error(readAxiosError(error, apiText("audioGenerationFailed")));
         }
@@ -60,7 +78,7 @@ export async function requestAudioGeneration(config: AiConfig, prompt: string, o
             { headers: aiHeaders(requestConfig), responseType: "blob", signal: options?.signal },
         );
         await assertAudioBlob(response.data);
-        return response.data.type.startsWith("audio/") ? response.data : new Blob([response.data], { type: audioMimeType(format) });
+        return { blob: response.data.type.startsWith("audio/") ? response.data : new Blob([response.data], { type: audioMimeType(format) }) };
     } catch (error) {
         throw new Error(readAxiosError(error, apiText("audioGenerationFailed")));
     }
@@ -80,9 +98,9 @@ async function audioPluginBlob(result: unknown, format: string): Promise<Blob> {
     return blob.type.startsWith("audio/") ? blob : new Blob([blob], { type: audioMimeType(format) });
 }
 
-export async function storeGeneratedAudio(blob: Blob, format = "mp3"): Promise<UploadedFile> {
-    const audio = blob.type.startsWith("audio/") ? blob : new Blob([blob], { type: audioMimeType(format) });
-    return uploadMediaFile(audio, "audio");
+export async function storeGeneratedAudio(result: AudioGenerationResult, format = "mp3"): Promise<UploadedFile> {
+    const audio = result.blob.type.startsWith("audio/") ? result.blob : new Blob([result.blob], { type: audioMimeType(format) });
+    return { ...(await uploadMediaFile(audio, "audio")), assetId: result.assetId, assetVersionId: result.assetVersionId };
 }
 
 function assertAudioConfig(config: AiConfig, model: string) {
@@ -119,17 +137,8 @@ function readApiErrorMessage(value: unknown): string {
     }
     if (typeof value !== "object") return "";
     const payload = value as { msg?: unknown; message?: unknown; error?: unknown; detail?: unknown };
-    const errorMsg =
-        typeof payload.error === "string"
-            ? payload.error
-            : (payload.error as { message?: unknown })?.message;
-    return (
-        readApiErrorMessage(payload.msg) ||
-        readApiErrorMessage(payload.message) ||
-        readApiErrorMessage(errorMsg) ||
-        readApiErrorMessage(payload.detail) ||
-        ""
-    );
+    const errorMsg = typeof payload.error === "string" ? payload.error : (payload.error as { message?: unknown })?.message;
+    return readApiErrorMessage(payload.msg) || readApiErrorMessage(payload.message) || readApiErrorMessage(errorMsg) || readApiErrorMessage(payload.detail) || "";
 }
 
 function readAxiosError(error: unknown, fallback: string) {
