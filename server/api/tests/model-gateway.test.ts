@@ -3,6 +3,7 @@ import test from "node:test";
 import type { Pool } from "pg";
 
 import { DomainError } from "../src/domain.js";
+import { createJobSchema } from "../src/job-contract.js";
 import { ModelGateway } from "../src/model-gateway.js";
 
 const definition = {
@@ -39,6 +40,35 @@ function gateway(row = definition) {
     query: async () => ({ rows: [row], rowCount: 1 }),
   } as unknown as Pool);
 }
+
+test("drama jobs preserve a strict trace without forwarding it as a model parameter", () => {
+  const input = createJobSchema.parse({
+    nodeId: "drama:seedance-skill-1",
+    modelId: "text.gpt-5-5",
+    capability: "text",
+    mode: "chat",
+    prompt: "编译当前镜头",
+    parameters: {},
+    references: [],
+    idempotencyKey: "skill-node:abcd1234",
+    trace: {
+      workflowKind: "skill.seedance",
+      skillId: "seedance-20-drama",
+      skillVersion: "6.7.0",
+      inputHash: "0123abcd",
+      inputSnapshot: { shotId: "S001" },
+      userModified: false,
+    },
+  });
+  assert.equal(input.trace?.workflowKind, "skill.seedance");
+  assert.equal(input.trace?.inputSnapshot?.shotId, "S001");
+  assert.throws(() =>
+    createJobSchema.parse({
+      ...input,
+      trace: { ...input.trace, apiKey: "must-not-pass" },
+    }),
+  );
+});
 
 test("T2V strips reference-only fields and maps accepted parameters", async () => {
   const compiled = await gateway().compile({

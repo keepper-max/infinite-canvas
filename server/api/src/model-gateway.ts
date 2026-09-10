@@ -31,6 +31,17 @@ export type GenerationInput = {
     assetVersionId?: string;
     mimeType?: string;
   }>;
+  trace?: {
+    workflowKind?: string;
+    skillId?: string;
+    skillVersion?: string;
+    inputHash?: string;
+    outputRevision?: number;
+    userModified?: boolean;
+    inputSnapshot?: Record<string, unknown>;
+    assetKind?: "character" | "scene" | "prop" | "image" | "video" | "audio";
+    assetName?: string;
+  };
 };
 
 export type CompiledGenerationRequest = GenerationInput & {

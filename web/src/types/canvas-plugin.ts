@@ -40,6 +40,7 @@ export type CanvasNodeToolbarItem = {
 
 // Context injected while rendering each node; the primary interface between plugins and the canvas.
 export type CanvasNodeContext = {
+    projectId: string;
     node: CanvasNodeData;
     theme: CanvasTheme;
     scale: number;
@@ -75,6 +76,7 @@ export type PluginStorage = {
 
 // Node-independent host capabilities constructed by the canvas page and injected into the render chain.
 export type CanvasPluginHost = {
+    projectId: string;
     getNode: (id: string) => CanvasNodeData | null;
     getNodes: () => CanvasNodeData[];
     getConnections: () => CanvasConnection[];
@@ -100,6 +102,8 @@ export type CanvasBuiltinPanelConfig = {
 // Shared node definition used by both built-in and plugin nodes.
 export type CanvasNodeDefinition = {
     type: string; // Built-ins use values such as "image"; plugins should use "<pluginId>:<name>".
+    workflowKind?: string;
+    definitionVersion?: number;
     title: string;
     icon: ReactNode;
     description?: string;
@@ -123,6 +127,17 @@ export type CanvasNodeDefinition = {
     Panel?: ComponentType<{ ctx: CanvasNodeContext; onClose: () => void }>;
     toolbar?: (ctx: CanvasNodeContext) => CanvasNodeToolbarItem[];
     onDoubleClick?: (ctx: CanvasNodeContext) => boolean; // Return true when handled.
+    ports?: Array<{
+        id: string;
+        label: string;
+        direction: "input" | "output";
+        resourceTypes: Array<"text" | "prompt" | "image" | "video" | "audio" | "json" | "asset" | "timeline">;
+        roles: Array<"data" | "identity" | "environment" | "composition" | "motion" | "first_frame" | "last_frame" | "video_input" | "audio_input" | "mask">;
+        cardinality: "one" | "many";
+        required?: boolean;
+    }>;
+    execution?: { capability: "none" | "text" | "image" | "video" | "audio" | "compose"; mode?: "t2v" | "i2v" | "flf2v" | "multiref" | "extend" };
+    execute?: (ctx: CanvasNodeContext) => Promise<void>;
 };
 
 // Application capabilities available while a plugin starts.

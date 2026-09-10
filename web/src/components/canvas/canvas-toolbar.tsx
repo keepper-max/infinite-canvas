@@ -1,7 +1,34 @@
 import type { CSSProperties, MouseEvent as ReactMouseEvent, ReactNode, RefObject } from "react";
 import { useEffect, useRef, useState } from "react";
 import { Button, Segmented, Switch } from "antd";
-import { CircleDot, Eraser, Focus, Gauge, Grid2x2, Group, Hand, Image as ImageIcon, Info, LayoutDashboard, Moon, MousePointer2, Music2, Palette, Puzzle, Redo2, Settings2, Square, Sun, Trash2, Type, Undo2, Upload, Video } from "lucide-react";
+import {
+    CircleDot,
+    Clapperboard,
+    Eraser,
+    Focus,
+    Gauge,
+    Grid2x2,
+    Group,
+    Hand,
+    Image as ImageIcon,
+    Info,
+    LayoutDashboard,
+    Moon,
+    MousePointer2,
+    Music2,
+    Palette,
+    Play,
+    Puzzle,
+    Redo2,
+    Settings2,
+    Square,
+    Sun,
+    Trash2,
+    Type,
+    Undo2,
+    Upload,
+    Video,
+} from "lucide-react";
 
 import { canvasThemes, type CanvasBackgroundMode, type CanvasColorTheme, type CanvasTheme } from "@/lib/canvas-theme";
 import { getNodePluginId, listNodeDefinitions, useNodeRegistryVersion } from "@/lib/canvas/node-registry";
@@ -36,6 +63,10 @@ export function CanvasToolbar({
     onAutoLayout,
     onToggleFocusMode,
     onTogglePerformanceMode,
+    onCreateDramaTemplate,
+    onRunDrama,
+    dramaRunning,
+    hasDramaNodes,
 }: {
     selectedCount: number;
     canvasTool: "select" | "pan";
@@ -63,6 +94,10 @@ export function CanvasToolbar({
     onAutoLayout: () => void;
     onToggleFocusMode: () => void;
     onTogglePerformanceMode: () => void;
+    onCreateDramaTemplate: () => void;
+    onRunDrama: (scope: "current" | "selected" | "downstream" | "all") => void;
+    dramaRunning: boolean;
+    hasDramaNodes: boolean;
 }) {
     const wrapRef = useRef<HTMLDivElement>(null);
     const { t } = useTranslation();
@@ -75,6 +110,7 @@ export function CanvasToolbar({
     const [appearanceOpen, setAppearanceOpen] = useState(false);
     const [panelX, setPanelX] = useState(0);
     const [extensionsOpen, setExtensionsOpen] = useState(false);
+    const [dramaOpen, setDramaOpen] = useState(false);
     const [extPanelX, setExtPanelX] = useState(0);
     // Keep extension plugin nodes synchronized with registry changes.
     useNodeRegistryVersion();
@@ -86,16 +122,17 @@ export function CanvasToolbar({
 
     // Close extension-node and canvas-appearance popovers when clicking outside the toolbar and its panels.
     useEffect(() => {
-        if (!extensionsOpen && !appearanceOpen) return;
+        if (!extensionsOpen && !appearanceOpen && !dramaOpen) return;
         const handlePointerDown = (event: PointerEvent) => {
             if (rootRef.current && !rootRef.current.contains(event.target as Node)) {
                 setExtensionsOpen(false);
                 setAppearanceOpen(false);
+                setDramaOpen(false);
             }
         };
         document.addEventListener("pointerdown", handlePointerDown, true);
         return () => document.removeEventListener("pointerdown", handlePointerDown, true);
-    }, [extensionsOpen, appearanceOpen]);
+    }, [extensionsOpen, appearanceOpen, dramaOpen]);
 
     return (
         <div ref={rootRef} className="pointer-events-none absolute bottom-5 z-50 flex justify-center" style={{ left: focusMode ? 16 : 300, right: 16 }}>
@@ -123,6 +160,30 @@ export function CanvasToolbar({
                 </ToolbarButton>
                 <ToolbarButton id="tool-layout" label={t("canvas.productivity.autoLayout")} hovered={hovered} hoverStyle={hoverStyle} wrapRef={wrapRef} onTipX={setTipX} onHover={setHovered} onClick={onAutoLayout}>
                     <LayoutDashboard className="size-4.5" />
+                </ToolbarButton>
+                <Divider theme={theme} />
+                <ToolbarButton id="tool-drama-template" label="插入漫剧工作流" hovered={hovered} hoverStyle={hoverStyle} wrapRef={wrapRef} onTipX={setTipX} onHover={setHovered} onClick={onCreateDramaTemplate}>
+                    <Clapperboard className="size-4.5" />
+                </ToolbarButton>
+                <ToolbarButton
+                    id="tool-drama-run"
+                    label={dramaRunning ? "漫剧工作流运行中" : "运行漫剧工作流"}
+                    active={dramaOpen || dramaRunning}
+                    disabled={!hasDramaNodes || dramaRunning}
+                    hovered={hovered}
+                    activeStyle={activeStyle}
+                    hoverStyle={hoverStyle}
+                    wrapRef={wrapRef}
+                    onTipX={setTipX}
+                    onHover={setHovered}
+                    onClick={(event) => {
+                        setPanelX(getTipX(wrapRef.current, event.currentTarget));
+                        setAppearanceOpen(false);
+                        setExtensionsOpen(false);
+                        setDramaOpen((value) => !value);
+                    }}
+                >
+                    <Play className="size-4.5" />
                 </ToolbarButton>
                 <ToolbarButton
                     id="tool-focus"
@@ -254,6 +315,35 @@ export function CanvasToolbar({
                             </button>
                         ))}
                     </div>
+                </div>
+            ) : null}
+
+            {dramaOpen ? (
+                <div
+                    className="pointer-events-auto absolute bottom-[72px] z-30 w-[220px] -translate-x-1/2 rounded-xl border p-2 shadow-xl backdrop-blur"
+                    style={{ left: panelX || "50%", background: theme.toolbar.panel, borderColor: theme.toolbar.border, color: theme.toolbar.item }}
+                >
+                    <div className="px-2 pb-1.5 text-[11px] font-medium opacity-50">执行范围</div>
+                    {(
+                        [
+                            ["current", "当前节点"],
+                            ["selected", "选中节点"],
+                            ["downstream", "当前节点及后续"],
+                            ["all", "全部漫剧节点"],
+                        ] as const
+                    ).map(([scope, label]) => (
+                        <button
+                            key={scope}
+                            type="button"
+                            className="w-full rounded-lg px-2 py-2 text-left text-sm transition hover:opacity-75"
+                            onClick={() => {
+                                setDramaOpen(false);
+                                onRunDrama(scope);
+                            }}
+                        >
+                            {label}
+                        </button>
+                    ))}
                 </div>
             ) : null}
 
@@ -411,6 +501,8 @@ function toolLabel(id: string, t: (key: string) => string) {
     if (id === "tool-undo") return t("canvas.undo");
     if (id === "tool-redo") return t("canvas.redo");
     if (id === "tool-layout") return t("canvas.productivity.autoLayout");
+    if (id === "tool-drama-template") return "插入漫剧工作流";
+    if (id === "tool-drama-run") return "运行漫剧工作流";
     if (id === "tool-focus") return t("canvas.productivity.focusMode");
     if (id === "tool-performance") return t("canvas.productivity.performanceMode");
     if (id === "tool-text") return t("canvas.toolbar.text");

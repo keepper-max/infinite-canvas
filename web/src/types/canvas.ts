@@ -1,3 +1,5 @@
+import type { DramaNodeState } from "@/types/drama";
+
 export type Position = {
     x: number;
     y: number;
@@ -89,6 +91,7 @@ export type CanvasNodeMetadata = {
     videoTaskProvider?: "openai" | "gemini" | "managed";
     groupId?: string;
     interactive?: boolean; // Plugin node interaction/move state; see CanvasNodeDefinition.interactionToggle.
+    drama?: DramaNodeState;
 };
 
 export type CanvasNodeData = {

@@ -21,6 +21,9 @@ export function createCanvasNode(type: CanvasNodeTypeId, position: Position, met
         width: spec.width,
         height: spec.height,
         metadata: { ...spec.metadata, ...metadata },
+        definitionId: type.includes(":") ? `builtin.${type}` : `core.${type}`,
+        definitionVersion: spec.definitionVersion,
+        workflowKind: spec.workflowKind,
     };
 }
 

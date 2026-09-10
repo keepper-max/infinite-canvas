@@ -516,6 +516,7 @@ export class JobExecutor {
     const results: Array<Record<string, unknown>> = [];
     for (let index = 0; index < artifacts.length; index++) {
       const artifact = artifacts[index]!;
+      const trace = ((row.input_snapshot || {}) as GenerationInput).trace || {};
       if (artifact.kind === "text") {
         const id = randomUUID();
         await this.pool.query(
@@ -526,7 +527,15 @@ export class JobExecutor {
             row.project_id,
             index,
             artifact.mimeType,
-            { text: artifact.text },
+            {
+              text: artifact.text,
+              trace:
+                (
+                  row.input_snapshot as GenerationInput & {
+                    trace?: Record<string, unknown>;
+                  }
+                )?.trace || {},
+            },
           ],
         );
         results.push({ id, kind: artifact.kind, text: artifact.text });
@@ -540,12 +549,14 @@ export class JobExecutor {
       const client = await this.pool.connect();
       try {
         await client.query("begin");
+        const assetKind = generatedAssetKind(artifact.kind, trace.assetKind);
         const asset = await client.query(
           "insert into assets(project_id,kind,name,status,created_by) values($1,$2,$3,'active',$4) returning id",
           [
             row.project_id,
-            artifact.kind,
-            `${artifact.kind}-${String(row.id).slice(0, 8)}-${index + 1}.${extension}`,
+            assetKind,
+            trace.assetName ||
+              `${assetKind}-${String(row.id).slice(0, 8)}-${index + 1}.${extension}`,
             row.created_by,
           ],
         );
@@ -558,7 +569,7 @@ export class JobExecutor {
             bytes.byteLength,
             sha256,
             row.id,
-            { modelId: row.model_id, mode: row.mode },
+            buildArtifactProvenance(row),
             row.created_by,
           ],
         );
@@ -752,4 +763,33 @@ function extensionFor(mime: string) {
   if (mime.includes("wav")) return "wav";
   if (mime.includes("mpeg")) return "mp3";
   return mime.startsWith("video/") ? "mp4" : "bin";
+}
+
+function buildArtifactProvenance(row: Record<string, unknown>) {
+  const snapshot = (row.input_snapshot || {}) as GenerationInput & {
+    trace?: Record<string, unknown>;
+  };
+  return {
+    modelId: row.model_id,
+    mode: row.mode,
+    ...(snapshot.trace || {}),
+    inputAssetVersionIds: (snapshot.references || [])
+      .map((reference) => reference.assetVersionId)
+      .filter(Boolean),
+    parameters: snapshot.parameters || {},
+  };
+}
+
+function generatedAssetKind(
+  kind: ProviderArtifact["kind"],
+  requested: unknown,
+) {
+  if (
+    kind === "image" &&
+    ["character", "scene", "prop", "image"].includes(String(requested))
+  )
+    return String(requested);
+  if (kind === "video" && requested === "video") return "video";
+  if (kind === "audio" && requested === "audio") return "audio";
+  return kind;
 }

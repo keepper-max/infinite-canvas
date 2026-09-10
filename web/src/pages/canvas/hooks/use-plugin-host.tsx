@@ -18,6 +18,7 @@ import type { CanvasConnection, CanvasNodeData, ViewportTransform } from "@/type
 type CanvasTheme = (typeof canvasThemes)[keyof typeof canvasThemes];
 
 type PluginHostParams = {
+    projectId: string;
     effectiveConfig: AiConfig;
     isAiConfigReady: (config: AiConfig, model: string) => boolean;
     openConfigDialog: (open: boolean) => void;
@@ -36,7 +37,7 @@ type PluginHostParams = {
  */
 export function usePluginHost(params: PluginHostParams) {
     const { t } = useTranslation();
-    const { effectiveConfig, isAiConfigReady, openConfigDialog, theme, nodesRef, connectionsRef, viewportRef, setNodes, setDialogNodeId, applyAgentOps } = params;
+    const { projectId, effectiveConfig, isAiConfigReady, openConfigDialog, theme, nodesRef, connectionsRef, viewportRef, setNodes, setDialogNodeId, applyAgentOps } = params;
 
     // Host capabilities available to plugin nodes; methods receive nodeId and are not bound to a specific node.
     const pluginAi = useMemo<CanvasPluginAi>(() => {
@@ -55,14 +56,16 @@ export function usePluginHost(params: PluginHostParams) {
                 ensureReady(config);
                 const references = toReferences(options?.references);
                 const items = references.length ? await requestEdit(config, prompt, references, { signal: options?.signal }) : await requestGeneration(config, prompt, { signal: options?.signal });
-                const images = await Promise.all(items.map(async (item) => {
-                    try {
-                        return await imageToDataUrl({ dataUrl: item.dataUrl }, { signal: options?.signal });
-                    } catch (error) {
-                        if (options?.signal?.aborted) throw error;
-                        return item.dataUrl;
-                    }
-                }));
+                const images = await Promise.all(
+                    items.map(async (item) => {
+                        try {
+                            return await imageToDataUrl({ dataUrl: item.dataUrl }, { signal: options?.signal });
+                        } catch (error) {
+                            if (options?.signal?.aborted) throw error;
+                            return item.dataUrl;
+                        }
+                    }),
+                );
                 return { images };
             },
             generateVideo: async (prompt, options) => {
@@ -91,6 +94,7 @@ export function usePluginHost(params: PluginHostParams) {
 
     const pluginHost = useMemo<CanvasPluginHost>(
         () => ({
+            projectId,
             getNode: (id) => nodesRef.current.find((node) => node.id === id) || null,
             getNodes: () => nodesRef.current,
             getConnections: () => connectionsRef.current,
@@ -104,14 +108,22 @@ export function usePluginHost(params: PluginHostParams) {
                     .filter((conn) => conn.fromNodeId === nodeId)
                     .map((conn) => nodesRef.current.find((node) => node.id === conn.toNodeId))
                     .filter((node): node is CanvasNodeData => Boolean(node)),
-            updateNode: (nodeId, patch) => setNodes((prev) => prev.map((node) => (node.id === nodeId ? { ...node, ...patch } : node))),
-            updateMetadata: (nodeId, patch) => setNodes((prev) => prev.map((node) => (node.id === nodeId ? { ...node, metadata: { ...node.metadata, ...patch } } : node))),
+            updateNode: (nodeId, patch) => {
+                const next = nodesRef.current.map((node) => (node.id === nodeId ? { ...node, ...patch } : node));
+                nodesRef.current = next;
+                setNodes(next);
+            },
+            updateMetadata: (nodeId, patch) => {
+                const next = nodesRef.current.map((node) => (node.id === nodeId ? { ...node, metadata: { ...node.metadata, ...patch } } : node));
+                nodesRef.current = next;
+                setNodes(next);
+            },
             applyOps: (ops) => applyAgentOps(ops),
             ai: pluginAi,
             openPanel: (nodeId) => setDialogNodeId(nodeId),
             closePanel: () => setDialogNodeId(null),
         }),
-        [applyAgentOps, pluginAi],
+        [applyAgentOps, pluginAi, projectId],
     );
 
     const renderPluginPanel = useCallback(

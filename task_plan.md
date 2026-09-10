@@ -6,7 +6,7 @@
 
 ## 当前阶段
 
-第 5 部分画布产品化升级已完成；下一步执行第 6 部分漫剧节点、分镜、角色与 Seedance Skill。
+第 6 部分漫剧节点、分镜、角色与 Seedance Skill 已完成；等待用户决定是否提交，未自动进入第 7 部分。
 
 ## 执行口令
 
@@ -75,7 +75,7 @@
 - 文件：`plans/ai-drama-canvas-2/06-drama-workflow.md`
 - 目标：剧本拆解、角色卡、场景、分镜表、首尾帧、多参考和 Seedance Skill 结构化输出。
 - 依赖：第 3、4、5 部分。
-- 状态：`pending`
+- 状态：`complete`
 
 ### 第 7 部分：声音、字幕、时间线与 FFmpeg 成片
 

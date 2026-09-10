@@ -53,6 +53,9 @@ export function applyCanvasAgentOps(snapshot: CanvasAgentSnapshot, ops?: CanvasA
                 width: op.width || spec.width,
                 height: op.height || spec.height,
                 metadata: { ...spec.metadata, ...op.metadata },
+                definitionId: nodeType.includes(":") ? `builtin.${nodeType}` : `core.${nodeType}`,
+                definitionVersion: spec.definitionVersion,
+                workflowKind: spec.workflowKind,
             };
             nodes = [...nodes, node];
             selectedNodeIds = [node.id];

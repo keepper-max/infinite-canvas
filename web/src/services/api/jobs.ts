@@ -4,7 +4,24 @@ import { getCurrentSession, platformRequest } from "./platform";
 
 export type ManagedCapability = "text" | "image" | "video" | "audio";
 export type ManagedMode = "chat" | "t2i" | "i2i" | "tts" | "t2v" | "i2v" | "flf2v" | "multiref";
-export type ManagedReference = { role: "first_frame" | "last_frame" | "identity_reference" | "environment_reference" | "motion_reference" | "audio_reference"; dataUrl?: string; url?: string; assetVersionId?: string; mimeType?: string };
+export type ManagedReference = {
+    role: "first_frame" | "last_frame" | "identity_reference" | "environment_reference" | "composition_reference" | "motion_reference" | "video_input" | "audio_reference";
+    dataUrl?: string;
+    url?: string;
+    assetVersionId?: string;
+    mimeType?: string;
+};
+export type ManagedJobTrace = {
+    workflowKind?: string;
+    skillId?: string;
+    skillVersion?: string;
+    inputHash?: string;
+    outputRevision?: number;
+    userModified?: boolean;
+    inputSnapshot?: Record<string, unknown>;
+    assetKind?: "character" | "scene" | "prop" | "image" | "video" | "audio";
+    assetName?: string;
+};
 export type ManagedJob = {
     id: string;
     projectId: string;
@@ -21,7 +38,7 @@ export type ManagedJob = {
 
 type Context = { projectId?: string; nodeId?: string; nodeRevision?: number; idempotencyKey?: string; signal?: AbortSignal };
 
-export async function createManagedJob(input: { model: string; capability: ManagedCapability; mode: ManagedMode; prompt: string; parameters?: Record<string, unknown>; references?: ManagedReference[] }, context: Context = {}) {
+export async function createManagedJob(input: { model: string; capability: ManagedCapability; mode: ManagedMode; prompt: string; parameters?: Record<string, unknown>; references?: ManagedReference[]; trace?: ManagedJobTrace }, context: Context = {}) {
     const projectId = context.projectId || (await getCurrentSession(context.signal)).workspace.projectId;
     const requestHash = stableHash(JSON.stringify(input));
     const idempotencyKey = context.idempotencyKey || (context.nodeId ? `${context.nodeId}:${context.nodeRevision || 0}:${input.capability}:${input.mode}:${requestHash}` : `workbench:${nanoid()}`);
@@ -38,6 +55,7 @@ export async function createManagedJob(input: { model: string; capability: Manag
                 prompt: input.prompt,
                 parameters: input.parameters || {},
                 references: input.references || [],
+                trace: input.trace,
                 idempotencyKey,
             }),
         })

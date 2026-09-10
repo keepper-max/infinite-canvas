@@ -47,13 +47,13 @@ export function isRegisteredNodeType(type: string) {
     return definitions.has(type);
 }
 
-const FALLBACK_SPEC = { width: 340, height: 240, title: i18n.t("canvas.node.node"), metadata: {} as CanvasNodeDefinition["defaultMetadata"] };
+const FALLBACK_SPEC = { width: 340, height: 240, title: i18n.t("canvas.node.node"), metadata: {} as CanvasNodeDefinition["defaultMetadata"], workflowKind: "generic", definitionVersion: 1 };
 
 // Provide default size, title, and metadata shared by createCanvasNode and agent operations.
 export function getNodeSpec(type: string) {
     const def = definitions.get(type);
     if (!def) return FALLBACK_SPEC;
-    return { width: def.defaultSize.width, height: def.defaultSize.height, title: def.title, metadata: def.defaultMetadata };
+    return { width: def.defaultSize.width, height: def.defaultSize.height, title: def.title, metadata: def.defaultMetadata, workflowKind: def.workflowKind || "generic", definitionVersion: def.definitionVersion || 1 };
 }
 
 export function isBuiltinNodeType(type: string) {

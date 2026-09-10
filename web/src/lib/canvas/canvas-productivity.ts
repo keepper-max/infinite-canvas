@@ -148,6 +148,10 @@ export function autoLayoutCanvasNodes(nodes: CanvasNodeData[], connections: Canv
 }
 
 export function inferConnectionResourceType(node: CanvasNodeData): NonNullable<CanvasConnection["resourceType"]> {
+    if (node.workflowKind === "video.seedance") return "video";
+    if (["character.turnaround", "scene.candidate", "scene.panorama", "prop.image", "composition.3d", "frame.first", "frame.last"].includes(node.workflowKind || "")) return "image";
+    if (["prompt.optimize", "skill.seedance"].includes(node.workflowKind || "")) return "prompt";
+    if (["script.breakdown", "character.profile", "storyboard.plan"].includes(node.workflowKind || "")) return "json";
     if (node.type === CanvasNodeType.Image) return "image";
     if (node.type === CanvasNodeType.Video) return "video";
     if (node.type === CanvasNodeType.Audio) return "audio";
@@ -158,11 +162,20 @@ export function inferConnectionResourceType(node: CanvasNodeData): NonNullable<C
 
 export function inferConnectionRole(source: CanvasNodeData, target: CanvasNodeData): NonNullable<CanvasConnection["role"]> {
     const resourceType = inferConnectionResourceType(source);
-    if (target.type === CanvasNodeType.Video) {
+    if (target.type === CanvasNodeType.Video || target.workflowKind === "video.seedance") {
         if (resourceType === "audio") return "audio_input";
         if (resourceType === "video") return "video_input";
+        if (source.workflowKind === "frame.last") return "last_frame";
+        if (source.workflowKind === "character.turnaround") return "identity";
+        if (["scene.candidate", "scene.panorama"].includes(source.workflowKind || "")) return "environment";
+        if (source.workflowKind === "composition.3d") return "composition";
         if (resourceType === "image") return "first_frame";
     }
+    if (source.workflowKind === "character.turnaround") return "identity";
+    if (["scene.candidate", "scene.panorama"].includes(source.workflowKind || "")) return "environment";
+    if (source.workflowKind === "composition.3d") return "composition";
+    if (source.workflowKind === "frame.first") return "first_frame";
+    if (source.workflowKind === "frame.last") return "last_frame";
     return "data";
 }
 

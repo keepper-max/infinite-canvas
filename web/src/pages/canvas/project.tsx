@@ -87,6 +87,10 @@ import {
 } from "@/lib/canvas/canvas-generation-helpers";
 import { getNodeDefinition, isBuiltinNodeType as isBuiltinType, useNodeRegistryVersion } from "@/lib/canvas/node-registry";
 import { registerBuiltinNodes } from "@/components/canvas/nodes/builtin-nodes";
+import { registerDramaNodes } from "@/components/canvas/nodes/drama-nodes";
+import { buildNodeContext } from "@/lib/canvas/plugin-node-context";
+import { buildDramaTemplate } from "@/lib/drama/drama-template";
+import { downstreamDramaNodeIds, dramaExecutionOrder } from "@/lib/drama/drama-runtime";
 import {
     alignCanvasNodes,
     autoLayoutCanvasNodes,
@@ -124,6 +128,7 @@ import type { ReferenceAudio, ReferenceVideo } from "@/types/media";
 
 // Register built-in nodes in the shared registry once when the module loads.
 registerBuiltinNodes();
+registerDramaNodes();
 
 type CanvasClipboard = {
     nodes: CanvasNodeData[];
@@ -301,6 +306,7 @@ function InfiniteCanvasPage() {
     const [focusMode, setFocusMode] = useState(false);
     const [performanceMode, setPerformanceMode] = useState(false);
     const [alignmentGuides, setAlignmentGuides] = useState<CanvasAlignmentGuides>({});
+    const [dramaRunning, setDramaRunning] = useState(false);
 
     const nodesRef = useRef(nodes);
     const connectionsRef = useRef(connections);
@@ -872,7 +878,10 @@ function InfiniteCanvasPage() {
     const canUngroupSelection = canUngroupSelectedNodes(selectedNodeIds, nodes);
     const inspectorNode = singleSelectedNodeId ? nodeById.get(singleSelectedNodeId) || null : null;
     const inspectorConnection = selectedConnectionId ? connections.find((connection) => connection.id === selectedConnectionId) || null : null;
-    const inspectorReferences = useMemo(() => (inspectorNode ? connections.filter((connection) => connection.toNodeId === inspectorNode.id).flatMap((connection) => (nodeById.get(connection.fromNodeId) ? [nodeById.get(connection.fromNodeId)!] : [])) : []), [connections, inspectorNode, nodeById]);
+    const inspectorReferences = useMemo(
+        () => (inspectorNode ? connections.filter((connection) => connection.toNodeId === inspectorNode.id).flatMap((connection) => (nodeById.get(connection.fromNodeId) ? [nodeById.get(connection.fromNodeId)!] : [])) : []),
+        [connections, inspectorNode, nodeById],
+    );
     const activeNodeId = hasMultipleSelectedNodes ? null : hoveredNodeId || (selectedNodeIds.size === 1 ? Array.from(selectedNodeIds)[0] : null);
     const groupChildCountById = useMemo(() => {
         const map = new Map<string, number>();
@@ -960,6 +969,7 @@ function InfiniteCanvasPage() {
     });
 
     const { pluginHost, renderPluginPanel, buildNodeToolbarItems } = usePluginHost({
+        projectId,
         effectiveConfig,
         isAiConfigReady,
         openConfigDialog,
@@ -1003,15 +1013,76 @@ function InfiniteCanvasPage() {
         [effectiveConfig.canvasImageCount, effectiveConfig.count, effectiveConfig.imageModel, effectiveConfig.model, effectiveConfig.size, getCanvasCenter],
     );
 
+    const createDramaTemplate = useCallback(() => {
+        const created = buildDramaTemplate(getCanvasCenter());
+        const nextNodes = [...nodesRef.current, ...created.nodes];
+        const nextConnections = [...connectionsRef.current, ...created.connections];
+        nodesRef.current = nextNodes;
+        connectionsRef.current = nextConnections;
+        setNodes(nextNodes);
+        setConnections(nextConnections);
+        setSelectedNodeIds(new Set([created.nodes[0]!.id]));
+        setSelectedConnectionId(null);
+        setDialogNodeId(created.nodes[0]!.id);
+        message.success("已插入漫剧生产工作流");
+    }, [getCanvasCenter, message]);
+
+    const runDramaWorkflow = useCallback(
+        async (scope: "current" | "selected" | "downstream" | "all") => {
+            const selected = selectedNodeIdsRef.current;
+            const currentId = toolbarNodeId || (selected.size === 1 ? [...selected][0] : undefined);
+            let requested: Set<string> | undefined;
+            if (scope === "current") requested = currentId ? new Set([currentId]) : new Set();
+            if (scope === "selected") requested = new Set(selected);
+            if (scope === "downstream") requested = currentId ? downstreamDramaNodeIds(new Set([currentId]), connectionsRef.current) : new Set();
+            if (requested && !requested.size) {
+                message.warning("请先选择一个漫剧节点");
+                return;
+            }
+            const ordered = dramaExecutionOrder(nodesRef.current, connectionsRef.current, requested);
+            if (!ordered.length) {
+                message.warning("当前范围没有可执行的漫剧节点");
+                return;
+            }
+            setDramaRunning(true);
+            let completed = 0;
+            let failed = 0;
+            try {
+                for (const planned of ordered) {
+                    const node = nodesRef.current.find((item) => item.id === planned.id);
+                    if (!node) continue;
+                    const blocked = connectionsRef.current
+                        .filter((edge) => edge.toNodeId === node.id)
+                        .map((edge) => nodesRef.current.find((item) => item.id === edge.fromNodeId))
+                        .some((upstream) => upstream?.workflowKind && upstream.metadata?.status === "error");
+                    if (blocked) {
+                        failed += 1;
+                        pluginHost.updateMetadata(node.id, { status: "error", errorDetails: "上游节点执行失败，请修复后重试" });
+                        continue;
+                    }
+                    const execute = getNodeDefinition(node.type)?.execute;
+                    if (!execute) continue;
+                    try {
+                        await execute(buildNodeContext(pluginHost, node, theme, viewportRef.current.k, selected.has(node.id)));
+                        completed += 1;
+                    } catch {
+                        failed += 1;
+                    }
+                }
+                if (failed) message.warning(`工作流完成 ${completed} 个，失败或跳过 ${failed} 个`);
+                else message.success(`工作流已完成 ${completed} 个节点`);
+            } finally {
+                setDramaRunning(false);
+            }
+        },
+        [message, pluginHost, theme, toolbarNodeId],
+    );
+
     const deleteNodes = useCallback(
         (ids: Set<string>) => {
             if (!ids.size) return;
             const protectedGroupIds = new Set(nodesRef.current.filter((node) => node.locked && node.metadata?.groupId).map((node) => node.metadata!.groupId!));
-            const allIds = new Set(
-                nodesRef.current
-                    .filter((node) => ids.has(node.id) && !node.locked && !(node.type === CanvasNodeType.Group && protectedGroupIds.has(node.id)))
-                    .map((node) => node.id),
-            );
+            const allIds = new Set(nodesRef.current.filter((node) => ids.has(node.id) && !node.locked && !(node.type === CanvasNodeType.Group && protectedGroupIds.has(node.id))).map((node) => node.id));
             if (!allIds.size) {
                 message.info(t("canvas.productivity.lockedSkipped"));
                 return;
@@ -3712,6 +3783,10 @@ function InfiniteCanvasPage() {
                     onAutoLayout={autoLayout}
                     onToggleFocusMode={() => setFocusMode((value) => !value)}
                     onTogglePerformanceMode={() => setPerformanceMode((value) => !value)}
+                    onCreateDramaTemplate={createDramaTemplate}
+                    onRunDrama={(scope) => void runDramaWorkflow(scope)}
+                    dramaRunning={dramaRunning}
+                    hasDramaNodes={nodes.some((node) => Boolean(node.workflowKind))}
                 />
 
                 {isMiniMapOpen ? <Minimap nodes={nodes} viewport={viewport} viewportSize={size} onViewportChange={setViewport} /> : null}

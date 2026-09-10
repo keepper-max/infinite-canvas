@@ -7,7 +7,9 @@ const referenceSchema = z
       "last_frame",
       "identity_reference",
       "environment_reference",
+      "composition_reference",
       "motion_reference",
+      "video_input",
       "audio_reference",
     ]),
     assetVersionId: z.string().uuid().optional(),
@@ -19,6 +21,25 @@ const referenceSchema = z
     (value) => Boolean(value.assetVersionId || value.url || value.dataUrl),
     "参考素材缺少来源",
   );
+
+const traceSchema = z
+  .object({
+    workflowKind: z.string().min(1).max(200).optional(),
+    skillId: z.string().min(1).max(200).optional(),
+    skillVersion: z.string().min(1).max(100).optional(),
+    inputHash: z
+      .string()
+      .regex(/^[a-f0-9]{8,64}$/i)
+      .optional(),
+    outputRevision: z.number().int().min(0).optional(),
+    userModified: z.boolean().optional(),
+    inputSnapshot: z.record(z.string(), z.unknown()).optional(),
+    assetKind: z
+      .enum(["character", "scene", "prop", "image", "video", "audio"])
+      .optional(),
+    assetName: z.string().trim().min(1).max(200).optional(),
+  })
+  .strict();
 
 export const createJobSchema = z
   .object({
@@ -39,6 +60,7 @@ export const createJobSchema = z
     prompt: z.string().min(1).max(120_000),
     parameters: z.record(z.string(), z.unknown()).default({}),
     references: z.array(referenceSchema).max(15).default([]),
+    trace: traceSchema.optional(),
     idempotencyKey: z.string().min(8).max(200),
   })
   .strict();
