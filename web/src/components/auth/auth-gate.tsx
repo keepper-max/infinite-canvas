@@ -2,8 +2,10 @@ import { useEffect, useState, type ReactNode } from "react";
 import { Navigate, useLocation } from "react-router-dom";
 
 import { AuthProvider } from "@/components/auth/auth-context";
+import { fetchManagedModelCatalog } from "@/services/api/image";
 import { getCurrentSession, listProjects, logout as logoutRequest, PlatformApiError, type AuthSession } from "@/services/api/platform";
 import { useCanvasStore } from "@/stores/canvas/use-canvas-store";
+import { modelOptionsFromChannels, useConfigStore } from "@/stores/use-config-store";
 
 export function AuthGate({ children }: { children: ReactNode }) {
     const location = useLocation();
@@ -42,6 +44,25 @@ export function AuthGate({ children }: { children: ReactNode }) {
             });
         return () => controller.abort();
     }, [hydrated, session]);
+
+    useEffect(() => {
+        if (!session) return;
+        const controller = new AbortController();
+        const current = useConfigStore.getState().config;
+        const managed = current.channels.find((channel) => channel.managed);
+        if (!managed) return () => controller.abort();
+        void fetchManagedModelCatalog(managed, controller.signal)
+            .then((models) => {
+                if (controller.signal.aborted || !models.length) return;
+                const latest = useConfigStore.getState().config;
+                const channels = latest.channels.map((channel) => (channel.managed ? { ...channel, models } : channel));
+                useConfigStore.setState({ config: { ...latest, channels, models: modelOptionsFromChannels(channels) } });
+            })
+            .catch((error) => {
+                if (!controller.signal.aborted) console.warn("Managed model catalog sync failed", error);
+            });
+        return () => controller.abort();
+    }, [session]);
 
     if (state === "loading" || (state === "ready" && (!hydrated || !shellReady))) return <FullScreenStatus text="正在进入工作台…" />;
     if (state === "signed-out") return <Navigate to={`/login?next=${encodeURIComponent(location.pathname + location.search)}`} replace />;

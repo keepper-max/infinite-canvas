@@ -966,8 +966,8 @@ export async function fetchChannelModels(channel: ModelChannel) {
     return fetchImageModels({ baseUrl: channel.baseUrl, apiKey: channel.apiKey, apiFormat: channel.apiFormat });
 }
 
-export async function fetchManagedModelCatalog(_channel: ModelChannel): Promise<ChannelModel[]> {
-    const response = await platformRequest<{ models: Array<{ id: string; displayName: string; capability: ModelCapability; acceptedParameters?: string[] }> }>("/api/models");
+export async function fetchManagedModelCatalog(_channel: ModelChannel, signal?: AbortSignal): Promise<ChannelModel[]> {
+    const response = await platformRequest<{ models: Array<{ id: string; displayName: string; capability: ModelCapability; acceptedParameters?: string[] }> }>("/api/models", { signal });
     return response.models.map((model) => ({ name: model.id, displayName: model.displayName, capability: model.capability || guessCapability(model.id), supportedParameters: model.acceptedParameters }));
 }
 
