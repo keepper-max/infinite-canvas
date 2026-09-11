@@ -478,6 +478,8 @@ export default {
                 invalidHomepage: "Enter a valid homepage URL",
                 name: "Source name",
                 namePlaceholder: "Used for categories and labels",
+                description: "Short description",
+                descriptionPlaceholder: "Describe what this prompt collection is best for",
                 homepage: "Source homepage (optional)",
                 enabled: "Enable source",
                 jsonFormat: "JSON format",

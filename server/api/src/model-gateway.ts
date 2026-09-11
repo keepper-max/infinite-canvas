@@ -50,6 +50,16 @@ export type CompiledGenerationRequest = GenerationInput & {
   upstreamParameters: Record<string, unknown>;
 };
 
+type CatalogCapabilityProfile = Pick<
+  ModelDefinition,
+  | "capability"
+  | "modes"
+  | "acceptedParameters"
+  | "requiredParametersByMode"
+  | "limits"
+  | "parameterMap"
+>;
+
 export class ModelGateway {
   constructor(private readonly pool: Pool) {}
 
@@ -70,23 +80,57 @@ export class ModelGateway {
         candidate.id || candidate.model || candidate.name || "",
       ).trim();
       if (!name) continue;
-      const capability = normalizeCapability(
-        candidate.modelType || candidate.type || candidate.capability,
-      );
+      const profile = catalogModelProfile(candidate);
+      const displayName = String(candidate.displayName || name).trim();
       const known = await this.pool.query(
-        "update model_catalog set discovered=true,healthy=true,catalog_metadata=$2,discovered_at=now(),checked_at=now(),updated_at=now() where upstream_model=$1 returning id",
-        [name, sanitizeCatalogEntry(candidate)],
+        "update model_catalog set display_name=$2,discovered=true,healthy=true,catalog_metadata=$3,discovered_at=now(),checked_at=now(),updated_at=now() where upstream_model=$1 returning id",
+        [name, displayName, sanitizeCatalogEntry(candidate)],
       );
-      if (!known.rowCount && capability) {
-        const id = `catalog.${capability}.${createSlug(name)}`.slice(0, 190);
+      let id = String(known.rows[0]?.id || "");
+      if (!profile) {
+        if (id.startsWith("catalog."))
+          await this.pool.query(
+            "update model_catalog set enabled=false,healthy=false,updated_at=now() where id=$1",
+            [id],
+          );
+        continue;
+      }
+      if (!id) {
+        id = `catalog.${profile.capability}.${createSlug(name)}`.slice(0, 190);
         await this.pool.query(
           `insert into model_catalog(id,display_name,capability,upstream_model,provider_id,discovered,enabled,healthy,catalog_metadata,discovered_at,checked_at)
-                    values($1,$2,$3,$2,'token360',true,false,false,$4,now(),now()) on conflict(id) do update set catalog_metadata=excluded.catalog_metadata,discovered=true,discovered_at=now(),checked_at=now(),updated_at=now()`,
-          [id, name, capability, sanitizeCatalogEntry(candidate)],
+                    values($1,$2,$3,$4,'token360',true,true,true,$5,now(),now())
+                    on conflict(id) do update set display_name=excluded.display_name,capability=excluded.capability,upstream_model=excluded.upstream_model,catalog_metadata=excluded.catalog_metadata,discovered=true,enabled=true,healthy=true,discovered_at=now(),checked_at=now(),updated_at=now()`,
+          [id, displayName, profile.capability, name, sanitizeCatalogEntry(candidate)],
         );
+      }
+      if (id.startsWith("catalog.")) {
+        await this.pool.query(
+          "update model_catalog set enabled=true,healthy=true,updated_at=now() where id=$1",
+          [id],
+        );
+        await this.upsertCatalogProfile(id, profile);
       }
     }
     return candidates.length;
+  }
+
+  private async upsertCatalogProfile(id: string, profile: CatalogCapabilityProfile) {
+    await this.pool.query(
+      `insert into model_capabilities(model_id,modes,accepted_parameters,required_parameters_by_mode,limits,parameter_map)
+       values($1,$2,$3,$4,$5,$6)
+       on conflict(model_id) do update set modes=excluded.modes,accepted_parameters=excluded.accepted_parameters,
+       required_parameters_by_mode=excluded.required_parameters_by_mode,limits=excluded.limits,
+       parameter_map=excluded.parameter_map,updated_at=now()`,
+      [
+        id,
+        JSON.stringify(profile.modes),
+        JSON.stringify(profile.acceptedParameters),
+        JSON.stringify(profile.requiredParametersByMode),
+        JSON.stringify(profile.limits),
+        JSON.stringify(profile.parameterMap),
+      ],
+    );
   }
 
   async listPublicModels(): Promise<
@@ -219,12 +263,107 @@ function catalogItems(payload: unknown): Array<Record<string, unknown>> {
 }
 function normalizeCapability(value: unknown): Capability | null {
   const text = String(value || "").toLowerCase();
+  if (text.includes("speech_to_text") || text.includes("speech-to-text"))
+    return null;
   if (text.includes("video")) return "video";
   if (text.includes("image")) return "image";
   if (text.includes("audio") || text.includes("speech")) return "audio";
   if (text.includes("text") || text.includes("chat") || text.includes("llm"))
     return "text";
   return null;
+}
+
+export function catalogModelProfile(
+  candidate: Record<string, unknown>,
+): CatalogCapabilityProfile | null {
+  const capability = normalizeCapability(
+    candidate.modelType || candidate.type || candidate.capability,
+  );
+  if (!capability) return null;
+  const supported = new Set(catalogStrings(candidate.supported_parameters || candidate.supportedParameters));
+  const inputs = new Set(catalogStrings(candidate.modelInputTypes).map((value) => value.toLowerCase()));
+  const accepts = (...names: string[]) => names.some((name) => supported.has(name));
+
+  if (capability === "text") {
+    return {
+      capability,
+      modes: ["chat"],
+      acceptedParameters: accepts("reasoning_effort") ? ["reasoningEffort"] : [],
+      requiredParametersByMode: {},
+      limits: { maxPromptChars: 120_000 },
+      parameterMap: { reasoningEffort: "reasoning_effort" },
+    };
+  }
+  if (capability === "image") {
+    const supportsReferences = inputs.has("image") || accepts("images", "image");
+    return {
+      capability,
+      modes: supportsReferences ? ["t2i", "i2i"] : ["t2i"],
+      acceptedParameters: [
+        ...(accepts("n") ? ["count"] : []),
+        ...(accepts("size") ? ["size"] : []),
+        ...(accepts("quality") ? ["quality"] : []),
+        ...(accepts("background") ? ["background"] : []),
+        ...(supportsReferences ? ["references"] : []),
+      ],
+      requiredParametersByMode: supportsReferences ? { i2i: ["references"] } : {},
+      limits: { maxImages: 9, maxPromptChars: 20_000 },
+      parameterMap: { count: "n", references: "images" },
+    };
+  }
+  if (capability === "video") {
+    const supportsFrames = accepts("frame_images") || inputs.has("image");
+    const supportsReferences = accepts("input_references");
+    const modes: GenerationMode[] = ["t2v"];
+    if (supportsFrames) modes.push("i2v");
+    if (accepts("frame_images")) modes.push("flf2v");
+    if (supportsReferences) modes.push("multiref");
+    return {
+      capability,
+      modes,
+      acceptedParameters: [
+        ...(accepts("duration") ? ["duration"] : []),
+        ...(accepts("resolution") ? ["resolution"] : []),
+        ...(accepts("aspect_ratio", "ratio") ? ["aspectRatio"] : []),
+        ...(accepts("generate_audio") ? ["generateAudio"] : []),
+        ...(accepts("watermark") ? ["watermark"] : []),
+        ...(supportsFrames ? ["firstFrame"] : []),
+        ...(accepts("frame_images") ? ["lastFrame"] : []),
+        ...(supportsReferences ? ["references"] : []),
+      ],
+      requiredParametersByMode: {
+        ...(supportsFrames ? { i2v: ["firstFrame"] } : {}),
+        ...(accepts("frame_images") ? { flf2v: ["firstFrame", "lastFrame"] } : {}),
+        ...(supportsReferences ? { multiref: ["references"] } : {}),
+      },
+      limits: { maxImages: 9, maxVideos: 3, maxAudios: 3, maxPromptChars: 20_000 },
+      parameterMap: {
+        duration: "duration",
+        resolution: "resolution",
+        aspectRatio: accepts("aspect_ratio") ? "aspect_ratio" : "ratio",
+        generateAudio: "generate_audio",
+        watermark: "watermark",
+      },
+    };
+  }
+  return {
+    capability,
+    modes: ["tts"],
+    acceptedParameters: [
+      ...(accepts("voice") ? ["voice"] : []),
+      ...(accepts("response_format", "audio_format") ? ["format"] : []),
+      ...(accepts("speed") ? ["speed"] : []),
+      ...(accepts("instructions") ? ["instructions"] : []),
+    ],
+    requiredParametersByMode: {},
+    limits: { maxPromptChars: 10_000 },
+    parameterMap: { format: accepts("response_format") ? "response_format" : "audio_format" },
+  };
+}
+
+function catalogStrings(value: unknown): string[] {
+  if (Array.isArray(value)) return value.map(String).map((item) => item.trim()).filter(Boolean);
+  return String(value || "").split(/[\s,]+/).map((item) => item.trim()).filter(Boolean);
 }
 function createSlug(value: string) {
   return (
@@ -243,8 +382,15 @@ function sanitizeCatalogEntry(value: Record<string, unknown>) {
     "modelType",
     "capability",
     "description",
+    "descriptionEn",
+    "descriptionZh",
+    "displayName",
+    "modelInputTypes",
+    "modelOutputTypes",
     "status",
     "supportedParameters",
+    "supported_parameters",
+    "effectiveDefaultParams",
   ];
   return Object.fromEntries(
     allowed

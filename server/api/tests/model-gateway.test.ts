@@ -4,7 +4,7 @@ import type { Pool } from "pg";
 
 import { DomainError } from "../src/domain.js";
 import { createJobSchema } from "../src/job-contract.js";
-import { ModelGateway } from "../src/model-gateway.js";
+import { catalogModelProfile, ModelGateway } from "../src/model-gateway.js";
 
 const definition = {
   id: "video.seedance-2-5",
@@ -40,6 +40,26 @@ function gateway(row = definition) {
     query: async () => ({ rows: [row], rowCount: 1 }),
   } as unknown as Pool);
 }
+
+test("catalog profiles expose each supported generation family without mixing speech recognition into TTS", () => {
+  assert.deepEqual(
+    catalogModelProfile({ modelType: "LLM", supported_parameters: ["reasoning_effort"] })?.modes,
+    ["chat"],
+  );
+  assert.deepEqual(
+    catalogModelProfile({ modelType: "IMAGE_GENERATION", modelInputTypes: ["TEXT", "IMAGE"], supported_parameters: ["n", "size", "images"] })?.modes,
+    ["t2i", "i2i"],
+  );
+  assert.deepEqual(
+    catalogModelProfile({ modelType: "VIDEO_GENERATION", modelInputTypes: ["TEXT", "IMAGE"], supported_parameters: ["duration", "frame_images", "input_references"] })?.modes,
+    ["t2v", "i2v", "flf2v", "multiref"],
+  );
+  assert.deepEqual(
+    catalogModelProfile({ modelType: "AUDIO_TEXT_TO_SPEECH", supported_parameters: ["voice", "audio_format"] })?.modes,
+    ["tts"],
+  );
+  assert.equal(catalogModelProfile({ modelType: "AUDIO_SPEECH_TO_TEXT" }), null);
+});
 
 test("drama jobs preserve a strict trace without forwarding it as a model parameter", () => {
   const input = createJobSchema.parse({

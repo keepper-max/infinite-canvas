@@ -23,7 +23,7 @@ export function PromptSourceEditorDrawer({ open, source, onSave, onClose }: { op
         if (!name) return message.warning(t("config.promptSources.editor.nameRequired"));
         if (!isHttpUrl(url)) return message.warning(t("config.promptSources.editor.invalidUrl"));
         if (draft.homepage.trim() && !isHttpUrl(draft.homepage.trim())) return message.warning(t("config.promptSources.editor.invalidHomepage"));
-        onSave({ ...draft, name, url, homepage: draft.homepage.trim(), builtIn: false });
+        onSave({ ...draft, name, description: draft.description.trim() || "自定义提示词集合", url, homepage: draft.homepage.trim(), builtIn: false });
         onClose();
     };
 
@@ -51,6 +51,10 @@ export function PromptSourceEditorDrawer({ open, source, onSave, onClose }: { op
                 <label className="block">
                     <span className="mb-1.5 block text-sm font-medium">JSON URL</span>
                     <Input value={draft.url} onChange={(event) => patch({ url: event.target.value })} placeholder="https://example.com/prompts.json" />
+                </label>
+                <label className="block">
+                    <span className="mb-1.5 block text-sm font-medium">{t("config.promptSources.editor.description")}</span>
+                    <Input.TextArea rows={2} maxLength={100} showCount value={draft.description} onChange={(event) => patch({ description: event.target.value })} placeholder={t("config.promptSources.editor.descriptionPlaceholder")} />
                 </label>
                 <label className="block">
                     <span className="mb-1.5 block text-sm font-medium">{t("config.promptSources.editor.homepage")}</span>

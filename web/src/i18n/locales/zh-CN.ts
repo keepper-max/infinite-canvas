@@ -478,6 +478,8 @@ export default {
                 invalidHomepage: "请输入有效的主页地址",
                 name: "来源名称",
                 namePlaceholder: "用于分类展示",
+                description: "简短说明",
+                descriptionPlaceholder: "用一句话说明这组提示词适合什么场景",
                 homepage: "来源主页（可选）",
                 enabled: "启用来源",
                 jsonFormat: "JSON 格式",
