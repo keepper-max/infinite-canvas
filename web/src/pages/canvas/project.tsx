@@ -8,7 +8,7 @@ import { useTranslation } from "react-i18next";
 import { requestEdit, requestGeneration, requestImageQuestion } from "@/services/api/image";
 import { requestAudioGeneration, storeGeneratedAudio } from "@/services/api/audio";
 import { createVideoGenerationTask, isVideoTaskFailed, storeGeneratedVideo, waitForVideoGenerationTask } from "@/services/api/video";
-import { subscribeProjectJobEvents } from "@/services/api/jobs";
+import { abortForManualJobCancellation, subscribeProjectJobEvents } from "@/services/api/jobs";
 import { createCanvasDraft, type CanvasDraft } from "@/services/api/canvas";
 import { defaultConfig, useConfigStore, useEffectiveConfig } from "@/stores/use-config-store";
 import { uploadImage } from "@/services/image-storage";
@@ -525,7 +525,7 @@ function InfiniteCanvasPage() {
             const affectedNodeIds = new Set<string>();
             generationRequestsRef.current.forEach((request) => {
                 if (request.runningNodeId !== runningId) return;
-                request.controller.abort();
+                abortForManualJobCancellation(request.controller);
                 generationRequestsRef.current.delete(request.targetNodeId);
                 affectedNodeIds.add(request.targetNodeId);
                 affectedNodeIds.add(request.originNodeId);

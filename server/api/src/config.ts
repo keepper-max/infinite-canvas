@@ -82,8 +82,8 @@ export function readConfig(env: NodeJS.ProcessEnv = process.env): ApiConfig {
     ),
     submitTimeoutMs: readInteger(
       env.PROVIDER_SUBMIT_TIMEOUT_MS,
-      300_000,
-      1_000,
+      0,
+      0,
       300_000,
       "PROVIDER_SUBMIT_TIMEOUT_MS",
     ),
@@ -96,8 +96,8 @@ export function readConfig(env: NodeJS.ProcessEnv = process.env): ApiConfig {
     ),
     maxRuntimeMs: readInteger(
       env.JOB_MAX_RUNTIME_MS,
-      1_800_000,
-      10_000,
+      0,
+      0,
       86_400_000,
       "JOB_MAX_RUNTIME_MS",
     ),

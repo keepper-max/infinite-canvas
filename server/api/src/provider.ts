@@ -238,10 +238,14 @@ export class Token360Provider {
     });
   }
   private async raw(path: string, init: RequestInit) {
-    const timeout = AbortSignal.timeout(this.submitTimeoutMs);
-    const signal = init.signal
-      ? AbortSignal.any([init.signal, timeout])
-      : timeout;
+    const timeout =
+      this.submitTimeoutMs > 0
+        ? AbortSignal.timeout(this.submitTimeoutMs)
+        : undefined;
+    const signal =
+      init.signal && timeout
+        ? AbortSignal.any([init.signal, timeout])
+        : init.signal || timeout;
     try {
       return await fetch(`${this.config.baseUrl}${path}`, {
         ...init,

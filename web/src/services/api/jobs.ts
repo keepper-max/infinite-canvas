@@ -2,6 +2,8 @@ import { nanoid } from "nanoid";
 
 import { getCurrentSession, platformRequest } from "./platform";
 
+const MANUAL_JOB_CANCEL_REASON = "manual-managed-job-cancel";
+
 export type ManagedCapability = "text" | "image" | "video" | "audio";
 export type ManagedMode = "chat" | "t2i" | "i2i" | "tts" | "t2v" | "i2v" | "flf2v" | "multiref";
 export type ManagedReference = {
@@ -39,13 +41,14 @@ export type ManagedJob = {
 type Context = { projectId?: string; nodeId?: string; nodeRevision?: number; idempotencyKey?: string; signal?: AbortSignal };
 
 export async function createManagedJob(input: { model: string; capability: ManagedCapability; mode: ManagedMode; prompt: string; parameters?: Record<string, unknown>; references?: ManagedReference[]; trace?: ManagedJobTrace }, context: Context = {}) {
-    const projectId = context.projectId || (await getCurrentSession(context.signal)).workspace.projectId;
+    // Let the local API finish creating the durable job even if the page stops
+    // waiting. Once the ID is known, an explicit manual stop cancels it.
+    const projectId = context.projectId || (await getCurrentSession()).workspace.projectId;
     const requestHash = stableHash(JSON.stringify(input));
     const idempotencyKey = context.idempotencyKey || (context.nodeId ? `${context.nodeId}:${context.nodeRevision || 0}:${input.capability}:${input.mode}:${requestHash}` : `workbench:${nanoid()}`);
     return (
         await platformRequest<{ job: ManagedJob }>(`/api/projects/${encodeURIComponent(projectId)}/jobs`, {
             method: "POST",
-            signal: context.signal,
             body: JSON.stringify({
                 nodeId: context.nodeId,
                 nodeRevision: context.nodeRevision || 0,
@@ -70,17 +73,37 @@ export async function cancelManagedJob(jobId: string) {
     return (await platformRequest<{ job: ManagedJob }>(`/api/jobs/${encodeURIComponent(jobId)}/cancel`, { method: "POST" })).job;
 }
 
+export function abortForManualJobCancellation(controller: AbortController) {
+    controller.abort(MANUAL_JOB_CANCEL_REASON);
+}
+
+export function cancelManagedJobOnAbort(jobId: string, signal?: AbortSignal) {
+    if (!signal) return () => undefined;
+    const cancel = () => {
+        if (signal.reason !== MANUAL_JOB_CANCEL_REASON) return;
+        void cancelManagedJob(jobId).catch(() => undefined);
+    };
+    if (signal.aborted) cancel();
+    else signal.addEventListener("abort", cancel, { once: true });
+    return () => signal.removeEventListener("abort", cancel);
+}
+
 export async function retryManagedJob(jobId: string) {
     return (await platformRequest<{ job: ManagedJob }>(`/api/jobs/${encodeURIComponent(jobId)}/retry`, { method: "POST" })).job;
 }
 
 export async function waitForManagedJob(jobId: string, signal?: AbortSignal) {
-    for (;;) {
-        if (signal?.aborted) throw new DOMException("Aborted", "AbortError");
-        const job = await getManagedJob(jobId, signal);
-        if (job.status === "completed") return job;
-        if (job.status === "failed" || job.status === "cancelled") throw new Error(job.error?.message || (job.status === "cancelled" ? "任务已取消" : "生成失败"));
-        await delay(1_500, signal);
+    const unbindCancellation = cancelManagedJobOnAbort(jobId, signal);
+    try {
+        for (;;) {
+            if (signal?.aborted) throw new DOMException("Aborted", "AbortError");
+            const job = await getManagedJob(jobId, signal);
+            if (job.status === "completed") return job;
+            if (job.status === "failed" || job.status === "cancelled") throw new Error(job.error?.message || (job.status === "cancelled" ? "任务已取消" : "生成失败"));
+            await delay(1_500, signal);
+        }
+    } finally {
+        unbindCancellation();
     }
 }
 

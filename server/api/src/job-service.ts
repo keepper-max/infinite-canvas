@@ -333,15 +333,33 @@ export class JobExecutor {
       [jobId, attempt],
     );
     await this.event(row, "job.started", "submitting", 1, "正在提交模型");
+    const cancellationController = new AbortController();
+    const providerSignal = signal
+      ? AbortSignal.any([signal, cancellationController.signal])
+      : cancellationController.signal;
+    const cancellationMonitor = setInterval(() => {
+      void this.pool
+        .query("select status from generation_jobs where id=$1", [jobId])
+        .then((result) => {
+          if (
+            result.rows[0]?.status === "cancel_requested" &&
+            !cancellationController.signal.aborted
+          )
+            cancellationController.abort(new Error("Job cancelled"));
+        })
+        .catch(() => undefined);
+    }, this.config.videoPollIntervalMs);
+    let activeProviderJobId = row.provider_job_id;
     try {
       let result = row.provider_job_id
-        ? await this.provider.get(String(row.provider_job_id), signal)
-        : await this.provider.create(compiled, signal);
+        ? await this.provider.get(String(row.provider_job_id), providerSignal)
+        : await this.provider.create(compiled, providerSignal);
       if (result.providerJobId)
         await this.pool.query(
           "update generation_jobs set provider_job_id=$2,heartbeat_at=now(),updated_at=now() where id=$1",
           [jobId, result.providerJobId],
         );
+      activeProviderJobId = result.providerJobId || activeProviderJobId;
       if (result.status !== "completed") {
         const running = await this.pool.query(
           "update generation_jobs set status='running',progress=greatest(progress,2),heartbeat_at=now(),updated_at=now() where id=$1 and status <> 'cancel_requested' returning id",
@@ -384,9 +402,9 @@ export class JobExecutor {
             { ...row, provider_job_id: result.providerJobId },
             signal,
           );
-        if (Date.now() >= deadline)
+        if (this.config.maxRuntimeMs > 0 && Date.now() >= deadline)
           throw new ProviderError("PROVIDER_TIMEOUT", "生成任务等待超时", true);
-        result = await this.provider.get(result.providerJobId!, signal);
+        result = await this.provider.get(result.providerJobId!, providerSignal);
         const afterPoll = (
           await this.pool.query(
             "select status from generation_jobs where id=$1",
@@ -465,6 +483,15 @@ export class JobExecutor {
       });
       return { artifacts };
     } catch (error) {
+      const current = await this.pool.query(
+        "select status from generation_jobs where id=$1",
+        [jobId],
+      );
+      if (current.rows[0]?.status === "cancel_requested")
+        return this.cancel(
+          { ...row, provider_job_id: activeProviderJobId },
+          signal,
+        );
       const mapped = mapProviderError(error);
       await this.pool.query(
         "update job_attempts set status='failed',error_code=$3,error_sanitized=$4,finished_at=now() where job_id=$1 and attempt=$2",
@@ -475,6 +502,8 @@ export class JobExecutor {
         [jobId, mapped.retryable, mapped.code, mapped.details, mapped.message],
       );
       throw error;
+    } finally {
+      clearInterval(cancellationMonitor);
     }
   }
   async markAttemptFailed(jobId: string, final: boolean) {

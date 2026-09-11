@@ -595,8 +595,10 @@ async function saveCanvasInTransaction(
         workflowKind: node.workflowKind,
         label: node.title,
         position: node.position,
-        width: node.width,
-        height: node.height,
+        // The canvas keeps precise dimensions in `data`; these legacy helper
+        // columns are integers and must not reject freely resized nodes.
+        width: Math.round(node.width),
+        height: Math.round(node.height),
         locked: node.locked,
         groupId:
           typeof node.metadata?.groupId === "string"

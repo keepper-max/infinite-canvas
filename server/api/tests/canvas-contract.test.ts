@@ -41,3 +41,14 @@ test("dangling and duplicate references are rejected", () => {
     assert.throws(() => parseCanvasWrite({ ...base, edges: [{ id: "bad", fromNodeId: "a", toNodeId: "missing" }] }), (error) => error instanceof DomainError && error.code === "INVALID_CANVAS_EDGE");
     assert.throws(() => parseCanvasWrite({ ...base, nodes: [base.nodes[0], base.nodes[0]], edges: [] }), (error) => error instanceof DomainError && error.code === "DUPLICATE_NODE_ID");
 });
+
+test("canvas contract accepts fractional node sizes produced by free resize", () => {
+    const { write } = parseCanvasWrite({
+        expectedRevision: 0,
+        nodes: [{ id: "image", type: "image", title: "Image", position: { x: 0.25, y: 1.5 }, width: 340.5, height: 191.25 }],
+        edges: [],
+        viewport: { x: 0, y: 0, k: 1 },
+    });
+    assert.equal(write.nodes[0]?.width, 340.5);
+    assert.equal(write.nodes[0]?.height, 191.25);
+});

@@ -43,6 +43,76 @@ test("provider reports request timeout separately from connection failures", asy
   }
 });
 
+test("provider leaves requests unbounded when submit timeout is disabled", async () => {
+  const originalFetch = globalThis.fetch;
+  let receivedSignal: AbortSignal | null | undefined;
+  globalThis.fetch = async (_input, init) => {
+    receivedSignal = init?.signal;
+    return Response.json({ data: [{ b64_json: "AA==" }] });
+  };
+  try {
+    const provider = new Token360Provider(
+      {
+        baseUrl: "https://example.invalid",
+        apiKey: "test-only",
+        catalogUrl: "https://example.invalid/models",
+      },
+      0,
+    );
+    await provider.create({
+      modelId: "image.test",
+      upstreamModel: "image-test",
+      providerId: "token360",
+      capability: "image",
+      mode: "t2i",
+      prompt: "test",
+      parameters: {},
+      references: [],
+      upstreamParameters: {},
+    });
+    assert.equal(receivedSignal, undefined);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("provider keeps manual cancellation active when submit timeout is disabled", async () => {
+  const originalFetch = globalThis.fetch;
+  const controller = new AbortController();
+  let receivedSignal: AbortSignal | null | undefined;
+  globalThis.fetch = async (_input, init) => {
+    receivedSignal = init?.signal;
+    return Response.json({ data: [{ b64_json: "AA==" }] });
+  };
+  try {
+    const provider = new Token360Provider(
+      {
+        baseUrl: "https://example.invalid",
+        apiKey: "test-only",
+        catalogUrl: "https://example.invalid/models",
+      },
+      0,
+    );
+    await provider.create(
+      {
+        modelId: "image.test",
+        upstreamModel: "image-test",
+        providerId: "token360",
+        capability: "image",
+        mode: "t2i",
+        prompt: "test",
+        parameters: {},
+        references: [],
+        upstreamParameters: {},
+      },
+      controller.signal,
+    );
+    assert.equal(receivedSignal, controller.signal);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
 test("video provider emits documented frame and multimodal reference shapes", async () => {
   const originalFetch = globalThis.fetch;
   const bodies: Array<Record<string, unknown>> = [];
