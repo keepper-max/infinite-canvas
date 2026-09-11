@@ -1457,16 +1457,24 @@ function InfiniteCanvasPage() {
         applyHistory(next);
     }, [applyHistory]);
 
-    const createAndOpenProject = useCallback(() => {
-        const id = createProject(t("canvas.defaultTitle", { count: useCanvasStore.getState().projects.length + 1 }));
-        navigate(`/canvas/${id}`);
-    }, [createProject, navigate, t]);
+    const createAndOpenProject = useCallback(async () => {
+        try {
+            const id = await createProject(t("canvas.defaultTitle", { count: useCanvasStore.getState().projects.length + 1 }));
+            navigate(`/canvas/${id}`);
+        } catch (error) {
+            message.error(error instanceof Error ? error.message : t("apiErrors.requestFailed"));
+        }
+    }, [createProject, message, navigate, t]);
 
-    const deleteCurrentProject = useCallback(() => {
-        deleteProjects([projectId]);
-        cleanupAssetImages();
-        navigate("/canvas");
-    }, [cleanupAssetImages, deleteProjects, navigate, projectId]);
+    const deleteCurrentProject = useCallback(async () => {
+        try {
+            const workspace = await deleteProjects([projectId]);
+            cleanupAssetImages();
+            navigate(`/canvas/${workspace.projectId}`, { replace: true });
+        } catch (error) {
+            message.error(error instanceof Error ? error.message : t("apiErrors.requestFailed"));
+        }
+    }, [cleanupAssetImages, deleteProjects, message, navigate, projectId, t]);
 
     const exportCurrentProject = useCallback(async () => {
         const project = useCanvasStore.getState().projects.find((item) => item.id === projectId);
@@ -2617,11 +2625,16 @@ function InfiniteCanvasPage() {
         setTitleEditing(true);
     }, [currentProject?.title, t]);
 
-    const finishTitleEditing = useCallback(() => {
+    const finishTitleEditing = useCallback(async () => {
         const nextTitle = titleDraft.trim();
-        if (nextTitle) renameProject(projectId, nextTitle);
-        setTitleEditing(false);
-    }, [projectId, renameProject, titleDraft]);
+        if (!nextTitle) return setTitleEditing(false);
+        try {
+            await renameProject(projectId, nextTitle);
+            setTitleEditing(false);
+        } catch (error) {
+            message.error(error instanceof Error ? error.message : t("apiErrors.requestFailed"));
+        }
+    }, [message, projectId, renameProject, t, titleDraft]);
 
     const preventCanvasContextMenu = useCallback((event: ReactMouseEvent) => {
         if ((event.target as HTMLElement).closest("[data-node-id]")) return;
@@ -3543,6 +3556,8 @@ function InfiniteCanvasPage() {
                         onProjects={() => navigate("/canvas")}
                         onCreateProject={createAndOpenProject}
                         onDeleteProject={deleteCurrentProject}
+                        canRenameProject={currentProject?.role !== "viewer"}
+                        canDeleteProject={currentProject?.role === "owner"}
                         onExportProject={exportCurrentProject}
                         onImportImage={() => handleUploadRequest()}
                         onOpenPlugins={() => setPluginManagerOpen(true)}

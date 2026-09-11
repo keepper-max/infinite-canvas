@@ -52,6 +52,18 @@ export async function getProject(projectId: string, signal?: AbortSignal) {
     return (await platformRequest<{ project: ProjectSummary }>(`/api/projects/${encodeURIComponent(projectId)}`, { signal })).project;
 }
 
+export async function createProject(name: string, description = "") {
+    return (await platformRequest<{ project: ProjectSummary }>("/api/projects", { method: "POST", body: JSON.stringify({ name, description }) })).project;
+}
+
+export async function updateProject(projectId: string, input: { name?: string; description?: string }) {
+    return (await platformRequest<{ project: ProjectSummary }>(`/api/projects/${encodeURIComponent(projectId)}`, { method: "PATCH", body: JSON.stringify(input) })).project;
+}
+
+export async function deleteProject(projectId: string) {
+    return platformRequest<{ deletedProjectId: string; workspace: Workspace }>(`/api/projects/${encodeURIComponent(projectId)}`, { method: "DELETE" });
+}
+
 export async function platformRequest<T>(path: string, init: RequestInit = {}): Promise<T> {
     let response: Response;
     try {

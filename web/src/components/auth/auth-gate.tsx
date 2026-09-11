@@ -32,8 +32,8 @@ export function AuthGate({ children }: { children: ReactNode }) {
         void listProjects(controller.signal)
             .then((projects) => {
                 const store = useCanvasStore.getState();
-                store.ensureProjectShell(session.workspace);
-                projects.forEach((project) => store.ensureProjectShell(project));
+                const workspaces = projects.some((project) => project.projectId === session.workspace.projectId) ? projects : [{ ...session.workspace, role: "owner" }, ...projects];
+                store.syncProjectShells(workspaces);
                 setShellReady(true);
             })
             .catch((error) => {

@@ -141,6 +141,7 @@ GET  /api/projects
 POST /api/projects
 GET  /api/projects/:projectId
 PATCH /api/projects/:projectId
+DELETE /api/projects/:projectId
 
 GET  /api/projects/:projectId/canvas
 PUT  /api/projects/:projectId/canvas
@@ -165,6 +166,8 @@ GET  /api/health/ready
 
 所有 `:projectId` 路由先校验 Session，再校验成员关系。通过任务 ID 或资产 ID 访问时，也必须反查所属项目权限。
 
+项目创建、改名和删除以 PostgreSQL 为唯一权威；IndexedDB 只保存云端项目的离线缓存和待迁移旧项目。项目删除仅允许所有者执行，采用软删除并停止未完成任务；删除最后一个可用项目时，服务端必须在同一事务返回新的默认草稿空间。
+
 ## SSE
 
 - `Content-Type: text/event-stream`，事件 `id` 使用 `JobEvent.eventId`。
@@ -186,4 +189,3 @@ GET  /api/health/ready
 - 已登录且没有项目的异常账号在进入工作台时自动补建默认草稿，不要求先走创建项目页。
 - 第 2 部分明确询问后迁移旧 IndexedDB 画布；迁移失败继续保留本地数据并允许导出。
 - 第 8 部分部署通过新健康探针后才切流；旧镜像和旧数据卷保留到验收完成。
-

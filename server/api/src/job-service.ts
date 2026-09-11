@@ -173,7 +173,7 @@ export class JobService {
   }
   async get(jobId: string, userId: string) {
     const result = await this.pool.query(
-      `select j.* from generation_jobs j join project_members m on m.project_id=j.project_id where j.id=$1 and m.user_id=$2`,
+      `select j.* from generation_jobs j join project_members m on m.project_id=j.project_id join projects p on p.id=j.project_id where j.id=$1 and m.user_id=$2 and p.deleted_at is null`,
       [jobId, userId],
     );
     if (!result.rows[0]) return null;
@@ -214,7 +214,7 @@ export class JobService {
   }
   async cancel(jobId: string, userId: string) {
     const result = await this.pool.query(
-      `update generation_jobs j set status='cancel_requested',cancel_requested_at=now(),updated_at=now() from project_members m where j.id=$1 and m.project_id=j.project_id and m.user_id=$2 and m.role in ('owner','admin','editor') and j.status in ('pending','queued','submitting','retrying','running','downloading','persisting') returning j.*`,
+      `update generation_jobs j set status='cancel_requested',cancel_requested_at=now(),updated_at=now() from project_members m, projects p where j.id=$1 and m.project_id=j.project_id and p.id=j.project_id and p.deleted_at is null and m.user_id=$2 and m.role in ('owner','admin','editor') and j.status in ('pending','queued','submitting','retrying','running','downloading','persisting') returning j.*`,
       [jobId, userId],
     );
     const row = result.rows[0];

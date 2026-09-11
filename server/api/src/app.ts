@@ -307,6 +307,13 @@ export function createApp(
     );
   });
 
+  app.post("/api/projects", async (context) => {
+    const user = await requireUser(context.req.raw, repository, config);
+    const input = projectCreateInput.parse(await readJson(context.req.raw));
+    const project = await repository.createProjectForUser(user.id, input);
+    return context.json(success(context, { project }), 201);
+  });
+
   app.get("/api/projects/:projectId", async (context) => {
     const user = await requireUser(context.req.raw, repository, config);
     const project = await repository.getProjectForUser(
@@ -316,6 +323,30 @@ export function createApp(
     if (!project)
       throw new DomainError("PROJECT_FORBIDDEN", "无权访问该项目", 403);
     return context.json(success(context, { project }));
+  });
+
+  app.patch("/api/projects/:projectId", async (context) => {
+    const user = await requireUser(context.req.raw, repository, config);
+    const input = projectUpdateInput.parse(await readJson(context.req.raw));
+    const project = await repository.updateProjectForUser(
+      context.req.param("projectId"),
+      user.id,
+      input,
+    );
+    if (!project)
+      throw new DomainError("PROJECT_FORBIDDEN", "无权访问该项目", 403);
+    return context.json(success(context, { project }));
+  });
+
+  app.delete("/api/projects/:projectId", async (context) => {
+    const user = await requireUser(context.req.raw, repository, config);
+    const result = await repository.deleteProjectForUser(
+      context.req.param("projectId"),
+      user.id,
+    );
+    if (!result)
+      throw new DomainError("PROJECT_FORBIDDEN", "无权访问该项目", 403);
+    return context.json(success(context, result));
   });
 
   app.get("/api/projects/:projectId/canvas", async (context) => {
@@ -769,6 +800,28 @@ const loginInput = z
       .max(passwordPolicy.maxLength, "密码过长"),
   })
   .strict();
+const projectName = z
+  .string()
+  .trim()
+  .min(1, "请输入项目名称")
+  .max(100, "项目名称最多 100 个字符");
+const projectDescription = z
+  .string()
+  .trim()
+  .max(1000, "项目说明最多 1000 个字符");
+const projectCreateInput = z
+  .object({ name: projectName, description: projectDescription.default("") })
+  .strict();
+const projectUpdateInput = z
+  .object({
+    name: projectName.optional(),
+    description: projectDescription.optional(),
+  })
+  .strict()
+  .refine(
+    (input) => input.name !== undefined || input.description !== undefined,
+    { message: "至少提交一个要修改的字段" },
+  );
 const positiveInteger = z.coerce.number().int().min(1);
 const restoreInput = z
   .object({ expectedRevision: z.number().int().min(0) })

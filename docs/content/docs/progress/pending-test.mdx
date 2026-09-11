@@ -5,6 +5,8 @@ description: Implemented changes that still need manual verification
 
 # Pending Tests
 
+- Cloud project lifecycle: automated API/PostgreSQL coverage now passes for create, rename, soft delete, access blocking, fallback workspace, canvas save, and a fresh login session restoring the same canvas revision. Manual UI verification remains for project-list and in-canvas controls, redirects, shared-viewer visibility, and confirming IndexedDB-only legacy projects never reappear as active cloud projects.
+
 - Production release orchestration: preflight and deployment must stop before building or switching services when `.env` permissions are too broad, secure cookies/HTTPS origins are missing, the worktree is dirty, or the explicit confirmation token is absent, without printing secrets. The release must build separate commit-tagged Web and API images, migrate and switch API/Worker before Web, retain a verified backup and manifest on failure, and restore previous images from that manifest without dropping database structures.
 
 - Platform operations and permissions: new users should get a zero-balance credit account; SMS, credit charging, and payments must remain disabled. A team `editor` can edit an attached project, while a `viewer` can read it but cannot save the canvas, mutate assets, or create/retry/cancel generation and composition jobs. Non-admin users cannot access platform metrics, failures, or model health; admin-visible errors must not expose API keys. Before release, create and verify backups of source, environment, PostgreSQL, containers, and image identifiers, then exercise migrations and rollback in an isolated environment.
@@ -16,6 +18,7 @@ description: Implemented changes that still need manual verification
 The current release needs manual verification in these areas:
 
 - Managed generation jobs: after signing in, start text, image, audio, and each Seedance video mode from the canvas. Progress should survive page refresh, duplicate clicks should not create duplicate jobs, successful files should enter cloud assets as immutable versions, failed jobs should allow retry, and a running cancellation must remain cancelled instead of later becoming completed. The browser must not expose the built-in API key or provider address.
+- Local real-provider smoke: the latest Docker stack accepts and queues a GPT-5.5 job, but the local API/Worker currently has no `TOKEN360_API_KEY`; securely inject it outside Git, then verify one task reaches completed and remains visible after a new login or page refresh.
 
 - Cloud assets and versions: after signing in, upload images, video, audio, subtitles, or a project archive from My Assets and verify that they remain after refresh; image cards should use thumbnails. Uploading another file to the same asset should create an immutable version that can be compared side by side, selected as the current version, used as the parent of a new version, downloaded, moved to trash, and restored. Switching the current version must not change an exact version already pinned by a canvas. Migrating local assets should transfer old IndexedDB images and videos item by item, allow failed items to retry, and keep the original local files. A different account must not be able to list, download, or reference another account's assets.
 

@@ -11,7 +11,9 @@ export async function assertProjectAccess(
   mode: ProjectAccessMode = "read",
 ) {
   const result = await executor.query(
-    "select role from project_members where project_id=$1 and user_id=$2",
+    `select m.role from project_members m
+     join projects p on p.id=m.project_id
+     where m.project_id=$1 and m.user_id=$2 and p.deleted_at is null`,
     [projectId, userId],
   );
   const role = result.rows[0]?.role as string | undefined;

@@ -88,6 +88,50 @@ test(
         200,
       );
 
+      const createdProject = await postJson(
+        restartedApp,
+        "/api/projects",
+        first.cookie,
+        { name: "云端第二项目", description: "生命周期验收" },
+      );
+      assert.equal(createdProject.response.status, 201);
+      const createdProjectId = createdProject.body.data.project.projectId;
+      const renamedProject = await patchJson(
+        restartedApp,
+        `/api/projects/${createdProjectId}`,
+        first.cookie,
+        { name: "云端第二项目·已改名" },
+      );
+      assert.equal(
+        renamedProject.body.data.project.projectTitle,
+        "云端第二项目·已改名",
+      );
+      const deletedProject = await restartedApp.request(
+        `/api/projects/${createdProjectId}`,
+        { method: "DELETE", headers: { cookie: first.cookie } },
+      );
+      assert.equal(deletedProject.status, 200);
+      assert.equal(
+        ((await deletedProject.json()) as any).data.workspace.projectId,
+        first.workspaceId,
+      );
+      assert.equal(
+        (
+          await restartedApp.request(`/api/projects/${createdProjectId}`, {
+            headers: { cookie: first.cookie },
+          })
+        ).status,
+        403,
+      );
+      assert.ok(
+        (
+          await pool.query(
+            "select deleted_at from projects where id=$1 and deleted_at is not null",
+            [createdProjectId],
+          )
+        ).rowCount,
+      );
+
       const initialWrite = canvasWrite(0, "初始故事");
       const saved = await putCanvas(
         restartedApp,

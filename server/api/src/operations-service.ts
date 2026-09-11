@@ -183,7 +183,7 @@ export class OperationsService implements OperationsServicePort {
   async attachTeamProject(teamId: string, userId: string, projectId: string) {
     await this.requireTeamOwner(teamId, userId);
     const project = await this.pool.query(
-      "select 1 from projects where id=$1 and owner_id=$2",
+      "select 1 from projects where id=$1 and owner_id=$2 and deleted_at is null",
       [projectId, userId],
     );
     if (!project.rowCount)
@@ -225,7 +225,7 @@ export class OperationsService implements OperationsServicePort {
     const result = await this.pool.query(
       `select
         (select count(*)::int from users) users,
-        (select count(*)::int from projects) projects,
+        (select count(*)::int from projects where deleted_at is null) projects,
         (select count(*)::int from assets where status='active') assets,
         (select coalesce(sum(bytes),0)::bigint from asset_versions) asset_bytes,
         (select count(*)::int from generation_jobs where status not in ('completed','failed','cancelled')) active_jobs,
@@ -362,7 +362,10 @@ function iso(value: unknown) {
 function sanitizeError(value: unknown) {
   return String(value || "任务失败")
     .replace(/(bearer\s+|sk-)[a-z0-9._-]+/gi, "$1***")
-    .replace(/((?:api[_-]?key|token|authorization)\s*[:=]\s*)["']?[^\s,"'}]+/gi, "$1***")
+    .replace(
+      /((?:api[_-]?key|token|authorization)\s*[:=]\s*)["']?[^\s,"'}]+/gi,
+      "$1***",
+    )
     .replace(/([?&](?:api[_-]?key|token)=)[^&\s]+/gi, "$1***")
     .slice(0, 1_000);
 }

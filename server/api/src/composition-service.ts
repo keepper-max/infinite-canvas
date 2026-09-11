@@ -163,7 +163,7 @@ export class CompositionService {
 
   async get(jobId: string, userId: string) {
     const result = await this.pool.query(
-      `select j.* from composition_jobs j join project_members m on m.project_id=j.project_id where j.id=$1 and m.user_id=$2`,
+      `select j.* from composition_jobs j join project_members m on m.project_id=j.project_id join projects p on p.id=j.project_id where j.id=$1 and m.user_id=$2 and p.deleted_at is null`,
       [jobId, userId],
     );
     return result.rows[0] ? serialize(result.rows[0]) : null;
@@ -190,7 +190,7 @@ export class CompositionService {
   async cancel(jobId: string, userId: string) {
     const result = await this.pool.query(
       `update composition_jobs j set status='cancel_requested',cancel_requested_at=now(),updated_at=now()
-       from project_members m where j.id=$1 and m.project_id=j.project_id and m.user_id=$2
+       from project_members m, projects p where j.id=$1 and m.project_id=j.project_id and p.id=j.project_id and p.deleted_at is null and m.user_id=$2
        and m.role in ('owner','admin','editor')
        and j.status in ('pending','queued','preparing','rendering','uploading','retrying') returning j.*`,
       [jobId, userId],

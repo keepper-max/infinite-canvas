@@ -24,6 +24,8 @@ export function CanvasTopBar({
     onProjects,
     onCreateProject,
     onDeleteProject,
+    canRenameProject,
+    canDeleteProject,
     onExportProject,
     onImportImage,
     onOpenPlugins,
@@ -48,6 +50,8 @@ export function CanvasTopBar({
     onProjects: () => void;
     onCreateProject: () => void;
     onDeleteProject: () => void;
+    canRenameProject: boolean;
+    canDeleteProject: boolean;
     onExportProject: () => void;
     onImportImage: () => void;
     onOpenPlugins: () => void;
@@ -100,7 +104,7 @@ export function CanvasTopBar({
                                 { key: "projects", icon: <Images className="size-4" />, label: t("canvas.projects"), onClick: onProjects },
                                 { type: "divider" },
                                 { key: "new", icon: <Plus className="size-4" />, label: t("canvas.create"), onClick: onCreateProject },
-                                { key: "delete", danger: true, icon: <Trash2 className="size-4" />, label: t("canvas.deleteCurrent"), onClick: onDeleteProject },
+                                ...(canDeleteProject ? [{ key: "delete", danger: true, icon: <Trash2 className="size-4" />, label: t("canvas.deleteCurrent"), onClick: onDeleteProject }] : []),
                                 { type: "divider" },
                                 { key: "import", icon: <Upload className="size-4" />, label: t("canvas.importAsset"), onClick: onImportImage },
                                 { key: "export", icon: <Download className="size-4" />, label: t("canvas.exportCurrent"), onClick: onExportProject },
@@ -133,7 +137,7 @@ export function CanvasTopBar({
                             <button
                                 type="button"
                                 className="max-w-[280px] truncate border-b border-dashed border-transparent text-left text-lg font-semibold tracking-normal transition hover:border-current"
-                                onDoubleClick={onStartTitleEditing}
+                                onDoubleClick={canRenameProject ? onStartTitleEditing : undefined}
                                 title={t("canvas.renameHint")}
                             >
                                 {title}
