@@ -7,11 +7,20 @@ import { navigationTools, type NavigationToolSlug } from "@/constant/navigation-
 import { AppConfigModal } from "@/components/layout/app-config-modal";
 import { MobileNavDrawer } from "@/components/layout/mobile-nav-drawer";
 import { UserStatusActions } from "@/components/layout/user-status-actions";
+import { CODEX_AGENT_ENABLED } from "@/constant/env";
 import { cn } from "@/lib/utils";
 import { useEffect, useRef, useState } from "react";
 import { useAgentStore } from "@/stores/use-agent-store";
 
-export function AppTopNav() {
+type AppTopNavProps = {
+    canvasProject: boolean;
+    canvasVisible: boolean;
+    onCanvasPointerEnter: () => void;
+    onCanvasPointerLeave: () => void;
+    onRevealCanvasNav: () => void;
+};
+
+export function AppTopNav({ canvasProject, canvasVisible, onCanvasPointerEnter, onCanvasPointerLeave, onRevealCanvasNav }: AppTopNavProps) {
     const { t } = useTranslation();
     const { pathname } = useLocation();
     const [mobileNavOpen, setMobileNavOpen] = useState(false);
@@ -22,20 +31,37 @@ export function AppTopNav() {
     const connectAgent = useAgentStore((state) => state.connectAgent);
     const togglePanel = useAgentStore((state) => state.togglePanel);
     const panelOpen = useAgentStore((state) => state.panelOpen);
-    const hideHeader = /^\/canvas\/[^/]+/.test(pathname);
     const slug = pathname.split("/").filter(Boolean)[0];
     const activeToolSlug = navigationTools.some((tool) => tool.slug === slug) ? (slug as NavigationToolSlug) : undefined;
 
     useEffect(() => {
-        if (autoConnectRef.current || agentEnabled || agentConnected || !agentToken.trim()) return;
+        if (!CODEX_AGENT_ENABLED || autoConnectRef.current || agentEnabled || agentConnected || !agentToken.trim()) return;
         autoConnectRef.current = true;
         connectAgent({ silent: true });
     }, [agentConnected, agentEnabled, agentToken, connectAgent]);
 
     return (
         <>
-            {!hideHeader ? (
-                <header className="sticky top-0 z-20 h-14 shrink-0 border-b border-stone-200 bg-background/90 backdrop-blur-xl dark:border-stone-800">
+            {canvasProject ? (
+                <button
+                    type="button"
+                    className="absolute inset-x-0 top-0 z-[79] h-2 cursor-default bg-transparent outline-none"
+                    onPointerEnter={onRevealCanvasNav}
+                    onFocus={onRevealCanvasNav}
+                    aria-label={t("topNav.showNavigation")}
+                />
+            ) : null}
+            <header
+                className={cn(
+                    "z-20 h-14 shrink-0 border-b border-stone-200 bg-background/90 backdrop-blur-xl dark:border-stone-800",
+                    canvasProject
+                        ? "absolute inset-x-0 top-0 z-[80] transition-[transform,opacity] duration-300 ease-out motion-reduce:transition-none"
+                        : "sticky top-0",
+                )}
+                style={canvasProject ? { transform: canvasVisible ? "translateY(0)" : "translateY(-100%)", opacity: canvasVisible ? 1 : 0, pointerEvents: canvasVisible ? "auto" : "none" } : undefined}
+                onPointerEnter={canvasProject ? onCanvasPointerEnter : undefined}
+                onPointerLeave={canvasProject ? onCanvasPointerLeave : undefined}
+            >
                     <div className="mx-auto flex h-full max-w-7xl items-stretch justify-between gap-5 px-6">
                         <div className="flex min-w-0 items-center">
                             <Link to="/" className="flex h-full shrink-0 items-center gap-2 text-sm font-semibold leading-none tracking-tight text-stone-950 transition hover:text-stone-600 dark:text-stone-100 dark:hover:text-stone-300">
@@ -83,14 +109,15 @@ export function AppTopNav() {
                         </div>
 
                         <div className="my-auto flex h-9 min-w-0 items-center justify-end gap-2 justify-self-end whitespace-nowrap">
-                            <Tooltip title={t(panelOpen ? "topNav.closeAgent" : "topNav.openAgent")}>
-                                <Button type="text" shape="circle" className="!h-8 !w-8 !min-w-8" icon={<Bot className="size-4" />} onClick={togglePanel} aria-label={t(panelOpen ? "topNav.closeAgent" : "topNav.openAgent")} />
-                            </Tooltip>
+                            {CODEX_AGENT_ENABLED ? (
+                                <Tooltip title={t(panelOpen ? "topNav.closeAgent" : "topNav.openAgent")}>
+                                    <Button type="text" shape="circle" className="!h-8 !w-8 !min-w-8" icon={<Bot className="size-4" />} onClick={togglePanel} aria-label={t(panelOpen ? "topNav.closeAgent" : "topNav.openAgent")} />
+                                </Tooltip>
+                            ) : null}
                             <UserStatusActions />
                         </div>
                     </div>
-                </header>
-            ) : null}
+            </header>
 
             <MobileNavDrawer open={mobileNavOpen} activeToolSlug={activeToolSlug} onClose={() => setMobileNavOpen(false)} />
             <AppConfigModal />

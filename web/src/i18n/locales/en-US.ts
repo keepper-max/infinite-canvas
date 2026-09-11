@@ -355,6 +355,7 @@ export default {
         operations: "Platform",
     },
     topNav: {
+        showNavigation: "Show top navigation",
         openMenu: "Open navigation menu",
         menu: "Navigation menu",
         navigation: "Navigation",

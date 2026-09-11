@@ -30,6 +30,11 @@ const zhCN: ProductUpdateItem[] = [
         title: "后台任务",
         description: "生成任务在页面关闭后继续运行，并支持进度恢复、取消和失败重试。",
     },
+    {
+        type: "优化",
+        title: "沉浸画布导航",
+        description: "进入画布时保留完整导航，闲置后自动收起，鼠标触碰页面顶边即可再次展开。",
+    },
 ];
 
 const enUS: ProductUpdateItem[] = [
@@ -57,6 +62,11 @@ const enUS: ProductUpdateItem[] = [
         type: "优化",
         title: "Background jobs",
         description: "Generation continues after the page closes with progress recovery, cancellation, and retry support.",
+    },
+    {
+        type: "优化",
+        title: "Immersive canvas navigation",
+        description: "The full navigation appears when the canvas opens, retracts when idle, and returns at the top edge.",
     },
 ];
 

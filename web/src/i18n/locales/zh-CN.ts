@@ -355,6 +355,7 @@ export default {
         operations: "平台状态",
     },
     topNav: {
+        showNavigation: "显示顶部导航",
         openMenu: "打开导航菜单",
         menu: "导航菜单",
         navigation: "导航",
