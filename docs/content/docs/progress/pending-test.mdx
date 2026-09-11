@@ -5,6 +5,8 @@ description: Implemented changes that still need manual verification
 
 # Pending Tests
 
+- Provider timeout and retry: text, image, audio, and video submissions may wait up to 300 seconds. A synchronous text timeout should show a distinct generation-timeout message, create only one upstream attempt, and remain available for an explicit manual retry; image, audio, and asynchronous video jobs should retain their configured automatic retry policy.
+
 - Model catalog and prompt sources: after API startup, Settings should list every currently supported text, image, video, and text-to-speech model returned by the public catalog, grouped by capability; speech-to-text must not appear under text-to-speech until a transcription node exists. The public top bar and canvas menu should have no documentation entry. Prompt source cards should show concise purpose descriptions rather than URLs, while refresh and custom-source editing continue to work.
 
 - Cloud project lifecycle: automated API/PostgreSQL coverage now passes for create, rename, soft delete, access blocking, fallback workspace, canvas save, and a fresh login session restoring the same canvas revision. Manual UI verification remains for project-list and in-canvas controls, redirects, shared-viewer visibility, and confirming IndexedDB-only legacy projects never reappear as active cloud projects.

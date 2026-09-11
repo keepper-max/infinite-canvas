@@ -82,7 +82,7 @@ export function readConfig(env: NodeJS.ProcessEnv = process.env): ApiConfig {
     ),
     submitTimeoutMs: readInteger(
       env.PROVIDER_SUBMIT_TIMEOUT_MS,
-      60_000,
+      300_000,
       1_000,
       300_000,
       "PROVIDER_SUBMIT_TIMEOUT_MS",

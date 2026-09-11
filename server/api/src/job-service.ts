@@ -47,6 +47,10 @@ export class JobService {
       return serializeJob(duplicate.rows[0]);
     }
     const compiled = await this.gateway.compile(input);
+    const maxAttempts = automaticAttemptsForCapability(
+      compiled.capability,
+      this.config.maxAttempts,
+    );
     const client = await this.pool.connect();
     let job: Record<string, unknown>;
     try {
@@ -93,7 +97,7 @@ export class JobService {
           input.parameters,
           input,
           compiled,
-          this.config.maxAttempts,
+          maxAttempts,
           input.idempotencyKey,
           fingerprint,
           randomUUID(),
@@ -132,7 +136,7 @@ export class JobService {
       client.release();
     }
     try {
-      await this.queue.add(job.id as string, this.config.maxAttempts);
+      await this.queue.add(job.id as string, Number(job.max_attempts));
       await this.pool.query(
         "update generation_jobs set status='queued',updated_at=now() where id=$1",
         [job.id],
@@ -248,7 +252,7 @@ export class JobService {
     );
     await this.publish(current.projectId).catch(() => undefined);
     try {
-      await this.queue.add(jobId, this.config.maxAttempts);
+      await this.queue.add(jobId, current.maxAttempts);
     } catch (error) {
       await this.pool.query(
         "update generation_jobs set status='failed',retryable=true,user_error_code='QUEUE_UNAVAILABLE',user_error_message='任务队列暂时不可用',finished_at=now(),updated_at=now() where id=$1",
@@ -284,6 +288,13 @@ export class JobService {
         () => undefined,
       );
   }
+}
+
+export function automaticAttemptsForCapability(
+  capability: GenerationInput["capability"],
+  configuredAttempts: number,
+) {
+  return capability === "text" ? 1 : configuredAttempts;
 }
 
 export class JobExecutor {

@@ -253,6 +253,13 @@ export class Token360Provider {
         },
       });
     } catch (error) {
+      if (error instanceof Error && error.name === "TimeoutError")
+        throw new ProviderError(
+          "PROVIDER_TIMEOUT",
+          "模型响应超时，请稍后重试",
+          true,
+          { errorName: error.name },
+        );
       throw new ProviderError(
         "PROVIDER_UNAVAILABLE",
         "模型服务连接失败",

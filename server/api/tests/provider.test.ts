@@ -2,7 +2,46 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import type { CompiledGenerationRequest } from "../src/model-gateway.js";
-import { Token360Provider } from "../src/provider.js";
+import { ProviderError, Token360Provider } from "../src/provider.js";
+
+test("provider reports request timeout separately from connection failures", async () => {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async () => {
+    const error = new Error("request timed out");
+    error.name = "TimeoutError";
+    throw error;
+  };
+  try {
+    const provider = new Token360Provider(
+      {
+        baseUrl: "https://example.invalid",
+        apiKey: "test-only",
+        catalogUrl: "https://example.invalid/models",
+      },
+      1_000,
+    );
+    await assert.rejects(
+      provider.create({
+        modelId: "text.gpt-5-5",
+        upstreamModel: "gpt-5.5",
+        providerId: "token360",
+        capability: "text",
+        mode: "chat",
+        prompt: "test",
+        parameters: {},
+        references: [],
+        upstreamParameters: {},
+      }),
+      (error: unknown) =>
+        error instanceof ProviderError &&
+        error.code === "PROVIDER_TIMEOUT" &&
+        error.message === "模型响应超时，请稍后重试" &&
+        error.retryable,
+    );
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
 
 test("video provider emits documented frame and multimodal reference shapes", async () => {
   const originalFetch = globalThis.fetch;
