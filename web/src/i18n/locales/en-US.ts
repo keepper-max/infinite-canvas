@@ -349,6 +349,7 @@ export default {
         canvas: "My Canvases",
         image: "Image Studio",
         video: "Video Studio",
+        text: "AI Text Studio",
         prompts: "Prompt Library",
         assets: "My Assets",
         config: "Settings",

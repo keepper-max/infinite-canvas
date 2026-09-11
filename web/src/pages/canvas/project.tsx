@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { ChangeEvent as ReactChangeEvent, DragEvent as ReactDragEvent, MouseEvent as ReactMouseEvent, PointerEvent as ReactPointerEvent } from "react";
-import { useNavigate, useParams, useSearchParams } from "react-router-dom";
+import { useLocation, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { Group, Video } from "lucide-react";
 import { saveAs } from "file-saver";
 import { useTranslation } from "react-i18next";
@@ -204,6 +204,7 @@ function InfiniteCanvasPage() {
     const nodeRegistryVersion = useNodeRegistryVersion((state) => state.version);
     const params = useParams<{ id: string }>();
     const navigate = useNavigate();
+    const location = useLocation();
     const [searchParams] = useSearchParams();
     const projectId = params.id || "";
     const localAgentConnected = useAgentStore((state) => state.connected);
@@ -322,6 +323,7 @@ function InfiniteCanvasPage() {
     const generationRequestsRef = useRef(new Map<string, CanvasGenerationRequest>());
     const videoPollIdsRef = useRef(new Set<string>());
     const insertAssetAtRef = useRef<((payload: InsertAssetPayload, position?: Position) => void) | null>(null);
+    const handoffInsertedRef = useRef(false);
 
     const applyPersistedCanvas = useCallback(
         async (draft: CanvasDraft) => {
@@ -727,6 +729,19 @@ function InfiniteCanvasPage() {
         const rect = containerRef.current?.getBoundingClientRect();
         return screenToCanvas((rect?.left || 0) + (rect?.width || size.width) / 2, (rect?.top || 0) + (rect?.height || size.height) / 2);
     }, [screenToCanvas, size.height, size.width]);
+
+    useEffect(() => {
+        const handoff = (location.state as { workbenchPrompt?: unknown } | null)?.workbenchPrompt;
+        if (!projectLoaded || handoffInsertedRef.current || typeof handoff !== "string" || !handoff.trim()) return;
+        handoffInsertedRef.current = true;
+        const node = {
+            ...createCanvasNode(CanvasNodeType.Text, getCanvasCenter(), { content: handoff.trim(), status: NODE_STATUS_SUCCESS }),
+            title: "AI 文本结果",
+        };
+        setNodes((current) => [...current, node]);
+        setSelectedNodeIds(new Set([node.id]));
+        message.success("已将文本添加到画布");
+    }, [getCanvasCenter, location.state, message, projectLoaded]);
 
     const setConnecting = useCallback((next: ConnectionHandle | null) => {
         connectingParamsRef.current = next;

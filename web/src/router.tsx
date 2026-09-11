@@ -13,6 +13,7 @@ import ImagePage from "@/pages/image";
 import NotFound from "@/pages/not-found";
 import PromptsPage from "@/pages/prompts";
 import VideoPage from "@/pages/video";
+import TextWorkbenchPage from "@/pages/text";
 import WorkspaceEntryPage from "@/pages/workspace-entry";
 import OperationsPage from "@/pages/operations";
 
@@ -33,6 +34,7 @@ export const router = createBrowserRouter([
             { path: "/home", element: <HomePage /> },
             { path: "/image", element: <ImagePage /> },
             { path: "/video", element: <VideoPage /> },
+            { path: "/text", element: <TextWorkbenchPage /> },
             { path: "/assets", element: <AssetsPage /> },
             { path: "/prompts", element: <PromptsPage /> },
             { path: "/canvas", element: <CanvasPage /> },

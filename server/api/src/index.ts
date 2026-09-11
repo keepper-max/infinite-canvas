@@ -13,6 +13,7 @@ import { createQueue } from "./queue.js";
 import { CompositionService } from "./composition-service.js";
 import { createCompositionQueue } from "./queue.js";
 import { OperationsService } from "./operations-service.js";
+import { TextWorkbenchService } from "./text-workbench-service.js";
 
 const config = readConfig();
 const { db, pool } = createDatabase(config.databaseUrl);
@@ -45,6 +46,7 @@ const compositionService = new CompositionService(
   compositionQueue.publish,
 );
 const operationsService = new OperationsService(pool, config.operations);
+const textWorkbenchService = new TextWorkbenchService(pool, jobService);
 const app = createApp(
   new PostgresPlatformRepository(db),
   config,
@@ -53,6 +55,7 @@ const app = createApp(
   modelGateway,
   compositionService,
   operationsService,
+  textWorkbenchService,
 );
 
 const server = serve({ fetch: app.fetch, port: config.port }, (info) => {

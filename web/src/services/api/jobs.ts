@@ -66,6 +66,14 @@ export async function getManagedJob(jobId: string, signal?: AbortSignal) {
     return (await platformRequest<{ job: ManagedJob }>(`/api/jobs/${encodeURIComponent(jobId)}`, { signal })).job;
 }
 
+export async function cancelManagedJob(jobId: string) {
+    return (await platformRequest<{ job: ManagedJob }>(`/api/jobs/${encodeURIComponent(jobId)}/cancel`, { method: "POST" })).job;
+}
+
+export async function retryManagedJob(jobId: string) {
+    return (await platformRequest<{ job: ManagedJob }>(`/api/jobs/${encodeURIComponent(jobId)}/retry`, { method: "POST" })).job;
+}
+
 export async function waitForManagedJob(jobId: string, signal?: AbortSignal) {
     for (;;) {
         if (signal?.aborted) throw new DOMException("Aborted", "AbortError");

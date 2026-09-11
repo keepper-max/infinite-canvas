@@ -40,6 +40,7 @@ import {
   teamProjectSchema,
 } from "./operations-contract.js";
 import type { OperationsServicePort } from "./operations-service.js";
+import type { TextWorkbenchService } from "./text-workbench-service.js";
 
 type Variables = { requestId: string };
 type AppEnv = { Variables: Variables };
@@ -52,6 +53,7 @@ export function createApp(
   modelGateway?: ModelGateway,
   compositionService?: CompositionService,
   operationsService?: OperationsServicePort,
+  textWorkbenchService?: TextWorkbenchService,
 ) {
   const app = new Hono<AppEnv>();
 
@@ -441,6 +443,69 @@ export function createApp(
     );
   });
 
+  app.get("/api/projects/:projectId/text-conversations", async (context) => {
+    const user = await requireUser(context.req.raw, repository, config);
+    const conversations = await requireTextWorkbenchService(
+      textWorkbenchService,
+    ).list(context.req.param("projectId"), user.id);
+    return context.json(success(context, { conversations }));
+  });
+
+  app.post("/api/projects/:projectId/text-conversations", async (context) => {
+    const user = await requireUser(context.req.raw, repository, config);
+    const input = textConversationCreateInput.parse(
+      await readJson(context.req.raw),
+    );
+    const conversation = await requireTextWorkbenchService(
+      textWorkbenchService,
+    ).create(context.req.param("projectId"), user.id, input);
+    return context.json(success(context, { conversation }), 201);
+  });
+
+  app.patch("/api/text-conversations/:conversationId", async (context) => {
+    const user = await requireUser(context.req.raw, repository, config);
+    const input = textConversationUpdateInput.parse(
+      await readJson(context.req.raw),
+    );
+    const conversation = await requireTextWorkbenchService(
+      textWorkbenchService,
+    ).update(context.req.param("conversationId"), user.id, input);
+    return context.json(success(context, { conversation }));
+  });
+
+  app.delete("/api/text-conversations/:conversationId", async (context) => {
+    const user = await requireUser(context.req.raw, repository, config);
+    const result = await requireTextWorkbenchService(
+      textWorkbenchService,
+    ).archive(context.req.param("conversationId"), user.id);
+    return context.json(success(context, result));
+  });
+
+  app.get(
+    "/api/text-conversations/:conversationId/messages",
+    async (context) => {
+      const user = await requireUser(context.req.raw, repository, config);
+      const messages = await requireTextWorkbenchService(
+        textWorkbenchService,
+      ).messages(context.req.param("conversationId"), user.id);
+      return context.json(success(context, { messages }));
+    },
+  );
+
+  app.post(
+    "/api/text-conversations/:conversationId/generate",
+    async (context) => {
+      const user = await requireUser(context.req.raw, repository, config);
+      const input = textMessageGenerateInput.parse(
+        await readJson(context.req.raw),
+      );
+      const result = await requireTextWorkbenchService(
+        textWorkbenchService,
+      ).generate(context.req.param("conversationId"), user.id, input);
+      return context.json(success(context, result), 202);
+    },
+  );
+
   app.get("/api/projects/:projectId/jobs", async (context) => {
     const user = await requireUser(context.req.raw, repository, config);
     return context.json(
@@ -779,6 +844,17 @@ function requireOperationsService(service?: OperationsServicePort) {
   return service;
 }
 
+function requireTextWorkbenchService(service?: TextWorkbenchService) {
+  if (!service)
+    throw new DomainError(
+      "TEXT_WORKBENCH_UNAVAILABLE",
+      "文本工作台暂时不可用",
+      503,
+      true,
+    );
+  return service;
+}
+
 const emailSchema = z
   .string()
   .trim()
@@ -829,6 +905,35 @@ const restoreInput = z
 const migrationInput = z
   .object({ migrationKey: z.string().min(8).max(200) })
   .catchall(z.unknown());
+const textWorkbenchMode = z.enum([
+  "chat",
+  "prompt",
+  "script",
+  "storyboard",
+  "seedance",
+]);
+const textConversationCreateInput = z
+  .object({
+    title: z.string().trim().min(1).max(100).optional(),
+    mode: textWorkbenchMode.default("chat"),
+    modelId: z.string().trim().min(1).max(200),
+  })
+  .strict();
+const textConversationUpdateInput = textConversationCreateInput
+  .partial()
+  .refine((input) => Object.keys(input).length > 0, {
+    message: "至少提交一个要修改的字段",
+  });
+const textMessageGenerateInput = z
+  .object({
+    content: z.string().trim().min(1).max(100_000),
+    modelId: z.string().trim().min(1).max(200),
+    mode: textWorkbenchMode.default("chat"),
+    reasoningEffort: z
+      .enum(["none", "minimal", "low", "medium", "high", "xhigh"])
+      .optional(),
+  })
+  .strict();
 
 async function issueSession(
   context: Context<AppEnv>,
