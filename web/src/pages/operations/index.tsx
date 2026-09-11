@@ -1,8 +1,11 @@
 import { App, Button, Card, Empty, Input, Modal, Select, Spin, Tag } from "antd";
-import { Activity, Boxes, Coins, CreditCard, MessageSquareText, Plus, RefreshCw, Users } from "lucide-react";
+import { Activity, Boxes, Coins, CreditCard, History, MessageSquareText, Plus, RefreshCw, Users } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
+import { useTranslation } from "react-i18next";
 
+import { getProductUpdates } from "@/constant/product-updates";
 import { formatBytes } from "@/lib/image-utils";
+import { APP_VERSION } from "@/constant/env";
 import {
     addTeamMember,
     attachTeamProject,
@@ -27,6 +30,7 @@ import { listProjects, type ProjectSummary } from "@/services/api/platform";
 
 export default function OperationsPage() {
     const { message } = App.useApp();
+    const { i18n } = useTranslation();
     const [loading, setLoading] = useState(true);
     const [capabilities, setCapabilities] = useState<OperationsCapabilities>();
     const [account, setAccount] = useState<CreditAccount>();
@@ -42,6 +46,7 @@ export default function OperationsPage() {
     const [memberEmail, setMemberEmail] = useState("");
     const [memberRole, setMemberRole] = useState<"admin" | "editor" | "viewer">("editor");
     const [projectId, setProjectId] = useState<string>();
+    const productUpdates = getProductUpdates(i18n.resolvedLanguage);
 
     const load = useCallback(async () => {
         setLoading(true);
@@ -189,6 +194,32 @@ export default function OperationsPage() {
                         <div className="mt-5 flex items-center gap-2 text-sm">
                             <Boxes className="size-4" />
                             模型目录 {models.length} 个，已启用 {models.filter((model) => model.enabled).length} 个，健康 {models.filter((model) => model.healthy).length} 个
+                        </div>
+                        <div className="mt-5 overflow-hidden rounded-2xl border border-stone-200 bg-stone-50 dark:border-stone-800 dark:bg-stone-950/60">
+                            <div className="flex flex-wrap items-center justify-between gap-3 border-b border-stone-200 px-4 py-3 dark:border-stone-800">
+                                <span className="flex items-center gap-2 font-medium">
+                                    <History className="size-4" />
+                                    内部发布信息
+                                </span>
+                                <div className="flex items-center gap-2">
+                                    <Tag color="gold">仅管理员可见</Tag>
+                                    <code className="rounded-md bg-stone-900 px-2 py-1 text-xs text-stone-100 dark:bg-stone-100 dark:text-stone-900">{APP_VERSION}</code>
+                                </div>
+                            </div>
+                            <div className="p-4">
+                                <div className="mb-3 text-xs uppercase tracking-[0.18em] text-stone-400">当前更新内容</div>
+                                <div className="space-y-2">
+                                    {productUpdates.map((item) => (
+                                        <div key={item.title} className="flex items-start gap-2 text-sm leading-6 text-stone-700 dark:text-stone-300">
+                                            <Tag className="m-0 mt-0.5 shrink-0">{item.type}</Tag>
+                                            <span>
+                                                <strong>{item.title}</strong>
+                                                <span className="text-stone-500 dark:text-stone-400"> · {item.description}</span>
+                                            </span>
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
                         </div>
                         {failures.length ? (
                             <div className="mt-5 space-y-2">

@@ -2,7 +2,7 @@
 
 ## 项目云端单一数据源与端到端验收（2026-09-10）
 
-- **状态：** partially_verified（实现、迁移、本地重建及持久化闭环通过；真实上游成功待本地密钥）
+- **状态：** complete
 - **已开始：** 重读总计划、仓库规则、既有发现和验证记录。
 - **执行边界：** 项目删除采用软删除；不修改 ECS，不产生 Git 提交，不把密钥写入代码或日志。
 - **当前阶段：** 审计项目/成员/画布/任务数据流和现有前端项目操作。
@@ -15,7 +15,7 @@
 - **阶段 D 完成：** API/Web 类型检查与生产构建通过；最新 API、Worker、Web 镜像已在 `canvas-part5-qa` 原数据卷上重建，0012 迁移、服务健康和 Worker 内 FFmpeg 均通过。
 - **数据保护：** 重建前 PostgreSQL 自定义格式备份保存到 `H:\CodexStorage\infinite-canvas-backups\canvas-part5-qa-pre-project-lifecycle-20260911-100114.dump`，`pg_restore` 清单可读取；未重置 PostgreSQL、Redis 或 MinIO 数据卷。
 - **端到端结果：** 隔离账号注册、默认项目、项目创建/改名/软删除、画布保存、新登录会话恢复节点/视口/版本全部通过；真实 GPT-5.5 任务已进入 Redis Worker，随后因本地未配置 `TOKEN360_API_KEY` 以 `PROVIDER_AUTH_FAILED` 失败。
-- **剩余验证：** 通过安全环境变量为本地 API/Worker 注入模型密钥后，只需重跑一次真实任务成功与产物恢复；当前没有把密钥写入代码、日志、备份或 Git。
+- **最终验收：** `.env` 密钥已同时加载到 API/Worker；真实 GPT-5.5 任务按 `queued → submitting → completed` 完成至 100%，全新登录会话恢复同一画布 revision 1 和 completed 任务。密钥未进入代码、日志、备份或 Git。
 
 ## 当前状态
 
