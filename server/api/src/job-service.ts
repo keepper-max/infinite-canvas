@@ -47,10 +47,7 @@ export class JobService {
       return serializeJob(duplicate.rows[0]);
     }
     const compiled = await this.gateway.compile(input);
-    const maxAttempts = automaticAttemptsForCapability(
-      compiled.capability,
-      this.config.maxAttempts,
-    );
+    const maxAttempts = generationJobAttempts();
     const client = await this.pool.connect();
     let job: Record<string, unknown>;
     try {
@@ -290,11 +287,8 @@ export class JobService {
   }
 }
 
-export function automaticAttemptsForCapability(
-  capability: GenerationInput["capability"],
-  configuredAttempts: number,
-) {
-  return capability === "text" ? 1 : configuredAttempts;
+export function generationJobAttempts() {
+  return 1;
 }
 
 export class JobExecutor {
