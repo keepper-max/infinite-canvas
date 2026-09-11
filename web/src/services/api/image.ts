@@ -89,7 +89,7 @@ type GeminiPayload = {
     promptFeedback?: { blockReason?: string };
 };
 type GeminiStreamState = { buffer: string; text: string; toolCalls: ResponseToolCall[]; error?: string };
-type RequestOptions = { signal?: AbortSignal };
+type RequestOptions = { signal?: AbortSignal; projectId?: string; nodeId?: string; nodeRevision?: number; idempotencyKey?: string };
 
 const QUALITY_BASE: Record<string, number> = {
     low: 1024,
@@ -706,7 +706,7 @@ export async function requestGeneration(config: AiConfig, prompt: string, option
                         prompt: withSystemPrompt(requestConfig, prompt),
                         parameters: { count: n, size: resolveRequestSize(normalizeQuality(config.quality), config.size), quality: normalizeQuality(config.quality), background: normalizeBackground(config.background) },
                     },
-                    { signal: options?.signal },
+                    { projectId: options?.projectId, nodeId: options?.nodeId, nodeRevision: options?.nodeRevision, idempotencyKey: options?.idempotencyKey, signal: options?.signal },
                 )
             ).id,
             options?.signal,
@@ -717,6 +717,7 @@ export async function requestGeneration(config: AiConfig, prompt: string, option
                 dataUrl: await artifactUrl(artifact, options?.signal),
                 assetId: artifact.assetId,
                 assetVersionId: artifact.assetVersionId,
+                generationJobId: job.id,
                 type: artifact.mimeType || "image/png",
                 name: "generated-image",
             })),
@@ -801,7 +802,7 @@ export async function requestEdit(config: AiConfig, prompt: string, references: 
                         parameters: { count: n, size: resolveRequestSize(normalizeQuality(config.quality), config.size), quality: normalizeQuality(config.quality) },
                         references: refs,
                     },
-                    { signal: options?.signal },
+                    { projectId: options?.projectId, nodeId: options?.nodeId, nodeRevision: options?.nodeRevision, idempotencyKey: options?.idempotencyKey, signal: options?.signal },
                 )
             ).id,
             options?.signal,
@@ -812,6 +813,7 @@ export async function requestEdit(config: AiConfig, prompt: string, references: 
                 dataUrl: await artifactUrl(artifact, options?.signal),
                 assetId: artifact.assetId,
                 assetVersionId: artifact.assetVersionId,
+                generationJobId: job.id,
                 type: artifact.mimeType || "image/png",
                 name: "generated-image",
             })),

@@ -5,6 +5,8 @@ description: Implemented changes that still need manual verification
 
 # Pending Tests
 
+- Managed canvas result recovery: Seedance asynchronous submissions should retain the provider task ID instead of failing on legacy databases. Canvas image jobs should identify their target node and job in the inspector, remain successful when browser image caching is unavailable, and refresh from a fresh cloud asset URL on another browser.
+
 - Cross-device model catalog: on a browser with no local site data, sign in as an existing or new user and open the image, video, and text workbenches. The server catalog should load only after authentication and expose all enabled models for each capability without requiring a second refresh or a previously warmed browser cache.
 
 - Provider timeout and retry: text, image, audio, and video submissions may wait up to 300 seconds. Any failed model request should create only one upstream attempt, show a distinct timeout or connection message, and remain available for an explicit manual retry. FFmpeg composition keeps its independent retry policy.

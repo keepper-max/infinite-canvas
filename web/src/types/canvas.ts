@@ -35,6 +35,7 @@ export type CanvasNodeImage = {
     storageKey?: string;
     assetId?: string;
     assetVersionId?: string;
+    generationJobId?: string;
     naturalWidth: number;
     naturalHeight: number;
     bytes: number;
@@ -84,6 +85,7 @@ export type CanvasNodeMetadata = {
     storageKey?: string;
     assetId?: string;
     assetVersionId?: string;
+    generationJobId?: string;
     mimeType?: string;
     bytes?: number;
     durationMs?: number;

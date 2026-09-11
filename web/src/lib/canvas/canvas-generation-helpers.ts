@@ -7,6 +7,7 @@ import type { NodeGenerationInput } from "@/components/canvas/canvas-node-genera
 import type { CanvasNodeGenerationMode } from "@/components/canvas/canvas-node-prompt-panel";
 import type { CanvasImageAngleParams } from "@/components/canvas/canvas-node-angle-dialog";
 import type { ReferenceImage } from "@/types/image";
+import { artifactUrl } from "@/services/api/jobs";
 import { CanvasNodeType, type CanvasAssistantSession, type CanvasConnection, type CanvasNodeData, type CanvasNodeMetadata } from "@/types/canvas";
 
 export function imageExtension(dataUrl: string) {
@@ -49,12 +50,24 @@ export async function hydrateCanvasImages(nodes: CanvasNodeData[]) {
             const content = metadata?.content;
             if ((node.type === CanvasNodeType.Video || node.type === CanvasNodeType.Audio) && metadata?.storageKey) return { ...node, metadata: { ...metadata, content: await resolveMediaUrl(metadata.storageKey, content) } };
             if (node.type !== CanvasNodeType.Image || !metadata || !content) return node;
-            const images = await Promise.all((metadata.images || []).map(async (image) => (image.content ? { ...image, content: await resolveImageUrl(image.storageKey, image.content) } : image)));
-            if (metadata.storageKey) return { ...node, metadata: { ...metadata, content: await resolveImageUrl(metadata.storageKey, content), images } };
+            const images = await Promise.all((metadata.images || []).map(async (image) => (image.content ? { ...image, content: await hydrateGeneratedImageUrl(image.content, image.storageKey, image.assetVersionId) } : image)));
+            if (metadata.storageKey || metadata.assetVersionId) return { ...node, metadata: { ...metadata, content: await hydrateGeneratedImageUrl(content, metadata.storageKey, metadata.assetVersionId), images } };
             if (!content.startsWith("data:image/")) return node;
             return { ...node, metadata: { ...metadata, ...imageMetadata(await uploadImage(content)) } };
         }),
     );
+}
+
+async function hydrateGeneratedImageUrl(content: string, storageKey?: string, assetVersionId?: string) {
+    let fallback = content;
+    if (assetVersionId) {
+        try {
+            fallback = await artifactUrl({ id: assetVersionId, assetVersionId });
+        } catch {
+            // Keep the last usable URL when an asset was removed or is temporarily unavailable.
+        }
+    }
+    return storageKey ? resolveImageUrl(storageKey, fallback) : fallback;
 }
 
 export async function hydrateAssistantImages(sessions: CanvasAssistantSession[]) {

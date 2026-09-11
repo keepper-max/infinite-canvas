@@ -7,4 +7,5 @@ export type ReferenceImage = {
     storageKey?: string;
     assetId?: string;
     assetVersionId?: string;
+    generationJobId?: string;
 };

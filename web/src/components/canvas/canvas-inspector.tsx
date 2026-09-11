@@ -76,7 +76,7 @@ export function CanvasInspector({
                         <Info label="比例" value={node.metadata?.size || "自动"} />
                         <Info label="时长" value={node.metadata?.seconds ? `${node.metadata.seconds}s` : "—"} />
                         <Info label="资产版本" value={node.metadata?.assetVersionId || "—"} />
-                        <Info label="任务" value={node.metadata?.videoTaskId || "—"} />
+                        <Info label="任务" value={node.metadata?.generationJobId || node.metadata?.videoTaskId || "—"} />
                         <Info label="生成数量" value={String(node.metadata?.count || node.metadata?.textCount || 1)} />
                         <Info label="质量" value={node.metadata?.quality || node.metadata?.vquality || "自动"} />
                     </div>
