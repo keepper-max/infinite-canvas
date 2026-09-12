@@ -219,6 +219,39 @@ test("completed video without inline URL downloads canonical content endpoint", 
   }
 });
 
+test("video provider explains generated-audio copyright rejection", async () => {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async () =>
+    Response.json({
+      id: "video-1",
+      status: "failed",
+      error: {
+        message:
+          "The request was rejected because the generated audio may violate copyright restrictions.",
+      },
+    });
+  try {
+    const provider = new Token360Provider(
+      {
+        baseUrl: "https://example.invalid",
+        apiKey: "test-only",
+        catalogUrl: "https://example.invalid/models",
+      },
+      1_000,
+    );
+    await assert.rejects(
+      provider.get("video-1"),
+      (error: unknown) =>
+        error instanceof ProviderError &&
+        error.code === "PROVIDER_REJECTED" &&
+        error.message ===
+          "生成音频可能涉及版权限制，请关闭生成音频后重试",
+    );
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
 function request(
   mode: CompiledGenerationRequest["mode"],
   upstreamParameters: Record<string, unknown>,

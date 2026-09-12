@@ -47,6 +47,7 @@ type UploadOptions = {
     source?: CloudAssetSource;
     parentVersionIds?: string[];
     provenance?: Record<string, unknown>;
+    signal?: AbortSignal;
 };
 
 export async function listCloudAssets(projectId: string, includeTrashed = false, signal?: AbortSignal) {
@@ -71,14 +72,14 @@ export async function uploadCloudAsset(projectId: string, file: Blob & { name?: 
         provenance: options.provenance || {},
         ...(thumbnail ? { thumbnail: { mimeType: thumbnail.type, bytes: thumbnail.size, sha256: await digestSha256(thumbnail) } } : {}),
     };
-    const { upload } = await platformRequest<{ upload: { uploadId: string; assetId: string; uploadUrl: string; headers: Record<string, string>; thumbnailUpload?: { url: string; headers: Record<string, string> } } }>(`/api/projects/${encodeURIComponent(projectId)}/assets/uploads`, { method: "POST", body: JSON.stringify(input) });
-    const uploaded = await fetch(upload.uploadUrl, { method: "PUT", headers: upload.headers, body: file });
+    const { upload } = await platformRequest<{ upload: { uploadId: string; assetId: string; uploadUrl: string; headers: Record<string, string>; thumbnailUpload?: { url: string; headers: Record<string, string> } } }>(`/api/projects/${encodeURIComponent(projectId)}/assets/uploads`, { method: "POST", body: JSON.stringify(input), signal: options.signal });
+    const uploaded = await fetch(upload.uploadUrl, { method: "PUT", headers: upload.headers, body: file, signal: options.signal });
     if (!uploaded.ok) throw new Error(`素材上传失败（${uploaded.status}）`);
     if (thumbnail && upload.thumbnailUpload) {
-        const thumbnailResponse = await fetch(upload.thumbnailUpload.url, { method: "PUT", headers: upload.thumbnailUpload.headers, body: thumbnail });
+        const thumbnailResponse = await fetch(upload.thumbnailUpload.url, { method: "PUT", headers: upload.thumbnailUpload.headers, body: thumbnail, signal: options.signal });
         if (!thumbnailResponse.ok) throw new Error(`缩略图上传失败（${thumbnailResponse.status}）`);
     }
-    return (await platformRequest<{ asset: CloudAsset }>(`/api/projects/${encodeURIComponent(projectId)}/assets/uploads/${encodeURIComponent(upload.uploadId)}/complete`, { method: "POST", body: "{}" })).asset;
+    return (await platformRequest<{ asset: CloudAsset }>(`/api/projects/${encodeURIComponent(projectId)}/assets/uploads/${encodeURIComponent(upload.uploadId)}/complete`, { method: "POST", body: "{}", signal: options.signal })).asset;
 }
 
 export async function setCloudAssetCurrentVersion(assetId: string, versionId: string) {

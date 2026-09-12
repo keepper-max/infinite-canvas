@@ -9,7 +9,9 @@ import { imageToDataUrl } from "@/services/image-storage";
 import { boolConfig, buildApiUrl, isServerManagedConfig, modelOptionName, resolveModelRequestConfig, resolveModelScript, withLocalProxy, type AiConfig } from "@/stores/use-config-store";
 import { normalizeVideoGenerationMode, selectedVideoModel, supportedVideoModes, videoParameterPayload } from "@/lib/video-model-capabilities";
 import { runModelPlugin } from "./model-plugin";
+import { currentVersion, uploadCloudAsset } from "./assets";
 import { artifactUrl, cancelManagedJobOnAbort, createManagedJob, getManagedJob } from "./jobs";
+import { getCurrentSession } from "./platform";
 import type { ReferenceImage } from "@/types/image";
 import type { ReferenceAudio, ReferenceVideo } from "@/types/media";
 
@@ -191,25 +193,27 @@ async function createOpenAIVideoTask(config: AiConfig, model: string, prompt: st
 /** The managed video gateway uses JSON and maps reference media by generation mode. */
 async function createManagedVideoTask(config: AiConfig, model: string, prompt: string, references: ReferenceImage[], options?: VideoMediaOptions): Promise<VideoGenerationTask> {
     const modelDefinition = selectedVideoModel(config, model);
+    const projectId = options?.projectId || (await getCurrentSession(options?.signal)).workspace.projectId;
     const images = await Promise.all(
         references.map(async (image) => {
             if (image.assetVersionId) return { assetVersionId: image.assetVersionId, mimeType: image.type };
             const dataUrl = await imageToDataUrl(image);
-            return { dataUrl, mimeType: dataUrl.match(/^data:([^;,]+)/)?.[1] || image.type };
+            const file = dataUrlToFile({ ...image, dataUrl });
+            return stageManagedReference(projectId, file, "image", image.name, image.storageKey, options?.signal);
         }),
     );
     const videos = await Promise.all(
         (options?.videos || []).map(async (video) => {
             if (video.assetVersionId) return { assetVersionId: video.assetVersionId, mimeType: video.type };
-            const dataUrl = await readFileAsDataUrl(await referenceMediaToFile(video, "ref.mp4", "invalidReferenceVideo", options));
-            return { dataUrl, mimeType: dataUrl.match(/^data:([^;,]+)/)?.[1] || video.type };
+            const file = await referenceMediaToFile(video, "ref.mp4", "invalidReferenceVideo", options);
+            return stageManagedReference(projectId, file, "video", video.name, video.storageKey, options?.signal);
         }),
     );
     const audios = await Promise.all(
         (options?.audios || []).map(async (audio) => {
             if (audio.assetVersionId) return { assetVersionId: audio.assetVersionId, mimeType: audio.type };
-            const dataUrl = await readFileAsDataUrl(await referenceMediaToFile(audio, "ref.mp3", "invalidReferenceAudio", options));
-            return { dataUrl, mimeType: dataUrl.match(/^data:([^;,]+)/)?.[1] || audio.type };
+            const file = await referenceMediaToFile(audio, "ref.mp3", "invalidReferenceAudio", options);
+            return stageManagedReference(projectId, file, "audio", audio.name, audio.storageKey, options?.signal);
         }),
     );
     const generationMode = normalizeVideoGenerationMode(config.videoMode, supportedVideoModes(modelDefinition), images.length);
@@ -245,6 +249,19 @@ async function createManagedVideoTask(config: AiConfig, model: string, prompt: s
     } catch (error) {
         throw new Error(readAxiosError(error, apiText("videoTaskCreateFailed")));
     }
+}
+
+async function stageManagedReference(projectId: string, file: File, kind: "image" | "video" | "audio", name: string, storageKey?: string, signal?: AbortSignal) {
+    const asset = await uploadCloudAsset(projectId, file, {
+        kind,
+        name,
+        source: "migration",
+        provenance: { purpose: "generation-reference", localStorageKey: storageKey || null },
+        signal,
+    });
+    const version = currentVersion(asset);
+    if (!version) throw new Error("参考素材转存失败，请重新上传后重试");
+    return { assetVersionId: version.id, mimeType: version.mimeType || file.type };
 }
 
 async function pollManagedVideoTask(task: VideoGenerationTask, options?: RequestOptions): Promise<VideoGenerationTaskState> {

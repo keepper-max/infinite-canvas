@@ -408,6 +408,11 @@ function readError(value: unknown): string {
 }
 function providerUserMessage(value: string, fallback: string) {
   const message = value.toLowerCase();
+  if (
+    message.includes("copyright") &&
+    (message.includes("audio") || message.includes("music"))
+  )
+    return "生成音频可能涉及版权限制，请关闭生成音频后重试";
   if (message.includes("omni_reference_task_type"))
     return "当前生成模式与多参考参数不匹配";
   if (message.includes("first_frame") || message.includes("last_frame"))
