@@ -35,7 +35,12 @@ const definition = {
     resolutions: ["480p", "720p", "1080p"],
     aspectRatios: ["16:9"],
   },
-  parameter_map: { aspectRatio: "ratio", bitrateMode: "bitrate_mode", outputFormat: "output_format", omniReferenceTaskType: "omni_reference_task_type" },
+  parameter_map: {
+    aspectRatio: "ratio",
+    bitrateMode: "bitrate_mode",
+    outputFormat: "output_format",
+    omniReferenceTaskType: "omni_reference_task_type",
+  },
 };
 
 function gateway(row = definition) {
@@ -46,35 +51,97 @@ function gateway(row = definition) {
 
 test("catalog profiles expose each supported generation family without mixing speech recognition into TTS", () => {
   assert.deepEqual(
-    catalogModelProfile({ modelType: "LLM", supported_parameters: ["reasoning_effort"] })?.modes,
+    catalogModelProfile({
+      modelType: "LLM",
+      supported_parameters: ["reasoning_effort"],
+    })?.modes,
     ["chat"],
   );
   assert.deepEqual(
-    catalogModelProfile({ modelType: "IMAGE_GENERATION", modelInputTypes: ["TEXT", "IMAGE"], supported_parameters: ["n", "size", "images"] })?.modes,
+    catalogModelProfile({
+      modelType: "IMAGE_GENERATION",
+      modelInputTypes: ["TEXT", "IMAGE"],
+      supported_parameters: ["n", "size", "images"],
+    })?.modes,
     ["t2i", "i2i"],
   );
   assert.deepEqual(
-    catalogModelProfile({ modelType: "VIDEO_GENERATION", modelInputTypes: ["TEXT", "IMAGE"], supported_parameters: ["duration", "frame_images", "input_references"] })?.modes,
+    catalogModelProfile({
+      modelType: "VIDEO_GENERATION",
+      modelInputTypes: ["TEXT", "IMAGE"],
+      supported_parameters: ["duration", "frame_images", "input_references"],
+    })?.modes,
     ["t2v", "i2v", "flf2v", "multiref"],
   );
   assert.deepEqual(
-    catalogModelProfile({ modelType: "AUDIO_TEXT_TO_SPEECH", supported_parameters: ["voice", "audio_format"] })?.modes,
+    catalogModelProfile({
+      modelType: "AUDIO_TEXT_TO_SPEECH",
+      supported_parameters: ["voice", "audio_format"],
+    })?.modes,
     ["tts"],
   );
-  assert.equal(catalogModelProfile({ modelType: "AUDIO_SPEECH_TO_TEXT" }), null);
+  assert.equal(
+    catalogModelProfile({ modelType: "AUDIO_SPEECH_TO_TEXT" }),
+    null,
+  );
 });
 
 test("video catalog profiles preserve model-specific options and request mappings", () => {
   const profile = catalogModelProfile({
     modelType: "VIDEO_GENERATION",
     modelInputTypes: ["text", "image", "video", "audio"],
-    supported_parameters: ["duration", "resolution", "aspect_ratio", "bitrate_mode", "output_format", "frame_images", "input_references"],
+    supported_parameters: [
+      "duration",
+      "resolution",
+      "aspect_ratio",
+      "bitrate_mode",
+      "output_format",
+      "frame_images",
+      "input_references",
+    ],
     normalizedApiParameterSchema: {
       fields: [
-        { name: "duration", enum: [-1, 5, 10] },
-        { name: "resolution", enum: ["720p", "1080p"] },
-        { name: "aspect_ratio", enum: ["adaptive", "16:9"] },
-        { name: "input_references", reference_images: { max_items: 30 }, reference_videos: { max_items: 10 }, reference_audios: { max_items: 10 } },
+        {
+          name: "duration",
+          type: "integer",
+          playground_visible: true,
+          request_role: "model_parameter",
+          enum: [-1, 5, 10],
+        },
+        {
+          name: "resolution",
+          type: "string",
+          playground_visible: true,
+          request_role: "model_parameter",
+          enum: ["720p", "1080p"],
+        },
+        {
+          name: "aspect_ratio",
+          type: "string",
+          playground_visible: true,
+          request_role: "model_parameter",
+          enum: ["adaptive", "16:9"],
+        },
+        {
+          name: "bitrate_mode",
+          type: "string",
+          playground_visible: true,
+          request_role: "model_parameter",
+          enum: ["standard", "high"],
+        },
+        {
+          name: "output_format",
+          type: "string",
+          playground_visible: true,
+          request_role: "model_parameter",
+          enum: ["mp4", "mov"],
+        },
+        {
+          name: "input_references",
+          reference_images: { max_items: 30 },
+          reference_videos: { max_items: 10 },
+          reference_audios: { max_items: 10 },
+        },
       ],
     },
   });
@@ -86,9 +153,122 @@ test("video catalog profiles preserve model-specific options and request mapping
     durations: [-1, 5, 10],
     resolutions: ["720p", "1080p"],
     aspectRatios: ["adaptive", "16:9"],
+    parameterSchema: [
+      { key: "duration", type: "integer", options: [-1, 5, 10] },
+      { key: "resolution", type: "string", options: ["720p", "1080p"] },
+      { key: "aspectRatio", type: "string", options: ["adaptive", "16:9"] },
+      { key: "bitrateMode", type: "string", options: ["standard", "high"] },
+      { key: "outputFormat", type: "string", options: ["mp4", "mov"] },
+    ],
   });
   assert.ok(profile?.acceptedParameters.includes("bitrateMode"));
   assert.equal(profile?.parameterMap.outputFormat, "output_format");
+});
+
+test("video modes follow frame and multimodal reference limits", () => {
+  const singleFrame = catalogModelProfile({
+    modelType: "VIDEO_GENERATION",
+    supported_parameters: ["frame_images", "input_references"],
+    normalizedApiParameterSchema: {
+      fields: [
+        { name: "frame_images", max_items: 1 },
+        {
+          name: "input_references",
+          reference_images: { max_items: 0 },
+          reference_videos: { max_items: 0 },
+          reference_audios: { max_items: 0 },
+        },
+      ],
+    },
+  });
+  assert.deepEqual(singleFrame?.modes, ["t2v", "i2v"]);
+
+  const firstLastAndReferences = catalogModelProfile({
+    modelType: "VIDEO_GENERATION",
+    supported_parameters: ["frame_images", "input_references"],
+    normalizedApiParameterSchema: {
+      fields: [
+        { name: "frame_images", max_items: 2 },
+        {
+          name: "input_references",
+          reference_images: { max_items: 3 },
+          reference_videos: { max_items: 1 },
+          reference_audios: { max_items: 0 },
+        },
+      ],
+    },
+  });
+  assert.deepEqual(firstLastAndReferences?.modes, [
+    "t2v",
+    "i2v",
+    "flf2v",
+    "multiref",
+  ]);
+});
+
+test("catalog-defined scalar video parameters map and validate generically", async () => {
+  const profile = catalogModelProfile({
+    modelType: "VIDEO_GENERATION",
+    supported_parameters: ["duration", "movement_amplitude", "prompt_extend"],
+    normalizedApiParameterSchema: {
+      fields: [
+        {
+          name: "duration",
+          type: "integer",
+          playground_visible: true,
+          request_role: "model_parameter",
+          enum: [5],
+        },
+        {
+          name: "movement_amplitude",
+          type: "string",
+          playground_visible: true,
+          request_role: "model_parameter",
+          enum: ["small", "large"],
+        },
+        {
+          name: "prompt_extend",
+          type: "boolean",
+          playground_visible: true,
+          request_role: "model_parameter",
+          default: true,
+        },
+      ],
+    },
+  });
+  assert.ok(profile);
+  const row = {
+    ...definition,
+    modes: profile.modes,
+    accepted_parameters: profile.acceptedParameters,
+    required_parameters_by_mode: profile.requiredParametersByMode,
+    limits: profile.limits,
+    parameter_map: profile.parameterMap,
+  };
+  const compiled = await gateway(row).compile({
+    modelId: definition.id,
+    capability: "video",
+    mode: "t2v",
+    prompt: "人物缓慢转身",
+    parameters: { duration: 5, movementAmplitude: "large", promptExtend: true },
+  });
+  assert.deepEqual(compiled.upstreamParameters, {
+    duration: 5,
+    movement_amplitude: "large",
+    prompt_extend: true,
+  });
+  await assert.rejects(
+    () =>
+      gateway(row).compile({
+        modelId: definition.id,
+        capability: "video",
+        mode: "t2v",
+        prompt: "人物缓慢转身",
+        parameters: { duration: 5, movementAmplitude: "invalid" },
+      }),
+    (error: unknown) =>
+      error instanceof DomainError && error.code === "INVALID_MODEL_PARAMETER",
+  );
 });
 
 test("drama jobs preserve a strict trace without forwarding it as a model parameter", () => {
@@ -188,6 +368,46 @@ test("model parameter ranges fail locally before provider submission", async () 
   );
 });
 
+test("multiref enforces explicit zero limits without rejecting frame modes", async () => {
+  const row = {
+    ...definition,
+    limits: { ...definition.limits, maxImages: 3, maxVideos: 1, maxAudios: 0 },
+  };
+  await assert.rejects(
+    () =>
+      gateway(row).compile({
+        modelId: definition.id,
+        capability: "video",
+        mode: "multiref",
+        prompt: "人物转身",
+        references: [
+          {
+            role: "audio_reference",
+            url: "https://example.com/reference.mp3",
+            mimeType: "audio/mpeg",
+          },
+        ],
+      }),
+    (error: unknown) =>
+      error instanceof DomainError && error.code === "INVALID_MODEL_PARAMETER",
+  );
+  await assert.doesNotReject(() =>
+    gateway({ ...row, limits: { ...row.limits, maxImages: 0 } }).compile({
+      modelId: definition.id,
+      capability: "video",
+      mode: "i2v",
+      prompt: "人物转身",
+      references: [
+        {
+          role: "first_frame",
+          url: "https://example.com/first.png",
+          mimeType: "image/png",
+        },
+      ],
+    }),
+  );
+});
+
 test("video quality and format parameters map to provider field names", async () => {
   const compiled = await gateway().compile({
     modelId: definition.id,
@@ -196,5 +416,8 @@ test("video quality and format parameters map to provider field names", async ()
     prompt: "人物转身",
     parameters: { bitrateMode: "high", outputFormat: "mp4" },
   });
-  assert.deepEqual(compiled.upstreamParameters, { bitrate_mode: "high", output_format: "mp4" });
+  assert.deepEqual(compiled.upstreamParameters, {
+    bitrate_mode: "high",
+    output_format: "mp4",
+  });
 });

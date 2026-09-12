@@ -12,6 +12,8 @@ export type ModelGenerationMode = "chat" | "t2i" | "i2i" | "tts" | "t2v" | "i2v"
 export type ModelParameterDefinition = {
     key: string;
     type: "boolean" | "string" | "integer" | "number";
+    description?: string;
+    required?: boolean;
     defaultValue?: unknown;
     options?: Array<string | number | boolean>;
     min?: number;
@@ -65,6 +67,7 @@ export type AiConfig = {
     videoMode: string;
     videoBitrateMode: string;
     videoOutputFormat: string;
+    videoModelParameters: Record<string, Record<string, string>>;
     systemPrompt: string;
     reasoningEffort: ReasoningEffort;
     models: string[];
@@ -143,6 +146,7 @@ export const defaultConfig: AiConfig = {
     videoMode: "t2v",
     videoBitrateMode: "high",
     videoOutputFormat: "mp4",
+    videoModelParameters: {},
     systemPrompt: "",
     reasoningEffort: "auto",
     models: [`${MANAGED_CHANNEL_ID}::image.nano-banana-2`, `${MANAGED_CHANNEL_ID}::video.seedance-2-5`, `${MANAGED_CHANNEL_ID}::text.gpt-5-5`, `${MANAGED_CHANNEL_ID}::audio.seed-audio-1`],
@@ -321,6 +325,7 @@ export const useConfigStore = create<ConfigStore>()(
                         videoMode: normalizeStoredVideoMode(config.videoMode),
                         videoBitrateMode: config.videoBitrateMode || defaultConfig.videoBitrateMode,
                         videoOutputFormat: config.videoOutputFormat || defaultConfig.videoOutputFormat,
+                        videoModelParameters: config.videoModelParameters && typeof config.videoModelParameters === "object" ? config.videoModelParameters : {},
                         canvasImageCount: config.canvasImageCount || "3",
                         proxyEnabled: Boolean(config.proxyEnabled),
                         proxyUrl: config.proxyUrl || DEFAULT_LOCAL_PROXY_URL,

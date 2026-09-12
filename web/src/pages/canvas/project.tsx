@@ -458,6 +458,7 @@ function InfiniteCanvasPage() {
                                   generateAudio: generationConfig.videoGenerateAudio,
                                   watermark: generationConfig.videoWatermark,
                                   videoMode: generationConfig.videoMode,
+                                  videoModelParameters: generationConfig.videoModelParameters,
                                   assetId: result.assetId,
                                   assetVersionId: result.assetVersionId,
                               })
@@ -1228,25 +1229,28 @@ function InfiniteCanvasPage() {
         setConnections((prev) => prev.filter((connection) => connection.fromNodeId !== fromNodeId || connection.toNodeId !== toNodeId));
     }, []);
 
-    const startNodeReferenceSelection = useCallback((nodeId: string) => {
-        const connectedSourceIds = new Set(
-            connectionsRef.current
-                .filter((connection) => connection.toNodeId === nodeId)
-                .flatMap((connection) => {
-                    const source = nodesRef.current.find((node) => node.id === connection.fromNodeId);
-                    return source?.type === CanvasNodeType.Group ? [source.id, ...getGroupResourceNodes(source.id, nodesRef.current).map((child) => child.id)] : [connection.fromNodeId];
-                }),
-        );
-        const hasAvailableReference = nodesRef.current.some((node) => node.id !== nodeId && !connectedSourceIds.has(node.id) && isCanvasReferenceNode(node, nodesRef.current));
-        if (!hasAvailableReference) {
-            message.warning(t("canvas.references.noneAvailable"));
-            return;
-        }
-        setReferencePickerNodeId(nodeId);
-        setSelectedNodeIds(new Set([nodeId]));
-        setSelectedConnectionId(null);
-        setDialogNodeId(null);
-    }, [message, t]);
+    const startNodeReferenceSelection = useCallback(
+        (nodeId: string) => {
+            const connectedSourceIds = new Set(
+                connectionsRef.current
+                    .filter((connection) => connection.toNodeId === nodeId)
+                    .flatMap((connection) => {
+                        const source = nodesRef.current.find((node) => node.id === connection.fromNodeId);
+                        return source?.type === CanvasNodeType.Group ? [source.id, ...getGroupResourceNodes(source.id, nodesRef.current).map((child) => child.id)] : [connection.fromNodeId];
+                    }),
+            );
+            const hasAvailableReference = nodesRef.current.some((node) => node.id !== nodeId && !connectedSourceIds.has(node.id) && isCanvasReferenceNode(node, nodesRef.current));
+            if (!hasAvailableReference) {
+                message.warning(t("canvas.references.noneAvailable"));
+                return;
+            }
+            setReferencePickerNodeId(nodeId);
+            setSelectedNodeIds(new Set([nodeId]));
+            setSelectedConnectionId(null);
+            setDialogNodeId(null);
+        },
+        [message, t],
+    );
 
     const exitNodeReferenceSelection = useCallback(() => {
         if (!referencePickerNodeId) return;
@@ -2931,6 +2935,7 @@ function InfiniteCanvasPage() {
                             videoMode: generationConfig.videoMode,
                             videoBitrateMode: generationConfig.videoBitrateMode,
                             videoOutputFormat: generationConfig.videoOutputFormat,
+                            videoModelParameters: generationConfig.videoModelParameters,
                             references: generationReferenceUrls(generationContext),
                         },
                     };
@@ -2958,6 +2963,7 @@ function InfiniteCanvasPage() {
                                 videoMode: generationConfig.videoMode,
                                 videoBitrateMode: generationConfig.videoBitrateMode,
                                 videoOutputFormat: generationConfig.videoOutputFormat,
+                                videoModelParameters: generationConfig.videoModelParameters,
                                 references: generationReferenceUrls(generationContext),
                             },
                             generationContext.referenceVideos,
@@ -3255,6 +3261,7 @@ function InfiniteCanvasPage() {
                             generateAudio: generationConfig.videoGenerateAudio,
                             watermark: generationConfig.videoWatermark,
                             videoMode: generationConfig.videoMode,
+                            videoModelParameters: generationConfig.videoModelParameters,
                         },
                         context?.referenceVideos || [],
                         context?.referenceAudios || [],

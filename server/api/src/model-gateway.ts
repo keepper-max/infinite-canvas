@@ -21,6 +21,8 @@ export type ModelDefinition = {
 export type PublicModelParameter = {
   key: string;
   type: "boolean" | "string" | "integer" | "number";
+  description?: string;
+  required?: boolean;
   defaultValue?: unknown;
   options?: Array<string | number | boolean>;
   min?: number;
@@ -111,7 +113,13 @@ export class ModelGateway {
           `insert into model_catalog(id,display_name,capability,upstream_model,provider_id,discovered,enabled,healthy,catalog_metadata,discovered_at,checked_at)
                     values($1,$2,$3,$4,'token360',true,true,true,$5,now(),now())
                     on conflict(id) do update set display_name=excluded.display_name,capability=excluded.capability,upstream_model=excluded.upstream_model,catalog_metadata=excluded.catalog_metadata,discovered=true,enabled=true,healthy=true,discovered_at=now(),checked_at=now(),updated_at=now()`,
-          [id, displayName, profile.capability, name, sanitizeCatalogEntry(candidate)],
+          [
+            id,
+            displayName,
+            profile.capability,
+            name,
+            sanitizeCatalogEntry(candidate),
+          ],
         );
       }
       if (id.startsWith("catalog.")) {
@@ -126,7 +134,10 @@ export class ModelGateway {
     return candidates.length;
   }
 
-  private async upsertCatalogProfile(id: string, profile: CatalogCapabilityProfile) {
+  private async upsertCatalogProfile(
+    id: string,
+    profile: CatalogCapabilityProfile,
+  ) {
     await this.pool.query(
       `insert into model_capabilities(model_id,modes,accepted_parameters,required_parameters_by_mode,limits,parameter_map)
        values($1,$2,$3,$4,$5,$6)
@@ -146,12 +157,7 @@ export class ModelGateway {
 
   async listPublicModels(): Promise<
     Array<
-      Omit<
-        ModelDefinition,
-        | "upstreamModel"
-        | "providerId"
-        | "parameterMap"
-      > & {
+      Omit<ModelDefinition, "upstreamModel" | "providerId" | "parameterMap"> & {
         parameters: PublicModelParameter[];
         defaults: Record<string, unknown>;
       }
@@ -209,7 +215,12 @@ export class ModelGateway {
         422,
       );
     const references = Array.isArray(input.references) ? input.references : [];
-    validateModelLimits(row.limits, input.parameters || {}, references);
+    validateModelLimits(
+      row.limits,
+      input.parameters || {},
+      references,
+      input.mode,
+    );
     const parameterSource: Record<string, unknown> = {
       ...(input.parameters || {}),
     };
@@ -234,8 +245,7 @@ export class ModelGateway {
           422,
         );
     }
-    if (input.mode !== "multiref")
-      delete parameterSource.omniReferenceTaskType;
+    if (input.mode !== "multiref") delete parameterSource.omniReferenceTaskType;
     if (input.mode === "t2v") {
       delete parameterSource.firstFrame;
       delete parameterSource.lastFrame;
@@ -297,22 +307,34 @@ export function catalogModelProfile(
     candidate.modelType || candidate.type || candidate.capability,
   );
   if (!capability) return null;
-  const supported = new Set(catalogStrings(candidate.supported_parameters || candidate.supportedParameters));
-  const inputs = new Set(catalogStrings(candidate.modelInputTypes).map((value) => value.toLowerCase()));
-  const accepts = (...names: string[]) => names.some((name) => supported.has(name));
+  const supported = new Set(
+    catalogStrings(
+      candidate.supported_parameters || candidate.supportedParameters,
+    ),
+  );
+  const inputs = new Set(
+    catalogStrings(candidate.modelInputTypes).map((value) =>
+      value.toLowerCase(),
+    ),
+  );
+  const accepts = (...names: string[]) =>
+    names.some((name) => supported.has(name));
 
   if (capability === "text") {
     return {
       capability,
       modes: ["chat"],
-      acceptedParameters: accepts("reasoning_effort") ? ["reasoningEffort"] : [],
+      acceptedParameters: accepts("reasoning_effort")
+        ? ["reasoningEffort"]
+        : [],
       requiredParametersByMode: {},
       limits: { maxPromptChars: 120_000 },
       parameterMap: { reasoningEffort: "reasoning_effort" },
     };
   }
   if (capability === "image") {
-    const supportsReferences = inputs.has("image") || accepts("images", "image");
+    const supportsReferences =
+      inputs.has("image") || accepts("images", "image");
     return {
       capability,
       modes: supportsReferences ? ["t2i", "i2i"] : ["t2i"],
@@ -323,48 +345,58 @@ export function catalogModelProfile(
         ...(accepts("background") ? ["background"] : []),
         ...(supportsReferences ? ["references"] : []),
       ],
-      requiredParametersByMode: supportsReferences ? { i2i: ["references"] } : {},
+      requiredParametersByMode: supportsReferences
+        ? { i2i: ["references"] }
+        : {},
       limits: { maxImages: 9, maxPromptChars: 20_000 },
       parameterMap: { count: "n", references: "images" },
     };
   }
   if (capability === "video") {
-    const supportsFrames = accepts("frame_images") || inputs.has("image");
-    const supportsReferences = accepts("input_references");
+    const fields = catalogParameterFields(candidate);
+    const frameField = fields.find((field) => field.name === "frame_images");
+    const referenceField = fields.find(
+      (field) => field.name === "input_references",
+    );
+    const frameLimit = catalogArrayLimit(frameField);
+    const supportsFrames = accepts("frame_images") && frameLimit !== 0;
+    const supportsLastFrame =
+      supportsFrames && (frameLimit === null || frameLimit >= 2);
+    const supportsReferences =
+      accepts("input_references") &&
+      (!referenceField || catalogReferenceSupport(referenceField));
+    const parameters = publicParameterSchema(candidate);
     const modes: GenerationMode[] = ["t2v"];
     if (supportsFrames) modes.push("i2v");
-    if (accepts("frame_images")) modes.push("flf2v");
+    if (supportsLastFrame) modes.push("flf2v");
     if (supportsReferences) modes.push("multiref");
     return {
       capability,
       modes,
       acceptedParameters: [
-        ...(accepts("duration") ? ["duration"] : []),
-        ...(accepts("resolution") ? ["resolution"] : []),
-        ...(accepts("aspect_ratio", "ratio") ? ["aspectRatio"] : []),
-        ...(accepts("generate_audio") ? ["generateAudio"] : []),
-        ...(accepts("watermark") ? ["watermark"] : []),
-        ...(accepts("bitrate_mode") ? ["bitrateMode"] : []),
-        ...(accepts("output_format") ? ["outputFormat"] : []),
-        ...(accepts("omni_reference_task_type") ? ["omniReferenceTaskType"] : []),
+        ...parameters.map((parameter) => parameter.key),
+        ...(accepts("omni_reference_task_type")
+          ? ["omniReferenceTaskType"]
+          : []),
         ...(supportsFrames ? ["firstFrame"] : []),
-        ...(accepts("frame_images") ? ["lastFrame"] : []),
+        ...(supportsLastFrame ? ["lastFrame"] : []),
         ...(supportsReferences ? ["references"] : []),
       ],
       requiredParametersByMode: {
         ...(supportsFrames ? { i2v: ["firstFrame"] } : {}),
-        ...(accepts("frame_images") ? { flf2v: ["firstFrame", "lastFrame"] } : {}),
+        ...(supportsLastFrame ? { flf2v: ["firstFrame", "lastFrame"] } : {}),
         ...(supportsReferences ? { multiref: ["references"] } : {}),
       },
       limits: videoCatalogLimits(candidate),
       parameterMap: {
-        duration: "duration",
-        resolution: "resolution",
-        aspectRatio: accepts("aspect_ratio") ? "aspect_ratio" : "ratio",
-        generateAudio: "generate_audio",
-        watermark: "watermark",
-        bitrateMode: "bitrate_mode",
-        outputFormat: "output_format",
+        ...Object.fromEntries(
+          parameters.map((parameter) => [
+            parameter.key,
+            catalogParameterFields(candidate).find(
+              (field) => publicParameterName(field.name) === parameter.key,
+            )?.name || parameter.key,
+          ]),
+        ),
         omniReferenceTaskType: "omni_reference_task_type",
       },
     };
@@ -380,13 +412,22 @@ export function catalogModelProfile(
     ],
     requiredParametersByMode: {},
     limits: { maxPromptChars: 10_000 },
-    parameterMap: { format: accepts("response_format") ? "response_format" : "audio_format" },
+    parameterMap: {
+      format: accepts("response_format") ? "response_format" : "audio_format",
+    },
   };
 }
 
 function catalogStrings(value: unknown): string[] {
-  if (Array.isArray(value)) return value.map(String).map((item) => item.trim()).filter(Boolean);
-  return String(value || "").split(/[\s,]+/).map((item) => item.trim()).filter(Boolean);
+  if (Array.isArray(value))
+    return value
+      .map(String)
+      .map((item) => item.trim())
+      .filter(Boolean);
+  return String(value || "")
+    .split(/[\s,]+/)
+    .map((item) => item.trim())
+    .filter(Boolean);
 }
 function createSlug(value: string) {
   return (
@@ -434,37 +475,87 @@ const PUBLIC_PARAMETER_NAMES: Record<string, string> = {
   output_format: "outputFormat",
 };
 
-function catalogParameterFields(candidate: unknown): Array<Record<string, unknown>> {
+function publicParameterName(value: unknown) {
+  const name = String(value || "").trim();
+  if (!/^[a-z][a-z0-9_]*$/.test(name)) return "";
+  return (
+    PUBLIC_PARAMETER_NAMES[name] ||
+    name.replace(/_([a-z0-9])/g, (_, character: string) =>
+      character.toUpperCase(),
+    )
+  );
+}
+
+function catalogParameterFields(
+  candidate: unknown,
+): Array<Record<string, unknown>> {
   if (!isRecord(candidate)) return [];
   const schema = candidate.normalizedApiParameterSchema;
-  return isRecord(schema) && Array.isArray(schema.fields) ? schema.fields.filter(isRecord) : [];
+  return isRecord(schema) && Array.isArray(schema.fields)
+    ? schema.fields.filter(isRecord)
+    : [];
 }
 
 function publicParameterSchema(candidate: unknown): PublicModelParameter[] {
   return catalogParameterFields(candidate).flatMap((field) => {
-    const key = PUBLIC_PARAMETER_NAMES[String(field.name || "")];
+    const key = publicParameterName(field.name);
     const type = String(field.type || "");
-    if (!key || field.playground_visible !== true || !["boolean", "string", "integer", "number"].includes(type)) return [];
-    const options = Array.isArray(field.enum) ? field.enum.filter((value): value is string | number | boolean => ["string", "number", "boolean"].includes(typeof value)) : undefined;
-    return [{
-      key,
-      type: type as PublicModelParameter["type"],
-      ...(field.default !== undefined && field.default !== null ? { defaultValue: field.default } : {}),
-      ...(options?.length ? { options } : {}),
-      ...(field.min !== undefined && field.min !== null && Number.isFinite(Number(field.min)) ? { min: Number(field.min) } : {}),
-      ...(field.max !== undefined && field.max !== null && Number.isFinite(Number(field.max)) ? { max: Number(field.max) } : {}),
-      ...(field.step !== undefined && field.step !== null && Number.isFinite(Number(field.step)) ? { step: Number(field.step) } : {}),
-    }];
+    if (
+      !key ||
+      field.playground_visible !== true ||
+      (field.request_role !== undefined &&
+        field.request_role !== "model_parameter") ||
+      field.transport_only === true ||
+      !["boolean", "string", "integer", "number"].includes(type)
+    )
+      return [];
+    const options = Array.isArray(field.enum)
+      ? field.enum.filter((value): value is string | number | boolean =>
+          ["string", "number", "boolean"].includes(typeof value),
+        )
+      : undefined;
+    return [
+      {
+        key,
+        type: type as PublicModelParameter["type"],
+        ...(String(field.description || "").trim()
+          ? { description: String(field.description).trim() }
+          : {}),
+        ...(field.required === true ? { required: true } : {}),
+        ...(field.default !== undefined && field.default !== null
+          ? { defaultValue: field.default }
+          : {}),
+        ...(options?.length ? { options } : {}),
+        ...(field.min !== undefined &&
+        field.min !== null &&
+        Number.isFinite(Number(field.min))
+          ? { min: Number(field.min) }
+          : {}),
+        ...(field.max !== undefined &&
+        field.max !== null &&
+        Number.isFinite(Number(field.max))
+          ? { max: Number(field.max) }
+          : {}),
+        ...(field.step !== undefined &&
+        field.step !== null &&
+        Number.isFinite(Number(field.step))
+          ? { step: Number(field.step) }
+          : {}),
+      },
+    ];
   });
 }
 
 function publicParameterDefaults(candidate: unknown) {
-  if (!isRecord(candidate) || !isRecord(candidate.effectiveDefaultParams)) return {};
+  if (!isRecord(candidate) || !isRecord(candidate.effectiveDefaultParams))
+    return {};
   return Object.fromEntries(
-    Object.entries(candidate.effectiveDefaultParams).flatMap(([name, value]): Array<[string, unknown]> => {
-      const key = PUBLIC_PARAMETER_NAMES[name];
-      return key ? [[key, value]] : [];
-    }),
+    Object.entries(candidate.effectiveDefaultParams).flatMap(
+      ([name, value]): Array<[string, unknown]> => {
+        const key = publicParameterName(name);
+        return key ? [[key, value]] : [];
+      },
+    ),
   );
 }
 
@@ -476,7 +567,10 @@ function videoCatalogLimits(candidate: Record<string, unknown>) {
     return Array.isArray(values) ? values : [];
   };
   const referenceField = field("input_references");
-  const referenceLimit = (key: "reference_images" | "reference_videos" | "reference_audios", fallback: number) => {
+  const referenceLimit = (
+    key: "reference_images" | "reference_videos" | "reference_audios",
+    fallback: number,
+  ) => {
     const value = referenceField?.[key];
     if (!isRecord(value)) return fallback;
     const maximum = Number(value.max_items);
@@ -489,8 +583,42 @@ function videoCatalogLimits(candidate: Record<string, unknown>) {
     maxPromptChars: 20_000,
     durations: enumValues("duration"),
     resolutions: enumValues("resolution"),
-    aspectRatios: enumValues("aspect_ratio").length ? enumValues("aspect_ratio") : enumValues("ratio"),
+    aspectRatios: enumValues("aspect_ratio").length
+      ? enumValues("aspect_ratio")
+      : enumValues("ratio"),
+    parameterSchema: publicParameterSchema(candidate),
   };
+}
+
+function catalogArrayLimit(field: Record<string, unknown> | undefined) {
+  if (!field) return null;
+  if (
+    field.max_items === undefined ||
+    field.max_items === null ||
+    field.max_items === ""
+  )
+    return null;
+  const value = Number(field.max_items);
+  return Number.isFinite(value) ? value : null;
+}
+
+function catalogReferenceSupport(field: Record<string, unknown> | undefined) {
+  if (!field) return false;
+  const limits = [
+    field.reference_images,
+    field.reference_videos,
+    field.reference_audios,
+  ]
+    .filter(isRecord)
+    .filter(
+      (value) =>
+        value.max_items !== undefined &&
+        value.max_items !== null &&
+        value.max_items !== "",
+    )
+    .map((value) => Number(value.max_items))
+    .filter(Number.isFinite);
+  return !limits.length || limits.some((value) => value > 0);
 }
 
 function arrayOfStrings(value: unknown): string[] {
@@ -517,8 +645,72 @@ function validateModelLimits(
   limitsValue: unknown,
   parameters: Record<string, unknown>,
   references: GenerationInput["references"] = [],
+  mode: GenerationMode = "t2v",
 ) {
   const limits = isRecord(limitsValue) ? limitsValue : {};
+  const parameterSchema = Array.isArray(limits.parameterSchema)
+    ? limits.parameterSchema.filter(isRecord)
+    : [];
+  for (const definition of parameterSchema) {
+    const key = String(definition.key || "");
+    const value = parameters[key];
+    if (value === undefined || value === null || value === "") {
+      if (definition.required === true)
+        throw new DomainError(
+          "INVALID_MODEL_PARAMETER",
+          `缺少模型参数：${key}`,
+          422,
+        );
+      continue;
+    }
+    const type = String(definition.type || "");
+    const validType =
+      type === "boolean"
+        ? typeof value === "boolean"
+        : type === "integer"
+          ? typeof value === "number" && Number.isInteger(value)
+          : type === "number"
+            ? typeof value === "number" && Number.isFinite(value)
+            : type === "string"
+              ? typeof value === "string"
+              : true;
+    if (!validType)
+      throw new DomainError(
+        "INVALID_MODEL_PARAMETER",
+        `模型参数类型不正确：${key}`,
+        422,
+      );
+    const options = Array.isArray(definition.options) ? definition.options : [];
+    if (
+      options.length &&
+      !options.some(
+        (option) =>
+          String(option).toLowerCase() === String(value).toLowerCase(),
+      )
+    )
+      throw new DomainError(
+        "INVALID_MODEL_PARAMETER",
+        `模型参数不在支持范围内：${key}`,
+        422,
+      );
+    if (typeof value === "number") {
+      const minimum = Number(definition.min);
+      const maximum = Number(definition.max);
+      if (
+        (definition.min !== undefined &&
+          Number.isFinite(minimum) &&
+          value < minimum) ||
+        (definition.max !== undefined &&
+          Number.isFinite(maximum) &&
+          value > maximum)
+      )
+        throw new DomainError(
+          "INVALID_MODEL_PARAMETER",
+          `模型参数超出支持范围：${key}`,
+          422,
+        );
+    }
+  }
   for (const [parameter, limitKey, label] of [
     ["duration", "durations", "时长"],
     ["resolution", "resolutions", "清晰度"],
@@ -537,6 +729,7 @@ function validateModelLimits(
         422,
       );
   }
+  if (mode !== "multiref") return;
   const referenceList = references || [];
   const counts = {
     maxImages: referenceList.filter(
@@ -551,8 +744,15 @@ function validateModelLimits(
     ).length,
   };
   for (const [limitKey, count] of Object.entries(counts)) {
-    const maximum = Number(limits[limitKey] || 0);
-    if (maximum && count > maximum)
+    const rawMaximum = limits[limitKey];
+    const maximum = Number(rawMaximum);
+    if (
+      rawMaximum !== undefined &&
+      rawMaximum !== null &&
+      rawMaximum !== "" &&
+      Number.isFinite(maximum) &&
+      count > maximum
+    )
       throw new DomainError(
         "INVALID_MODEL_PARAMETER",
         `参考素材数量超过模型上限（最多 ${maximum} 个）`,

@@ -7,7 +7,7 @@ import { clampVideoSeconds, computeVideoSize, inferVideoRatio } from "@/lib/medi
 import { getMediaBlob, resolveMediaUrl, uploadMediaFile, type UploadedFile } from "@/services/file-storage";
 import { imageToDataUrl } from "@/services/image-storage";
 import { boolConfig, buildApiUrl, isServerManagedConfig, modelOptionName, resolveModelRequestConfig, resolveModelScript, withLocalProxy, type AiConfig } from "@/stores/use-config-store";
-import { normalizeVideoGenerationMode, selectedVideoModel, supportedVideoModes, videoParameterValue } from "@/lib/video-model-capabilities";
+import { normalizeVideoGenerationMode, selectedVideoModel, supportedVideoModes, videoParameterPayload } from "@/lib/video-model-capabilities";
 import { runModelPlugin } from "./model-plugin";
 import { artifactUrl, cancelManagedJobOnAbort, createManagedJob, getManagedJob } from "./jobs";
 import type { ReferenceImage } from "@/types/image";
@@ -225,11 +225,10 @@ async function createManagedVideoTask(config: AiConfig, model: string, prompt: s
             : generationMode === "t2v"
               ? []
               : generationMode === "i2v"
-                ? firstImage ? [{ role: "first_frame" as const, ...firstImage }] : []
-                : [
-                      ...(firstImage ? [{ role: "first_frame" as const, ...firstImage }] : []),
-                      ...(lastImage ? [{ role: "last_frame" as const, ...lastImage }] : []),
-                  ];
+                ? firstImage
+                    ? [{ role: "first_frame" as const, ...firstImage }]
+                    : []
+                : [...(firstImage ? [{ role: "first_frame" as const, ...firstImage }] : []), ...(lastImage ? [{ role: "last_frame" as const, ...lastImage }] : [])];
     try {
         const created = await createManagedJob(
             {
@@ -237,15 +236,7 @@ async function createManagedVideoTask(config: AiConfig, model: string, prompt: s
                 capability: "video",
                 mode: generationMode,
                 prompt,
-                parameters: {
-                    duration: Number(videoParameterValue(config, modelDefinition, "duration", "6")),
-                    resolution: videoParameterValue(config, modelDefinition, "resolution", "720p"),
-                    aspectRatio: videoParameterValue(config, modelDefinition, "aspectRatio", "adaptive"),
-                    generateAudio: videoParameterValue(config, modelDefinition, "generateAudio", "false") === "true",
-                    watermark: videoParameterValue(config, modelDefinition, "watermark", "false") === "true",
-                    bitrateMode: videoParameterValue(config, modelDefinition, "bitrateMode", "high"),
-                    outputFormat: videoParameterValue(config, modelDefinition, "outputFormat", "mp4"),
-                },
+                parameters: videoParameterPayload(config, modelDefinition),
                 references: mappedReferences,
             },
             { projectId: options?.projectId, nodeId: options?.nodeId, nodeRevision: options?.nodeRevision, idempotencyKey: options?.idempotencyKey, signal: options?.signal },

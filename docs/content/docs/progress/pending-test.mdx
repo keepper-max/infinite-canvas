@@ -5,7 +5,7 @@ description: Implemented changes that still need manual verification
 
 # Pending Tests
 
-- Dynamic video model parameters: select Seedance 2.5 in both the video workbench and a canvas video node. The panel should expose only catalog-supported values (Auto/4–30 seconds, 480p/720p/1080p, supported ratios, bitrate, MP4/MOV, audio, and watermark) and four explicit modes. T2V must submit no references; I2V must require the first frame; FLF2V must bind first/last frames by role; multimodal reference may submit image/video/audio inputs. Switching to another model must update the controls and server-side validation to that model's catalog schema.
+- Dynamic parameters for all video models: switch among representative Vidu Q1 text/image, Veo 3.1, Berry, Seedance, CogVideoX, and MiniMax models. Modes, duration, resolution, ratio, and extended controls must follow the catalog schema. T2V must reject references, first/last-frame modes must cap images at 1/2, multimodal mode must enforce separate image/video/audio limits including explicit zeroes, and native `2k` / `4k` values must never be converted to `720p`.
 
 - Canvas reference picker: clicking Add reference with no eligible canvas asset should show a warning without hiding the node editor. With an eligible image, video, audio, text, or resource group, selecting it should create one connection and immediately return to the node editor; clicking the target node, the top hint, or ESC should cancel selection.
 
