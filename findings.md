@@ -236,3 +236,24 @@
 - 画布节点支持自由缩放并会产生小数尺寸，服务端 `width`/`height` 使用整数校验会稳定返回 422；位置本来已接受小数，尺寸应同样接受范围内有限数值。
 - `canvas_nodes.width/height` 仍是兼容旧结构的整数辅助列；精确尺寸已保存在节点 JSON。正确的无迁移修复是在协议层接受有限小数、辅助列取整、读取时继续以 JSON 精确值为准。
 - 普通 AbortSignal 还会用于请求替换和页面生命周期，不能一律解释为后台取消；只有「停止」按钮传入显式手动取消原因时才调用任务取消 API，刷新或切页只结束本地等待，后台任务继续。
+# 当前任务发现：动态视频参数（2026-09-12）
+
+- Token360 公开目录返回 `normalizedApiParameterSchema.fields`、`effectiveDefaultParams`、`supported_parameters`、输入输出类型与参考素材上限。
+- Seedance 2.5 当前目录列出：时长 -1/4-30 秒、480p/720p/1080p、自适应及六种比例、标准/高码率、mp4/mov、音频、水印；多模态参考最多 30 图/10 视频/10 音频。
+- 服务端 `model-gateway.ts` 已有 `modes`、`acceptedParameters`、`requiredParametersByMode`、`limits`、`parameterMap` 和提交前编译验证。
+- `/api/models` 当前未把模式级必填规则和完整 UI 参数 schema 暴露给前端。
+- 前端模型同步只保存 `acceptedParameters`；`VideoSettingsPanel` 固定渲染 480/720/1080、比例、时长和两个旧模式。
+- 托管视频请求仍把旧的 `frames/reference` 加参考图数量推断为 `t2v/i2v/flf2v/multiref`，导致用户选择与真实请求模式存在间接关系。
+
+## 当前技术方向
+- 公共模型响应增加经过白名单清理的参数 schema、默认值、生成方式和参考素材限制。
+- 新的前端配置使用四种明确模式：`t2v`、`i2v`、`flf2v`、`multiref`。
+- 旧值增量兼容：`reference -> multiref`；`frames` 根据已连接图片数迁移。
+- 生成方式切换只改变可见和可提交参数，不删除其他模式曾保存的草稿配置。
+
+---
+# 2026-09-12 本地动态视频参数未显示
+
+- 根因不是前端实现未生效，而是 `localhost:3000` 仍运行旧 Web 镜像；工作区源码完成后没有执行本地镜像重建。
+- 当前有效编排是 `canvas-part5-qa` 的基础 `docker-compose.yml`；已停止的 `model-proxy` 来自旧编排覆盖文件，是孤立容器且不在当前 API 直连链路中。
+- 最新 Web 页面已从服务端模型能力返回值渲染四种生成方式，并显示 Seedance 2.5 的动态参数；旧截图中的 W/H 固定尺寸和“首尾帧模式 / 全能参考模式”已消失。

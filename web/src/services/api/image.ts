@@ -969,8 +969,8 @@ export async function fetchChannelModels(channel: ModelChannel) {
 }
 
 export async function fetchManagedModelCatalog(_channel: ModelChannel, signal?: AbortSignal): Promise<ChannelModel[]> {
-    const response = await platformRequest<{ models: Array<{ id: string; displayName: string; capability: ModelCapability; acceptedParameters?: string[] }> }>("/api/models", { signal });
-    return response.models.map((model) => ({ name: model.id, displayName: model.displayName, capability: model.capability || guessCapability(model.id), supportedParameters: model.acceptedParameters }));
+    const response = await platformRequest<{ models: Array<{ id: string; displayName: string; capability: ModelCapability; acceptedParameters?: string[]; modes?: ChannelModel["modes"]; requiredParametersByMode?: ChannelModel["requiredParametersByMode"]; parameters?: ChannelModel["parameters"]; defaults?: ChannelModel["defaults"]; limits?: ChannelModel["limits"] }> }>("/api/models", { signal });
+    return response.models.map((model) => ({ name: model.id, displayName: model.displayName, capability: model.capability || guessCapability(model.id), supportedParameters: model.acceptedParameters, modes: model.modes, requiredParametersByMode: model.requiredParametersByMode, parameters: model.parameters, defaults: model.defaults, limits: model.limits }));
 }
 
 const defaultGeminiConfig: Pick<AiConfig, "baseUrl" | "apiKey" | "apiFormat" | "model" | "systemPrompt"> = {

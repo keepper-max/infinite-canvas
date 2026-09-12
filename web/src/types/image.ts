@@ -8,4 +8,5 @@ export type ReferenceImage = {
     assetId?: string;
     assetVersionId?: string;
     generationJobId?: string;
+    role?: "first_frame" | "last_frame" | "identity" | "environment" | "composition" | "motion";
 };

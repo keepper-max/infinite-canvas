@@ -2929,6 +2929,8 @@ function InfiniteCanvasPage() {
                             generateAudio: generationConfig.videoGenerateAudio,
                             watermark: generationConfig.videoWatermark,
                             videoMode: generationConfig.videoMode,
+                            videoBitrateMode: generationConfig.videoBitrateMode,
+                            videoOutputFormat: generationConfig.videoOutputFormat,
                             references: generationReferenceUrls(generationContext),
                         },
                     };
@@ -2954,6 +2956,8 @@ function InfiniteCanvasPage() {
                                 generateAudio: generationConfig.videoGenerateAudio,
                                 watermark: generationConfig.videoWatermark,
                                 videoMode: generationConfig.videoMode,
+                                videoBitrateMode: generationConfig.videoBitrateMode,
+                                videoOutputFormat: generationConfig.videoOutputFormat,
                                 references: generationReferenceUrls(generationContext),
                             },
                             generationContext.referenceVideos,

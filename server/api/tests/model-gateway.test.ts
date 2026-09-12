@@ -17,6 +17,9 @@ const definition = {
     "duration",
     "resolution",
     "aspectRatio",
+    "bitrateMode",
+    "outputFormat",
+    "omniReferenceTaskType",
     "firstFrame",
     "lastFrame",
     "references",
@@ -32,7 +35,7 @@ const definition = {
     resolutions: ["480p", "720p", "1080p"],
     aspectRatios: ["16:9"],
   },
-  parameter_map: { aspectRatio: "ratio" },
+  parameter_map: { aspectRatio: "ratio", bitrateMode: "bitrate_mode", outputFormat: "output_format", omniReferenceTaskType: "omni_reference_task_type" },
 };
 
 function gateway(row = definition) {
@@ -59,6 +62,33 @@ test("catalog profiles expose each supported generation family without mixing sp
     ["tts"],
   );
   assert.equal(catalogModelProfile({ modelType: "AUDIO_SPEECH_TO_TEXT" }), null);
+});
+
+test("video catalog profiles preserve model-specific options and request mappings", () => {
+  const profile = catalogModelProfile({
+    modelType: "VIDEO_GENERATION",
+    modelInputTypes: ["text", "image", "video", "audio"],
+    supported_parameters: ["duration", "resolution", "aspect_ratio", "bitrate_mode", "output_format", "frame_images", "input_references"],
+    normalizedApiParameterSchema: {
+      fields: [
+        { name: "duration", enum: [-1, 5, 10] },
+        { name: "resolution", enum: ["720p", "1080p"] },
+        { name: "aspect_ratio", enum: ["adaptive", "16:9"] },
+        { name: "input_references", reference_images: { max_items: 30 }, reference_videos: { max_items: 10 }, reference_audios: { max_items: 10 } },
+      ],
+    },
+  });
+  assert.deepEqual(profile?.limits, {
+    maxImages: 30,
+    maxVideos: 10,
+    maxAudios: 10,
+    maxPromptChars: 20_000,
+    durations: [-1, 5, 10],
+    resolutions: ["720p", "1080p"],
+    aspectRatios: ["adaptive", "16:9"],
+  });
+  assert.ok(profile?.acceptedParameters.includes("bitrateMode"));
+  assert.equal(profile?.parameterMap.outputFormat, "output_format");
 });
 
 test("drama jobs preserve a strict trace without forwarding it as a model parameter", () => {
@@ -99,7 +129,7 @@ test("T2V strips reference-only fields and maps accepted parameters", async () =
     parameters: {
       duration: 5,
       aspectRatio: "16:9",
-      omni_reference_task_type: "reference",
+      omniReferenceTaskType: "reference",
       firstFrame: "unsafe",
     },
     references: [{ role: "first_frame", url: "https://example.com/frame.png" }],
@@ -156,4 +186,15 @@ test("model parameter ranges fail locally before provider submission", async () 
     (error: unknown) =>
       error instanceof DomainError && error.code === "INVALID_MODEL_PARAMETER",
   );
+});
+
+test("video quality and format parameters map to provider field names", async () => {
+  const compiled = await gateway().compile({
+    modelId: definition.id,
+    capability: "video",
+    mode: "t2v",
+    prompt: "人物转身",
+    parameters: { bitrateMode: "high", outputFormat: "mp4" },
+  });
+  assert.deepEqual(compiled.upstreamParameters, { bitrate_mode: "high", output_format: "mp4" });
 });

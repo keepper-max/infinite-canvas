@@ -8,6 +8,16 @@ import i18n from "@/i18n";
 export type ApiCallFormat = "openai" | "gemini";
 export type ModelCapability = "image" | "video" | "text" | "audio";
 export type ReasoningEffort = "auto" | "low" | "medium" | "high" | "xhigh";
+export type ModelGenerationMode = "chat" | "t2i" | "i2i" | "tts" | "t2v" | "i2v" | "flf2v" | "multiref";
+export type ModelParameterDefinition = {
+    key: string;
+    type: "boolean" | "string" | "integer" | "number";
+    defaultValue?: unknown;
+    options?: Array<string | number | boolean>;
+    min?: number;
+    max?: number;
+    step?: number;
+};
 
 export type ChannelModel = {
     name: string;
@@ -15,6 +25,11 @@ export type ChannelModel = {
     capability: ModelCapability;
     script?: string;
     supportedParameters?: string[];
+    modes?: ModelGenerationMode[];
+    requiredParametersByMode?: Partial<Record<ModelGenerationMode, string[]>>;
+    parameters?: ModelParameterDefinition[];
+    defaults?: Record<string, unknown>;
+    limits?: Record<string, unknown>;
 };
 
 export type ModelChannel = {
@@ -48,6 +63,8 @@ export type AiConfig = {
     videoGenerateAudio: string;
     videoWatermark: string;
     videoMode: string;
+    videoBitrateMode: string;
+    videoOutputFormat: string;
     systemPrompt: string;
     reasoningEffort: ReasoningEffort;
     models: string[];
@@ -123,7 +140,9 @@ export const defaultConfig: AiConfig = {
     vquality: "720",
     videoGenerateAudio: "true",
     videoWatermark: "false",
-    videoMode: "frames",
+    videoMode: "t2v",
+    videoBitrateMode: "high",
+    videoOutputFormat: "mp4",
     systemPrompt: "",
     reasoningEffort: "auto",
     models: [`${MANAGED_CHANNEL_ID}::image.nano-banana-2`, `${MANAGED_CHANNEL_ID}::video.seedance-2-5`, `${MANAGED_CHANNEL_ID}::text.gpt-5-5`, `${MANAGED_CHANNEL_ID}::audio.seed-audio-1`],
@@ -299,7 +318,9 @@ export const useConfigStore = create<ConfigStore>()(
                         vquality: config.vquality || "720",
                         videoGenerateAudio: config.videoGenerateAudio || "true",
                         videoWatermark: config.videoWatermark || "false",
-                        videoMode: config.videoMode === "reference" ? "reference" : "frames",
+                        videoMode: normalizeStoredVideoMode(config.videoMode),
+                        videoBitrateMode: config.videoBitrateMode || defaultConfig.videoBitrateMode,
+                        videoOutputFormat: config.videoOutputFormat || defaultConfig.videoOutputFormat,
                         canvasImageCount: config.canvasImageCount || "3",
                         proxyEnabled: Boolean(config.proxyEnabled),
                         proxyUrl: config.proxyUrl || DEFAULT_LOCAL_PROXY_URL,
@@ -326,9 +347,25 @@ export function normalizeChannelModels(models: Array<string | ChannelModel> | un
         const capability = typeof item === "string" ? guessCapability(name) : item.capability || guessCapability(name);
         const script = typeof item === "string" ? undefined : item.script?.trim() || undefined;
         const supportedParameters = typeof item === "string" || !Array.isArray(item.supportedParameters) ? undefined : Array.from(new Set(item.supportedParameters.map((value) => value.trim()).filter(Boolean)));
-        result.push({ name, capability, script, supportedParameters, displayName: typeof item === "string" ? undefined : item.displayName });
+        result.push({
+            name,
+            capability,
+            script,
+            supportedParameters,
+            displayName: typeof item === "string" ? undefined : item.displayName,
+            modes: typeof item === "string" || !Array.isArray(item.modes) ? undefined : item.modes,
+            requiredParametersByMode: typeof item === "string" ? undefined : item.requiredParametersByMode,
+            parameters: typeof item === "string" || !Array.isArray(item.parameters) ? undefined : item.parameters,
+            defaults: typeof item === "string" ? undefined : item.defaults,
+            limits: typeof item === "string" ? undefined : item.limits,
+        });
     }
     return result;
+}
+
+function normalizeStoredVideoMode(value: string | undefined) {
+    if (["t2v", "i2v", "flf2v", "multiref"].includes(value || "")) return value as string;
+    return value === "reference" ? "multiref" : "t2v";
 }
 
 export function createModelChannel(channel?: Partial<ModelChannel>): ModelChannel {

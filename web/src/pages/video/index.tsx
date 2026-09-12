@@ -61,7 +61,7 @@ type GenerationLog = {
     error?: string;
 };
 
-type GenerationLogConfig = Pick<AiConfig, "model" | "videoModel" | "size" | "vquality" | "videoSeconds" | "videoGenerateAudio" | "videoWatermark" | "videoMode">;
+type GenerationLogConfig = Pick<AiConfig, "model" | "videoModel" | "size" | "vquality" | "videoSeconds" | "videoGenerateAudio" | "videoWatermark" | "videoMode" | "videoBitrateMode" | "videoOutputFormat">;
 
 type UpdateAiConfig = <K extends keyof AiConfig>(key: K, value: AiConfig[K]) => void;
 
@@ -375,6 +375,8 @@ export default function VideoPage() {
         if (log.config.videoGenerateAudio) updateConfig("videoGenerateAudio", log.config.videoGenerateAudio);
         if (log.config.videoWatermark) updateConfig("videoWatermark", log.config.videoWatermark);
         if (log.config.videoMode) updateConfig("videoMode", log.config.videoMode);
+        if (log.config.videoBitrateMode) updateConfig("videoBitrateMode", log.config.videoBitrateMode);
+        if (log.config.videoOutputFormat) updateConfig("videoOutputFormat", log.config.videoOutputFormat);
         setResults(log.status === "pending" ? [{ id: log.id, status: "pending" }] : log.video ? [{ id: log.video.id, status: "success", video: log.video }] : [{ id: log.id, status: "failed", error: log.error || t("workbench.generationFailed") }]);
     };
 
@@ -529,7 +531,7 @@ function GenerationSettings({ config, model, updateConfig, openConfigDialog }: {
                 <ModelPicker config={config} value={model} onChange={(value) => updateConfig("videoModel", value)} capability="video" fullWidth onMissingConfig={() => openConfigDialog(false)} />
             </label>
             <div className="col-span-2">
-                <VideoSettingsPanel config={config} onConfigChange={(key, value) => updateConfig(key, value)} theme={theme} showTitle={false} className="space-y-4" />
+                <VideoSettingsPanel config={config} selectedModel={model} onConfigChange={(key, value) => updateConfig(key, value)} theme={theme} showTitle={false} className="space-y-4" />
             </div>
         </>
     );
@@ -744,7 +746,9 @@ function normalizeLogConfig(log: Partial<GenerationLog>): GenerationLogConfig {
         videoSeconds: log.config?.videoSeconds || log.seconds || "",
         videoGenerateAudio: log.config?.videoGenerateAudio || "true",
         videoWatermark: log.config?.videoWatermark || "false",
-        videoMode: log.config?.videoMode === "reference" ? "reference" : "frames",
+        videoMode: log.config?.videoMode || "t2v",
+        videoBitrateMode: log.config?.videoBitrateMode || "high",
+        videoOutputFormat: log.config?.videoOutputFormat || "mp4",
     };
 }
 
@@ -757,7 +761,9 @@ function buildLog({ prompt, model, config, references, durationMs, status, task,
         videoSeconds: config.videoSeconds,
         videoGenerateAudio: config.videoGenerateAudio,
         videoWatermark: config.videoWatermark,
-        videoMode: config.videoMode === "reference" ? "reference" : "frames",
+        videoMode: config.videoMode,
+        videoBitrateMode: config.videoBitrateMode,
+        videoOutputFormat: config.videoOutputFormat,
     };
     return {
         id: nanoid(),
@@ -789,7 +795,9 @@ function buildVideoConfig(config: AiConfig, model: string): AiConfig {
         vquality: normalizeResolution(config.vquality),
         videoGenerateAudio: String(boolConfig(config.videoGenerateAudio, true)),
         videoWatermark: String(boolConfig(config.videoWatermark, false)),
-        videoMode: config.videoMode === "reference" ? "reference" : "frames",
+        videoMode: config.videoMode,
+        videoBitrateMode: config.videoBitrateMode,
+        videoOutputFormat: config.videoOutputFormat,
     };
 }
 

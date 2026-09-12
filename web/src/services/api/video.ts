@@ -6,7 +6,8 @@ import { dataUrlToFile, readFileAsDataUrl } from "@/lib/image-utils";
 import { clampVideoSeconds, computeVideoSize, inferVideoRatio } from "@/lib/media-size";
 import { getMediaBlob, resolveMediaUrl, uploadMediaFile, type UploadedFile } from "@/services/file-storage";
 import { imageToDataUrl } from "@/services/image-storage";
-import { boolConfig, buildApiUrl, isServerManagedConfig, modelDefinitionOf, modelOptionName, resolveModelRequestConfig, resolveModelScript, withLocalProxy, type AiConfig } from "@/stores/use-config-store";
+import { boolConfig, buildApiUrl, isServerManagedConfig, modelOptionName, resolveModelRequestConfig, resolveModelScript, withLocalProxy, type AiConfig } from "@/stores/use-config-store";
+import { normalizeVideoGenerationMode, selectedVideoModel, supportedVideoModes, videoParameterValue } from "@/lib/video-model-capabilities";
 import { runModelPlugin } from "./model-plugin";
 import { artifactUrl, cancelManagedJobOnAbort, createManagedJob, getManagedJob } from "./jobs";
 import type { ReferenceImage } from "@/types/image";
@@ -189,6 +190,7 @@ async function createOpenAIVideoTask(config: AiConfig, model: string, prompt: st
 
 /** The managed video gateway uses JSON and maps reference media by generation mode. */
 async function createManagedVideoTask(config: AiConfig, model: string, prompt: string, references: ReferenceImage[], options?: VideoMediaOptions): Promise<VideoGenerationTask> {
+    const modelDefinition = selectedVideoModel(config, model);
     const images = await Promise.all(
         references.map(async (image) => {
             if (image.assetVersionId) return { assetVersionId: image.assetVersionId, mimeType: image.type };
@@ -210,16 +212,24 @@ async function createManagedVideoTask(config: AiConfig, model: string, prompt: s
             return { dataUrl, mimeType: dataUrl.match(/^data:([^;,]+)/)?.[1] || audio.type };
         }),
     );
-    const mode = resolveVideoMode(config.videoMode, images.length);
-    const generationMode = mode === "reference" ? "multiref" : images.length >= 2 ? "flf2v" : images.length === 1 ? "i2v" : "t2v";
+    const generationMode = normalizeVideoGenerationMode(config.videoMode, supportedVideoModes(modelDefinition), images.length);
+    const firstImage = images[references.findIndex((reference) => reference.role === "first_frame")] || images[0];
+    const lastImage = images[references.findIndex((reference) => reference.role === "last_frame")] || images.find((image) => image !== firstImage);
     const mappedReferences =
-        mode === "reference"
+        generationMode === "multiref"
             ? [
                   ...images.map((reference) => ({ role: "identity_reference" as const, ...reference })),
                   ...videos.map((reference) => ({ role: "motion_reference" as const, ...reference })),
                   ...audios.map((reference) => ({ role: "audio_reference" as const, ...reference })),
               ]
-            : images.map((reference, index) => ({ role: (index === 0 ? "first_frame" : "last_frame") as "first_frame" | "last_frame", ...reference }));
+            : generationMode === "t2v"
+              ? []
+              : generationMode === "i2v"
+                ? firstImage ? [{ role: "first_frame" as const, ...firstImage }] : []
+                : [
+                      ...(firstImage ? [{ role: "first_frame" as const, ...firstImage }] : []),
+                      ...(lastImage ? [{ role: "last_frame" as const, ...lastImage }] : []),
+                  ];
     try {
         const created = await createManagedJob(
             {
@@ -228,11 +238,13 @@ async function createManagedVideoTask(config: AiConfig, model: string, prompt: s
                 mode: generationMode,
                 prompt,
                 parameters: {
-                    duration: Number(normalizeVideoSeconds(config.videoSeconds)),
-                    resolution: normalizeVideoResolution(config.vquality),
-                    aspectRatio: videoAspectRatio(config.size),
-                    generateAudio: boolConfig(config.videoGenerateAudio, true),
-                    watermark: boolConfig(config.videoWatermark, false),
+                    duration: Number(videoParameterValue(config, modelDefinition, "duration", "6")),
+                    resolution: videoParameterValue(config, modelDefinition, "resolution", "720p"),
+                    aspectRatio: videoParameterValue(config, modelDefinition, "aspectRatio", "adaptive"),
+                    generateAudio: videoParameterValue(config, modelDefinition, "generateAudio", "false") === "true",
+                    watermark: videoParameterValue(config, modelDefinition, "watermark", "false") === "true",
+                    bitrateMode: videoParameterValue(config, modelDefinition, "bitrateMode", "high"),
+                    outputFormat: videoParameterValue(config, modelDefinition, "outputFormat", "mp4"),
                 },
                 references: mappedReferences,
             },
@@ -407,7 +419,7 @@ function normalizeVideoSeconds(value: string) {
 }
 
 function resolveVideoMode(mode: string | undefined, imageCount: number) {
-    if (mode === "reference" || imageCount > 2) return "reference";
+    if (mode === "reference" || mode === "multiref" || imageCount > 2) return "reference";
     return "frames";
 }
 

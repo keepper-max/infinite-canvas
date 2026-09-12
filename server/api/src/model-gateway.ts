@@ -18,6 +18,16 @@ export type ModelDefinition = {
   parameterMap: Record<string, string>;
 };
 
+export type PublicModelParameter = {
+  key: string;
+  type: "boolean" | "string" | "integer" | "number";
+  defaultValue?: unknown;
+  options?: Array<string | number | boolean>;
+  min?: number;
+  max?: number;
+  step?: number;
+};
+
 export type GenerationInput = {
   modelId: string;
   capability: Capability;
@@ -109,8 +119,9 @@ export class ModelGateway {
           "update model_catalog set enabled=true,healthy=true,updated_at=now() where id=$1",
           [id],
         );
-        await this.upsertCatalogProfile(id, profile);
       }
+      if (id.startsWith("catalog.") || profile.capability === "video")
+        await this.upsertCatalogProfile(id, profile);
     }
     return candidates.length;
   }
@@ -140,12 +151,15 @@ export class ModelGateway {
         | "upstreamModel"
         | "providerId"
         | "parameterMap"
-        | "requiredParametersByMode"
-      >
+      > & {
+        parameters: PublicModelParameter[];
+        defaults: Record<string, unknown>;
+      }
     >
   > {
     const result = await this.pool
-      .query(`select c.id, c.display_name, c.capability, p.modes, p.accepted_parameters, p.limits
+      .query(`select c.id, c.display_name, c.capability, c.catalog_metadata,
+                    p.modes, p.accepted_parameters, p.required_parameters_by_mode, p.limits
             from model_catalog c join model_capabilities p on p.model_id = c.id
             where c.enabled = true and c.healthy = true order by c.capability, c.display_name`);
     return result.rows.map((row) => ({
@@ -154,7 +168,10 @@ export class ModelGateway {
       capability: row.capability,
       modes: row.modes || [],
       acceptedParameters: row.accepted_parameters || [],
+      requiredParametersByMode: row.required_parameters_by_mode || {},
       limits: row.limits || {},
+      parameters: publicParameterSchema(row.catalog_metadata),
+      defaults: publicParameterDefaults(row.catalog_metadata),
     }));
   }
 
@@ -218,7 +235,7 @@ export class ModelGateway {
         );
     }
     if (input.mode !== "multiref")
-      delete parameterSource.omni_reference_task_type;
+      delete parameterSource.omniReferenceTaskType;
     if (input.mode === "t2v") {
       delete parameterSource.firstFrame;
       delete parameterSource.lastFrame;
@@ -327,6 +344,9 @@ export function catalogModelProfile(
         ...(accepts("aspect_ratio", "ratio") ? ["aspectRatio"] : []),
         ...(accepts("generate_audio") ? ["generateAudio"] : []),
         ...(accepts("watermark") ? ["watermark"] : []),
+        ...(accepts("bitrate_mode") ? ["bitrateMode"] : []),
+        ...(accepts("output_format") ? ["outputFormat"] : []),
+        ...(accepts("omni_reference_task_type") ? ["omniReferenceTaskType"] : []),
         ...(supportsFrames ? ["firstFrame"] : []),
         ...(accepts("frame_images") ? ["lastFrame"] : []),
         ...(supportsReferences ? ["references"] : []),
@@ -336,13 +356,16 @@ export function catalogModelProfile(
         ...(accepts("frame_images") ? { flf2v: ["firstFrame", "lastFrame"] } : {}),
         ...(supportsReferences ? { multiref: ["references"] } : {}),
       },
-      limits: { maxImages: 9, maxVideos: 3, maxAudios: 3, maxPromptChars: 20_000 },
+      limits: videoCatalogLimits(candidate),
       parameterMap: {
         duration: "duration",
         resolution: "resolution",
         aspectRatio: accepts("aspect_ratio") ? "aspect_ratio" : "ratio",
         generateAudio: "generate_audio",
         watermark: "watermark",
+        bitrateMode: "bitrate_mode",
+        outputFormat: "output_format",
+        omniReferenceTaskType: "omni_reference_task_type",
       },
     };
   }
@@ -391,12 +414,83 @@ function sanitizeCatalogEntry(value: Record<string, unknown>) {
     "supportedParameters",
     "supported_parameters",
     "effectiveDefaultParams",
+    "normalizedApiParameterSchema",
   ];
   return Object.fromEntries(
     allowed
       .filter((key) => value[key] !== undefined)
       .map((key) => [key, value[key]]),
   );
+}
+
+const PUBLIC_PARAMETER_NAMES: Record<string, string> = {
+  duration: "duration",
+  resolution: "resolution",
+  aspect_ratio: "aspectRatio",
+  ratio: "aspectRatio",
+  generate_audio: "generateAudio",
+  watermark: "watermark",
+  bitrate_mode: "bitrateMode",
+  output_format: "outputFormat",
+};
+
+function catalogParameterFields(candidate: unknown): Array<Record<string, unknown>> {
+  if (!isRecord(candidate)) return [];
+  const schema = candidate.normalizedApiParameterSchema;
+  return isRecord(schema) && Array.isArray(schema.fields) ? schema.fields.filter(isRecord) : [];
+}
+
+function publicParameterSchema(candidate: unknown): PublicModelParameter[] {
+  return catalogParameterFields(candidate).flatMap((field) => {
+    const key = PUBLIC_PARAMETER_NAMES[String(field.name || "")];
+    const type = String(field.type || "");
+    if (!key || field.playground_visible !== true || !["boolean", "string", "integer", "number"].includes(type)) return [];
+    const options = Array.isArray(field.enum) ? field.enum.filter((value): value is string | number | boolean => ["string", "number", "boolean"].includes(typeof value)) : undefined;
+    return [{
+      key,
+      type: type as PublicModelParameter["type"],
+      ...(field.default !== undefined && field.default !== null ? { defaultValue: field.default } : {}),
+      ...(options?.length ? { options } : {}),
+      ...(field.min !== undefined && field.min !== null && Number.isFinite(Number(field.min)) ? { min: Number(field.min) } : {}),
+      ...(field.max !== undefined && field.max !== null && Number.isFinite(Number(field.max)) ? { max: Number(field.max) } : {}),
+      ...(field.step !== undefined && field.step !== null && Number.isFinite(Number(field.step)) ? { step: Number(field.step) } : {}),
+    }];
+  });
+}
+
+function publicParameterDefaults(candidate: unknown) {
+  if (!isRecord(candidate) || !isRecord(candidate.effectiveDefaultParams)) return {};
+  return Object.fromEntries(
+    Object.entries(candidate.effectiveDefaultParams).flatMap(([name, value]): Array<[string, unknown]> => {
+      const key = PUBLIC_PARAMETER_NAMES[name];
+      return key ? [[key, value]] : [];
+    }),
+  );
+}
+
+function videoCatalogLimits(candidate: Record<string, unknown>) {
+  const fields = catalogParameterFields(candidate);
+  const field = (name: string) => fields.find((item) => item.name === name);
+  const enumValues = (name: string): unknown[] => {
+    const values = field(name)?.enum;
+    return Array.isArray(values) ? values : [];
+  };
+  const referenceField = field("input_references");
+  const referenceLimit = (key: "reference_images" | "reference_videos" | "reference_audios", fallback: number) => {
+    const value = referenceField?.[key];
+    if (!isRecord(value)) return fallback;
+    const maximum = Number(value.max_items);
+    return Number.isFinite(maximum) && maximum >= 0 ? maximum : fallback;
+  };
+  return {
+    maxImages: referenceLimit("reference_images", 9),
+    maxVideos: referenceLimit("reference_videos", 3),
+    maxAudios: referenceLimit("reference_audios", 3),
+    maxPromptChars: 20_000,
+    durations: enumValues("duration"),
+    resolutions: enumValues("resolution"),
+    aspectRatios: enumValues("aspect_ratio").length ? enumValues("aspect_ratio") : enumValues("ratio"),
+  };
 }
 
 function arrayOfStrings(value: unknown): string[] {

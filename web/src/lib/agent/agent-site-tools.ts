@@ -199,15 +199,17 @@ function getVideoConfig() {
             resolution: config.vquality || "720",
             generateAudio: config.videoGenerateAudio !== "false",
             watermark: config.videoWatermark === "true",
-            mode: config.videoMode === "reference" ? "reference" : "frames",
+            mode: config.videoMode,
         },
         models: selectableModelsByCapability(config, "video").map((value) => ({ value, label: modelOptionLabel(config, value) })),
         sizeOptions: videoSizeOptions,
         secondsRange: videoSecondsRange,
         resolutionOptions: videoResolutionOptions,
         modeOptions: [
-            { value: "frames", label: i18n.t("settingsPanels.video.modes.frames") },
-            { value: "reference", label: i18n.t("settingsPanels.video.modes.reference") },
+            { value: "t2v", label: i18n.t("settingsPanels.video.modes.t2v") },
+            { value: "i2v", label: i18n.t("settingsPanels.video.modes.i2v") },
+            { value: "flf2v", label: i18n.t("settingsPanels.video.modes.flf2v") },
+            { value: "multiref", label: i18n.t("settingsPanels.video.modes.multiref") },
         ],
     };
 }
@@ -241,9 +243,10 @@ function runVideoWorkbench(input: SiteToolInput, navigate: NavigateFunction) {
         configStore.updateConfig("videoWatermark", String(input.watermark));
         applied.watermark = input.watermark;
     }
-    if (input.mode === "frames" || input.mode === "reference") {
-        configStore.updateConfig("videoMode", input.mode);
-        applied.mode = input.mode;
+    if (["t2v", "i2v", "flf2v", "multiref"].includes(String(input.mode || ""))) {
+        const mode = String(input.mode);
+        configStore.updateConfig("videoMode", mode);
+        applied.mode = mode;
     }
     const prompt = typeof input.prompt === "string" ? input.prompt : undefined;
     const run = input.run !== false;

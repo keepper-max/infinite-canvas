@@ -72,6 +72,8 @@ export type CanvasNodeMetadata = {
     generateAudio?: string;
     watermark?: string;
     videoMode?: string;
+    videoBitrateMode?: string;
+    videoOutputFormat?: string;
     audioVoice?: string;
     audioFormat?: string;
     audioSpeed?: string;
