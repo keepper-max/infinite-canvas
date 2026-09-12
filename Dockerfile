@@ -69,5 +69,6 @@ FROM nginx:1.27-alpine AS web
 
 COPY nginx.conf /etc/nginx/conf.d/default.conf
 COPY --from=web-build /app/web/dist /usr/share/nginx/html
+RUN chmod -R a+rX /usr/share/nginx/html
 
 EXPOSE 3000
