@@ -54,6 +54,7 @@ type CanvasNodeProps = {
     onRetry?: (node: CanvasNodeData) => void;
     onViewImage?: (node: CanvasNodeData, imageId?: string) => void;
     onSelectReference?: (nodeId: string) => void;
+    onCancelReferenceSelection?: () => void;
     onContextMenu: (event: React.MouseEvent, nodeId: string) => void;
 };
 
@@ -118,6 +119,7 @@ export const CanvasNode = React.memo(function CanvasNode({
     onRetry,
     onViewImage,
     onSelectReference,
+    onCancelReferenceSelection,
     onContextMenu,
 }: CanvasNodeProps) {
     const theme = canvasThemes[useThemeStore((state) => state.theme)];
@@ -296,7 +298,7 @@ export const CanvasNode = React.memo(function CanvasNode({
     return (
         <div
             data-node-id={data.id}
-            className={`node-element absolute flex select-none flex-col transition-shadow duration-200 ${isGroup ? "z-[5]" : isSelected ? "z-50" : "z-10"} ${referenceSelectionState === "available" ? "cursor-pointer" : referenceSelectionState ? "cursor-not-allowed" : ""}`}
+            className={`node-element absolute flex select-none flex-col transition-shadow duration-200 ${isGroup ? "z-[5]" : isSelected ? "z-50" : "z-10"} ${referenceSelectionState === "available" || referenceSelectionState === "target" ? "cursor-pointer" : referenceSelectionState ? "cursor-not-allowed" : ""}`}
             style={{
                 transform: `translate(${data.position.x}px, ${data.position.y}px)`,
                 width: data.width,
@@ -375,6 +377,9 @@ export const CanvasNode = React.memo(function CanvasNode({
                     else if (event.button === 0 && referenceSelectionState === "available") {
                         event.stopPropagation();
                         onSelectReference?.(data.id);
+                    } else if (event.button === 0 && referenceSelectionState === "target") {
+                        event.stopPropagation();
+                        onCancelReferenceSelection?.();
                     }
                 }}
                 onDoubleClick={(event) => {
@@ -436,7 +441,7 @@ export const CanvasNode = React.memo(function CanvasNode({
 
                 {referenceSelectionState && (referenceSelectionState !== "available" || hovered) ? (
                     <div className="pointer-events-none absolute inset-0 z-[60] grid place-items-center rounded-[inherit]" style={{ background: `color-mix(in srgb, ${theme.canvas.background} ${referenceSelectionState === "target" ? 78 : referenceSelectionState === "disabled" ? 60 : 34}%, transparent)`, boxShadow: referenceSelectionState === "available" ? `inset 0 0 0 2px ${selectionBlue}` : undefined }}>
-                        {referenceSelectionState !== "disabled" ? <span className="rounded-lg px-3 py-2 text-sm font-medium shadow-sm" style={{ background: theme.toolbar.panel, color: theme.node.text }}>{t(referenceSelectionState === "target" ? "canvas.references.selecting" : "canvas.references.choose")}</span> : null}
+                        {referenceSelectionState !== "disabled" ? <span className="rounded-lg px-3 py-2 text-sm font-medium shadow-sm" style={{ background: theme.toolbar.panel, color: theme.node.text }}>{t(referenceSelectionState === "target" ? "canvas.references.cancelSelecting" : "canvas.references.choose")}</span> : null}
                     </div>
                 ) : null}
 

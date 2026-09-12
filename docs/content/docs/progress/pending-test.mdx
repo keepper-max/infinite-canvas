@@ -5,6 +5,8 @@ description: Implemented changes that still need manual verification
 
 # Pending Tests
 
+- Canvas reference picker: clicking Add reference with no eligible canvas asset should show a warning without hiding the node editor. With an eligible image, video, audio, text, or resource group, selecting it should create one connection and immediately return to the node editor; clicking the target node, the top hint, or ESC should cancel selection.
+
 - Managed canvas result recovery: Seedance asynchronous submissions should retain the provider task ID instead of failing on legacy databases. Canvas image jobs should identify their target node and job in the inspector, remain successful when browser image caching is unavailable, and refresh from a fresh cloud asset URL on another browser.
 
 - Cross-device model catalog: on a browser with no local site data, sign in as an existing or new user and open the image, video, and text workbenches. The server catalog should load only after authentication and expose all enabled models for each capability without requiring a second refresh or a previously warmed browser cache.

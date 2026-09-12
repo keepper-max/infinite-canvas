@@ -1229,11 +1229,24 @@ function InfiniteCanvasPage() {
     }, []);
 
     const startNodeReferenceSelection = useCallback((nodeId: string) => {
+        const connectedSourceIds = new Set(
+            connectionsRef.current
+                .filter((connection) => connection.toNodeId === nodeId)
+                .flatMap((connection) => {
+                    const source = nodesRef.current.find((node) => node.id === connection.fromNodeId);
+                    return source?.type === CanvasNodeType.Group ? [source.id, ...getGroupResourceNodes(source.id, nodesRef.current).map((child) => child.id)] : [connection.fromNodeId];
+                }),
+        );
+        const hasAvailableReference = nodesRef.current.some((node) => node.id !== nodeId && !connectedSourceIds.has(node.id) && isCanvasReferenceNode(node, nodesRef.current));
+        if (!hasAvailableReference) {
+            message.warning(t("canvas.references.noneAvailable"));
+            return;
+        }
         setReferencePickerNodeId(nodeId);
         setSelectedNodeIds(new Set([nodeId]));
         setSelectedConnectionId(null);
         setDialogNodeId(null);
-    }, []);
+    }, [message, t]);
 
     const exitNodeReferenceSelection = useCallback(() => {
         if (!referencePickerNodeId) return;
@@ -1248,8 +1261,9 @@ function InfiniteCanvasPage() {
             const source = nodesRef.current.find((node) => node.id === fromNodeId);
             if (!source || !isCanvasReferenceNode(source, nodesRef.current)) return;
             setConnections((prev) => [...prev, { id: nanoid(), fromNodeId, toNodeId: referencePickerNodeId }]);
+            exitNodeReferenceSelection();
         },
-        [referenceConnectedNodeIds, referencePickerNodeId],
+        [exitNodeReferenceSelection, referenceConnectedNodeIds, referencePickerNodeId],
     );
 
     useEffect(() => {
@@ -3699,6 +3713,7 @@ function InfiniteCanvasPage() {
                             onRetry={handleNodeRetry}
                             onViewImage={handleNodeViewImage}
                             onSelectReference={selectNodeReference}
+                            onCancelReferenceSelection={exitNodeReferenceSelection}
                             onContextMenu={handleNodeContextMenu}
                         />
                     ))}
