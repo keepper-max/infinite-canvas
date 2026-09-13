@@ -514,7 +514,12 @@ export class JobExecutor {
         jobId,
       ])
     ).rows[0];
-    if (!row || row.status === "cancel_requested" || row.status === "cancelled")
+    if (
+      !row ||
+      ["cancel_requested", "cancelled", "completed", "failed"].includes(
+        row.status,
+      )
+    )
       return;
     const status = final ? "failed" : "retrying";
     await this.pool.query(

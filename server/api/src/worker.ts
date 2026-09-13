@@ -8,6 +8,8 @@ import { JobExecutor } from "./job-service.js";
 import { ModelGateway } from "./model-gateway.js";
 import { S3ObjectStorage } from "./object-storage.js";
 import { ProviderError, Token360Provider } from "./provider.js";
+import { recoverInterruptedProviderJobs } from "./job-recovery.js";
+import { createQueue } from "./queue.js";
 import {
   CompositionCancelledError,
   CompositionExecutor,
@@ -42,6 +44,16 @@ const executor = new JobExecutor(
   config.jobs,
   (projectId) => connection.publish(`job-events:${projectId}`, "changed"),
 );
+const recoveryQueue = createQueue(config.jobs);
+const recoveredJobs = await recoverInterruptedProviderJobs(
+  pool,
+  recoveryQueue.queue,
+  1,
+);
+if (recoveredJobs.length)
+  console.log(
+    `[generation-worker] recovering ${recoveredJobs.length} interrupted provider result(s)`,
+  );
 const compositionExecutor = new CompositionExecutor(
   pool,
   storage,
@@ -52,24 +64,22 @@ const compositionExecutor = new CompositionExecutor(
 
 const worker = new Worker<{ jobId: string }>(
   config.jobs.queueName,
-  async (job: Job<{ jobId: string }>, token?: string) => {
-    const controller = new AbortController();
-    const onClosing = () => controller.abort(new Error("Worker shutting down"));
-    worker.once("closing", onClosing);
+  async (job: Job<{ jobId: string }>) => {
     try {
       return await executor.execute(
         job.data.jobId,
         job.attemptsMade + 1,
-        controller.signal,
       );
     } catch (error) {
+      await executor.markAttemptFailed(
+        job.data.jobId,
+        job.attemptsMade + 1 >=
+          (job.opts.attempts || config.jobs.maxAttempts),
+      );
       if (error instanceof ProviderError && !error.retryable) {
         throw new UnrecoverableError(error.message);
       }
       throw error;
-    } finally {
-      worker.off("closing", onClosing);
-      void token;
     }
   },
   {
@@ -134,6 +144,8 @@ async function shutdown() {
   closing = true;
   await worker.close(false);
   await compositionWorker.close(false);
+  await recoveryQueue.queue.close();
+  await recoveryQueue.connection.quit();
   await connection.quit();
   await pool.end();
 }
