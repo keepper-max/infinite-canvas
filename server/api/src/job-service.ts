@@ -310,11 +310,6 @@ export class JobExecutor {
     if (!row) return;
     if (["completed", "failed", "cancelled"].includes(row.status)) return;
     if (row.status === "cancel_requested") return this.cancel(row, signal);
-    const resolvedInput = await this.resolveAssetReferences(
-      row.input_snapshot as GenerationInput,
-      String(row.project_id),
-    );
-    const compiled = await this.gateway.compile(resolvedInput);
     const submitting = await this.pool.query(
       "update generation_jobs set status='submitting',progress=greatest(progress,1),attempt_count=$2,started_at=coalesce(started_at,now()),heartbeat_at=now(),updated_at=now() where id=$1 and status not in ('cancel_requested','cancelled','completed','failed') returning id",
       [jobId, attempt],
@@ -352,9 +347,17 @@ export class JobExecutor {
     }, this.config.videoPollIntervalMs);
     let activeProviderJobId = row.provider_job_id;
     try {
+      const compiled = row.provider_job_id
+        ? undefined
+        : await this.gateway.compile(
+            await this.resolveAssetReferences(
+              row.input_snapshot as GenerationInput,
+              String(row.project_id),
+            ),
+          );
       let result = row.provider_job_id
         ? await this.provider.get(String(row.provider_job_id), providerSignal)
-        : await this.provider.create(compiled, providerSignal);
+        : await this.provider.create(compiled!, providerSignal);
       if (result.providerJobId)
         await this.pool.query(
           "update generation_jobs set provider_job_id=$2,heartbeat_at=now(),updated_at=now() where id=$1",

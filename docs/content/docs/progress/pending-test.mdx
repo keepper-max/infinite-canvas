@@ -5,7 +5,7 @@ description: Implemented changes that still need manual verification
 
 # Pending Tests
 
-- Interrupted managed-video recovery: while a Token360 video has completed and the Worker is downloading or persisting it, restart the Worker. The existing provider task must be resumed without submitting a new generation, the result must enter the asset library and return to the canvas, and the node must not remain permanently at “Generating”.
+- Interrupted managed-video recovery: while a Token360 video has completed and the Worker is downloading or persisting it, restart the Worker. The existing provider task must be resumed without submitting a new generation even if its model is no longer present in the latest catalog; the result must enter the asset library and return to the canvas, and the node must not remain permanently at “Generating”.
 
 - Managed failure details: submit a video prompt or references that the provider rejects for visual copyright restrictions. The failed canvas node and Get task status action should show the specific safe Chinese explanation instead of only "视频生成失败"; generated-audio copyright, parameter mismatch, authentication, rate limit, and internal-error messages must remain correctly classified without exposing upstream URLs, headers, or credentials. Re-querying a historical failed job with a stored sanitized provider message should receive the improved explanation.
 
