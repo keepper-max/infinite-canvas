@@ -125,8 +125,26 @@ async function createImageThumbnail(file: Blob) {
 }
 
 async function digestSha256(blob: Blob) {
-    const digest = await crypto.subtle.digest("SHA-256", await blob.arrayBuffer());
-    return Array.from(new Uint8Array(digest), (value) => value.toString(16).padStart(2, "0")).join("");
+    try {
+        const subtle = globalThis.crypto?.subtle;
+        if (subtle) return bytesToHex(new Uint8Array(await subtle.digest("SHA-256", await blob.arrayBuffer())));
+
+        const { sha256 } = await import("@noble/hashes/sha2.js");
+        const hasher = sha256.create();
+        const reader = blob.stream().getReader();
+        while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+            hasher.update(value);
+        }
+        return bytesToHex(hasher.digest());
+    } catch {
+        throw new Error("素材校验失败，请重新选择素材后重试");
+    }
+}
+
+function bytesToHex(bytes: Uint8Array) {
+    return Array.from(bytes, (value) => value.toString(16).padStart(2, "0")).join("");
 }
 
 async function readMediaMetadata(blob: Blob): Promise<{ width?: number; height?: number; durationMs?: number }> {
