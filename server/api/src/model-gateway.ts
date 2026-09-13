@@ -41,6 +41,7 @@ export type GenerationInput = {
     url?: string;
     dataUrl?: string;
     assetVersionId?: string;
+    virtualPortraitId?: string;
     mimeType?: string;
   }>;
   trace?: {

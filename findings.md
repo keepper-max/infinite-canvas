@@ -279,3 +279,30 @@
 - 参考输入上限必须结合生成方式：文生为 0、首帧为 1、首尾帧为 2、多模态参考使用目录 `maxImages`；画布连接输入由服务端再次校验。
 - 对当前 22 个视频模型的实时 Schema 扫描确认：所有 111 个可见字段均为 `model_parameter`，类型只包含 boolean/integer/string，且字段结构没有条件显示扩展键。因此“生成方式变化”主要影响参考素材槽，标量参数按模型变化即可。
 - 实时能力编译已覆盖 22/22：纯文生模型只保留 T2V，单帧模型只增加 I2V，双帧模型增加 FLF2V，有非零或未声明旧式参考上限的模型增加多模态参考。
+
+# Virtual Portrait 角色资产库
+
+- 用户截图明确指出：视频 API 通过 `asset://{assetId}` 引用 Virtual Portrait，不能使用分组 ID 或资产记录 ID。
+- 首帧/尾帧场景放入 `frame_images[].image_url.url`；参考图与多模态参考放入 `input_references[].image_url.url`。
+- First-frame I2V 只使用一个首帧资产；多个 Virtual Portrait 角色应使用 Reference images 或 Multimodal reference 模式。
+- 官方流程：`POST /v1/asset-groups` 以 `groupKind=VIRTUAL_PORTRAIT` 建组；`POST /v1/assets` 用 multipart 的 `groupId`、`file`、`name` 上传；随后轮询 `GET /v1/assets/{assetId}` 或按 `groupId` 列表直到 `active`。
+- Virtual Portrait 无需真人验证，但必须属于 active 分组且资产自身为 active；普通 `ua_` 用户上传资产不能冒充 Virtual Portrait，唯一可用于视频引用的是 `ta_` 前缀 `assetId`。
+- 官方列出 First-frame I2V、首尾帧、参考图、多模态参考、编辑视频、续写视频；实际可用性仍必须以具体模型 `GET /v1/models/{model_id}` 的参数 schema 和当前 Provider/SKU 为准。
+- Token360 登录态 Assets 页面不能由公开抓取工具读取；公开文档已提供本次实现所需的 API 合约，后续不依赖登录页面结构。
+- 现有平台资产是项目级 PostgreSQL `assets` + 不可变 `asset_versions`，支持类型、状态、软删除和云端下载；当前没有供应商资产分组、供应商 `assetId` 或处理状态字段。
+- 现有视频请求已在服务端统一生成 `frame_images` 与 `input_references`，适合在这一可信边界把 Virtual Portrait 引用映射成 `asset://`，无需浏览器直接拼 Token360 请求。
+- 当前画布资产入口主要基于本地 `useAssetStore` 与通用云端资产 API，类型只覆盖文本、图片和视频；Virtual Portrait 应作为独立角色资产视图，同时仍能插入画布并参与现有图片连线。
+# 2026-09-14 Virtual Portrait 补充审计
+
+- 真实开发仓库为 `H:\CodexStorage\infinite-canvas-upgrade`；桌面线程 `cwd` 是另一套旧项目，不能作为本次改动目标。
+- `createApp` 当前通过可选依赖注入资产、任务、模型等服务，适合新增独立 `VirtualPortraitService` 并在路由层复用现有登录与项目权限。
+- 画布左栏目前只有“画布 / 资产 / 提示词”三个页签；普通资产完全来自浏览器本地 `useAssetStore`，上传走客户端存储服务，不具备项目级跨设备 Virtual Portrait 同步能力。
+- 生成引用当前只接受 `assetVersionId`、标准 URL 或 data URL。Virtual Portrait 应新增站内 `virtualPortraitId` 引用，由服务端校验归属和 active 状态后解析成 `asset://ta_...`；不能允许客户端直接提交任意 `asset://`。
+- Token360 视频 body 的最终映射层已经正确写入 `frame_images[].image_url.url` 与 `input_references[].image_url.url`，因此不应在 provider 层再做第二套 Virtual Portrait 特判。
+
+## 最终实现结论
+
+- 一个项目只创建一个服务端托管的 `VIRTUAL_PORTRAIT` 分组；角色条目保存 Token360 `ta_` Asset ID，并关联现有不可变源图版本。
+- 角色库只展示当前项目条目，预览地址每次由对象存储重新签发；处理中的条目在角色页打开时继续同步 Token360 状态。
+- 画布角色节点同时保存源图版本与站内角色 UUID：普通生图继续用源图版本，托管视频优先用角色 UUID 并在 Worker 内解析成 `asset://ta_...`。
+- 本地移除采用归档语义，不删除源图和未公开文档语义下的 Token360 上游资产；数据库回滚脚本同样保留源素材与版本。

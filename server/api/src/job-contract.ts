@@ -13,12 +13,17 @@ const referenceSchema = z
       "audio_reference",
     ]),
     assetVersionId: z.string().uuid().optional(),
-    url: z.string().url().optional(),
+    virtualPortraitId: z.string().uuid().optional(),
+    url: z
+      .string()
+      .url()
+      .refine((value) => ["http:", "https:"].includes(new URL(value).protocol), "参考素材 URL 只支持 HTTP 或 HTTPS")
+      .optional(),
     dataUrl: z.string().max(30_000_000).optional(),
     mimeType: z.string().max(128).optional(),
   })
   .refine(
-    (value) => Boolean(value.assetVersionId || value.url || value.dataUrl),
+    (value) => Boolean(value.assetVersionId || value.virtualPortraitId || value.url || value.dataUrl),
     "参考素材缺少来源",
   );
 

@@ -14,6 +14,7 @@ import { CompositionService } from "./composition-service.js";
 import { createCompositionQueue } from "./queue.js";
 import { OperationsService } from "./operations-service.js";
 import { TextWorkbenchService } from "./text-workbench-service.js";
+import { Token360VirtualPortraitClient, VirtualPortraitService } from "./virtual-portrait-service.js";
 
 const config = readConfig();
 const { db, pool } = createDatabase(config.databaseUrl);
@@ -47,6 +48,11 @@ const compositionService = new CompositionService(
 );
 const operationsService = new OperationsService(pool, config.operations);
 const textWorkbenchService = new TextWorkbenchService(pool, jobService);
+const virtualPortraitService = new VirtualPortraitService(
+  pool,
+  objectStorage,
+  new Token360VirtualPortraitClient(config.provider),
+);
 const app = createApp(
   new PostgresPlatformRepository(db),
   config,
@@ -56,6 +62,7 @@ const app = createApp(
   compositionService,
   operationsService,
   textWorkbenchService,
+  virtualPortraitService,
 );
 
 const server = serve({ fetch: app.fetch, port: config.port }, (info) => {

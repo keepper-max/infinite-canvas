@@ -199,6 +199,7 @@ async function createManagedVideoTask(config: AiConfig, model: string, prompt: s
     const projectId = options?.projectId || (await getCurrentSession(options?.signal)).workspace.projectId;
     const images = await Promise.all(
         references.map(async (image) => {
+            if (image.virtualPortraitId) return { virtualPortraitId: image.virtualPortraitId, mimeType: image.type };
             if (image.assetVersionId) return { assetVersionId: image.assetVersionId, mimeType: image.type };
             const dataUrl = await imageToDataUrl(image);
             const file = dataUrlToFile({ ...image, dataUrl });

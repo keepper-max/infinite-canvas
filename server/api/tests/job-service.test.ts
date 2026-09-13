@@ -2,10 +2,55 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import { generationJobAttempts, JobExecutor } from "../src/job-service.js";
+import { createJobSchema } from "../src/job-contract.js";
+import type { GenerationInput } from "../src/model-gateway.js";
 import { recoverInterruptedProviderJobs } from "../src/job-recovery.js";
 
 test("generation jobs do not retry automatically", () => {
   assert.equal(generationJobAttempts(), 1);
+});
+
+test("virtual portrait references are resolved from the current project only", async () => {
+  const pool = {
+    async query(sql: string, values?: unknown[]) {
+      assert.match(sql, /virtual_portraits/);
+      assert.deepEqual(values, ["11111111-1111-4111-8111-111111111111", "project-1"]);
+      return { rows: [{ provider_asset_id: "ta_portrait_1" }] };
+    },
+  };
+  const executor = new JobExecutor(pool as never, {} as never, {} as never, {} as never, {} as never);
+  const resolver = executor as unknown as { resolveAssetReferences(input: GenerationInput, projectId: string): Promise<GenerationInput> };
+  const resolved = await resolver.resolveAssetReferences(
+    {
+      modelId: "video.seedance-2-0",
+      capability: "video",
+      mode: "i2v",
+      prompt: "test",
+      references: [{ role: "first_frame", virtualPortraitId: "11111111-1111-4111-8111-111111111111" }],
+    },
+    "project-1",
+  );
+  assert.equal(resolved.references?.[0]?.url, "asset://ta_portrait_1");
+});
+
+test("managed job input accepts project portrait IDs but rejects direct asset URLs", () => {
+  const input = {
+    modelId: "video.seedance-2-0",
+    capability: "video",
+    mode: "i2v",
+    prompt: "test",
+    parameters: {},
+    nodeRevision: 0,
+    idempotencyKey: "portrait-test-key",
+  } as const;
+  assert.equal(
+    createJobSchema.safeParse({ ...input, references: [{ role: "first_frame", virtualPortraitId: "11111111-1111-4111-8111-111111111111" }] }).success,
+    true,
+  );
+  assert.equal(
+    createJobSchema.safeParse({ ...input, references: [{ role: "first_frame", url: "asset://ta_forged" }] }).success,
+    false,
+  );
 });
 
 test("interrupted provider jobs resume existing results without a new submission", async () => {

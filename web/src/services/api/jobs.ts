@@ -11,6 +11,7 @@ export type ManagedReference = {
     dataUrl?: string;
     url?: string;
     assetVersionId?: string;
+    virtualPortraitId?: string;
     mimeType?: string;
 };
 export type ManagedJobTrace = {

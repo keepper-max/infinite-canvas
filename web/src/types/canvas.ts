@@ -35,6 +35,7 @@ export type CanvasNodeImage = {
     storageKey?: string;
     assetId?: string;
     assetVersionId?: string;
+    virtualPortraitId?: string;
     generationJobId?: string;
     naturalWidth: number;
     naturalHeight: number;
@@ -88,6 +89,7 @@ export type CanvasNodeMetadata = {
     storageKey?: string;
     assetId?: string;
     assetVersionId?: string;
+    virtualPortraitId?: string;
     generationJobId?: string;
     mimeType?: string;
     bytes?: number;
@@ -138,6 +140,12 @@ export type CanvasAssistantImage = {
     id: string;
     dataUrl: string;
     storageKey?: string;
+    assetId?: string;
+    assetVersionId?: string;
+    virtualPortraitId?: string;
+    mimeType?: string;
+    width?: number;
+    height?: number;
     prompt: string;
 };
 

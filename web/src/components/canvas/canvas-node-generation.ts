@@ -181,6 +181,7 @@ function readNodeGenerationResource(node: CanvasNodeData): NodeGenerationResourc
                     storageKey: node.metadata?.storageKey,
                     assetId: node.metadata?.assetId,
                     assetVersionId: node.metadata?.assetVersionId,
+                    virtualPortraitId: node.metadata?.virtualPortraitId,
                 },
             },
         ];
@@ -265,6 +266,9 @@ function readReferenceImage(node: CanvasNodeData): ReferenceImage | null {
         type: node.metadata.mimeType || "image/png",
         dataUrl: node.metadata.content,
         storageKey: node.metadata.storageKey,
+        assetId: node.metadata.assetId,
+        assetVersionId: node.metadata.assetVersionId,
+        virtualPortraitId: node.metadata.virtualPortraitId,
     };
 }
 

@@ -307,6 +307,53 @@ export const assetVersions = pgTable(
   ],
 );
 
+export const virtualPortraitLibraries = pgTable("virtual_portrait_libraries", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  projectId: uuid("project_id")
+    .notNull()
+    .unique()
+    .references(() => projects.id, { onDelete: "cascade" }),
+  providerGroupId: text("provider_group_id").notNull().unique(),
+  name: text("name").notNull(),
+  providerStatus: text("provider_status").default("active").notNull(),
+  createdBy: uuid("created_by")
+    .notNull()
+    .references(() => users.id),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+});
+
+export const virtualPortraits = pgTable(
+  "virtual_portraits",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    projectId: uuid("project_id")
+      .notNull()
+      .references(() => projects.id, { onDelete: "cascade" }),
+    libraryId: uuid("library_id")
+      .notNull()
+      .references(() => virtualPortraitLibraries.id, { onDelete: "cascade" }),
+    sourceAssetId: uuid("source_asset_id")
+      .notNull()
+      .references(() => assets.id, { onDelete: "restrict" }),
+    sourceAssetVersionId: uuid("source_asset_version_id")
+      .notNull()
+      .references(() => assetVersions.id, { onDelete: "restrict" }),
+    providerRecordId: text("provider_record_id"),
+    providerAssetId: text("provider_asset_id").notNull().unique(),
+    name: text("name").notNull(),
+    status: text("status").default("processing").notNull(),
+    errorMessage: text("error_message"),
+    createdBy: uuid("created_by")
+      .notNull()
+      .references(() => users.id),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+    archivedAt: timestamp("archived_at", { withTimezone: true }),
+  },
+  (table) => [index("virtual_portraits_project_status_updated_idx").on(table.projectId, table.status, table.updatedAt)],
+);
+
 export const assetLinks = pgTable(
   "asset_links",
   {

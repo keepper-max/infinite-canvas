@@ -660,6 +660,28 @@ export class JobExecutor {
   ): Promise<GenerationInput> {
     const references = await Promise.all(
       (input.references || []).map(async (reference) => {
+        if (reference.virtualPortraitId) {
+          const result = await this.pool.query(
+            `select vp.provider_asset_id
+               from virtual_portraits vp
+               join virtual_portrait_libraries vpl on vpl.id=vp.library_id
+              where vp.id=$1 and vp.project_id=$2 and vp.status='active'
+                and vp.archived_at is null and vpl.provider_status='active'`,
+            [reference.virtualPortraitId, projectId],
+          );
+          const portrait = result.rows[0];
+          if (!portrait || !String(portrait.provider_asset_id).startsWith("ta_"))
+            throw new DomainError(
+              "VIRTUAL_PORTRAIT_NOT_READY",
+              "角色资产尚未就绪或不属于当前项目",
+              422,
+            );
+          return {
+            ...reference,
+            url: `asset://${portrait.provider_asset_id}`,
+            mimeType: reference.mimeType || "image/png",
+          };
+        }
         if (!reference.assetVersionId) return reference;
         const result = await this.pool.query(
           `select v.storage_key, v.mime_type

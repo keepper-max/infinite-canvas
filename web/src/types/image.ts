@@ -7,6 +7,7 @@ export type ReferenceImage = {
     storageKey?: string;
     assetId?: string;
     assetVersionId?: string;
+    virtualPortraitId?: string;
     generationJobId?: string;
     role?: "first_frame" | "last_frame" | "identity" | "environment" | "composition" | "motion";
 };

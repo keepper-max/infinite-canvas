@@ -3419,7 +3419,11 @@ function InfiniteCanvasPage() {
 
     const insertAssistantImage = useCallback(
         async (image: CanvasAssistantImage, position?: Position) => {
-            const storedImage = image.storageKey ? { url: image.dataUrl, storageKey: image.storageKey, width: 1, height: 1, bytes: 0, mimeType: "image/png" } : await uploadImage(image.dataUrl);
+            const storedImage = image.assetVersionId
+                ? { url: image.dataUrl, storageKey: image.storageKey, width: image.width || 1, height: image.height || 1, bytes: 0, mimeType: image.mimeType || "image/png", assetId: image.assetId, assetVersionId: image.assetVersionId }
+                : image.storageKey
+                  ? { url: image.dataUrl, storageKey: image.storageKey, width: 1, height: 1, bytes: 0, mimeType: "image/png" }
+                  : await uploadImage(image.dataUrl);
             const meta = storedImage.width === 1 && storedImage.height === 1 ? await readImageMeta(storedImage.url) : storedImage;
             const config = fitNodeSize(meta.width, meta.height);
             const center = screenToCanvas((containerRef.current?.getBoundingClientRect().left || 0) + size.width / 2, (containerRef.current?.getBoundingClientRect().top || 0) + size.height / 2);
@@ -3431,7 +3435,7 @@ function InfiniteCanvasPage() {
                 position: position || { x: center.x - config.width / 2, y: center.y - config.height / 2 },
                 width: config.width,
                 height: config.height,
-                metadata: { ...imageMetadata({ ...storedImage, width: meta.width, height: meta.height }), prompt: image.prompt },
+                metadata: { ...imageMetadata({ ...storedImage, width: meta.width, height: meta.height }), prompt: image.prompt, virtualPortraitId: image.virtualPortraitId },
             };
 
             setNodes((prev) => [...prev, node]);
@@ -3483,7 +3487,21 @@ function InfiniteCanvasPage() {
                 ]);
                 setSelectedNodeIds(new Set([id]));
             } else {
-                void insertAssistantImage({ id: `asset-${Date.now()}`, prompt: payload.title, dataUrl: payload.dataUrl, storageKey: payload.storageKey }, position);
+                void insertAssistantImage(
+                    {
+                        id: `asset-${Date.now()}`,
+                        prompt: payload.title,
+                        dataUrl: payload.dataUrl,
+                        storageKey: payload.storageKey,
+                        assetId: payload.assetId,
+                        assetVersionId: payload.assetVersionId,
+                        virtualPortraitId: payload.virtualPortraitId,
+                        mimeType: payload.mimeType,
+                        width: payload.width,
+                        height: payload.height,
+                    },
+                    position,
+                );
             }
             setAssetPickerOpen(false);
         },
@@ -3598,7 +3616,7 @@ function InfiniteCanvasPage() {
 
     return (
         <main className="flex h-full min-h-0 overflow-hidden" style={{ background: theme.canvas.background, color: theme.node.text }}>
-            {!focusMode ? <CanvasSidePanel nodes={nodes} selectedNodeIds={selectedNodeIds} onFocusNode={focusNode} onPreviewNode={setPreviewNodeId} onInsertAsset={handleAssetInsert} /> : null}
+            {!focusMode ? <CanvasSidePanel projectId={projectId} nodes={nodes} selectedNodeIds={selectedNodeIds} onFocusNode={focusNode} onPreviewNode={setPreviewNodeId} onInsertAsset={handleAssetInsert} /> : null}
             <section className="relative min-w-0 flex-1 overflow-hidden">
                 {!focusMode ? (
                     <CanvasTopBar

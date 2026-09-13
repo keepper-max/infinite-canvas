@@ -41,6 +41,11 @@ import {
 } from "./operations-contract.js";
 import type { OperationsServicePort } from "./operations-service.js";
 import type { TextWorkbenchService } from "./text-workbench-service.js";
+import {
+  archiveVirtualPortraitSchema,
+  createVirtualPortraitSchema,
+} from "./virtual-portrait-contract.js";
+import type { VirtualPortraitServicePort } from "./virtual-portrait-service.js";
 
 type Variables = { requestId: string };
 type AppEnv = { Variables: Variables };
@@ -54,6 +59,7 @@ export function createApp(
   compositionService?: CompositionService,
   operationsService?: OperationsServicePort,
   textWorkbenchService?: TextWorkbenchService,
+  virtualPortraitService?: VirtualPortraitServicePort,
 ) {
   const app = new Hono<AppEnv>();
 
@@ -434,6 +440,38 @@ export function createApp(
     return context.json(success(context, { assets }));
   });
 
+  app.get("/api/projects/:projectId/virtual-portraits", async (context) => {
+    const user = await requireUser(context.req.raw, repository, config);
+    const portraits = await requireVirtualPortraitService(virtualPortraitService).list(
+      context.req.param("projectId"),
+      user.id,
+      context.req.query("refresh") === "true",
+    );
+    return context.json(success(context, { portraits }));
+  });
+
+  app.post("/api/projects/:projectId/virtual-portraits", async (context) => {
+    const user = await requireUser(context.req.raw, repository, config);
+    const input = createVirtualPortraitSchema.parse(await readJson(context.req.raw));
+    const portrait = await requireVirtualPortraitService(virtualPortraitService).create(
+      context.req.param("projectId"),
+      user.id,
+      input,
+    );
+    return context.json(success(context, { portrait }), 201);
+  });
+
+  app.delete("/api/virtual-portraits/:portraitId", async (context) => {
+    const user = await requireUser(context.req.raw, repository, config);
+    archiveVirtualPortraitSchema.parse(await readJson(context.req.raw));
+    const archived = await requireVirtualPortraitService(virtualPortraitService).archive(
+      context.req.param("portraitId"),
+      user.id,
+    );
+    if (!archived) throw new DomainError("VIRTUAL_PORTRAIT_NOT_FOUND", "找不到该角色资产", 404);
+    return context.json(success(context, { archivedId: context.req.param("portraitId") }));
+  });
+
   app.get("/api/models", async (context) => {
     await requireUser(context.req.raw, repository, config);
     return context.json(
@@ -794,6 +832,17 @@ function requireAssetService(service?: AssetServicePort) {
     throw new DomainError(
       "ASSET_SERVICE_UNAVAILABLE",
       "素材服务暂时不可用",
+      503,
+      true,
+    );
+  return service;
+}
+
+function requireVirtualPortraitService(service?: VirtualPortraitServicePort) {
+  if (!service)
+    throw new DomainError(
+      "VIRTUAL_PORTRAIT_SERVICE_UNAVAILABLE",
+      "角色资产服务暂时不可用",
       503,
       true,
     );
