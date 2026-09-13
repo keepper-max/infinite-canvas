@@ -42,6 +42,7 @@ export function ConnectionPath({
     const curvature = Math.max(dx * 0.5, 50);
     const pathD = `M ${startX} ${startY} C ${startX + curvature} ${startY}, ${endX - curvature} ${endY}, ${endX} ${endY}`;
     const stroke = active ? theme.node.activeStroke : ROLE_COLORS[connection.role || "data"] || theme.node.muted;
+    const baseStroke = flowing ? ROLE_COLORS[connection.role || "data"] || theme.node.muted : stroke;
 
     return (
         <g>
@@ -62,8 +63,15 @@ export function ConnectionPath({
                     onContextMenu?.(event);
                 }}
             />
-            <path d={pathD} stroke={stroke} strokeWidth={active ? 3 : 2} strokeOpacity={active ? 1 : 0.82} fill="none" style={{ filter: active ? `drop-shadow(0 0 8px ${theme.node.activeStroke}66)` : undefined, pointerEvents: "none" }} />
-            {flowing ? <path className="canvas-connection-flow" d={pathD} stroke={theme.node.text} strokeWidth="2" strokeOpacity="0.9" strokeDasharray="7 21" strokeLinecap="round" fill="none" style={{ pointerEvents: "none" }} /> : null}
+            <path
+                d={pathD}
+                stroke={baseStroke}
+                strokeWidth={flowing ? 2 : active ? 3 : 2}
+                strokeOpacity={flowing ? 0.48 : active ? 1 : 0.82}
+                fill="none"
+                style={{ filter: active ? `drop-shadow(0 0 8px ${theme.node.activeStroke}66)` : undefined, pointerEvents: "none" }}
+            />
+            {flowing ? <path className="canvas-connection-flow" d={pathD} stroke={theme.node.activeStroke} strokeWidth="2.5" strokeOpacity="1" strokeDasharray="12 10" fill="none" style={{ pointerEvents: "none" }} /> : null}
             {active && connection.role && connection.role !== "data" ? (
                 <g style={{ pointerEvents: "none" }}>
                     <rect x={(startX + endX) / 2 - 42} y={(startY + endY) / 2 - 11} width="84" height="22" rx="7" fill={theme.toolbar.panel} stroke={stroke} strokeOpacity="0.5" />

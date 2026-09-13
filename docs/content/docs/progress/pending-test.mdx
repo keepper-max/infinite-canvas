@@ -5,7 +5,7 @@ description: Implemented changes that still need manual verification
 
 # Pending Tests
 
-- Directional connection motion: selecting one or more canvas nodes should animate only their directly connected lines from source to target; selecting a line should animate that line. Hover-only highlights and unrelated lines must remain static, the effect should stay legible in both themes and at different zoom levels, and reduced-motion preference must disable movement.
+- Directional connection motion: selecting one or more canvas nodes should animate only their directly connected lines with clearly separated, high-contrast dashes moving from source to target; selecting a line should animate that line. Hover-only highlights and unrelated lines must remain static, the effect should stay legible in both themes and at different zoom levels, and reduced-motion preference must disable movement.
 
 - Managed video attachment: complete a server-managed video task and verify the canvas immediately binds its cloud asset version and playable URL without downloading a second browser-local copy. Until that binding finishes, the node must remain loading rather than showing success with an empty video; refreshing another browser should renew the asset URL from the saved version.
 
