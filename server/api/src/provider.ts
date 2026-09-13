@@ -355,7 +355,6 @@ function compileVideoBody(request: CompiledGenerationRequest) {
     });
   }
   delete body.references;
-  if (request.mode === "multiref") body.omni_reference_task_type = "reference";
   return body;
 }
 function safeJson(value: string): unknown {

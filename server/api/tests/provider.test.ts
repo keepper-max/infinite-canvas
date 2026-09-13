@@ -181,7 +181,14 @@ test("video provider emits documented frame and multimodal reference shapes", as
         role: "reference",
       },
     ]);
-    assert.equal(bodies[1]?.omni_reference_task_type, "reference");
+    assert.equal(bodies[1]?.omni_reference_task_type, undefined);
+    await provider.create(
+      request("multiref", {
+        references: [],
+        omni_reference_task_type: "reference",
+      }),
+    );
+    assert.equal(bodies[2]?.omni_reference_task_type, "reference");
   } finally {
     globalThis.fetch = originalFetch;
   }
