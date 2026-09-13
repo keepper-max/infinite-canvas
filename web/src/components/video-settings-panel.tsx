@@ -57,13 +57,26 @@ export function VideoSettingsPanel({ config, onConfigChange, theme, selectedMode
     const resolutionValues = (videoParameter(model, "resolution")?.options?.map(String) || resolutionOptions.map((item) => item.value)).map(normalizeVideoResolutionValue);
     const ratioValues = videoParameter(model, "aspectRatio")?.options?.map(String) || videoRatioOptions.map((item) => item.value);
     const additionalParameters = (model?.parameters || []).filter((definition) => !CORE_VIDEO_PARAMETER_KEYS.has(definition.key));
+    const updateModelParameters = (values: Record<string, string>) => {
+        const next = Object.entries(values).reduce(
+            (parameters, [key, value]) => updateVideoModelParameter({ ...config, videoModelParameters: parameters }, model, key, value),
+            config.videoModelParameters,
+        );
+        onConfigChange("videoModelParameters", next);
+    };
+    const updateCoreParameter = <K extends VideoSettingKey>(configKey: K, value: AiConfig[K], parameterKey: string, parameterValue = String(value)) => {
+        onConfigChange(configKey, value);
+        updateModelParameters({ [parameterKey]: parameterValue });
+    };
+    const providerResolution = (value: string) => videoParameter(model, "resolution")?.options?.map(String).find((option) => normalizeVideoResolutionValue(option) === value) || value;
     const updateAdditionalParameter = (key: string, value: string) => onConfigChange("videoModelParameters", updateVideoModelParameter(config, model, key, value));
     const applySize = (nextResolution: string, ratio: string) => {
         onConfigChange("vquality", nextResolution);
         onConfigChange("size", computeVideoSize(nextResolution, ratio));
+        updateModelParameters({ resolution: providerResolution(nextResolution), aspectRatio: ratio });
     };
     const selectResolution = (nextResolution: string) => {
-        if (selectedRatio === "auto") onConfigChange("vquality", nextResolution);
+        if (selectedRatio === "auto") updateCoreParameter("vquality", nextResolution, "resolution", providerResolution(nextResolution));
         else applySize(nextResolution, selectedRatio);
     };
 
@@ -119,12 +132,12 @@ export function VideoSettingsPanel({ config, onConfigChange, theme, selectedMode
                                 className="w-full"
                                 value={durationValue}
                                 options={durationDefinition.options.map((value) => ({ value: String(value), label: String(value) === "-1" ? t("settingsPanels.video.smart") : `${value}s` }))}
-                                onChange={(value) => onConfigChange("videoSeconds", value)}
+                                onChange={(value) => updateCoreParameter("videoSeconds", value, "duration")}
                             />
                         ) : (
                             <div className="flex items-center gap-3" onMouseDown={(event) => event.stopPropagation()}>
-                                <Slider className="min-w-0 flex-1" min={VIDEO_SECONDS_MIN} max={VIDEO_SECONDS_MAX} step={1} value={seconds} onChange={(value) => onConfigChange("videoSeconds", String(Array.isArray(value) ? value[0] : value))} />
-                                <SecondsInput value={seconds} theme={theme} onCommit={(value) => onConfigChange("videoSeconds", String(value))} />
+                                <Slider className="min-w-0 flex-1" min={VIDEO_SECONDS_MIN} max={VIDEO_SECONDS_MAX} step={1} value={seconds} onChange={(value) => updateCoreParameter("videoSeconds", String(Array.isArray(value) ? value[0] : value), "duration")} />
+                                <SecondsInput value={seconds} theme={theme} onCommit={(value) => updateCoreParameter("videoSeconds", String(value), "duration")} />
                                 <span className="shrink-0 text-sm" style={{ color: theme.node.muted }}>
                                     s
                                 </span>
@@ -151,7 +164,7 @@ export function VideoSettingsPanel({ config, onConfigChange, theme, selectedMode
                         title={t("settingsPanels.video.bitrateMode")}
                         value={videoParameterValue(config, model, "bitrateMode", "high")}
                         definition={videoParameter(model, "bitrateMode")}
-                        onChange={(value) => onConfigChange("videoBitrateMode", value)}
+                        onChange={(value) => updateCoreParameter("videoBitrateMode", value, "bitrateMode")}
                     />
                 ) : null}
                 {supportsVideoParameter(model, "outputFormat") ? (
@@ -159,14 +172,14 @@ export function VideoSettingsPanel({ config, onConfigChange, theme, selectedMode
                         title={t("settingsPanels.video.outputFormat")}
                         value={videoParameterValue(config, model, "outputFormat", "mp4")}
                         definition={videoParameter(model, "outputFormat")}
-                        onChange={(value) => onConfigChange("videoOutputFormat", value)}
+                        onChange={(value) => updateCoreParameter("videoOutputFormat", value, "outputFormat")}
                     />
                 ) : null}
                 {supportsVideoParameter(model, "generateAudio") ? (
-                    <SwitchSetting title={t("settingsPanels.video.generateAudio")} checked={videoParameterValue(config, model, "generateAudio", "false") === "true"} onChange={(value) => onConfigChange("videoGenerateAudio", String(value))} />
+                    <SwitchSetting title={t("settingsPanels.video.generateAudio")} checked={videoParameterValue(config, model, "generateAudio", "false") === "true"} onChange={(value) => updateCoreParameter("videoGenerateAudio", String(value), "generateAudio")} />
                 ) : null}
                 {supportsVideoParameter(model, "watermark") ? (
-                    <SwitchSetting title={t("settingsPanels.video.watermark")} checked={videoParameterValue(config, model, "watermark", "false") === "true"} onChange={(value) => onConfigChange("videoWatermark", String(value))} />
+                    <SwitchSetting title={t("settingsPanels.video.watermark")} checked={videoParameterValue(config, model, "watermark", "false") === "true"} onChange={(value) => updateCoreParameter("videoWatermark", String(value), "watermark")} />
                 ) : null}
                 {additionalParameters.map((definition) => (
                     <DynamicParameterSetting key={definition.key} definition={definition} value={videoParameterValue(config, model, definition.key)} onChange={(value) => updateAdditionalParameter(definition.key, value)} />

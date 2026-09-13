@@ -5,6 +5,8 @@ description: Implemented changes that still need manual verification
 
 # Pending Tests
 
+- Video model parameter persistence: in a Seedance 2.5 node, switch among the catalog-provided 4–10 second durations and change resolution, ratio, audio, bitrate, or output options. Every selection should remain visible after closing and reopening the panel and should be submitted as the selected model-specific value.
+
 - Large video references: generate Seedance video from a local image larger than 1 MB and verify the browser uploads it as an immutable cloud asset before creating the job, the request survives refresh, and manual Stop cancels an in-progress upload. A provider rejection mentioning generated-audio copyright must be shown as an actionable Chinese message instructing the user to disable generated audio.
 
 - Dynamic parameters for all video models: switch among representative Vidu Q1 text/image, Veo 3.1, Berry, Seedance, CogVideoX, and MiniMax models. Modes, duration, resolution, ratio, and extended controls must follow the catalog schema. T2V must reject references, first/last-frame modes must cap images at 1/2, multimodal mode must enforce separate image/video/audio limits including explicit zeroes, and native `2k` / `4k` values must never be converted to `720p`.
