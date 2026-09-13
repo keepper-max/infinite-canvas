@@ -3667,6 +3667,7 @@ function InfiniteCanvasPage() {
                             const to = nodeById.get(connection.toNodeId);
                             if (!from || !to) return null;
                             if (performanceMode && !visibleNodeIds.has(from.id) && !visibleNodeIds.has(to.id)) return null;
+                            const flowing = selectedConnectionId === connection.id || selectedNodeIds.has(connection.fromNodeId) || selectedNodeIds.has(connection.toNodeId);
 
                             return (
                                 <ConnectionPath
@@ -3674,7 +3675,8 @@ function InfiniteCanvasPage() {
                                     connection={connection}
                                     from={from}
                                     to={to}
-                                    active={selectedConnectionId === connection.id || relatedHighlight.connectionIds.has(connection.id)}
+                                    active={flowing || relatedHighlight.connectionIds.has(connection.id)}
+                                    flowing={flowing}
                                     onSelect={() => {
                                         setSelectedConnectionId(connection.id);
                                         setSelectedNodeIds(new Set());

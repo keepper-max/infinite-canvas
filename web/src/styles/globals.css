@@ -452,7 +452,6 @@
             transform: translate(0, 0) rotate(0) scale(1);
         }
     }
-
 }
 
 ::view-transition-old(root),
@@ -606,4 +605,22 @@
     padding: 0.5rem 0.8rem;
     border-radius: 0.6rem;
     font-size: 0.75rem;
+}
+
+@keyframes canvas-connection-flow {
+    to {
+        stroke-dashoffset: -28px;
+    }
+}
+
+.canvas-connection-flow {
+    animation: canvas-connection-flow 0.72s linear infinite;
+    will-change: stroke-dashoffset;
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .canvas-connection-flow {
+        animation: none;
+        opacity: 0.55;
+    }
 }
