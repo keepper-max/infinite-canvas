@@ -148,12 +148,15 @@ function videoPluginResult(result: unknown): VideoGenerationResult {
 }
 
 export async function storeGeneratedVideo(result: VideoGenerationResult): Promise<UploadedFile> {
-    if (result.blob) return uploadMediaFile(result.blob, "video");
+    if (result.url && result.assetVersionId) {
+        return { url: result.url, storageKey: "", bytes: 0, mimeType: result.mimeType || "video/mp4", assetId: result.assetId, assetVersionId: result.assetVersionId };
+    }
+    if (result.blob) return { ...(await uploadMediaFile(result.blob, "video")), assetId: result.assetId, assetVersionId: result.assetVersionId };
     if (result.url) {
         try {
-            return await uploadMediaFile(result.url, "video");
+            return { ...(await uploadMediaFile(result.url, "video")), assetId: result.assetId, assetVersionId: result.assetVersionId };
         } catch {
-            return { url: result.url, storageKey: "", bytes: 0, mimeType: result.mimeType || "video/mp4" };
+            return { url: result.url, storageKey: "", bytes: 0, mimeType: result.mimeType || "video/mp4", assetId: result.assetId, assetVersionId: result.assetVersionId };
         }
     }
     throw new Error(apiText("noPlayableVideo"));
