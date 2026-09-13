@@ -72,6 +72,7 @@ export function getAntThemeConfig(dark: boolean): ThemeConfig {
                 optionActiveBg: color.itemHoverBg,
                 optionSelectedBg: color.itemSelectedBg,
                 optionSelectedColor: color.itemText,
+                zIndexPopup: 1400,
             },
             Table: {
                 rowSelectedBg: color.tableSelectedBg,

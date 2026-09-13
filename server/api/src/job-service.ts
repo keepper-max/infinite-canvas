@@ -240,7 +240,7 @@ export class JobService {
       throw new DomainError("JOB_NOT_RETRYABLE", "当前任务不能重试", 409);
     await this.queue.remove(jobId);
     await this.pool.query(
-      "update generation_jobs set status='retrying',progress=0,attempt_count=0,provider_job_id=null,user_error_code=null,user_error_message=null,error_reason=null,started_at=null,finished_at=null,cancel_requested_at=null,updated_at=now() where id=$1",
+      "update generation_jobs set status='retrying',progress=0,attempt_count=0,provider_job_id=case when progress >= 96 then provider_job_id else null end,user_error_code=null,user_error_message=null,error_reason=null,started_at=null,finished_at=null,cancel_requested_at=null,updated_at=now() where id=$1",
       [jobId],
     );
     await this.pool.query(
@@ -458,6 +458,7 @@ export class JobExecutor {
       const artifacts = await this.persistArtifacts(
         row,
         result.artifacts || [],
+        providerSignal,
       );
       const versionIds = artifacts
         .map((artifact) => artifact.assetVersionId)
@@ -548,6 +549,7 @@ export class JobExecutor {
   private async persistArtifacts(
     row: Record<string, unknown>,
     artifacts: ProviderArtifact[],
+    signal?: AbortSignal,
   ) {
     const results: Array<Record<string, unknown>> = [];
     for (let index = 0; index < artifacts.length; index++) {
@@ -577,7 +579,7 @@ export class JobExecutor {
         results.push({ id, kind: artifact.kind, text: artifact.text });
         continue;
       }
-      const bytes = artifact.bytes || (await downloadBytes(artifact.url!));
+      const bytes = artifact.bytes || (await downloadBytes(artifact.url!, signal));
       const sha256 = createHash("sha256").update(bytes).digest("hex");
       const extension = extensionFor(artifact.mimeType);
       const storageKey = `projects/${row.project_id}/generated/${row.id}/${index}.${extension}`;
@@ -769,8 +771,8 @@ function delay(ms: number, signal?: AbortSignal) {
     );
   });
 }
-async function downloadBytes(url: string) {
-  const response = await fetch(url, { signal: AbortSignal.timeout(60_000) });
+async function downloadBytes(url: string, signal?: AbortSignal) {
+  const response = await fetch(url, { signal });
   if (!response.ok)
     throw new ProviderError(
       "ARTIFACT_DOWNLOAD_FAILED",

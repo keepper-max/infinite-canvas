@@ -7,8 +7,8 @@ import { useTranslation } from "react-i18next";
 
 import { requestEdit, requestGeneration, requestImageQuestion } from "@/services/api/image";
 import { requestAudioGeneration, storeGeneratedAudio } from "@/services/api/audio";
-import { createVideoGenerationTask, isVideoTaskFailed, storeGeneratedVideo, waitForVideoGenerationTask } from "@/services/api/video";
-import { abortForManualJobCancellation, subscribeProjectJobEvents } from "@/services/api/jobs";
+import { createVideoGenerationTask, storeGeneratedVideo, waitForVideoGenerationTask } from "@/services/api/video";
+import { abortForManualJobCancellation, getManagedJob, retryManagedJob, subscribeProjectJobEvents } from "@/services/api/jobs";
 import { createCanvasDraft, type CanvasDraft } from "@/services/api/canvas";
 import { defaultConfig, useConfigStore, useEffectiveConfig } from "@/stores/use-config-store";
 import { uploadImage } from "@/services/image-storage";
@@ -478,7 +478,6 @@ function InfiniteCanvasPage() {
                                       ...item.metadata,
                                       status: item.metadata?.content ? NODE_STATUS_SUCCESS : NODE_STATUS_ERROR,
                                       errorDetails: item.metadata?.content ? undefined : errorDetails,
-                                      ...(isVideoTaskFailed(error) ? { videoTaskId: undefined } : {}),
                                   },
                               }
                             : item,
@@ -506,6 +505,7 @@ function InfiniteCanvasPage() {
                                   ...node,
                                   metadata: {
                                       ...node.metadata,
+                                      ...(node.type === CanvasNodeType.Video ? { videoTaskId: event.jobId, videoTaskProvider: "managed" as const } : {}),
                                       status: event.status === "completed" ? NODE_STATUS_SUCCESS : event.status === "failed" || event.status === "cancelled" ? NODE_STATUS_ERROR : NODE_STATUS_LOADING,
                                       errorDetails: event.status === "failed" ? event.message : undefined,
                                   },
@@ -3140,7 +3140,6 @@ function InfiniteCanvasPage() {
                                           ...node.metadata,
                                           status: NODE_STATUS_ERROR,
                                           errorDetails,
-                                          ...(isVideoTaskFailed(error) && node.type === CanvasNodeType.Video ? { videoTaskId: undefined } : {}),
                                       },
                                   }
                             : node,
@@ -3160,6 +3159,15 @@ function InfiniteCanvasPage() {
     const handleRetryNode = useCallback(
         async (node: CanvasNodeData, imageId?: string) => {
             if (hasResumableVideoTask(node)) {
+                if (node.metadata?.videoTaskProvider === "managed" && node.metadata.videoTaskId) {
+                    try {
+                        const job = await getManagedJob(node.metadata.videoTaskId);
+                        if (job.status === "failed" && job.error?.retryable) await retryManagedJob(job.id);
+                    } catch (error) {
+                        message.error(error instanceof Error ? error.message : t("canvas.projectPage.generationFailed"));
+                        return;
+                    }
+                }
                 await pollVideoNodeTask(node);
                 return;
             }
@@ -3345,7 +3353,6 @@ function InfiniteCanvasPage() {
                                       status: item.metadata?.content ? NODE_STATUS_SUCCESS : NODE_STATUS_ERROR,
                                       errorDetails: item.metadata?.content ? undefined : errorDetails,
                                       images: item.metadata?.images?.map((image) => (image.id === imageId ? { ...image, status: NODE_STATUS_ERROR, errorDetails } : image)),
-                                      ...(isVideoTaskFailed(error) && item.type === CanvasNodeType.Video ? { videoTaskId: undefined } : {}),
                                   },
                               }
                             : item,
