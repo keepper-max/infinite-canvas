@@ -78,6 +78,7 @@ export async function platformRequest<T>(path: string, init: RequestInit = {}): 
     }
     const payload = (await response.json().catch(() => null)) as ApiSuccess<T> | ApiFailure | null;
     if (!response.ok) {
+        if (response.status === 413) throw new PlatformApiError("请求内容过大，请减少参考素材后重试", 413, "REQUEST_TOO_LARGE", false);
         const failure = payload as ApiFailure | null;
         throw new PlatformApiError(failure?.error?.message || "请求失败", response.status, failure?.error?.code || "REQUEST_FAILED", Boolean(failure?.error?.retryable), failure?.error?.details);
     }

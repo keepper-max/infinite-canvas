@@ -9,8 +9,9 @@ import { buildImageReferencePromptText } from "@/lib/image-reference-prompt";
 import { imageToDataUrl } from "@/services/image-storage";
 import { imageSizePresets, inferMediaScale } from "@/lib/media-size";
 import type { ReferenceImage } from "@/types/image";
+import { currentVersion, uploadCloudAsset } from "./assets";
 import { artifactUrl, createManagedJob, waitForManagedJob } from "./jobs";
-import { platformRequest } from "./platform";
+import { getCurrentSession, platformRequest } from "./platform";
 
 const apiText = (key: string, options?: Record<string, unknown>) => i18n.t(`apiErrors.${key}`, options);
 
@@ -784,11 +785,22 @@ export async function requestEdit(config: AiConfig, prompt: string, references: 
     const n = Math.max(1, Math.min(15, Math.floor(Math.abs(Number(config.count)) || 1)));
     const requestPrompt = buildImageReferencePromptText(prompt, references);
     if (isServerManagedConfig(requestConfig)) {
+        const projectId = options?.projectId || (await getCurrentSession(options?.signal)).workspace.projectId;
         const refs = await Promise.all(
             references.map(async (image) => {
                 if (image.assetVersionId) return { role: "identity_reference" as const, assetVersionId: image.assetVersionId, mimeType: image.type };
-                const dataUrl = await imageToDataUrl(image);
-                return { role: "identity_reference" as const, dataUrl, mimeType: dataUrl.match(/^data:([^;,]+)/)?.[1] || image.type };
+                const dataUrl = await imageToDataUrl(image, { signal: options?.signal });
+                const file = dataUrlToFile({ ...image, dataUrl });
+                const asset = await uploadCloudAsset(projectId, file, {
+                    kind: "image",
+                    name: image.name || "参考图片",
+                    source: "migration",
+                    provenance: { purpose: "generation-reference", localStorageKey: image.storageKey || null },
+                    signal: options?.signal,
+                });
+                const version = currentVersion(asset);
+                if (!version) throw new Error(apiText("referenceImageReadFailed"));
+                return { role: "identity_reference" as const, assetVersionId: version.id, mimeType: version.mimeType || file.type };
             }),
         );
         const job = await waitForManagedJob(
@@ -802,7 +814,7 @@ export async function requestEdit(config: AiConfig, prompt: string, references: 
                         parameters: { count: n, size: resolveRequestSize(normalizeQuality(config.quality), config.size), quality: normalizeQuality(config.quality) },
                         references: refs,
                     },
-                    { projectId: options?.projectId, nodeId: options?.nodeId, nodeRevision: options?.nodeRevision, idempotencyKey: options?.idempotencyKey, signal: options?.signal },
+                    { projectId, nodeId: options?.nodeId, nodeRevision: options?.nodeRevision, idempotencyKey: options?.idempotencyKey, signal: options?.signal },
                 )
             ).id,
             options?.signal,
