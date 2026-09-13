@@ -517,7 +517,11 @@ async function readCanvas(
       .where(eq(tables.canvasEdges.projectId, projectId))
       .orderBy(asc(tables.canvasEdges.sortOrder)),
   ]);
-  const nodes = nodeRows.map(deserializeNode);
+  const nodes = await enrichLegacyAssetBindings(
+    db,
+    projectId,
+    nodeRows.map(deserializeNode),
+  );
   const edges = edgeRows.map(deserializeEdge);
   return {
     projectId,
@@ -530,6 +534,72 @@ async function readCanvas(
     settings: canvas.settings as CanvasSettings,
     updatedAt: canvas.updatedAt.toISOString(),
   };
+}
+
+async function enrichLegacyAssetBindings(
+  db: Executor,
+  projectId: string,
+  nodes: CanvasNode[],
+) {
+  const localStorageKeys = [
+    ...new Set(
+      nodes
+        .map((node) => node.metadata?.storageKey)
+        .filter(
+          (value): value is string =>
+            typeof value === "string" && /^(?:image|video|audio):/.test(value),
+        ),
+    ),
+  ];
+  if (!localStorageKeys.length) return nodes;
+  const keyExpression = sql<string>`${tables.assetVersions.provenance}->>'localStorageKey'`;
+  const versions = await db
+    .select({
+      id: tables.assetVersions.id,
+      assetId: tables.assetVersions.assetId,
+      storageKey: tables.assetVersions.storageKey,
+      localStorageKey: keyExpression,
+    })
+    .from(tables.assetVersions)
+    .innerJoin(
+      tables.assets,
+      eq(tables.assets.id, tables.assetVersions.assetId),
+    )
+    .where(
+      and(
+        eq(tables.assets.projectId, projectId),
+        eq(tables.assets.status, "active"),
+        inArray(keyExpression, localStorageKeys),
+      ),
+    );
+  const matches = new Map<
+    string,
+    { id: string; assetId: string; storageKey: string } | null
+  >();
+  versions.forEach((version) => {
+    matches.set(
+      version.localStorageKey,
+      matches.has(version.localStorageKey) ? null : version,
+    );
+  });
+  return nodes.map((node) => {
+    if (node.metadata?.assetVersionId) return node;
+    const localStorageKey =
+      typeof node.metadata?.storageKey === "string"
+        ? node.metadata.storageKey
+        : null;
+    const version = localStorageKey ? matches.get(localStorageKey) : null;
+    if (!version) return node;
+    return {
+      ...node,
+      metadata: {
+        ...node.metadata,
+        assetId: version.assetId,
+        assetVersionId: version.id,
+        storageKey: version.storageKey,
+      },
+    };
+  });
 }
 
 async function saveCanvasInTransaction(

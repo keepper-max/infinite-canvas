@@ -48,17 +48,28 @@ export async function hydrateCanvasImages(nodes: CanvasNodeData[]) {
         nodes.map(async (node) => {
             const metadata = node.metadata;
             const content = metadata?.content;
-            if ((node.type === CanvasNodeType.Video || node.type === CanvasNodeType.Audio) && metadata?.storageKey) return { ...node, metadata: { ...metadata, content: await resolveMediaUrl(metadata.storageKey, content) } };
-            if (node.type !== CanvasNodeType.Image || !metadata || !content) return node;
-            const images = await Promise.all((metadata.images || []).map(async (image) => (image.content ? { ...image, content: await hydrateGeneratedImageUrl(image.content, image.storageKey, image.assetVersionId) } : image)));
+            if (
+                (node.type === CanvasNodeType.Video || node.type === CanvasNodeType.Audio) &&
+                metadata &&
+                (content || metadata.storageKey || metadata.assetVersionId)
+            ) {
+                return { ...node, metadata: { ...metadata, content: await hydrateGeneratedMediaUrl(content, metadata.storageKey, metadata.assetVersionId) } };
+            }
+            if (node.type !== CanvasNodeType.Image || !metadata) return node;
+            const images = await Promise.all(
+                (metadata.images || []).map(async (image) =>
+                    image.content || image.storageKey || image.assetVersionId ? { ...image, content: await hydrateGeneratedImageUrl(image.content, image.storageKey, image.assetVersionId) } : image,
+                ),
+            );
             if (metadata.storageKey || metadata.assetVersionId) return { ...node, metadata: { ...metadata, content: await hydrateGeneratedImageUrl(content, metadata.storageKey, metadata.assetVersionId), images } };
+            if (!content) return node;
             if (!content.startsWith("data:image/")) return node;
             return { ...node, metadata: { ...metadata, ...imageMetadata(await uploadImage(content)) } };
         }),
     );
 }
 
-async function hydrateGeneratedImageUrl(content: string, storageKey?: string, assetVersionId?: string) {
+async function hydrateGeneratedImageUrl(content = "", storageKey?: string, assetVersionId?: string) {
     let fallback = content;
     if (assetVersionId) {
         try {
@@ -68,6 +79,18 @@ async function hydrateGeneratedImageUrl(content: string, storageKey?: string, as
         }
     }
     return storageKey ? resolveImageUrl(storageKey, fallback) : fallback;
+}
+
+async function hydrateGeneratedMediaUrl(content = "", storageKey?: string, assetVersionId?: string) {
+    let fallback = content;
+    if (assetVersionId) {
+        try {
+            fallback = await artifactUrl({ id: assetVersionId, assetVersionId });
+        } catch {
+            // Keep the last usable URL when an asset was removed or is temporarily unavailable.
+        }
+    }
+    return storageKey ? resolveMediaUrl(storageKey, fallback) : fallback;
 }
 
 export async function hydrateAssistantImages(sessions: CanvasAssistantSession[]) {
