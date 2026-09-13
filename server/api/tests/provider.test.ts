@@ -251,8 +251,40 @@ test("video provider explains generated-audio copyright rejection", async () => 
       (error: unknown) =>
         error instanceof ProviderError &&
         error.code === "PROVIDER_REJECTED" &&
+        error.message === "生成音频可能涉及版权限制，请关闭生成音频后重试",
+    );
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("video provider explains visual copyright rejection", async () => {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async () =>
+    Response.json({
+      id: "video-2",
+      status: "failed",
+      error: {
+        message:
+          "The request was rejected because the generated video may violate copyright restrictions.",
+      },
+    });
+  try {
+    const provider = new Token360Provider(
+      {
+        baseUrl: "https://example.invalid",
+        apiKey: "test-only",
+        catalogUrl: "https://example.invalid/models",
+      },
+      1_000,
+    );
+    await assert.rejects(
+      provider.get("video-2"),
+      (error: unknown) =>
+        error instanceof ProviderError &&
+        error.code === "PROVIDER_REJECTED" &&
         error.message ===
-          "生成音频可能涉及版权限制，请关闭生成音频后重试",
+          "当前请求可能涉及版权限制，请更换受保护的角色、品牌或参考素材后重试",
     );
   } finally {
     globalThis.fetch = originalFetch;

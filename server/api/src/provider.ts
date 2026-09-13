@@ -405,13 +405,15 @@ function readError(value: unknown): string {
     ) || ""
   );
 }
-function providerUserMessage(value: string, fallback: string) {
+export function providerUserMessage(value: string, fallback: string) {
   const message = value.toLowerCase();
   if (
     message.includes("copyright") &&
     (message.includes("audio") || message.includes("music"))
   )
     return "生成音频可能涉及版权限制，请关闭生成音频后重试";
+  if (message.includes("copyright"))
+    return "当前请求可能涉及版权限制，请更换受保护的角色、品牌或参考素材后重试";
   if (message.includes("omni_reference_task_type"))
     return "当前生成模式与多参考参数不匹配";
   if (message.includes("first_frame") || message.includes("last_frame"))

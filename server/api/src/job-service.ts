@@ -10,6 +10,7 @@ import { assertProjectAccess } from "./project-access.js";
 import {
   ProviderError,
   Token360Provider,
+  providerUserMessage,
   type ProviderArtifact,
 } from "./provider.js";
 
@@ -730,7 +731,7 @@ function serializeJob(row: Record<string, any>) {
     error: row.user_error_code
       ? {
           code: row.user_error_code,
-          message: row.user_error_message,
+          message: serializedUserError(row),
           retryable: row.retryable,
         }
       : null,
@@ -741,6 +742,19 @@ function serializeJob(row: Record<string, any>) {
     startedAt: row.started_at?.toISOString?.() || row.started_at,
     finishedAt: row.finished_at?.toISOString?.() || row.finished_at,
   };
+}
+function serializedUserError(row: Record<string, any>) {
+  const details = row.provider_error_sanitized;
+  const upstreamMessage =
+    details &&
+    typeof details === "object" &&
+    typeof details.upstreamMessage === "string"
+      ? details.upstreamMessage
+      : "";
+  return providerUserMessage(
+    upstreamMessage,
+    row.user_error_message || "生成失败",
+  );
 }
 function mapProviderError(error: unknown) {
   if (error instanceof ProviderError)
