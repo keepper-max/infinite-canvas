@@ -14,7 +14,11 @@ import { CompositionService } from "./composition-service.js";
 import { createCompositionQueue } from "./queue.js";
 import { OperationsService } from "./operations-service.js";
 import { TextWorkbenchService } from "./text-workbench-service.js";
-import { Token360VirtualPortraitClient, VirtualPortraitService } from "./virtual-portrait-service.js";
+import {
+  Token360VirtualPortraitClient,
+  VirtualPortraitService,
+} from "./virtual-portrait-service.js";
+import { BillingService } from "./billing-service.js";
 
 const config = readConfig();
 const { db, pool } = createDatabase(config.databaseUrl);
@@ -46,7 +50,12 @@ const compositionService = new CompositionService(
   config.jobs,
   compositionQueue.publish,
 );
-const operationsService = new OperationsService(pool, config.operations);
+const billingService = new BillingService(pool, config.provider);
+const operationsService = new OperationsService(
+  pool,
+  config.operations,
+  billingService,
+);
 const textWorkbenchService = new TextWorkbenchService(pool, jobService);
 const virtualPortraitService = new VirtualPortraitService(
   pool,

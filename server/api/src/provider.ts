@@ -10,9 +10,11 @@ export type ProviderArtifact = {
 };
 export type ProviderResult = {
   providerJobId?: string;
+  billingTraceId?: string;
   status: "pending" | "running" | "completed";
   progress?: number;
   artifacts?: ProviderArtifact[];
+  usage?: Record<string, unknown>;
 };
 
 export class ProviderError extends Error {
@@ -34,8 +36,16 @@ export class Token360Provider {
 
   async create(
     request: CompiledGenerationRequest,
+    correlationOrSignal?: string | AbortSignal,
     signal?: AbortSignal,
   ): Promise<ProviderResult> {
+    const correlationId =
+      typeof correlationOrSignal === "string" ? correlationOrSignal : undefined;
+    const requestSignal =
+      correlationOrSignal instanceof AbortSignal ? correlationOrSignal : signal;
+    const correlationHeaders = correlationId
+      ? { "X-Trace-ID": correlationId, "X-Request-ID": correlationId }
+      : undefined;
     if (!this.config.apiKey)
       throw new ProviderError(
         "PROVIDER_AUTH_FAILED",
@@ -43,14 +53,16 @@ export class Token360Provider {
         false,
       );
     if (request.capability === "text") {
-      const payload = await this.json(
+      const { payload, response } = await this.jsonResponse(
         "/v1/chat/completions",
         {
           model: request.upstreamModel,
           messages: [{ role: "user", content: request.prompt }],
           ...request.upstreamParameters,
         },
-        signal,
+        requestSignal,
+        "POST",
+        correlationHeaders,
       );
       const text = readText(payload);
       if (!text)
@@ -60,21 +72,25 @@ export class Token360Provider {
           false,
         );
       return {
+        billingTraceId: readBillingTrace(response, correlationId),
         status: "completed",
+        usage: readUsage(payload),
         artifacts: [
           { kind: "text", mimeType: "text/plain; charset=utf-8", text },
         ],
       };
     }
     if (request.capability === "image") {
-      const payload = await this.json(
+      const { payload, response } = await this.jsonResponse(
         "/v1/images/generations",
         {
           model: request.upstreamModel,
           prompt: request.prompt,
           ...request.upstreamParameters,
         },
-        signal,
+        requestSignal,
+        "POST",
+        correlationHeaders,
       );
       const artifacts = readUrls(payload).map((url) => ({
         kind: "image" as const,
@@ -92,7 +108,12 @@ export class Token360Provider {
           "模型没有返回图片结果",
           false,
         );
-      return { status: "completed", artifacts: [...artifacts, ...base64] };
+      return {
+        billingTraceId: readBillingTrace(response, correlationId),
+        status: "completed",
+        artifacts: [...artifacts, ...base64],
+        usage: readUsage(payload),
+      };
     }
     if (request.capability === "audio") {
       const response = await this.fetch(
@@ -102,9 +123,11 @@ export class Token360Provider {
           input: request.prompt,
           ...request.upstreamParameters,
         },
-        signal,
+        requestSignal,
+        correlationHeaders,
       );
       return {
+        billingTraceId: readBillingTrace(response, correlationId),
         status: "completed",
         artifacts: [
           {
@@ -115,15 +138,20 @@ export class Token360Provider {
         ],
       };
     }
-    const payload = await this.json(
+    const { payload, response } = await this.jsonResponse(
       "/v1/videos",
       compileVideoBody(request),
-      signal,
+      requestSignal,
+      "POST",
+      correlationHeaders,
     );
+    const billingTraceId = readBillingTrace(response, correlationId);
     const directUrls = readUrls(payload);
     if (directUrls.length)
       return {
+        billingTraceId,
         status: "completed",
+        usage: readUsage(payload),
         artifacts: directUrls.map((url) => ({
           kind: "video",
           mimeType: "video/mp4",
@@ -145,7 +173,13 @@ export class Token360Provider {
         false,
         { upstreamMessage: sanitizeProviderDetail(readError(payload)) },
       );
-    return { providerJobId: id, status, progress: readProgress(payload) };
+    return {
+      providerJobId: id,
+      billingTraceId,
+      status,
+      progress: readProgress(payload),
+      usage: readUsage(payload),
+    };
   }
 
   async get(
@@ -171,6 +205,7 @@ export class Token360Provider {
             mimeType: "video/mp4",
             url,
           })),
+          usage: readUsage(payload),
         };
       const content = await this.raw(
         `/v1/videos/${encodeURIComponent(providerJobId)}/content?format=binary`,
@@ -188,10 +223,16 @@ export class Token360Provider {
             bytes: new Uint8Array(await content.arrayBuffer()),
           },
         ],
+        usage: readUsage(payload),
       };
     }
     if (status === "pending" || status === "running")
-      return { providerJobId, status, progress: readProgress(payload) };
+      return {
+        providerJobId,
+        status,
+        progress: readProgress(payload),
+        usage: readUsage(payload),
+      };
     throw new ProviderError(
       "PROVIDER_REJECTED",
       providerUserMessage(readError(payload), "视频生成失败"),
@@ -214,24 +255,43 @@ export class Token360Provider {
     body?: unknown,
     signal?: AbortSignal,
     method = "POST",
+    headers?: Record<string, string>,
+  ) {
+    return this.jsonResponse(path, body, signal, method, headers).then(
+      ({ payload }) => payload,
+    );
+  }
+  private jsonResponse(
+    path: string,
+    body?: unknown,
+    signal?: AbortSignal,
+    method = "POST",
+    headers?: Record<string, string>,
   ) {
     return this.raw(path, {
       method,
       body: body === undefined ? undefined : JSON.stringify(body),
       signal,
       headers:
-        body === undefined ? undefined : { "content-type": "application/json" },
+        body === undefined
+          ? headers
+          : { "content-type": "application/json", ...headers },
     }).then(async (response) => {
       if (!response.ok) await this.throwResponse(response);
-      return response.json() as Promise<unknown>;
+      return { payload: (await response.json()) as unknown, response };
     });
   }
-  private fetch(path: string, body: unknown, signal?: AbortSignal) {
+  private fetch(
+    path: string,
+    body: unknown,
+    signal?: AbortSignal,
+    headers?: Record<string, string>,
+  ) {
     return this.raw(path, {
       method: "POST",
       body: JSON.stringify(body),
       signal,
-      headers: { "content-type": "application/json" },
+      headers: { "content-type": "application/json", ...headers },
     }).then(async (response) => {
       if (!response.ok) await this.throwResponse(response);
       return response;
@@ -275,26 +335,28 @@ export class Token360Provider {
   private async throwResponse(response: Response): Promise<never> {
     const text = (await response.text()).slice(0, 2_000);
     const upstreamMessage = readError(safeJson(text));
+    const billingTraceId = readBillingTrace(response);
+    const traceDetails = billingTraceId ? { billingTraceId } : {};
     if (response.status === 401 || response.status === 403)
       throw new ProviderError(
         "PROVIDER_AUTH_FAILED",
         "模型服务授权失败",
         false,
-        { status: response.status },
+        { status: response.status, ...traceDetails },
       );
     if (response.status === 429)
       throw new ProviderError(
         "PROVIDER_RATE_LIMITED",
         "模型服务繁忙，请稍后重试",
         true,
-        { status: response.status },
+        { status: response.status, ...traceDetails },
       );
     if (response.status >= 500)
       throw new ProviderError(
         "PROVIDER_UNAVAILABLE",
         "模型服务暂时不可用",
         true,
-        { status: response.status },
+        { status: response.status, ...traceDetails },
       );
     throw new ProviderError(
       "PROVIDER_REJECTED",
@@ -305,10 +367,24 @@ export class Token360Provider {
       false,
       {
         status: response.status,
+        ...traceDetails,
         upstreamMessage: sanitizeProviderDetail(upstreamMessage),
       },
     );
   }
+}
+
+function readBillingTrace(response: Response, fallback?: string) {
+  return (
+    response.headers.get("x-trace-id") ||
+    response.headers.get("x-request-id") ||
+    fallback
+  );
+}
+
+function readUsage(value: unknown) {
+  const usage = asRecord(unwrap(value).usage || asRecord(value).usage);
+  return Object.keys(usage).length ? usage : undefined;
 }
 
 function compileVideoBody(request: CompiledGenerationRequest) {

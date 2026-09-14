@@ -5,7 +5,12 @@ import type {
   CanvasWrite,
 } from "./canvas-contract.js";
 
-export type PlatformUser = { id: string; email: string };
+export type PlatformUser = {
+  id: string;
+  email: string;
+  isAdmin: boolean;
+  accountStatus: "active" | "disabled";
+};
 
 export type Workspace = {
   projectId: string;
@@ -49,6 +54,7 @@ export interface PlatformRepository {
     tokenHash: string,
     expiresAt: Date,
   ): Promise<void>;
+  markLogin(userId: string): Promise<void>;
   findUserBySession(tokenHash: string, now: Date): Promise<PlatformUser | null>;
   deleteSession(tokenHash: string): Promise<void>;
   ensureDefaultWorkspace(userId: string): Promise<Workspace>;

@@ -2,6 +2,7 @@ import { createHash, randomUUID } from "node:crypto";
 import type { Pool, PoolClient } from "pg";
 
 import type { JobConfig } from "./config.js";
+import type { BillingService } from "./billing-service.js";
 import { DomainError } from "./domain.js";
 import type { CreateJobInput } from "./job-contract.js";
 import { ModelGateway, type GenerationInput } from "./model-gateway.js";
@@ -29,7 +30,12 @@ export class JobService {
     private readonly publish: JobEventPublisher = async () => undefined,
   ) {}
 
-  async create(projectId: string, userId: string, input: CreateJobInput) {
+  async create(
+    projectId: string,
+    userId: string,
+    input: CreateJobInput,
+    retryOfJobId?: string,
+  ) {
     const fingerprint = createHash("sha256")
       .update(JSON.stringify({ ...input, idempotencyKey: undefined }))
       .digest("hex");
@@ -80,10 +86,12 @@ export class JobService {
         await client.query("commit");
         return serializeJob(existing.rows[0]);
       }
+      const jobId = randomUUID();
       const result = await client.query(
-        `insert into generation_jobs(project_id,node_key,created_by,provider,model_id,mode,capability,input,parameters,input_snapshot,compiled_request,status,progress,max_attempts,idempotency_key,request_fingerprint,bullmq_job_id,queued_at)
-                values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,'pending',0,$12,$13,$14,$15,now()) on conflict(project_id,idempotency_key) where idempotency_key is not null do nothing returning *`,
+        `insert into generation_jobs(id,project_id,node_key,created_by,provider,model_id,mode,capability,input,parameters,input_snapshot,compiled_request,status,progress,max_attempts,idempotency_key,request_fingerprint,bullmq_job_id,queued_at,retry_of_job_id,billing_trace_id,billing_status,billing_next_check_at)
+                values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,'pending',0,$13,$14,$15,$16,now(),$17,$1::text,'pending',now()) on conflict(project_id,idempotency_key) where idempotency_key is not null do nothing returning *`,
         [
+          jobId,
           projectId,
           input.nodeId || null,
           userId,
@@ -99,6 +107,7 @@ export class JobService {
           input.idempotencyKey,
           fingerprint,
           randomUUID(),
+          retryOfJobId || null,
         ],
       );
       if (!result.rows[0]) {
@@ -234,42 +243,38 @@ export class JobService {
     return this.get(jobId, userId);
   }
   async retry(jobId: string, userId: string) {
-    const current = await this.get(jobId, userId);
+    const result = await this.pool.query(
+      `select j.* from generation_jobs j
+         join project_members m on m.project_id=j.project_id
+         join projects p on p.id=j.project_id
+        where j.id=$1 and m.user_id=$2 and p.deleted_at is null`,
+      [jobId, userId],
+    );
+    const current = result.rows[0];
     if (!current) return null;
-    await assertProjectAccess(this.pool, current.projectId, userId, "edit");
+    await assertProjectAccess(
+      this.pool,
+      String(current.project_id),
+      userId,
+      "edit",
+    );
     if (current.status !== "failed" || !current.retryable)
       throw new DomainError("JOB_NOT_RETRYABLE", "当前任务不能重试", 409);
     await this.queue.remove(jobId);
-    await this.pool.query(
-      "update generation_jobs set status='retrying',progress=0,attempt_count=0,provider_job_id=case when progress >= 96 then provider_job_id else null end,user_error_code=null,user_error_message=null,error_reason=null,started_at=null,finished_at=null,cancel_requested_at=null,updated_at=now() where id=$1",
-      [jobId],
+    const snapshot = current.input_snapshot as CreateJobInput | null;
+    if (!snapshot)
+      throw new DomainError("JOB_SNAPSHOT_MISSING", "任务缺少可重试参数", 409);
+    const retried = await this.create(
+      String(current.project_id),
+      userId,
+      { ...snapshot, idempotencyKey: `retry:${jobId}:${randomUUID()}` },
+      jobId,
     );
     await this.pool.query(
-      "insert into job_events(job_id,project_id,node_key,sequence,event_type,status,progress,message) select id,project_id,node_key,0,'job.retrying','retrying',0,'任务已重新进入队列' from generation_jobs where id=$1",
-      [jobId],
+      "update text_messages set generation_job_id=$2,updated_at=now() where generation_job_id=$1",
+      [jobId, retried.id],
     );
-    await this.publish(current.projectId).catch(() => undefined);
-    try {
-      await this.queue.add(jobId, current.maxAttempts);
-    } catch (error) {
-      await this.pool.query(
-        "update generation_jobs set status='failed',retryable=true,user_error_code='QUEUE_UNAVAILABLE',user_error_message='任务队列暂时不可用',finished_at=now(),updated_at=now() where id=$1",
-        [jobId],
-      );
-      await this.pool.query(
-        "insert into job_events(job_id,project_id,node_key,sequence,event_type,status,progress,message) select id,project_id,node_key,0,'job.failed','failed',0,'任务队列暂时不可用' from generation_jobs where id=$1",
-        [jobId],
-      );
-      await this.publish(current.projectId).catch(() => undefined);
-      throw new DomainError(
-        "QUEUE_UNAVAILABLE",
-        "任务队列暂时不可用",
-        503,
-        true,
-        { cause: error },
-      );
-    }
-    return this.get(jobId, userId);
+    return retried;
   }
   private async markCancelled(jobId: string) {
     const updated = await this.pool.query(
@@ -300,6 +305,7 @@ export class JobExecutor {
     private readonly storage: ObjectStorage,
     private readonly config: JobConfig,
     private readonly publish: JobEventPublisher = async () => undefined,
+    private readonly billing?: BillingService,
   ) {}
   async execute(jobId: string, attempt: number, signal?: AbortSignal) {
     const row = (
@@ -357,7 +363,11 @@ export class JobExecutor {
           );
       let result = row.provider_job_id
         ? await this.provider.get(String(row.provider_job_id), providerSignal)
-        : await this.provider.create(compiled!, providerSignal);
+        : await this.provider.create(compiled!, jobId, providerSignal);
+      if (!row.provider_job_id)
+        await this.billing
+          ?.recordTrace(jobId, result.billingTraceId, result.usage)
+          .catch(() => undefined);
       if (result.providerJobId)
         await this.pool.query(
           "update generation_jobs set provider_job_id=$2,heartbeat_at=now(),updated_at=now() where id=$1",
@@ -433,6 +443,10 @@ export class JobExecutor {
           "模型正在生成",
         );
       }
+      if (result.usage)
+        await this.billing
+          ?.recordMeterUsage(jobId, result.usage)
+          .catch(() => undefined);
       const beforePersist = (
         await this.pool.query(
           "select status from generation_jobs where id=$1",
@@ -488,6 +502,13 @@ export class JobExecutor {
       });
       return { artifacts };
     } catch (error) {
+      if (
+        error instanceof ProviderError &&
+        typeof error.safeDetails.billingTraceId === "string"
+      )
+        await this.billing
+          ?.recordTrace(jobId, error.safeDetails.billingTraceId)
+          .catch(() => undefined);
       const current = await this.pool.query(
         "select status from generation_jobs where id=$1",
         [jobId],
@@ -588,7 +609,8 @@ export class JobExecutor {
         results.push({ id, kind: artifact.kind, text: artifact.text });
         continue;
       }
-      const bytes = artifact.bytes || (await downloadBytes(artifact.url!, signal));
+      const bytes =
+        artifact.bytes || (await downloadBytes(artifact.url!, signal));
       const sha256 = createHash("sha256").update(bytes).digest("hex");
       const extension = extensionFor(artifact.mimeType);
       const storageKey = `projects/${row.project_id}/generated/${row.id}/${index}.${extension}`;
@@ -670,7 +692,10 @@ export class JobExecutor {
             [reference.virtualPortraitId, projectId],
           );
           const portrait = result.rows[0];
-          if (!portrait || !String(portrait.provider_asset_id).startsWith("ta_"))
+          if (
+            !portrait ||
+            !String(portrait.provider_asset_id).startsWith("ta_")
+          )
             throw new DomainError(
               "VIRTUAL_PORTRAIT_NOT_READY",
               "角色资产尚未就绪或不属于当前项目",
@@ -766,6 +791,13 @@ function serializeJob(row: Record<string, any>) {
         }
       : null,
     providerJobId: row.provider_job_id,
+    retryOfJobId: row.retry_of_job_id,
+    billingTraceId: row.billing_trace_id,
+    billingStatus: row.billing_status,
+    billingError: row.billing_error,
+    billingLastCheckedAt:
+      row.billing_last_checked_at?.toISOString?.() ||
+      row.billing_last_checked_at,
     outputAssetVersionIds: row.output_asset_version_ids || [],
     createdAt: row.created_at?.toISOString?.() || row.created_at,
     updatedAt: row.updated_at?.toISOString?.() || row.updated_at,

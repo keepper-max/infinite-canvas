@@ -3159,16 +3159,21 @@ function InfiniteCanvasPage() {
     const handleRetryNode = useCallback(
         async (node: CanvasNodeData, imageId?: string) => {
             if (hasResumableVideoTask(node)) {
+                let resumableNode = node;
                 if (node.metadata?.videoTaskProvider === "managed" && node.metadata.videoTaskId) {
                     try {
                         const job = await getManagedJob(node.metadata.videoTaskId);
-                        if (job.status === "failed" && job.error?.retryable) await retryManagedJob(job.id);
+                        if (job.status === "failed" && job.error?.retryable) {
+                            const retried = await retryManagedJob(job.id);
+                            resumableNode = { ...node, metadata: { ...node.metadata, videoTaskId: retried.id } };
+                            setNodes((prev) => prev.map((item) => (item.id === node.id ? resumableNode : item)));
+                        }
                     } catch (error) {
                         message.error(error instanceof Error ? error.message : t("canvas.projectPage.generationFailed"));
                         return;
                     }
                 }
-                await pollVideoNodeTask(node);
+                await pollVideoNodeTask(resumableNode);
                 return;
             }
             const sourceNode = findRetrySourceNode(node.id, nodesRef.current, connectionsRef.current) || node;

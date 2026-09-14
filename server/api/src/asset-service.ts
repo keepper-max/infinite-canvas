@@ -49,6 +49,7 @@ export interface AssetServicePort {
     versionId: string,
     userId: string,
   ): Promise<{ url: string } | null>;
+  createAdminDownloadUrl?(versionId: string): Promise<{ url: string } | null>;
   setCurrentVersion(
     assetId: string,
     versionId: string,
@@ -365,6 +366,33 @@ export class PostgresAssetService implements AssetServicePort {
         and(
           eq(tables.assetVersions.id, versionId),
           eq(tables.projectMembers.userId, userId),
+          isNull(tables.projects.deletedAt),
+        ),
+      )
+      .limit(1);
+    return row
+      ? { url: await this.storage.createDownloadUrl(row.storageKey, row.name) }
+      : null;
+  }
+
+  async createAdminDownloadUrl(versionId: string) {
+    const [row] = await this.db
+      .select({
+        storageKey: tables.assetVersions.storageKey,
+        name: tables.assets.name,
+      })
+      .from(tables.assetVersions)
+      .innerJoin(
+        tables.assets,
+        eq(tables.assets.id, tables.assetVersions.assetId),
+      )
+      .innerJoin(
+        tables.projects,
+        eq(tables.projects.id, tables.assets.projectId),
+      )
+      .where(
+        and(
+          eq(tables.assetVersions.id, versionId),
           isNull(tables.projects.deletedAt),
         ),
       )

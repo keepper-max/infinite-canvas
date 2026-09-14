@@ -19,7 +19,15 @@ export const users = pgTable("users", {
   email: text("email").notNull().unique(),
   passwordHash: text("password_hash").notNull(),
   isAdmin: boolean("is_admin").default(false).notNull(),
+  accountStatus: text("account_status").default("active").notNull(),
+  disabledReason: text("disabled_reason"),
+  disabledAt: timestamp("disabled_at", { withTimezone: true }),
+  disabledBy: uuid("disabled_by"),
+  lastLoginAt: timestamp("last_login_at", { withTimezone: true }),
   createdAt: timestamp("created_at", { withTimezone: true })
+    .defaultNow()
+    .notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true })
     .defaultNow()
     .notNull(),
 });
@@ -319,8 +327,12 @@ export const virtualPortraitLibraries = pgTable("virtual_portrait_libraries", {
   createdBy: uuid("created_by")
     .notNull()
     .references(() => users.id),
-  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
-  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true })
+    .defaultNow()
+    .notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true })
+    .defaultNow()
+    .notNull(),
 });
 
 export const virtualPortraits = pgTable(
@@ -347,11 +359,21 @@ export const virtualPortraits = pgTable(
     createdBy: uuid("created_by")
       .notNull()
       .references(() => users.id),
-    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
-    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
     archivedAt: timestamp("archived_at", { withTimezone: true }),
   },
-  (table) => [index("virtual_portraits_project_status_updated_idx").on(table.projectId, table.status, table.updatedAt)],
+  (table) => [
+    index("virtual_portraits_project_status_updated_idx").on(
+      table.projectId,
+      table.status,
+      table.updatedAt,
+    ),
+  ],
 );
 
 export const assetLinks = pgTable(

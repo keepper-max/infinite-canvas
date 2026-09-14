@@ -12,6 +12,12 @@ API 启动时会按文件名顺序执行 `db/migrations` 中尚未应用的 SQL�
 
 `0008_asset_versions.sql` 在兼容旧 `assets` 表的前提下增加不可变版本、画布引用、上传台账和回收站。旧资产文件字段会迁移为 v1，旧列保留但不再作为新链路的权威来源。
 
+`0016_admin_billing.sql` 增加账号状态、首次模型请求 Trace、重试来源和实际消耗流水。历史任务没有首次 Trace，不会用视频资源 ID 猜测费用；生产执行前同样必须完成 PostgreSQL 全库备份。
+
+管理员接口统一位于 `/api/admin/*`，每个接口独立校验管理员身份。涵盖概览、账号启停与会话撤销、消耗、任务与手动对账、模型状态、项目只读排障、素材临时下载和审计日志；不会返回 API Key、Authorization 或完整供应商请求。
+
+Worker 在生成任务进入终态后读取 `GET /v1/billing/{request_id}`。404 按退避计划继续同步，最长 24 小时；对账只更新账单状态，不重新提交模型任务，也不修改生成结果。
+
 画布接口：
 
 - `GET/PUT /api/projects/:projectId/canvas`

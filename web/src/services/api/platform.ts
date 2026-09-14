@@ -1,4 +1,4 @@
-export type PlatformUser = { id: string; email: string };
+export type PlatformUser = { id: string; email: string; isAdmin: boolean; accountStatus: "active" | "disabled" };
 
 export type Workspace = {
     projectId: string;

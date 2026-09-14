@@ -128,6 +128,7 @@ export function createApp(
     return context.json(
       success(context, {
         ...result,
+        user: publicUser(result.user, config),
         sessionExpiresAt: expiresAt.toISOString(),
       }),
       201,
@@ -139,11 +140,17 @@ export function createApp(
     const user = await repository.findUserByEmail(normalizeEmail(input.email));
     if (!user || !(await verifyPassword(user.passwordHash, input.password)))
       throw new DomainError("INVALID_CREDENTIALS", "邮箱或密码错误", 401);
+    if (user.accountStatus === "disabled")
+      throw new DomainError(
+        "ACCOUNT_DISABLED",
+        "账号已停用，请联系管理员",
+        403,
+      );
     const workspace = await repository.ensureDefaultWorkspace(user.id);
     const expiresAt = await issueSession(context, repository, config, user.id);
     return context.json(
       success(context, {
-        user: publicUser(user),
+        user: publicUser(user, config),
         workspace,
         sessionExpiresAt: expiresAt.toISOString(),
       }),
@@ -153,7 +160,9 @@ export function createApp(
   app.get("/api/auth/me", async (context) => {
     const user = await requireUser(context.req.raw, repository, config);
     const workspace = await repository.ensureDefaultWorkspace(user.id);
-    return context.json(success(context, { user, workspace }));
+    return context.json(
+      success(context, { user: publicUser(user, config), workspace }),
+    );
   });
 
   app.post("/api/auth/logout", async (context) => {
@@ -308,6 +317,173 @@ export function createApp(
     );
   });
 
+  app.get("/api/admin/users", async (context) => {
+    const user = await requireUser(context.req.raw, repository, config);
+    return context.json(
+      success(
+        context,
+        await requireOperationsService(operationsService).adminUsers(
+          user.id,
+          parseAdminQuery(context),
+        ),
+      ),
+    );
+  });
+
+  app.get("/api/admin/users/:userId", async (context) => {
+    const user = await requireUser(context.req.raw, repository, config);
+    const targetUserId = uuidParam.parse(context.req.param("userId"));
+    const service = requireOperationsService(operationsService);
+    await service.auditAdminAccess(
+      user.id,
+      "user.detail.view",
+      "user",
+      targetUserId,
+      context.get("requestId"),
+    );
+    return context.json(
+      success(context, await service.adminUser(user.id, targetUserId)),
+    );
+  });
+
+  app.patch("/api/admin/users/:userId/status", async (context) => {
+    const user = await requireUser(context.req.raw, repository, config);
+    const input = adminStatusInput.parse(await readJson(context.req.raw));
+    return context.json(
+      success(
+        context,
+        await requireOperationsService(operationsService).setUserStatus(
+          user.id,
+          uuidParam.parse(context.req.param("userId")),
+          input.status,
+          input.reason,
+          context.get("requestId"),
+        ),
+      ),
+    );
+  });
+
+  app.post("/api/admin/users/:userId/revoke-sessions", async (context) => {
+    const user = await requireUser(context.req.raw, repository, config);
+    return context.json(
+      success(
+        context,
+        await requireOperationsService(operationsService).revokeUserSessions(
+          user.id,
+          uuidParam.parse(context.req.param("userId")),
+          context.get("requestId"),
+        ),
+      ),
+    );
+  });
+
+  app.patch("/api/admin/users/:userId/admin", async (context) => {
+    const user = await requireUser(context.req.raw, repository, config);
+    const input = adminRoleInput.parse(await readJson(context.req.raw));
+    return context.json(
+      success(
+        context,
+        await requireOperationsService(operationsService).setUserAdmin(
+          user.id,
+          uuidParam.parse(context.req.param("userId")),
+          input.isAdmin,
+          context.get("requestId"),
+        ),
+      ),
+    );
+  });
+
+  app.get("/api/admin/usage", async (context) => {
+    const user = await requireUser(context.req.raw, repository, config);
+    return context.json(
+      success(
+        context,
+        await requireOperationsService(operationsService).adminUsage(
+          user.id,
+          parseAdminQuery(context),
+        ),
+      ),
+    );
+  });
+
+  app.get("/api/admin/jobs", async (context) => {
+    const user = await requireUser(context.req.raw, repository, config);
+    return context.json(
+      success(
+        context,
+        await requireOperationsService(operationsService).adminJobs(
+          user.id,
+          parseAdminQuery(context),
+        ),
+      ),
+    );
+  });
+
+  app.post("/api/admin/jobs/:jobId/reconcile", async (context) => {
+    const user = await requireUser(context.req.raw, repository, config);
+    return context.json(
+      success(
+        context,
+        await requireOperationsService(operationsService).reconcileUsage(
+          user.id,
+          uuidParam.parse(context.req.param("jobId")),
+          context.get("requestId"),
+        ),
+      ),
+    );
+  });
+
+  app.get("/api/admin/audit-logs", async (context) => {
+    const user = await requireUser(context.req.raw, repository, config);
+    return context.json(
+      success(
+        context,
+        await requireOperationsService(operationsService).adminAuditLogs(
+          user.id,
+          parseAdminQuery(context),
+        ),
+      ),
+    );
+  });
+
+  app.get("/api/admin/projects/:projectId/content", async (context) => {
+    const user = await requireUser(context.req.raw, repository, config);
+    return context.json(
+      success(
+        context,
+        await requireOperationsService(operationsService).adminProjectContent(
+          user.id,
+          uuidParam.parse(context.req.param("projectId")),
+          context.get("requestId"),
+        ),
+      ),
+    );
+  });
+
+  app.get("/api/admin/asset-versions/:versionId/download", async (context) => {
+    const user = await requireUser(context.req.raw, repository, config);
+    const versionId = uuidParam.parse(context.req.param("versionId"));
+    await requireOperationsService(operationsService).auditAdminAccess(
+      user.id,
+      "asset.download",
+      "asset_version",
+      versionId,
+      context.get("requestId"),
+    );
+    const service = requireAssetService(assetService);
+    if (!service.createAdminDownloadUrl)
+      throw new DomainError(
+        "ASSET_SERVICE_UNAVAILABLE",
+        "管理员素材下载暂不可用",
+        503,
+        true,
+      );
+    const download = await service.createAdminDownloadUrl(versionId);
+    if (!download)
+      throw new DomainError("ASSET_VERSION_NOT_FOUND", "找不到该素材版本", 404);
+    return context.json(success(context, download));
+  });
+
   app.get("/api/projects", async (context) => {
     const user = await requireUser(context.req.raw, repository, config);
     return context.json(
@@ -442,7 +618,9 @@ export function createApp(
 
   app.get("/api/projects/:projectId/virtual-portraits", async (context) => {
     const user = await requireUser(context.req.raw, repository, config);
-    const portraits = await requireVirtualPortraitService(virtualPortraitService).list(
+    const portraits = await requireVirtualPortraitService(
+      virtualPortraitService,
+    ).list(
       context.req.param("projectId"),
       user.id,
       context.req.query("refresh") === "true",
@@ -452,24 +630,30 @@ export function createApp(
 
   app.post("/api/projects/:projectId/virtual-portraits", async (context) => {
     const user = await requireUser(context.req.raw, repository, config);
-    const input = createVirtualPortraitSchema.parse(await readJson(context.req.raw));
-    const portrait = await requireVirtualPortraitService(virtualPortraitService).create(
-      context.req.param("projectId"),
-      user.id,
-      input,
+    const input = createVirtualPortraitSchema.parse(
+      await readJson(context.req.raw),
     );
+    const portrait = await requireVirtualPortraitService(
+      virtualPortraitService,
+    ).create(context.req.param("projectId"), user.id, input);
     return context.json(success(context, { portrait }), 201);
   });
 
   app.delete("/api/virtual-portraits/:portraitId", async (context) => {
     const user = await requireUser(context.req.raw, repository, config);
     archiveVirtualPortraitSchema.parse(await readJson(context.req.raw));
-    const archived = await requireVirtualPortraitService(virtualPortraitService).archive(
-      context.req.param("portraitId"),
-      user.id,
+    const archived = await requireVirtualPortraitService(
+      virtualPortraitService,
+    ).archive(context.req.param("portraitId"), user.id);
+    if (!archived)
+      throw new DomainError(
+        "VIRTUAL_PORTRAIT_NOT_FOUND",
+        "找不到该角色资产",
+        404,
+      );
+    return context.json(
+      success(context, { archivedId: context.req.param("portraitId") }),
     );
-    if (!archived) throw new DomainError("VIRTUAL_PORTRAIT_NOT_FOUND", "找不到该角色资产", 404);
-    return context.json(success(context, { archivedId: context.req.param("portraitId") }));
   });
 
   app.get("/api/models", async (context) => {
@@ -968,6 +1152,34 @@ const textConversationCreateInput = z
     modelId: z.string().trim().min(1).max(200),
   })
   .strict();
+const uuidParam = z.string().uuid();
+const adminStatusInput = z
+  .object({
+    status: z.enum(["active", "disabled"]),
+    reason: z.string().trim().max(500).optional(),
+  })
+  .strict();
+const adminRoleInput = z.object({ isAdmin: z.boolean() }).strict();
+const adminQueryInput = z.object({
+  page: z.coerce.number().int().min(1).default(1),
+  pageSize: z.coerce.number().int().min(1).max(100).default(20),
+  q: z.string().trim().max(200).optional(),
+  status: z.string().trim().max(50).optional(),
+  userId: z.string().uuid().optional(),
+  projectId: z.string().uuid().optional(),
+  modelId: z.string().trim().max(200).optional(),
+  capability: z.string().trim().max(50).optional(),
+  isAdmin: z
+    .enum(["true", "false"])
+    .transform((value) => value === "true")
+    .optional(),
+  createdFrom: z.string().date().optional(),
+  createdTo: z.string().date().optional(),
+});
+
+function parseAdminQuery(context: Context<AppEnv>) {
+  return adminQueryInput.parse(context.req.query());
+}
 const textConversationUpdateInput = textConversationCreateInput
   .partial()
   .refine((input) => Object.keys(input).length > 0, {
@@ -993,6 +1205,7 @@ async function issueSession(
   const token = createSessionToken();
   const expiresAt = new Date(Date.now() + config.sessionDays * 86_400_000);
   await repository.createSession(userId, hashSessionToken(token), expiresAt);
+  await repository.markLogin?.(userId);
   setCookie(context, config.cookieName, token, {
     httpOnly: true,
     secure: config.cookieSecure,
@@ -1049,8 +1262,18 @@ function apiError(context: Context<AppEnv>, error: DomainError) {
 
 function publicUser(
   user: PlatformUser & { passwordHash?: string },
+  config: ApiConfig,
 ): PlatformUser {
-  return { id: user.id, email: user.email };
+  return {
+    id: user.id,
+    email: user.email,
+    isAdmin:
+      Boolean(user.isAdmin) ||
+      Boolean(
+        config.operations?.adminEmails.includes(user.email.toLowerCase()),
+      ),
+    accountStatus: user.accountStatus || "active",
+  };
 }
 
 function isUnsafeMethod(method: string) {

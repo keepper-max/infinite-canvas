@@ -4,9 +4,92 @@ export type OperationsCapabilities = { sms: boolean; credits: boolean; payments:
 export type CreditAccount = { account: { id: string; balance: number; reserved: number }; ledger: Array<{ id: number; type: string; delta: number; balanceAfter: number; createdAt: string }>; enabled: boolean };
 export type Team = { id: string; name: string; ownerId: string; role: string; createdAt: string; updatedAt: string };
 export type TeamMember = { userId: string; email: string; role: "owner" | "admin" | "editor" | "viewer"; createdAt: string };
-export type AdminOverview = { users: number; projects: number; assets: number; assetBytes: number; activeJobs: number; failedJobs: number; activeCompositions: number; failedCompositions: number };
+export type UsageSummary = { currency: string; calls: number; totalTokens: string; generatedImages: string; videoDurationSeconds: string; audioDurationSeconds: string; totalAmount: string };
+export type AdminOverview = {
+    users: number;
+    projects: number;
+    assets: number;
+    assetBytes: number;
+    activeJobs: number;
+    failedJobs: number;
+    activeCompositions: number;
+    failedCompositions: number;
+    totalJobs: number;
+    successRate: number;
+    usage: UsageSummary[];
+    trends: Array<{ day: string; newUsers: number; jobs: number; completedJobs: number }>;
+};
 export type AdminFailure = { id: string; kind: string; status: string; error: { code?: string; message: string; retryable: boolean }; updatedAt: string };
 export type AdminModel = { id: string; displayName: string; capability: string; enabled: boolean; healthy: boolean; discovered: boolean; checkedAt?: string };
+export type AdminUser = {
+    id: string;
+    email: string;
+    isAdmin: boolean;
+    status: "active" | "disabled";
+    disabledReason?: string;
+    disabledAt?: string;
+    createdAt: string;
+    lastLoginAt?: string;
+    projectCount: number;
+    jobCount: number;
+    storageBytes: number;
+    activeSessions: number;
+    usageAmounts: Record<string, string>;
+};
+export type AdminUsage = {
+    jobId: string;
+    projectId: string;
+    projectName: string;
+    userId: string;
+    userEmail: string;
+    billingRequestId: string;
+    provider: string;
+    modelId: string;
+    capability: string;
+    status?: string;
+    billed?: boolean;
+    totalTokens?: string;
+    generatedImages?: number;
+    videoDurationSeconds?: string;
+    audioDurationSeconds?: string;
+    totalAmount?: string;
+    walletAmount?: string;
+    voucherAmount?: string;
+    currency?: string;
+    providerRequestId?: string;
+    reconciledAt: string;
+};
+export type AdminJob = {
+    id: string;
+    projectId: string;
+    projectName: string;
+    userId: string;
+    userEmail: string;
+    modelId: string;
+    capability: string;
+    mode: string;
+    status: string;
+    progress: number;
+    retryable: boolean;
+    error?: { code: string; message: string; details?: string };
+    providerJobId?: string;
+    retryOfJobId?: string;
+    billingTraceId?: string;
+    billingStatus: string;
+    billingError?: string;
+    createdAt: string;
+    updatedAt: string;
+    finishedAt?: string;
+};
+export type AdminAuditLog = { id: number; action: string; targetType?: string; targetId?: string; requestId?: string; metadata: Record<string, unknown>; actorEmail?: string; createdAt: string };
+export type PageResult<T> = { items: T[]; total: number; page: number; pageSize: number };
+export type UsageBreakdown = Record<"model" | "project" | "capability" | "day", Array<{ key: string; currency: string; calls: number; totalTokens: string; totalAmount: string }>>;
+export type AdminUserDetail = {
+    user: AdminUser;
+    projects: Array<{ id: string; name: string; description: string; jobCount: number; assetCount: number; createdAt: string; updatedAt: string }>;
+    usage: UsageSummary[];
+    usageBreakdowns: UsageBreakdown;
+};
 
 export function getOperationsCapabilities(signal?: AbortSignal) {
     return platformRequest<OperationsCapabilities>("/api/operations/capabilities", { signal });
@@ -37,6 +120,47 @@ export async function getAdminFailures(signal?: AbortSignal) {
 }
 export async function getAdminModels(signal?: AbortSignal) {
     return (await platformRequest<{ models: AdminModel[] }>("/api/admin/models", { signal })).models;
+}
+function adminQuery(input: Record<string, string | number | boolean | undefined>) {
+    const params = new URLSearchParams();
+    Object.entries(input).forEach(([key, value]) => {
+        if (value !== undefined && value !== "") params.set(key, String(value));
+    });
+    const value = params.toString();
+    return value ? `?${value}` : "";
+}
+export function getAdminUsers(input: Record<string, string | number | boolean | undefined> = {}, signal?: AbortSignal) {
+    return platformRequest<PageResult<AdminUser>>(`/api/admin/users${adminQuery(input)}`, { signal });
+}
+export function getAdminUser(userId: string, signal?: AbortSignal) {
+    return platformRequest<AdminUserDetail>(`/api/admin/users/${encodeURIComponent(userId)}`, { signal });
+}
+export function setAdminUserStatus(userId: string, status: "active" | "disabled", reason?: string) {
+    return platformRequest<AdminUser>(`/api/admin/users/${encodeURIComponent(userId)}/status`, { method: "PATCH", body: JSON.stringify({ status, ...(reason ? { reason } : {}) }) });
+}
+export function revokeAdminUserSessions(userId: string) {
+    return platformRequest<{ revoked: number }>(`/api/admin/users/${encodeURIComponent(userId)}/revoke-sessions`, { method: "POST" });
+}
+export function setAdminUserRole(userId: string, isAdmin: boolean) {
+    return platformRequest<AdminUser>(`/api/admin/users/${encodeURIComponent(userId)}/admin`, { method: "PATCH", body: JSON.stringify({ isAdmin }) });
+}
+export function getAdminUsage(input: Record<string, string | number | boolean | undefined> = {}, signal?: AbortSignal) {
+    return platformRequest<PageResult<AdminUsage> & { summary: UsageSummary[]; breakdowns: UsageBreakdown }>(`/api/admin/usage${adminQuery(input)}`, { signal });
+}
+export function getAdminJobs(input: Record<string, string | number | boolean | undefined> = {}, signal?: AbortSignal) {
+    return platformRequest<PageResult<AdminJob>>(`/api/admin/jobs${adminQuery(input)}`, { signal });
+}
+export function reconcileAdminJob(jobId: string) {
+    return platformRequest<{ status: string; requestId?: string }>(`/api/admin/jobs/${encodeURIComponent(jobId)}/reconcile`, { method: "POST" });
+}
+export function getAdminAuditLogs(input: Record<string, string | number | boolean | undefined> = {}, signal?: AbortSignal) {
+    return platformRequest<PageResult<AdminAuditLog>>(`/api/admin/audit-logs${adminQuery(input)}`, { signal });
+}
+export function getAdminProjectContent(projectId: string, signal?: AbortSignal) {
+    return platformRequest<Record<string, unknown>>(`/api/admin/projects/${encodeURIComponent(projectId)}/content`, { signal });
+}
+export function getAdminAssetDownload(versionId: string) {
+    return platformRequest<{ url: string }>(`/api/admin/asset-versions/${encodeURIComponent(versionId)}/download`);
 }
 export function isAdminForbidden(error: unknown) {
     return error instanceof PlatformApiError && error.code === "ADMIN_FORBIDDEN";

@@ -16,6 +16,7 @@ import VideoPage from "@/pages/video";
 import TextWorkbenchPage from "@/pages/text";
 import WorkspaceEntryPage from "@/pages/workspace-entry";
 import OperationsPage from "@/pages/operations";
+import AdminPage from "@/pages/admin";
 
 export const router = createBrowserRouter([
     { path: "/login", element: <AuthPage mode="login" /> },
@@ -42,6 +43,14 @@ export const router = createBrowserRouter([
             { path: "/config", element: <ConfigPage /> },
             { path: "/operations", element: <OperationsPage /> },
         ],
+    },
+    {
+        path: "/admin/:section?",
+        element: (
+            <AuthGate>
+                <AdminPage />
+            </AuthGate>
+        ),
     },
     { path: "*", element: <NotFound /> },
 ]);

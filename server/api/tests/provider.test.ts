@@ -113,6 +113,89 @@ test("provider keeps manual cancellation active when submit timeout is disabled"
   }
 });
 
+test("provider sends local job id as trace headers and preserves upstream trace", async () => {
+  const originalFetch = globalThis.fetch;
+  let headers: HeadersInit | undefined;
+  globalThis.fetch = async (_input, init) => {
+    headers = init?.headers;
+    return Response.json(
+      { data: [{ b64_json: "AA==" }], usage: { generated_images: 1 } },
+      { headers: { "X-Trace-ID": "upstream-trace-1" } },
+    );
+  };
+  try {
+    const provider = new Token360Provider(
+      {
+        baseUrl: "https://example.invalid",
+        apiKey: "test-only",
+        catalogUrl: "https://example.invalid/models",
+      },
+      0,
+    );
+    const result = await provider.create(
+      {
+        modelId: "image.test",
+        upstreamModel: "image-test",
+        providerId: "token360",
+        capability: "image",
+        mode: "t2i",
+        prompt: "test",
+        parameters: {},
+        references: [],
+        upstreamParameters: {},
+      },
+      "local-job-1",
+    );
+    assert.equal(new Headers(headers).get("X-Trace-ID"), "local-job-1");
+    assert.equal(new Headers(headers).get("X-Request-ID"), "local-job-1");
+    assert.equal(result.billingTraceId, "upstream-trace-1");
+    assert.deepEqual(result.usage, { generated_images: 1 });
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("provider preserves the billing trace from a rejected initial response", async () => {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async () =>
+    Response.json(
+      { error: { message: "invalid input" } },
+      { status: 400, headers: { "x-trace-id": "provider-rejected-trace" } },
+    );
+  try {
+    const provider = new Token360Provider(
+      {
+        baseUrl: "https://example.invalid",
+        apiKey: "test-only",
+        catalogUrl: "https://example.invalid/models",
+      },
+      0,
+    );
+    await assert.rejects(
+      () =>
+        provider.create(
+          {
+            capability: "text",
+            upstreamModel: "gpt-test",
+            prompt: "test",
+            upstreamParameters: {},
+          } as never,
+          "local-job-id",
+        ),
+      (error: unknown) => {
+        assert.ok(error instanceof ProviderError);
+        assert.equal(
+          error.safeDetails.billingTraceId,
+          "provider-rejected-trace",
+        );
+        return true;
+      },
+    );
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
 test("video provider emits documented frame and multimodal reference shapes", async () => {
   const originalFetch = globalThis.fetch;
   const bodies: Array<Record<string, unknown>> = [];

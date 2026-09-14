@@ -40,9 +40,14 @@ export class PostgresPlatformRepository implements PlatformRepository {
         const [user] = await tx
           .insert(tables.users)
           .values({ email, passwordHash })
-          .returning({ id: tables.users.id, email: tables.users.email });
+          .returning({
+            id: tables.users.id,
+            email: tables.users.email,
+            isAdmin: tables.users.isAdmin,
+            accountStatus: tables.users.accountStatus,
+          });
         const workspace = await createDefaultWorkspace(tx, user.id);
-        return { user, workspace };
+        return { user: normalizePlatformUser(user), workspace };
       });
     } catch (error) {
       if (isUniqueViolation(error))
@@ -63,11 +68,15 @@ export class PostgresPlatformRepository implements PlatformRepository {
         id: tables.users.id,
         email: tables.users.email,
         passwordHash: tables.users.passwordHash,
+        isAdmin: tables.users.isAdmin,
+        accountStatus: tables.users.accountStatus,
       })
       .from(tables.users)
       .where(eq(tables.users.email, email))
       .limit(1);
-    return user || null;
+    return user
+      ? { ...normalizePlatformUser(user), passwordHash: user.passwordHash }
+      : null;
   }
 
   async createSession(userId: string, tokenHash: string, expiresAt: Date) {
@@ -76,19 +85,32 @@ export class PostgresPlatformRepository implements PlatformRepository {
       .values({ userId, tokenHash, expiresAt });
   }
 
+  async markLogin(userId: string) {
+    await this.db
+      .update(tables.users)
+      .set({ lastLoginAt: new Date(), updatedAt: new Date() })
+      .where(eq(tables.users.id, userId));
+  }
+
   async findUserBySession(tokenHash: string, now: Date) {
     const [user] = await this.db
-      .select({ id: tables.users.id, email: tables.users.email })
+      .select({
+        id: tables.users.id,
+        email: tables.users.email,
+        isAdmin: tables.users.isAdmin,
+        accountStatus: tables.users.accountStatus,
+      })
       .from(tables.sessions)
       .innerJoin(tables.users, eq(tables.sessions.userId, tables.users.id))
       .where(
         and(
           eq(tables.sessions.tokenHash, tokenHash),
           gt(tables.sessions.expiresAt, now),
+          eq(tables.users.accountStatus, "active"),
         ),
       )
       .limit(1);
-    return user || null;
+    return user ? normalizePlatformUser(user) : null;
   }
 
   async deleteSession(tokenHash: string) {
@@ -406,16 +428,14 @@ export class PostgresPlatformRepository implements PlatformRepository {
         write,
         "migration",
       );
-      await tx
-        .insert(tables.canvasMigrations)
-        .values({
-          projectId,
-          userId,
-          migrationKey,
-          fromRevision: write.expectedRevision,
-          toRevision: canvas.revision,
-          report,
-        });
+      await tx.insert(tables.canvasMigrations).values({
+        projectId,
+        userId,
+        migrationKey,
+        fromRevision: write.expectedRevision,
+        toRevision: canvas.revision,
+        report,
+      });
       return { canvas, report, alreadyMigrated: false };
     });
   }
@@ -424,6 +444,23 @@ export class PostgresPlatformRepository implements PlatformRepository {
     await this.db.select({ id: tables.users.id }).from(tables.users).limit(1);
     return true;
   }
+}
+
+function normalizePlatformUser(user: {
+  id: string;
+  email: string;
+  isAdmin: boolean;
+  accountStatus: string;
+}) {
+  return {
+    id: user.id,
+    email: user.email,
+    isAdmin: user.isAdmin,
+    accountStatus:
+      user.accountStatus === "disabled"
+        ? ("disabled" as const)
+        : ("active" as const),
+  };
 }
 
 async function hasProjectAccess(
@@ -702,19 +739,17 @@ async function saveCanvasInTransaction(
     );
   }
   await syncAssetLinks(db, projectId, write.nodes, write.edges);
-  await db
-    .insert(tables.canvasSnapshots)
-    .values({
-      projectId,
-      version: canvas.revision,
-      contractVersion: write.contractVersion,
-      nodes: write.nodes,
-      edges: write.edges,
-      viewport: write.viewport,
-      settings: write.settings,
-      source,
-      restoredFromVersion,
-    });
+  await db.insert(tables.canvasSnapshots).values({
+    projectId,
+    version: canvas.revision,
+    contractVersion: write.contractVersion,
+    nodes: write.nodes,
+    edges: write.edges,
+    viewport: write.viewport,
+    settings: write.settings,
+    source,
+    restoredFromVersion,
+  });
   await db
     .update(tables.projects)
     .set({ updatedAt: now, lastOpenedAt: now })
@@ -794,16 +829,14 @@ async function syncAssetLinks(
       ),
     );
   if (unique.length)
-    await db
-      .insert(tables.assetLinks)
-      .values(
-        unique.map((link) => ({
-          projectId,
-          assetVersionId: link.assetVersionId,
-          nodeId: link.nodeId,
-          role: link.role,
-        })),
-      );
+    await db.insert(tables.assetLinks).values(
+      unique.map((link) => ({
+        projectId,
+        assetVersionId: link.assetVersionId,
+        nodeId: link.nodeId,
+        role: link.role,
+      })),
+    );
 }
 
 function collectAssetVersionReferences(

@@ -14,6 +14,7 @@ import {
   CompositionCancelledError,
   CompositionExecutor,
 } from "./composition-service.js";
+import { BillingService } from "./billing-service.js";
 
 const config = readConfig();
 const { pool } = createDatabase(config.databaseUrl);
@@ -33,6 +34,7 @@ const provider = new Token360Provider(
   config.provider,
   config.jobs.submitTimeoutMs,
 );
+const billing = new BillingService(pool, config.provider);
 const connection = new Redis(config.jobs.redisUrl, {
   maxRetriesPerRequest: null,
 });
@@ -43,6 +45,7 @@ const executor = new JobExecutor(
   storage,
   config.jobs,
   (projectId) => connection.publish(`job-events:${projectId}`, "changed"),
+  billing,
 );
 const recoveryQueue = createQueue(config.jobs);
 const recoveredJobs = await recoverInterruptedProviderJobs(
@@ -66,15 +69,11 @@ const worker = new Worker<{ jobId: string }>(
   config.jobs.queueName,
   async (job: Job<{ jobId: string }>) => {
     try {
-      return await executor.execute(
-        job.data.jobId,
-        job.attemptsMade + 1,
-      );
+      return await executor.execute(job.data.jobId, job.attemptsMade + 1);
     } catch (error) {
       await executor.markAttemptFailed(
         job.data.jobId,
-        job.attemptsMade + 1 >=
-          (job.opts.attempts || config.jobs.maxAttempts),
+        job.attemptsMade + 1 >= (job.opts.attempts || config.jobs.maxAttempts),
       );
       if (error instanceof ProviderError && !error.retryable) {
         throw new UnrecoverableError(error.message);
@@ -103,6 +102,24 @@ worker.on("error", (error) =>
 console.log(
   `[generation-worker] ready (concurrency=${config.jobs.workerConcurrency})`,
 );
+void billing
+  .runDue()
+  .catch((error) =>
+    console.error(
+      "[billing-worker]",
+      error instanceof Error ? error.message : "unknown error",
+    ),
+  );
+const billingTimer = setInterval(() => {
+  void billing
+    .runDue()
+    .catch((error) =>
+      console.error(
+        "[billing-worker]",
+        error instanceof Error ? error.message : "unknown error",
+      ),
+    );
+}, 30_000);
 
 const compositionWorker = new Worker<{ jobId: string }>(
   config.jobs.compositionQueueName,
@@ -142,6 +159,7 @@ let closing = false;
 async function shutdown() {
   if (closing) return;
   closing = true;
+  clearInterval(billingTimer);
   await worker.close(false);
   await compositionWorker.close(false);
   await recoveryQueue.queue.close();
