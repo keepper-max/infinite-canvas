@@ -317,6 +317,40 @@ test("T2V strips reference-only fields and maps accepted parameters", async () =
   assert.deepEqual(compiled.upstreamParameters, { duration: 5, ratio: "16:9" });
 });
 
+test("Seedance video extension forces adaptive ratio without changing motion references", async () => {
+  const extension = await gateway().compile({
+    modelId: definition.id,
+    capability: "video",
+    mode: "multiref",
+    prompt: "延续上一镜头",
+    parameters: { aspectRatio: "9:16" },
+    references: [
+      {
+        role: "video_input",
+        url: "https://example.com/source.mp4",
+        mimeType: "video/mp4",
+      },
+    ],
+  });
+  assert.equal(extension.upstreamParameters.ratio, "adaptive");
+
+  const motionReference = await gateway().compile({
+    modelId: definition.id,
+    capability: "video",
+    mode: "multiref",
+    prompt: "参考镜头运动",
+    parameters: { aspectRatio: "16:9" },
+    references: [
+      {
+        role: "motion_reference",
+        url: "https://example.com/motion.mp4",
+        mimeType: "video/mp4",
+      },
+    ],
+  });
+  assert.equal(motionReference.upstreamParameters.ratio, "16:9");
+});
+
 test("FLF2V binds first and last frame by role instead of upload order", async () => {
   const first = { role: "first_frame", url: "https://example.com/first.png" };
   const last = { role: "last_frame", url: "https://example.com/last.png" };

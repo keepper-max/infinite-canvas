@@ -5,6 +5,7 @@ import { Button } from "antd";
 
 import { VideoSettingsPanel, videoModeLabel, videoResolutionLabel, videoSecondsLabel, videoSizeLabel, type VideoSettingKey } from "@/components/video-settings-panel";
 import { canvasThemes } from "@/lib/canvas-theme";
+import { isSeedanceVideoModel, selectedVideoModel } from "@/lib/video-model-capabilities";
 import { useThemeStore } from "@/stores/use-theme-store";
 import type { AiConfig } from "@/stores/use-config-store";
 
@@ -13,14 +14,16 @@ type CanvasVideoSettingsPopoverProps = {
     onConfigChange: <K extends VideoSettingKey>(key: K, value: AiConfig[K]) => void;
     buttonClassName?: string;
     placement?: "topLeft" | "top" | "topRight" | "bottomLeft" | "bottom" | "bottomRight";
+    forceAdaptiveRatio?: boolean;
 };
 
-export function CanvasVideoSettingsPopover({ config, onConfigChange, buttonClassName, placement = "topLeft" }: CanvasVideoSettingsPopoverProps) {
+export function CanvasVideoSettingsPopover({ config, onConfigChange, buttonClassName, placement = "topLeft", forceAdaptiveRatio = false }: CanvasVideoSettingsPopoverProps) {
     const theme = canvasThemes[useThemeStore((state) => state.theme)];
     const buttonRef = useRef<HTMLSpanElement>(null);
     const panelRef = useRef<HTMLDivElement>(null);
     const [open, setOpen] = useState(false);
     const [buttonRect, setButtonRect] = useState<DOMRect | null>(null);
+    const extensionRatio = forceAdaptiveRatio && isSeedanceVideoModel(selectedVideoModel(config));
 
     useEffect(() => {
         if (!open) return;
@@ -43,7 +46,7 @@ export function CanvasVideoSettingsPopover({ config, onConfigChange, buttonClass
         };
     }, [open]);
 
-    const panel = open && buttonRect ? <VideoSettingsPortal buttonRect={buttonRect} panelRef={panelRef} placement={placement} theme={theme} config={config} onConfigChange={onConfigChange} /> : null;
+    const panel = open && buttonRect ? <VideoSettingsPortal buttonRect={buttonRect} panelRef={panelRef} placement={placement} theme={theme} config={config} onConfigChange={onConfigChange} forceAdaptiveRatio={extensionRatio} /> : null;
 
     return (
         <>
@@ -57,7 +60,7 @@ export function CanvasVideoSettingsPopover({ config, onConfigChange, buttonClass
                     onClick={() => setOpen((current) => !current)}
                 >
                     <span className="truncate">
-                        {videoResolutionLabel(config.vquality)} · {videoSizeLabel(config.size)} · {videoSecondsLabel(config.videoSeconds)} · {videoModeLabel(config.videoMode)}
+                        {videoResolutionLabel(config.vquality)} · {videoSizeLabel(extensionRatio ? "adaptive" : config.size)} · {videoSecondsLabel(config.videoSeconds)} · {videoModeLabel(config.videoMode)}
                     </span>
                 </Button>
             </span>
@@ -73,6 +76,7 @@ function VideoSettingsPortal({
     theme,
     config,
     onConfigChange,
+    forceAdaptiveRatio,
 }: {
     buttonRect: DOMRect;
     panelRef: RefObject<HTMLDivElement | null>;
@@ -80,6 +84,7 @@ function VideoSettingsPortal({
     theme: (typeof canvasThemes)[keyof typeof canvasThemes];
     config: AiConfig;
     onConfigChange: <K extends VideoSettingKey>(key: K, value: AiConfig[K]) => void;
+    forceAdaptiveRatio: boolean;
 }) {
     const width = 356;
     const gap = 8;
@@ -104,7 +109,7 @@ function VideoSettingsPortal({
 
     return createPortal(
         <div ref={panelRef} className="canvas-image-settings-popover" style={style} onPointerDown={(event) => event.stopPropagation()} onMouseDown={(event) => event.stopPropagation()} onClick={(event) => event.stopPropagation()}>
-            <VideoSettingsPanel config={config} onConfigChange={(key, value) => onConfigChange(key, value)} theme={theme} className="space-y-4" />
+            <VideoSettingsPanel config={config} onConfigChange={(key, value) => onConfigChange(key, value)} theme={theme} className="space-y-4" forceAdaptiveRatio={forceAdaptiveRatio} />
         </div>,
         document.body,
     );

@@ -10,6 +10,10 @@ export function selectedVideoModel(config: AiConfig, selectedModel?: string) {
     return modelDefinitionOf(config, selectedModel || config.model || config.videoModel);
 }
 
+export function isSeedanceVideoModel(model?: ChannelModel) {
+    return /seedance/i.test(`${model?.name || ""} ${model?.displayName || ""}`);
+}
+
 export function supportedVideoModes(model?: ChannelModel): VideoGenerationMode[] {
     const modes = (model?.modes || []).filter((mode): mode is VideoGenerationMode => VIDEO_MODES.includes(mode as VideoGenerationMode));
     return modes.length ? modes : VIDEO_MODES;

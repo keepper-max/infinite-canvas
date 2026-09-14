@@ -34,6 +34,7 @@ type CanvasNodePromptPanelProps = {
     onStartReferenceSelection?: (nodeId: string) => void;
     onImageSettingsOpenChange?: (open: boolean) => void;
     modeOverride?: CanvasNodeGenerationMode; // Plugin nodes set their generation type through useBuiltinPanel.mode.
+    forceAdaptiveVideoRatio?: boolean;
 };
 
 export function CanvasNodePromptPanel({
@@ -50,6 +51,7 @@ export function CanvasNodePromptPanel({
     onStartReferenceSelection,
     onImageSettingsOpenChange,
     modeOverride,
+    forceAdaptiveVideoRatio,
 }: CanvasNodePromptPanelProps) {
     const { t } = useTranslation();
     const globalConfig = useEffectiveConfig();
@@ -133,7 +135,7 @@ export function CanvasNodePromptPanel({
                     ) : mode === "video" ? (
                         <>
                             <ModelPicker config={config} value={config.model} onChange={(model) => onConfigChange(node.id, { model })} capability="video" onMissingConfig={() => openConfigDialog(true)} className="max-w-[190px]" />
-                            <CanvasVideoSettingsPopover config={config} buttonClassName="!h-10 !max-w-[220px] !justify-start !rounded-full !px-3" onConfigChange={(key, value) => onConfigChange(node.id, videoConfigPatch(key, value))} />
+                            <CanvasVideoSettingsPopover config={config} forceAdaptiveRatio={forceAdaptiveVideoRatio} buttonClassName="!h-10 !max-w-[220px] !justify-start !rounded-full !px-3" onConfigChange={(key, value) => onConfigChange(node.id, videoConfigPatch(key, value))} />
                         </>
                     ) : mode === "audio" ? (
                         <>

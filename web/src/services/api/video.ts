@@ -7,7 +7,7 @@ import { clampVideoSeconds, computeVideoSize, inferVideoRatio } from "@/lib/medi
 import { getMediaBlob, resolveMediaUrl, uploadMediaFile, type UploadedFile } from "@/services/file-storage";
 import { imageToDataUrl } from "@/services/image-storage";
 import { boolConfig, buildApiUrl, isServerManagedConfig, modelOptionName, resolveModelRequestConfig, resolveModelScript, withLocalProxy, type AiConfig } from "@/stores/use-config-store";
-import { normalizeVideoGenerationMode, selectedVideoModel, supportedVideoModes, videoParameterPayload } from "@/lib/video-model-capabilities";
+import { isSeedanceVideoModel, normalizeVideoGenerationMode, selectedVideoModel, supportedVideoModes, videoParameterPayload } from "@/lib/video-model-capabilities";
 import { runModelPlugin } from "./model-plugin";
 import { currentVersion, uploadCloudAsset } from "./assets";
 import { artifactUrl, cancelManagedJobOnAbort, createManagedJob, getManagedJob } from "./jobs";
@@ -208,9 +208,9 @@ async function createManagedVideoTask(config: AiConfig, model: string, prompt: s
     );
     const videos = await Promise.all(
         (options?.videos || []).map(async (video) => {
-            if (video.assetVersionId) return { assetVersionId: video.assetVersionId, mimeType: video.type };
+            if (video.assetVersionId) return { assetVersionId: video.assetVersionId, mimeType: video.type, role: video.role };
             const file = await referenceMediaToFile(video, "ref.mp4", "invalidReferenceVideo", options);
-            return stageManagedReference(projectId, file, "video", video.name, video.storageKey, options?.signal);
+            return { ...(await stageManagedReference(projectId, file, "video", video.name, video.storageKey, options?.signal)), role: video.role };
         }),
     );
     const audios = await Promise.all(
@@ -227,7 +227,7 @@ async function createManagedVideoTask(config: AiConfig, model: string, prompt: s
         generationMode === "multiref"
             ? [
                   ...images.map((reference) => ({ role: "identity_reference" as const, ...reference })),
-                  ...videos.map((reference) => ({ role: "motion_reference" as const, ...reference })),
+                  ...videos.map((reference) => ({ ...reference, role: reference.role === "video_input" ? ("video_input" as const) : ("motion_reference" as const) })),
                   ...audios.map((reference) => ({ role: "audio_reference" as const, ...reference })),
               ]
             : generationMode === "t2v"
@@ -237,6 +237,8 @@ async function createManagedVideoTask(config: AiConfig, model: string, prompt: s
                     ? [{ role: "first_frame" as const, ...firstImage }]
                     : []
                 : [...(firstImage ? [{ role: "first_frame" as const, ...firstImage }] : []), ...(lastImage ? [{ role: "last_frame" as const, ...lastImage }] : [])];
+    const parameters = videoParameterPayload(config, modelDefinition);
+    if (isSeedanceVideoModel(modelDefinition) && mappedReferences.some((reference) => reference.role === "video_input")) parameters.aspectRatio = "adaptive";
     try {
         const created = await createManagedJob(
             {
@@ -244,7 +246,7 @@ async function createManagedVideoTask(config: AiConfig, model: string, prompt: s
                 capability: "video",
                 mode: generationMode,
                 prompt,
-                parameters: videoParameterPayload(config, modelDefinition),
+                parameters,
                 references: mappedReferences,
             },
             { projectId: options?.projectId, nodeId: options?.nodeId, nodeRevision: options?.nodeRevision, idempotencyKey: options?.idempotencyKey, signal: options?.signal },

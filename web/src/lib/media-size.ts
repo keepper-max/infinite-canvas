@@ -120,7 +120,7 @@ export function parseVideoResolution(value: string | undefined) {
 }
 
 export function inferVideoRatio(size: string) {
-    if (!size || size === "auto") return "auto";
+    if (!size || size === "auto" || size === "adaptive") return "auto";
     if (videoRatioOptions.some((item) => item.value === size)) return size;
     const pixels = parsePixelSize(size) || parseAspectRatio(size);
     if (!pixels) return "16:9";

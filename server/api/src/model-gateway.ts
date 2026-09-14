@@ -216,15 +216,23 @@ export class ModelGateway {
         422,
       );
     const references = Array.isArray(input.references) ? input.references : [];
+    const videoExtension = isSeedanceVideoExtension(
+      row.upstream_model,
+      input,
+      references,
+    );
     validateModelLimits(
       row.limits,
-      input.parameters || {},
+      videoExtension
+        ? { ...(input.parameters || {}), aspectRatio: undefined }
+        : input.parameters || {},
       references,
       input.mode,
     );
     const parameterSource: Record<string, unknown> = {
       ...(input.parameters || {}),
     };
+    if (videoExtension) parameterSource.aspectRatio = "adaptive";
     const byRole = new Map(
       references.map((reference) => [reference.role, reference]),
     );
@@ -274,6 +282,18 @@ export class ModelGateway {
       upstreamParameters,
     };
   }
+}
+
+function isSeedanceVideoExtension(
+  upstreamModel: unknown,
+  input: GenerationInput,
+  references: NonNullable<GenerationInput["references"]>,
+) {
+  return (
+    input.capability === "video" &&
+    /seedance/i.test(String(upstreamModel || "")) &&
+    references.some((reference) => reference.role === "video_input")
+  );
 }
 
 function catalogItems(payload: unknown): Array<Record<string, unknown>> {

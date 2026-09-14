@@ -7,7 +7,7 @@ import { ImageSettingsTheme } from "@/components/image-settings-panel";
 import { type CanvasTheme } from "@/lib/canvas-theme";
 import { clampVideoSeconds, computeVideoSize, inferVideoRatio, parseVideoResolution, readVideoDimensions, VIDEO_SECONDS_MAX, VIDEO_SECONDS_MIN, videoRatioOptions } from "@/lib/media-size";
 import { type AiConfig } from "@/stores/use-config-store";
-import { normalizeVideoGenerationMode, selectedVideoModel, supportedVideoModes, supportsVideoParameter, updateVideoModelParameter, videoParameter, videoParameterValue } from "@/lib/video-model-capabilities";
+import { isSeedanceVideoModel, normalizeVideoGenerationMode, selectedVideoModel, supportedVideoModes, supportsVideoParameter, updateVideoModelParameter, videoParameter, videoParameterValue } from "@/lib/video-model-capabilities";
 
 const resolutionOptions = [
     { value: "480", label: "480p" },
@@ -39,9 +39,10 @@ type VideoSettingsPanelProps = {
     selectedModel?: string;
     showTitle?: boolean;
     className?: string;
+    forceAdaptiveRatio?: boolean;
 };
 
-export function VideoSettingsPanel({ config, onConfigChange, theme, selectedModel, showTitle = true, className = "w-[320px] space-y-4 rounded-2xl px-1 py-0.5" }: VideoSettingsPanelProps) {
+export function VideoSettingsPanel({ config, onConfigChange, theme, selectedModel, showTitle = true, className = "w-[320px] space-y-4 rounded-2xl px-1 py-0.5", forceAdaptiveRatio = false }: VideoSettingsPanelProps) {
     const { t } = useTranslation();
     const model = selectedVideoModel(config, selectedModel);
     const hasDynamicSchema = Boolean(model?.parameters?.length);
@@ -54,10 +55,11 @@ export function VideoSettingsPanel({ config, onConfigChange, theme, selectedMode
     const seconds = Number.isFinite(parsedSeconds) ? Math.max(durationControl.min, Math.min(durationControl.max, parsedSeconds)) : durationControl.min;
     const resolutionValue = normalizeVideoResolutionValue(videoParameterValue(config, model, "resolution", "720p"));
     const resolution = parseVideoResolution(resolutionValue);
-    const selectedRatio = inferVideoRatio(videoParameterValue(config, model, "aspectRatio", "auto"));
+    const extensionRatio = forceAdaptiveRatio && isSeedanceVideoModel(model);
+    const selectedRatio = extensionRatio ? "auto" : inferVideoRatio(videoParameterValue(config, model, "aspectRatio", "auto"));
     const dimensions = readVideoDimensions(config.size || "auto", resolution, selectedRatio);
     const resolutionValues = (videoParameter(model, "resolution")?.options?.map(String) || resolutionOptions.map((item) => item.value)).map(normalizeVideoResolutionValue);
-    const ratioValues = videoParameter(model, "aspectRatio")?.options?.map(String) || videoRatioOptions.map((item) => item.value);
+    const ratioValues = extensionRatio ? ["auto"] : (videoParameter(model, "aspectRatio")?.options?.map((value) => inferVideoRatio(String(value))) || videoRatioOptions.map((item) => item.value));
     const additionalParameters = (model?.parameters || []).filter((definition) => !CORE_VIDEO_PARAMETER_KEYS.has(definition.key));
     const updateModelParameters = (values: Record<string, string>) => {
         const next = Object.entries(values).reduce((parameters, [key, value]) => updateVideoModelParameter({ ...config, videoModelParameters: parameters }, model, key, value), config.videoModelParameters);
@@ -115,8 +117,9 @@ export function VideoSettingsPanel({ config, onConfigChange, theme, selectedMode
                                     <button
                                         key={item.value}
                                         type="button"
-                                        className="flex h-[72px] cursor-pointer flex-col items-center justify-center gap-1.5 rounded-xl border bg-transparent text-sm transition hover:opacity-80"
+                                        className="flex h-[72px] flex-col items-center justify-center gap-1.5 rounded-xl border bg-transparent text-sm transition enabled:cursor-pointer enabled:hover:opacity-80 disabled:cursor-default"
                                         style={{ borderColor: selectedRatio === item.value ? theme.node.text : theme.node.stroke, color: theme.node.text }}
+                                        disabled={extensionRatio}
                                         onMouseDown={(event) => event.stopPropagation()}
                                         onClick={() => applySize(resolutionValue, item.value)}
                                     >
@@ -125,6 +128,7 @@ export function VideoSettingsPanel({ config, onConfigChange, theme, selectedMode
                                     </button>
                                 ))}
                         </div>
+                        {extensionRatio ? <div className="mt-2 text-xs" style={{ color: theme.node.muted }}>{t("settingsPanels.video.extensionRatioHint")}</div> : null}
                     </SettingGroup>
                 ) : null}
                 {supportsVideoParameter(model, "duration") ? (

@@ -53,7 +53,7 @@ export function buildNodeGenerationContext(nodeId: string, nodes: CanvasNodeData
         const role = imageReferenceRole(roleByNodeId.get(input.nodeId));
         return [{ ...input.image, ...(role ? { role } : {}) }];
     });
-    const referenceVideos = resourceInputs.map((input) => input.video).filter((video): video is ReferenceVideo => Boolean(video));
+    const referenceVideos = videoReferences(resourceInputs, roleByNodeId);
     const referenceAudios = resourceInputs.map((input) => input.audio).filter((audio): audio is ReferenceAudio => Boolean(audio));
 
     return {
@@ -106,7 +106,7 @@ function buildComposerGenerationContext(inputs: NodeGenerationInput[], prompt: s
         const role = imageReferenceRole(roleByNodeId.get(input.nodeId));
         return [{ ...input.image, ...(role ? { role } : {}) }];
     });
-    const referenceVideos = selectedInputs.map((input) => input.video).filter((video): video is ReferenceVideo => Boolean(video));
+    const referenceVideos = videoReferences(selectedInputs, roleByNodeId);
     const referenceAudios = selectedInputs.map((input) => input.audio).filter((audio): audio is ReferenceAudio => Boolean(audio));
 
     if (!hasToken) {
@@ -138,6 +138,17 @@ function generationRoleByNodeId(nodeId: string, nodes: CanvasNodeData[], connect
     const configTarget = connections.find((connection) => connection.fromNodeId === nodeId && nodes.find((node) => node.id === connection.toNodeId)?.type === CanvasNodeType.Config)?.toNodeId;
     const targetId = configTarget || nodeId;
     return new Map(connections.filter((connection) => connection.toNodeId === targetId).map((connection) => [connection.fromNodeId, connection.role]));
+}
+
+export function hasVideoInputReference(nodeId: string, nodes: CanvasNodeData[], connections: CanvasConnection[]) {
+    return [...generationRoleByNodeId(nodeId, nodes, connections).values()].some((role) => role === "video_input");
+}
+
+function videoReferences(inputs: NodeGenerationResourceInput[], roleByNodeId: Map<string, CanvasConnection["role"]>): ReferenceVideo[] {
+    return inputs.flatMap((input) => {
+        if (!input.video) return [];
+        return [{ ...input.video, role: roleByNodeId.get(input.nodeId) === "video_input" ? "video_input" : "motion_reference" }];
+    });
 }
 
 function imageReferenceRole(role: CanvasConnection["role"]): ReferenceImage["role"] {
