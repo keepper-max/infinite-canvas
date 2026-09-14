@@ -848,16 +848,65 @@ function delay(ms: number, signal?: AbortSignal) {
     );
   });
 }
-async function downloadBytes(url: string, signal?: AbortSignal) {
-  const response = await fetch(url, { signal });
-  if (!response.ok)
-    throw new ProviderError(
-      "ARTIFACT_DOWNLOAD_FAILED",
-      "生成结果转存失败",
-      true,
-      { status: response.status },
-    );
-  return new Uint8Array(await response.arrayBuffer());
+export async function downloadBytes(
+  url: string,
+  signal?: AbortSignal,
+  idleMs = 60_000,
+  reconnectDelayMs = 1_000,
+) {
+  for (;;) {
+    if (signal?.aborted) throw signal.reason;
+    const idleController = new AbortController();
+    const requestSignal = signal
+      ? AbortSignal.any([signal, idleController.signal])
+      : idleController.signal;
+    let idle = false;
+    let idleTimer: ReturnType<typeof setTimeout> | undefined;
+    const resetIdleTimer = () => {
+      clearTimeout(idleTimer);
+      idleTimer = setTimeout(() => {
+        idle = true;
+        idleController.abort();
+      }, idleMs);
+    };
+    try {
+      resetIdleTimer();
+      const response = await fetch(url, { signal: requestSignal });
+      if (!response.ok)
+        throw new ProviderError(
+          "ARTIFACT_DOWNLOAD_FAILED",
+          "生成结果转存失败",
+          true,
+          { status: response.status },
+        );
+      if (!response.body) return new Uint8Array(await response.arrayBuffer());
+      const chunks: Uint8Array[] = [];
+      let size = 0;
+      const reader = response.body.getReader();
+      for (;;) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        if (value?.byteLength) {
+          chunks.push(value);
+          size += value.byteLength;
+          resetIdleTimer();
+        }
+      }
+      const bytes = new Uint8Array(size);
+      let offset = 0;
+      for (const chunk of chunks) {
+        bytes.set(chunk, offset);
+        offset += chunk.byteLength;
+      }
+      return bytes;
+    } catch (error) {
+      if (signal?.aborted) throw error;
+      if (!idle && !(error instanceof TypeError)) throw error;
+      await delay(reconnectDelayMs, signal);
+    } finally {
+      clearTimeout(idleTimer);
+    }
+  }
 }
 function extensionFor(mime: string) {
   if (mime.includes("png")) return "png";

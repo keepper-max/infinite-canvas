@@ -8,7 +8,10 @@ import { JobExecutor } from "./job-service.js";
 import { ModelGateway } from "./model-gateway.js";
 import { S3ObjectStorage } from "./object-storage.js";
 import { ProviderError, Token360Provider } from "./provider.js";
-import { recoverInterruptedProviderJobs } from "./job-recovery.js";
+import {
+  isStalledQueueJobError,
+  recoverInterruptedProviderJobs,
+} from "./job-recovery.js";
 import { createQueue } from "./queue.js";
 import {
   CompositionCancelledError,
@@ -89,12 +92,27 @@ const worker = new Worker<{ jobId: string }>(
 );
 
 worker.on("failed", (job, error) => {
-  if (job)
-    void executor.markAttemptFailed(
-      job.data.jobId,
-      error?.name === "UnrecoverableError" ||
-        job.attemptsMade >= (job.opts.attempts || config.jobs.maxAttempts),
-    );
+  if (!job) return;
+  if (isStalledQueueJobError(error)) {
+    void recoverInterruptedProviderJobs(pool, recoveryQueue.queue, 1)
+      .then((recovered) => {
+        if (!recovered.includes(job.data.jobId))
+          return executor.markAttemptFailed(job.data.jobId, true);
+      })
+      .catch(async (recoveryError) => {
+        console.error(
+          "[generation-worker] stalled job recovery failed:",
+          recoveryError instanceof Error ? recoveryError.message : "unknown error",
+        );
+        await executor.markAttemptFailed(job.data.jobId, true);
+      });
+    return;
+  }
+  void executor.markAttemptFailed(
+    job.data.jobId,
+    error?.name === "UnrecoverableError" ||
+      job.attemptsMade >= (job.opts.attempts || config.jobs.maxAttempts),
+  );
 });
 worker.on("error", (error) =>
   console.error("[generation-worker]", error.name, error.message),

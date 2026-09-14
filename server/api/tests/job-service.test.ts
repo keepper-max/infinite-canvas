@@ -2,16 +2,62 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
+  downloadBytes,
   generationJobAttempts,
   JobExecutor,
   JobService,
 } from "../src/job-service.js";
 import { createJobSchema } from "../src/job-contract.js";
 import type { GenerationInput } from "../src/model-gateway.js";
-import { recoverInterruptedProviderJobs } from "../src/job-recovery.js";
+import {
+  isStalledQueueJobError,
+  recoverInterruptedProviderJobs,
+} from "../src/job-recovery.js";
 
 test("generation jobs do not retry automatically", () => {
   assert.equal(generationJobAttempts(), 1);
+});
+
+test("only BullMQ stalled failures trigger result recovery", () => {
+  assert.equal(
+    isStalledQueueJobError(
+      new Error("job stalled more than allowable limit"),
+    ),
+    true,
+  );
+  assert.equal(isStalledQueueJobError(new Error("provider rejected")), false);
+});
+
+test("artifact download reconnects after sixty seconds without ending the job", async () => {
+  const originalFetch = globalThis.fetch;
+  let requests = 0;
+  globalThis.fetch = async (_input, init) => {
+    requests += 1;
+    if (requests > 1) return new Response(new Uint8Array([1, 2, 3]));
+    return new Response(
+      new ReadableStream({
+        start(controller) {
+          init?.signal?.addEventListener(
+            "abort",
+            () => controller.error(init.signal?.reason),
+            { once: true },
+          );
+        },
+      }),
+    );
+  };
+  try {
+    const result = await downloadBytes(
+      "https://example.invalid/video.mp4",
+      undefined,
+      10,
+      0,
+    );
+    assert.deepEqual([...result], [1, 2, 3]);
+    assert.equal(requests, 2);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
 });
 
 test("job ID and billing trace use distinct SQL parameters", async () => {

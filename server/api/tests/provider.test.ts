@@ -309,6 +309,33 @@ test("completed video without inline URL downloads canonical content endpoint", 
   }
 });
 
+test("completed video ignores duplicate signed URLs for the same output", async () => {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async () =>
+    Response.json({
+      id: "video-duplicate",
+      status: "completed",
+      video_url: "https://media.example/video.mp4?signature=one",
+      content: {
+        url: "https://media.example/video.mp4?signature=two",
+      },
+    });
+  try {
+    const provider = new Token360Provider(
+      {
+        baseUrl: "https://example.invalid",
+        apiKey: "test-only",
+        catalogUrl: "https://example.invalid/models",
+      },
+      1_000,
+    );
+    const result = await provider.get("video-duplicate");
+    assert.equal(result.artifacts?.length, 1);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
 test("video provider explains generated-audio copyright rejection", async () => {
   const originalFetch = globalThis.fetch;
   globalThis.fetch = async () =>

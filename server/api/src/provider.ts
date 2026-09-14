@@ -146,7 +146,7 @@ export class Token360Provider {
       correlationHeaders,
     );
     const billingTraceId = readBillingTrace(response, correlationId);
-    const directUrls = readUrls(payload);
+    const directUrls = uniqueMediaUrls(readUrls(payload));
     if (directUrls.length)
       return {
         billingTraceId,
@@ -194,7 +194,7 @@ export class Token360Provider {
     );
     const status = normalizeStatus(payload);
     if (status === "completed") {
-      const urls = readUrls(payload);
+      const urls = uniqueMediaUrls(readUrls(payload));
       if (urls.length)
         return {
           providerJobId,
@@ -543,6 +543,21 @@ function readUrls(value: unknown): string[] {
       ),
     ),
   ];
+}
+function uniqueMediaUrls(urls: string[]) {
+  const keys = new Set<string>();
+  return urls.filter((url) => {
+    let key = url;
+    try {
+      const parsed = new URL(url);
+      key = `${parsed.origin}${parsed.pathname}`;
+    } catch {
+      // Keep non-URL provider values distinct by their original representation.
+    }
+    if (keys.has(key)) return false;
+    keys.add(key);
+    return true;
+  });
 }
 function readBase64(value: unknown): string[] {
   return dataArray(value)

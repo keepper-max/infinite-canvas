@@ -18,6 +18,13 @@ export type ProviderRecoveryQueue = {
   ): Promise<unknown>;
 };
 
+export function isStalledQueueJobError(error: unknown) {
+  return (
+    error instanceof Error &&
+    error.message.toLowerCase().includes("job stalled more than allowable limit")
+  );
+}
+
 const ACTIVE_QUEUE_STATES = new Set([
   "active",
   "waiting",
