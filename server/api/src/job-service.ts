@@ -89,7 +89,7 @@ export class JobService {
       const jobId = randomUUID();
       const result = await client.query(
         `insert into generation_jobs(id,project_id,node_key,created_by,provider,model_id,mode,capability,input,parameters,input_snapshot,compiled_request,status,progress,max_attempts,idempotency_key,request_fingerprint,bullmq_job_id,queued_at,retry_of_job_id,billing_trace_id,billing_status,billing_next_check_at)
-                values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,'pending',0,$13,$14,$15,$16,now(),$17,$1::text,'pending',now()) on conflict(project_id,idempotency_key) where idempotency_key is not null do nothing returning *`,
+                values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,'pending',0,$13,$14,$15,$16,now(),$17,$18,'pending',now()) on conflict(project_id,idempotency_key) where idempotency_key is not null do nothing returning *`,
         [
           jobId,
           projectId,
@@ -108,6 +108,7 @@ export class JobService {
           fingerprint,
           randomUUID(),
           retryOfJobId || null,
+          jobId,
         ],
       );
       if (!result.rows[0]) {

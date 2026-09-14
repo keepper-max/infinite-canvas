@@ -1,13 +1,90 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { generationJobAttempts, JobExecutor } from "../src/job-service.js";
+import {
+  generationJobAttempts,
+  JobExecutor,
+  JobService,
+} from "../src/job-service.js";
 import { createJobSchema } from "../src/job-contract.js";
 import type { GenerationInput } from "../src/model-gateway.js";
 import { recoverInterruptedProviderJobs } from "../src/job-recovery.js";
 
 test("generation jobs do not retry automatically", () => {
   assert.equal(generationJobAttempts(), 1);
+});
+
+test("job ID and billing trace use distinct SQL parameters", async () => {
+  let insertSql = "";
+  let insertValues: unknown[] = [];
+  const jobRow = {
+    id: "",
+    project_id: "project-1",
+    node_key: null,
+    model_id: "gpt-5.5",
+    capability: "text",
+    mode: "chat",
+    status: "pending",
+    progress: 0,
+    max_attempts: 1,
+  };
+  const client = {
+    async query(sql: string, values?: unknown[]) {
+      if (sql.includes("from project_members"))
+        return { rows: [{ role: "owner" }], rowCount: 1 };
+      if (sql.startsWith("select * from generation_jobs"))
+        return { rows: [], rowCount: 0 };
+      if (sql.startsWith("insert into generation_jobs")) {
+        insertSql = sql;
+        insertValues = values || [];
+        jobRow.id = String(insertValues[0]);
+        return { rows: [jobRow], rowCount: 1 };
+      }
+      return { rows: [], rowCount: 1 };
+    },
+    release() {},
+  };
+  const pool = {
+    async query(sql: string) {
+      if (sql.includes("from project_members"))
+        return { rows: [{ role: "owner" }], rowCount: 1 };
+      if (sql.startsWith("select * from generation_jobs"))
+        return { rows: [], rowCount: 0 };
+      return { rows: [], rowCount: 1 };
+    },
+    async connect() {
+      return client;
+    },
+  };
+  const service = new JobService(
+    pool as never,
+    { async add() {}, async remove() { return true; } },
+    {
+      async compile(input: GenerationInput) {
+        return {
+          ...input,
+          providerId: "token360",
+          upstreamModel: "gpt-5.5",
+          upstreamParameters: {},
+        };
+      },
+    } as never,
+    {} as never,
+  );
+
+  await service.create("project-1", "user-1", {
+    modelId: "gpt-5.5",
+    capability: "text",
+    mode: "chat",
+    prompt: "test",
+    parameters: {},
+    nodeRevision: 0,
+    idempotencyKey: "billing-trace-parameter-test",
+  });
+
+  assert.match(insertSql, /now\(\),\$17,\$18,'pending'/);
+  assert.equal(insertValues.length, 18);
+  assert.equal(insertValues[17], insertValues[0]);
 });
 
 test("virtual portrait references are resolved from the current project only", async () => {
