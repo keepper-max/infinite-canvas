@@ -37,7 +37,14 @@ export class Token360VirtualPortraitClient {
       body: JSON.stringify({ name, groupKind: "VIRTUAL_PORTRAIT" }),
     });
     const record = unwrapRecord(payload);
-    const id = stringField(record, "id", "groupId", "group_id");
+    const id = stringField(
+      record,
+      "assetGroupId",
+      "asset_group_id",
+      "groupId",
+      "group_id",
+      "id",
+    );
     if (!id)
       throw new DomainError(
         "VIRTUAL_PORTRAIT_PROVIDER_INVALID",
@@ -69,6 +76,36 @@ export class Token360VirtualPortraitClient {
     return readProviderAsset(
       await this.request("/v1/assets", { method: "POST", body: form }),
     );
+  }
+
+  async resolveGroupId(groupId: string) {
+    if (!/^\d+$/.test(groupId)) return groupId;
+    const payload = await this.request(
+      "/v1/asset-groups?groupKind=VIRTUAL_PORTRAIT",
+      { method: "GET" },
+    );
+    const record = recordList(payload).find(
+      (item) =>
+        stringField(item, "id") === groupId ||
+        stringField(item, "assetGroupId", "asset_group_id") === groupId,
+    );
+    const resolved = record
+      ? stringField(
+          record,
+          "assetGroupId",
+          "asset_group_id",
+          "groupId",
+          "group_id",
+        )
+      : undefined;
+    if (!resolved)
+      throw new DomainError(
+        "VIRTUAL_PORTRAIT_GROUP_NOT_FOUND",
+        "虚拟角色资产分组已失效，请重新添加",
+        422,
+        false,
+      );
+    return resolved;
   }
 
   async getAsset(assetId: string) {
@@ -242,7 +279,20 @@ export class VirtualPortraitService implements VirtualPortraitServicePort {
         "select * from virtual_portrait_libraries where project_id=$1",
         [projectId],
       );
-      if (existing.rows[0]) return existing.rows[0];
+      if (existing.rows[0]) {
+        const resolvedGroupId = await this.provider.resolveGroupId(
+          String(existing.rows[0].provider_group_id),
+        );
+        if (resolvedGroupId === existing.rows[0].provider_group_id)
+          return existing.rows[0];
+        const repaired = await client.query(
+          `update virtual_portrait_libraries
+              set provider_group_id=$2,updated_at=now()
+            where project_id=$1 returning *`,
+          [projectId, resolvedGroupId],
+        );
+        return repaired.rows[0];
+      }
       const project = await client.query(
         "select name from projects where id=$1",
         [projectId],
@@ -324,6 +374,20 @@ function unwrapRecord(payload: unknown): Record<string, unknown> {
     record = nested;
   }
   return record;
+}
+
+function recordList(payload: unknown): Record<string, unknown>[] {
+  if (Array.isArray(payload))
+    return payload.filter(
+      (item): item is Record<string, unknown> =>
+        Boolean(item) && typeof item === "object" && !Array.isArray(item),
+    );
+  if (!payload || typeof payload !== "object") return [];
+  for (const value of Object.values(payload)) {
+    const records = recordList(value);
+    if (records.length) return records;
+  }
+  return [];
 }
 
 function readProviderAsset(payload: unknown): ProviderAsset {

@@ -15,7 +15,9 @@ test("virtual portrait client creates the documented group and multipart asset",
   globalThis.fetch = async (input, init) => {
     calls.push({ url: String(input), init });
     return calls.length === 1
-      ? Response.json({ data: { id: "group-1" } })
+      ? Response.json({
+          data: { id: "66062", assetGroupId: "legacy_rf_65723" },
+        })
       : Response.json({
           data: {
             id: "record-1",
@@ -33,7 +35,7 @@ test("virtual portrait client creates the documented group and multipart asset",
       new Uint8Array([1, 2, 3]),
       "image/png",
     );
-    assert.deepEqual(group, { id: "group-1", status: "active" });
+    assert.deepEqual(group, { id: "legacy_rf_65723", status: "active" });
     assert.equal(asset.assetId, "ta_portrait_1");
     assert.deepEqual(JSON.parse(String(calls[0]?.init?.body)), {
       name: "角色库",
@@ -41,9 +43,39 @@ test("virtual portrait client creates the documented group and multipart asset",
     });
     const form = calls[1]?.init?.body;
     assert.ok(form instanceof FormData);
-    assert.equal(form.get("groupId"), "group-1");
+    assert.equal(form.get("groupId"), "legacy_rf_65723");
     assert.equal(form.get("name"), "角色.png");
     assert.ok(form.get("file") instanceof Blob);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("virtual portrait client repairs a stored internal group record ID", async () => {
+  const originalFetch = globalThis.fetch;
+  let calls = 0;
+  globalThis.fetch = async () => {
+    calls += 1;
+    return Response.json({
+      data: {
+        items: [
+          {
+            id: "66062",
+            assetGroupId: "legacy_rf_65723",
+            groupKind: "VIRTUAL_PORTRAIT",
+          },
+        ],
+      },
+    });
+  };
+  try {
+    const client = new Token360VirtualPortraitClient(config);
+    assert.equal(await client.resolveGroupId("66062"), "legacy_rf_65723");
+    assert.equal(
+      await client.resolveGroupId("legacy_rf_65723"),
+      "legacy_rf_65723",
+    );
+    assert.equal(calls, 1);
   } finally {
     globalThis.fetch = originalFetch;
   }
