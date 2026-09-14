@@ -496,7 +496,7 @@ export function providerUserMessage(value: string, fallback: string) {
     return "首帧或尾帧参数不符合模型要求";
   if (message.includes("content") && message.includes("policy"))
     return "生成内容未通过模型安全检查";
-  return fallback;
+  return sanitizeProviderDetail(value) || fallback;
 }
 function sanitizeProviderDetail(value: string) {
   if (!value) return "";

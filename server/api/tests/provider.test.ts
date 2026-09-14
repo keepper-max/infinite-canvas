@@ -374,6 +374,42 @@ test("video provider explains visual copyright rejection", async () => {
   }
 });
 
+test("video provider returns a sanitized concrete upstream failure", async () => {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async () =>
+    Response.json({
+      id: "video-3",
+      status: "failed",
+      error: {
+        message:
+          "image data 1 failed: Image exceeds the maximum allowed total pixels. Current dimensions: 6336x9504 = 60217344 pixels. Maximum allowed: 36000000 pixels. https://private.invalid sk-secret",
+      },
+    });
+  try {
+    const provider = new Token360Provider(
+      {
+        baseUrl: "https://example.invalid",
+        apiKey: "test-only",
+        catalogUrl: "https://example.invalid/models",
+      },
+      1_000,
+    );
+    await assert.rejects(
+      provider.get("video-3"),
+      (error: unknown) =>
+        error instanceof ProviderError &&
+        error.code === "PROVIDER_REJECTED" &&
+        error.message.includes("Current dimensions: 6336x9504") &&
+        error.message.includes("[URL]") &&
+        error.message.includes("[REDACTED]") &&
+        !error.message.includes("private.invalid") &&
+        !error.message.includes("sk-secret"),
+    );
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
 function request(
   mode: CompiledGenerationRequest["mode"],
   upstreamParameters: Record<string, unknown>,
