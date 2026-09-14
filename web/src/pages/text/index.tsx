@@ -226,7 +226,7 @@ export default function TextWorkbenchPage() {
                     </div>
                 </aside>
 
-                <section className="flex min-w-0 flex-col bg-[#faf9f6] dark:bg-[#131311]">
+                <section className="flex min-h-0 min-w-0 flex-col overflow-hidden bg-[#faf9f6] dark:bg-[#131311]">
                     <header className="flex h-16 shrink-0 items-center justify-between gap-3 border-b border-black/10 px-5 dark:border-white/10">
                         <div className="min-w-0">
                             <h1 className="truncate text-base font-semibold">{activeConversation?.title || "AI 文本工作台"}</h1>
