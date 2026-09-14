@@ -162,6 +162,7 @@ export default {
         upload: "Upload",
         adjust: "Adjust",
         generate: "Generate",
+        stop: "Stop generation",
         results: "Results",
         waiting: "Waiting {{time}}",
         model: "Model",

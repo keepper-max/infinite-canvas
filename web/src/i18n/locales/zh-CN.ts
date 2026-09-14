@@ -162,6 +162,7 @@ export default {
         upload: "上传",
         adjust: "调整",
         generate: "开始生成",
+        stop: "停止生成",
         results: "生成结果",
         waiting: "等待 {{time}}",
         model: "模型",
