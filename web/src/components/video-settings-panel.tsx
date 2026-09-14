@@ -49,7 +49,9 @@ export function VideoSettingsPanel({ config, onConfigChange, theme, selectedMode
     const videoMode = normalizeVideoGenerationMode(config.videoMode, modes);
     const durationDefinition = videoParameter(model, "duration");
     const durationValue = videoParameterValue(config, model, "duration", "6");
-    const seconds = Number(durationValue === "-1" ? 6 : clampVideoSeconds(durationValue));
+    const durationControl = readDurationControl(durationDefinition);
+    const parsedSeconds = Number(durationValue === "-1" ? 6 : clampVideoSeconds(durationValue));
+    const seconds = Number.isFinite(parsedSeconds) ? Math.max(durationControl.min, Math.min(durationControl.max, parsedSeconds)) : durationControl.min;
     const resolutionValue = normalizeVideoResolutionValue(videoParameterValue(config, model, "resolution", "720p"));
     const resolution = parseVideoResolution(resolutionValue);
     const selectedRatio = inferVideoRatio(videoParameterValue(config, model, "aspectRatio", "auto"));
@@ -58,17 +60,17 @@ export function VideoSettingsPanel({ config, onConfigChange, theme, selectedMode
     const ratioValues = videoParameter(model, "aspectRatio")?.options?.map(String) || videoRatioOptions.map((item) => item.value);
     const additionalParameters = (model?.parameters || []).filter((definition) => !CORE_VIDEO_PARAMETER_KEYS.has(definition.key));
     const updateModelParameters = (values: Record<string, string>) => {
-        const next = Object.entries(values).reduce(
-            (parameters, [key, value]) => updateVideoModelParameter({ ...config, videoModelParameters: parameters }, model, key, value),
-            config.videoModelParameters,
-        );
+        const next = Object.entries(values).reduce((parameters, [key, value]) => updateVideoModelParameter({ ...config, videoModelParameters: parameters }, model, key, value), config.videoModelParameters);
         onConfigChange("videoModelParameters", next);
     };
     const updateCoreParameter = <K extends VideoSettingKey>(configKey: K, value: AiConfig[K], parameterKey: string, parameterValue = String(value)) => {
         onConfigChange(configKey, value);
         updateModelParameters({ [parameterKey]: parameterValue });
     };
-    const providerResolution = (value: string) => videoParameter(model, "resolution")?.options?.map(String).find((option) => normalizeVideoResolutionValue(option) === value) || value;
+    const providerResolution = (value: string) =>
+        videoParameter(model, "resolution")
+            ?.options?.map(String)
+            .find((option) => normalizeVideoResolutionValue(option) === value) || value;
     const updateAdditionalParameter = (key: string, value: string) => onConfigChange("videoModelParameters", updateVideoModelParameter(config, model, key, value));
     const applySize = (nextResolution: string, ratio: string) => {
         onConfigChange("vquality", nextResolution);
@@ -127,16 +129,59 @@ export function VideoSettingsPanel({ config, onConfigChange, theme, selectedMode
                 ) : null}
                 {supportsVideoParameter(model, "duration") ? (
                     <SettingGroup title={t("settingsPanels.video.seconds")} color={theme.node.muted}>
-                        {durationDefinition?.options?.length ? (
+                        {durationControl.continuous ? (
+                            <div className="space-y-2.5 rounded-xl border px-3 py-2.5" style={{ borderColor: theme.node.stroke }} onMouseDown={(event) => event.stopPropagation()}>
+                                <div className="flex justify-end">
+                                    <div className="inline-flex rounded-full border p-0.5 text-xs" style={{ borderColor: theme.node.stroke }}>
+                                        {durationControl.smart ? (
+                                            <button
+                                                type="button"
+                                                className="h-7 rounded-full px-3 transition"
+                                                style={{ background: durationValue === "-1" ? theme.node.text : "transparent", color: durationValue === "-1" ? theme.node.fill : theme.node.muted }}
+                                                onClick={() => updateCoreParameter("videoSeconds", "-1", "duration")}
+                                            >
+                                                {t("settingsPanels.video.smart")}
+                                            </button>
+                                        ) : null}
+                                        <span
+                                            className="grid h-7 min-w-14 place-items-center rounded-full px-3 font-semibold"
+                                            style={{ background: durationValue === "-1" ? "transparent" : theme.node.text, color: durationValue === "-1" ? theme.node.muted : theme.node.fill }}
+                                        >
+                                            {seconds}s
+                                        </span>
+                                    </div>
+                                </div>
+                                <div className="flex items-center gap-2 text-[11px]" style={{ color: theme.node.muted }}>
+                                    <span>{durationControl.min}s</span>
+                                    <Slider
+                                        className="min-w-0 flex-1"
+                                        min={durationControl.min}
+                                        max={durationControl.max}
+                                        step={durationControl.step}
+                                        value={seconds}
+                                        onChange={(value) => updateCoreParameter("videoSeconds", String(Array.isArray(value) ? value[0] : value), "duration")}
+                                    />
+                                    <span>{durationControl.max}s</span>
+                                </div>
+                            </div>
+                        ) : durationDefinition?.options?.length ? (
                             <Select
                                 className="w-full"
                                 value={durationValue}
                                 options={durationDefinition.options.map((value) => ({ value: String(value), label: String(value) === "-1" ? t("settingsPanels.video.smart") : `${value}s` }))}
                                 onChange={(value) => updateCoreParameter("videoSeconds", value, "duration")}
+                                getPopupContainer={(trigger) => trigger.parentElement || document.body}
                             />
                         ) : (
                             <div className="flex items-center gap-3" onMouseDown={(event) => event.stopPropagation()}>
-                                <Slider className="min-w-0 flex-1" min={VIDEO_SECONDS_MIN} max={VIDEO_SECONDS_MAX} step={1} value={seconds} onChange={(value) => updateCoreParameter("videoSeconds", String(Array.isArray(value) ? value[0] : value), "duration")} />
+                                <Slider
+                                    className="min-w-0 flex-1"
+                                    min={VIDEO_SECONDS_MIN}
+                                    max={VIDEO_SECONDS_MAX}
+                                    step={1}
+                                    value={seconds}
+                                    onChange={(value) => updateCoreParameter("videoSeconds", String(Array.isArray(value) ? value[0] : value), "duration")}
+                                />
                                 <SecondsInput value={seconds} theme={theme} onCommit={(value) => updateCoreParameter("videoSeconds", String(value), "duration")} />
                                 <span className="shrink-0 text-sm" style={{ color: theme.node.muted }}>
                                     s
@@ -176,7 +221,11 @@ export function VideoSettingsPanel({ config, onConfigChange, theme, selectedMode
                     />
                 ) : null}
                 {supportsVideoParameter(model, "generateAudio") ? (
-                    <SwitchSetting title={t("settingsPanels.video.generateAudio")} checked={videoParameterValue(config, model, "generateAudio", "false") === "true"} onChange={(value) => updateCoreParameter("videoGenerateAudio", String(value), "generateAudio")} />
+                    <SwitchSetting
+                        title={t("settingsPanels.video.generateAudio")}
+                        checked={videoParameterValue(config, model, "generateAudio", "false") === "true"}
+                        onChange={(value) => updateCoreParameter("videoGenerateAudio", String(value), "generateAudio")}
+                    />
                 ) : null}
                 {supportsVideoParameter(model, "watermark") ? (
                     <SwitchSetting title={t("settingsPanels.video.watermark")} checked={videoParameterValue(config, model, "watermark", "false") === "true"} onChange={(value) => updateCoreParameter("videoWatermark", String(value), "watermark")} />
@@ -187,6 +236,17 @@ export function VideoSettingsPanel({ config, onConfigChange, theme, selectedMode
             </div>
         </ImageSettingsTheme>
     );
+}
+
+function readDurationControl(definition?: { options?: Array<string | number | boolean>; min?: number; max?: number; step?: number }) {
+    const smart = definition?.options?.some((value) => String(value) === "-1") || false;
+    const options = Array.from(new Set((definition?.options || []).map(Number).filter((value) => Number.isFinite(value) && value >= VIDEO_SECONDS_MIN && value <= VIDEO_SECONDS_MAX))).sort((left, right) => left - right);
+    const min = Number.isFinite(definition?.min) ? Math.max(VIDEO_SECONDS_MIN, Number(definition?.min)) : (options[0] ?? VIDEO_SECONDS_MIN);
+    const max = Number.isFinite(definition?.max) ? Math.min(VIDEO_SECONDS_MAX, Number(definition?.max)) : (options.at(-1) ?? VIDEO_SECONDS_MAX);
+    const inferredStep = options.length > 1 ? options[1] - options[0] : 1;
+    const step = Number.isFinite(definition?.step) && Number(definition?.step) > 0 ? Number(definition?.step) : inferredStep;
+    const continuous = !options.length || (options.length > 1 && options.every((value, index) => index === 0 || value - options[index - 1] === step));
+    return { smart, min, max, step, continuous };
 }
 
 export function videoResolutionLabel(value: string) {
