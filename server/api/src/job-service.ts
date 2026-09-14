@@ -478,6 +478,7 @@ export class JobExecutor {
         row,
         result.artifacts || [],
         providerSignal,
+        activeProviderJobId ? String(activeProviderJobId) : undefined,
       );
       const versionIds = artifacts
         .map((artifact) => artifact.assetVersionId)
@@ -581,6 +582,7 @@ export class JobExecutor {
     row: Record<string, unknown>,
     artifacts: ProviderArtifact[],
     signal?: AbortSignal,
+    providerJobId?: string,
   ) {
     const results: Array<Record<string, unknown>> = [];
     for (let index = 0; index < artifacts.length; index++) {
@@ -611,7 +613,22 @@ export class JobExecutor {
         continue;
       }
       const bytes =
-        artifact.bytes || (await downloadBytes(artifact.url!, signal));
+        artifact.bytes ||
+        (await downloadBytes(
+          artifact.url!,
+          signal,
+          60_000,
+          1_000,
+          providerJobId
+            ? async () => {
+                const refreshed = await this.provider.get(
+                  providerJobId,
+                  signal,
+                );
+                return refreshed.artifacts?.[index]?.url;
+              }
+            : undefined,
+        ));
       const sha256 = createHash("sha256").update(bytes).digest("hex");
       const extension = extensionFor(artifact.mimeType);
       const storageKey = `projects/${row.project_id}/generated/${row.id}/${index}.${extension}`;
@@ -853,7 +870,9 @@ export async function downloadBytes(
   signal?: AbortSignal,
   idleMs = 60_000,
   reconnectDelayMs = 1_000,
+  refreshUrl?: () => Promise<string | undefined>,
 ) {
+  let currentUrl = url;
   for (;;) {
     if (signal?.aborted) throw signal.reason;
     const idleController = new AbortController();
@@ -871,7 +890,7 @@ export async function downloadBytes(
     };
     try {
       resetIdleTimer();
-      const response = await fetch(url, { signal: requestSignal });
+      const response = await fetch(currentUrl, { signal: requestSignal });
       if (!response.ok)
         throw new ProviderError(
           "ARTIFACT_DOWNLOAD_FAILED",
@@ -901,7 +920,18 @@ export async function downloadBytes(
       return bytes;
     } catch (error) {
       if (signal?.aborted) throw error;
-      if (!idle && !(error instanceof TypeError)) throw error;
+      const downloadFailed =
+        error instanceof ProviderError &&
+        error.code === "ARTIFACT_DOWNLOAD_FAILED";
+      if (!idle && !(error instanceof TypeError) && !downloadFailed)
+        throw error;
+      if (refreshUrl) {
+        try {
+          currentUrl = (await refreshUrl()) || currentUrl;
+        } catch (refreshError) {
+          if (signal?.aborted) throw refreshError;
+        }
+      }
       await delay(reconnectDelayMs, signal);
     } finally {
       clearTimeout(idleTimer);

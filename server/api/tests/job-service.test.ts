@@ -60,6 +60,43 @@ test("artifact download reconnects after sixty seconds without ending the job", 
   }
 });
 
+test("artifact download refreshes an expired provider URL before reconnecting", async () => {
+  const originalFetch = globalThis.fetch;
+  const requestedUrls: string[] = [];
+  globalThis.fetch = async (input, init) => {
+    requestedUrls.push(String(input));
+    if (requestedUrls.length > 1)
+      return new Response(new Uint8Array([4, 5, 6]));
+    return new Response(
+      new ReadableStream({
+        start(controller) {
+          init?.signal?.addEventListener(
+            "abort",
+            () => controller.error(init.signal?.reason),
+            { once: true },
+          );
+        },
+      }),
+    );
+  };
+  try {
+    const result = await downloadBytes(
+      "https://media.example/expired.mp4",
+      undefined,
+      10,
+      0,
+      async () => "https://media.example/refreshed.mp4",
+    );
+    assert.deepEqual([...result], [4, 5, 6]);
+    assert.deepEqual(requestedUrls, [
+      "https://media.example/expired.mp4",
+      "https://media.example/refreshed.mp4",
+    ]);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
 test("job ID and billing trace use distinct SQL parameters", async () => {
   let insertSql = "";
   let insertValues: unknown[] = [];
