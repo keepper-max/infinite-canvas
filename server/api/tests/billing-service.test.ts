@@ -112,6 +112,53 @@ test("billing 404 schedules the documented first 30 second retry", async () => {
   }
 });
 
+test("billing response without a finalized amount remains pending", async () => {
+  const calls: Array<{ sql: string; values?: unknown[] }> = [];
+  const pool = {
+    async query(sql: string, values?: unknown[]) {
+      calls.push({ sql, values });
+      if (sql.includes("returning *"))
+        return {
+          rows: [
+            {
+              id: "job-incomplete",
+              provider: "token360",
+              billing_trace_id: "job-incomplete",
+              billing_started_at: new Date(),
+              billing_attempt_count: 1,
+              billing_meter_usage: {},
+            },
+          ],
+          rowCount: 1,
+        };
+      return { rows: [], rowCount: 1 };
+    },
+  };
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async () =>
+    Response.json({
+      data: {
+        request_id: "job-incomplete",
+        billed: false,
+        status: "in_progress",
+        usage: { total_tokens: 139 },
+      },
+    });
+  try {
+    const result = await new BillingService(pool as never, config).reconcileJob(
+      "job-incomplete",
+      true,
+    );
+    assert.deepEqual(result, { status: "pending", retryAfterSeconds: 30 });
+    assert.equal(
+      calls.some(({ sql }) => sql.includes("insert into generation_usage")),
+      false,
+    );
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
 test("billing reconciliation stops after 24 hours without a bill", async () => {
   const calls: Array<{ sql: string; values?: unknown[] }> = [];
   const pool = {

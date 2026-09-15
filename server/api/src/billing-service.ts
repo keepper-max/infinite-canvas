@@ -99,6 +99,17 @@ export class BillingService {
         ...asRecord(job.billing_meter_usage),
         ...asRecord(data.usage),
       };
+      const billed = booleanValue(data.billed);
+      const amountFinal = decimalValue(data.amount_final);
+      const totalAmount = decimalValue(data.total_amount);
+      const currency = stringValue(data.currency)?.toUpperCase();
+      if (
+        billed !== true ||
+        !currency ||
+        (amountFinal === null && totalAmount === null)
+      ) {
+        return this.reschedule(job);
+      }
       const mismatch =
         requestId !== String(job.id) ||
         String(job.billing_trace_id) !== String(job.id);
@@ -125,7 +136,7 @@ export class BillingService {
           job.model_id,
           job.capability,
           stringValue(data.bill_record_status) || stringValue(data.status),
-          booleanValue(data.billed),
+          billed,
           integerValue(usage.prompt_tokens),
           integerValue(usage.completion_tokens),
           integerValue(usage.input_tokens),
@@ -146,12 +157,12 @@ export class BillingService {
           ),
           decimalValue(usage.requested_seconds),
           decimalValue(data.amount_base),
-          decimalValue(data.amount_final),
-          decimalValue(data.total_amount),
+          amountFinal,
+          totalAmount,
           decimalValue(data.wallet_amount),
           decimalValue(data.voucher_amount),
           decimalValue(data.price),
-          stringValue(data.currency)?.toUpperCase(),
+          currency,
           stringValue(usage.provider_request_id) || stringValue(data.id),
           JSON.stringify(usage),
         ],

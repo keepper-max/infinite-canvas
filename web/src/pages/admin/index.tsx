@@ -168,8 +168,8 @@ function Overview() {
                             {data.usage.map((item) => (
                                 <div key={item.currency} className="rounded-xl border border-stone-200 p-4 dark:border-white/10">
                                     <div className="flex items-center justify-between">
-                                        <b>{item.currency}</b>
-                                        <span className="font-mono text-xl">{item.totalAmount}</span>
+                                        <b>{isAmountMissing(item.currency) ? "待计费" : item.currency}</b>
+                                        <span className="font-mono text-xl">{formatUsageAmount(item.currency, item.totalAmount)}</span>
                                     </div>
                                     <p className="mt-2 text-xs text-stone-500">
                                         {item.calls} 笔 · {item.totalTokens} Tokens · {item.videoDurationSeconds}s 视频
@@ -313,7 +313,7 @@ function UsersPanel() {
                         dataIndex: "usageAmounts",
                         render: (value: Record<string, string>) =>
                             Object.entries(value || {})
-                                .map(([currency, amount]) => `${currency} ${amount}`)
+                                .map(([currency, amount]) => formatUsageAmount(currency, amount))
                                 .join(" · ") || "—",
                     },
                     { title: "最近登录", dataIndex: "lastLoginAt", render: formatDate },
@@ -406,7 +406,7 @@ function UserDrawer({ userId, onClose, onChanged }: { userId?: string; onClose: 
                         {detail.usage.length ? (
                             detail.usage.map((item) => (
                                 <p key={item.currency} className="mb-2 font-mono">
-                                    {item.currency} {item.totalAmount} · {item.totalTokens} Tokens
+                                    {formatUsageAmount(item.currency, item.totalAmount)} · {item.totalTokens} Tokens
                                 </p>
                             ))
                         ) : (
@@ -438,7 +438,7 @@ function UserDrawer({ userId, onClose, onChanged }: { userId?: string; onClose: 
                                 { title: "任务 ID", dataIndex: "jobId", render: copyable },
                                 { title: "项目", dataIndex: "projectName" },
                                 { title: "模型", dataIndex: "modelId" },
-                                { title: "金额", render: (_, item) => `${item.currency || "—"} ${item.totalAmount || "—"}` },
+                                { title: "金额", render: (_, item) => formatUsageAmount(item.currency, item.totalAmount) },
                             ]}
                         />
                     </Panel>
@@ -554,7 +554,12 @@ function UsagePanel() {
         <div className="space-y-5">
             <div className="grid gap-4 md:grid-cols-3">
                 {data.summary.map((item) => (
-                    <Metric key={item.currency} label={`${item.currency} 实际金额`} value={item.totalAmount} note={`${item.totalTokens} Tokens · ${item.videoDurationSeconds}s`} />
+                    <Metric
+                        key={item.currency}
+                        label={isAmountMissing(item.currency) ? "待计费金额" : `${item.currency} 实际金额`}
+                        value={formatUsageAmount(item.currency, item.totalAmount)}
+                        note={`${item.totalTokens} Tokens · ${item.videoDurationSeconds}s`}
+                    />
                 ))}
             </div>
             <UsageBreakdownGrid breakdowns={data.breakdowns} />
@@ -580,7 +585,7 @@ function UsagePanel() {
                             title: "实际金额",
                             render: (_, item) => (
                                 <b className="font-mono">
-                                    {item.currency || "—"} {item.totalAmount || "—"}
+                                    {formatUsageAmount(item.currency, item.totalAmount)}
                                 </b>
                             ),
                         },
@@ -614,7 +619,7 @@ function UsageBreakdownGrid({ breakdowns, compact = false }: { breakdowns: Usage
                                         {item.key}
                                     </span>
                                     <span className="shrink-0 text-right font-mono">
-                                        {item.currency} {item.totalAmount}
+                                        {formatUsageAmount(item.currency, item.totalAmount)}
                                         <small className="block text-stone-500">
                                             {item.calls} 次 · {item.totalTokens} T
                                         </small>
@@ -876,6 +881,12 @@ function formatBytes(value: number) {
     const units = ["B", "KB", "MB", "GB", "TB"];
     const index = Math.min(units.length - 1, Math.floor(Math.log(value) / Math.log(1024)));
     return `${(value / 1024 ** index).toFixed(index ? 1 : 0)} ${units[index]}`;
+}
+function isAmountMissing(currency?: string) {
+    return !currency || currency === "UNKNOWN";
+}
+function formatUsageAmount(currency?: string, amount?: string) {
+    return isAmountMissing(currency) || amount === undefined || amount === null ? "金额未返回" : `${currency} ${amount}`;
 }
 function copyable(value?: string) {
     if (!value) return "—";
