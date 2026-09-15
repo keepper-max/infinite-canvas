@@ -5,6 +5,8 @@ description: Implemented changes that still need manual verification
 
 # Pending Tests
 
+- Token360 video return latency: production API and Worker should both run with `VIDEO_POLL_INTERVAL_MS=2000`. After Token360 reaches a terminal video state, the Worker should detect it within roughly two seconds, retain the existing idle reconnect behavior while downloading, persist the immutable asset with its SHA-256, and publish the completed canvas event only after the asset version is available. Manual cancellation and provider rate limits must remain unaffected.
+
 - Token360 incomplete billing: when the billing endpoint returns usage but `billed` is false, or omits currency/final amount, the job must remain pending and retry with the documented backoff instead of becoming settled. Admin overview, user detail, usage breakdowns, and ledgers must show “金额未返回” rather than `UNKNOWN 0`; a later finalized bill must replace the provisional record with its actual currency and decimal amount. Existing incomplete settled records should re-enter reconciliation after migration and reach settled/mismatch only after a finalized amount arrives, or become not billed after 24 hours.
 
 - 管理后台：概览应正常显示用户、项目、素材、任务、近 30 天趋势和消耗汇总；任务与消耗列表中的长任务、Trace、资源及账单 ID 应以短格式展示，悬停可查看且点击可复制完整值；`completed` 且没有真实错误的任务不应在失败原因列显示“任务失败”。

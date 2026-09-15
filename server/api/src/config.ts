@@ -89,7 +89,7 @@ export function readConfig(env: NodeJS.ProcessEnv = process.env): ApiConfig {
     ),
     videoPollIntervalMs: readInteger(
       env.VIDEO_POLL_INTERVAL_MS,
-      5_000,
+      2_000,
       1_000,
       60_000,
       "VIDEO_POLL_INTERVAL_MS",
