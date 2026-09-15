@@ -5,6 +5,8 @@ description: Implemented changes that still need manual verification
 
 # Pending Tests
 
+- 管理后台：概览应正常显示用户、项目、素材、任务、近 30 天趋势和消耗汇总；任务与消耗列表中的长任务、Trace、资源及账单 ID 应以短格式展示，悬停可查看且点击可复制完整值；`completed` 且没有真实错误的任务不应在失败原因列显示“任务失败”。
+
 - Seedance video extension ratio: connect a source video to a Seedance 2.0 or 2.5 video node using the `video_input` role. The canvas settings summary and ratio panel should show Adaptive and explain that the output follows the input video; submitting with an old fixed ratio such as `9:16` must send `adaptive` upstream and complete without the provider ratio rejection. A `motion_reference` video must retain the user's selected ratio, and non-Seedance models must remain unchanged.
 
 - Admin and Token360 reconciliation: verify that only administrators can access `/admin`; disabling an account revokes its sessions and blocks new requests without cancelling jobs already submitted. Run text, image, audio, and video jobs and confirm the local job UUID is the initial Token360 Trace, video polling never overwrites it, actual usage and currency-separated string amounts are reconciled, and a manual retry creates a new linked job. Exercise delayed 404 billing responses, duplicate reconciliation, Trace mismatches, the 24-hour cutoff, read-only project inspection, asset downloads, and immutable audit logs.

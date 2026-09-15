@@ -888,7 +888,10 @@ function copyable(value?: string) {
                 message.success("已复制");
             }}
         >
-            {value}
+            {compactId(value)}
         </button>
     );
+}
+function compactId(value: string) {
+    return value.length > 20 ? `${value.slice(0, 8)}…${value.slice(-6)}` : value;
 }

@@ -321,7 +321,7 @@ export class OperationsService implements OperationsServicePort {
       status: row.status,
       error: {
         code: row.error_code,
-        message: sanitizeError(row.error_message),
+        message: sanitizeError(row.error_message) || "任务失败",
         retryable: row.retryable,
       },
       updatedAt: iso(row.updated_at),
@@ -731,7 +731,7 @@ export class OperationsService implements OperationsServicePort {
 
   private async adminTrends() {
     const result = await this.pool.query(
-      `with days as (select generate_series(current_date-29,current_date,'1 day')::date day)
+      `with days as (select generate_series(current_date-29,current_date,interval '1 day')::date as day)
        select d.day::text,
         (select count(*)::int from users u where u.created_at>=d.day and u.created_at<d.day+1) new_users,
         (select count(*)::int from generation_jobs j where j.created_at>=d.day and j.created_at<d.day+1) jobs,
@@ -899,7 +899,7 @@ function iso(value: unknown) {
   return value instanceof Date ? value.toISOString() : value;
 }
 function sanitizeError(value: unknown) {
-  return String(value || "任务失败")
+  return String(value || "")
     .replace(/(bearer\s+|sk-)[a-z0-9._-]+/gi, "$1***")
     .replace(
       /((?:api[_-]?key|token|authorization)\s*[:=]\s*)["']?[^\s,"'}]+/gi,
@@ -1019,7 +1019,7 @@ function serializeAdminJob(row: Record<string, unknown>) {
     error: row.user_error_code
       ? {
           code: row.user_error_code,
-          message: sanitizeError(row.user_error_message),
+          message: sanitizeError(row.user_error_message) || "任务失败",
           details: sanitizeError(
             JSON.stringify(row.provider_error_sanitized || {}),
           ),
