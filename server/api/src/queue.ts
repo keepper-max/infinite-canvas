@@ -14,6 +14,10 @@ export function createQueue(config: JobConfig) {
     connection,
     defaultJobOptions: { removeOnComplete: 500, removeOnFail: 2_000 },
   });
+  const transferQueue = new Queue<{ jobId: string }>(config.transferQueueName, {
+    connection,
+    defaultJobOptions: { removeOnComplete: 500, removeOnFail: 2_000 },
+  });
   const port: JobQueuePort = {
     async add(jobId, maxAttempts) {
       await queue.add(
@@ -28,15 +32,38 @@ export function createQueue(config: JobConfig) {
     },
     async remove(jobId) {
       const job = await queue.getJob(jobId);
-      if (!job || (await job.isActive())) return false;
-      await job.remove();
-      return true;
+      const transferJob = await transferQueue.getJob(jobId);
+      let removed = false;
+      if (job && !(await job.isActive())) {
+        await job.remove();
+        removed = true;
+      }
+      if (transferJob && !(await transferJob.isActive())) {
+        await transferJob.remove();
+        removed = true;
+      }
+      return removed;
+    },
+  };
+  const transferPort = {
+    async add(jobId: string) {
+      await transferQueue.add(
+        "transfer",
+        { jobId },
+        {
+          jobId,
+          attempts: 5,
+          backoff: { type: "exponential" as const, delay: 2_000 },
+        },
+      );
     },
   };
   return {
     queue,
+    transferQueue,
     connection,
     port,
+    transferPort,
     publish: (projectId: string) =>
       connection.publish(`job-events:${projectId}`, "changed"),
   };

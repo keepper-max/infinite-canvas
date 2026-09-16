@@ -49,12 +49,25 @@ const executor = new JobExecutor(
   config.jobs,
   (projectId) => connection.publish(`job-events:${projectId}`, "changed"),
   billing,
+  undefined,
 );
 const recoveryQueue = createQueue(config.jobs);
+const transferPort = recoveryQueue.transferPort;
+const transferExecutor = new JobExecutor(
+  pool,
+  gateway,
+  provider,
+  storage,
+  config.jobs,
+  (projectId) => connection.publish(`job-events:${projectId}`, "changed"),
+  billing,
+  transferPort,
+);
 const recoveredJobs = await recoverInterruptedProviderJobs(
   pool,
   recoveryQueue.queue,
   1,
+  recoveryQueue.transferQueue,
 );
 if (recoveredJobs.length)
   console.log(
@@ -72,7 +85,10 @@ const worker = new Worker<{ jobId: string }>(
   config.jobs.queueName,
   async (job: Job<{ jobId: string }>) => {
     try {
-      return await executor.execute(job.data.jobId, job.attemptsMade + 1);
+      return await transferExecutor.execute(
+        job.data.jobId,
+        job.attemptsMade + 1,
+      );
     } catch (error) {
       await executor.markAttemptFailed(
         job.data.jobId,
@@ -91,10 +107,42 @@ const worker = new Worker<{ jobId: string }>(
   },
 );
 
+const transferWorker = new Worker<{ jobId: string }>(
+  config.jobs.transferQueueName,
+  async (job: Job<{ jobId: string }>) =>
+    transferExecutor.executeTransfer(job.data.jobId),
+  {
+    connection,
+    concurrency: config.jobs.transferWorkerConcurrency,
+    lockDuration: 120_000,
+  },
+);
+transferWorker.on("failed", (job, error) => {
+  if (!job) return;
+  const final = job.attemptsMade >= (job.opts.attempts || 5);
+  if (final) void transferExecutor.markAttemptFailed(job.data.jobId, true);
+  console.error(
+    "[transfer-worker]",
+    job.data.jobId,
+    error instanceof Error ? error.message : "unknown error",
+  );
+});
+transferWorker.on("error", (error) =>
+  console.error("[transfer-worker]", error.name, error.message),
+);
+console.log(
+  `[transfer-worker] ready (concurrency=${config.jobs.transferWorkerConcurrency})`,
+);
+
 worker.on("failed", (job, error) => {
   if (!job) return;
   if (isStalledQueueJobError(error)) {
-    void recoverInterruptedProviderJobs(pool, recoveryQueue.queue, 1)
+    void recoverInterruptedProviderJobs(
+      pool,
+      recoveryQueue.queue,
+      1,
+      recoveryQueue.transferQueue,
+    )
       .then((recovered) => {
         if (!recovered.includes(job.data.jobId))
           return executor.markAttemptFailed(job.data.jobId, true);
@@ -102,7 +150,9 @@ worker.on("failed", (job, error) => {
       .catch(async (recoveryError) => {
         console.error(
           "[generation-worker] stalled job recovery failed:",
-          recoveryError instanceof Error ? recoveryError.message : "unknown error",
+          recoveryError instanceof Error
+            ? recoveryError.message
+            : "unknown error",
         );
         await executor.markAttemptFailed(job.data.jobId, true);
       });
@@ -179,8 +229,10 @@ async function shutdown() {
   closing = true;
   clearInterval(billingTimer);
   await worker.close(false);
+  await transferWorker.close(false);
   await compositionWorker.close(false);
   await recoveryQueue.queue.close();
+  await recoveryQueue.transferQueue.close();
   await recoveryQueue.connection.quit();
   await connection.quit();
   await pool.end();

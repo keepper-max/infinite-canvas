@@ -113,11 +113,20 @@ export async function artifactUrl(artifact: NonNullable<ManagedJob["artifacts"]>
     return (await platformRequest<{ url: string }>(`/api/asset-versions/${encodeURIComponent(artifact.assetVersionId)}/download`, { signal })).url;
 }
 
-export type ManagedJobEvent = { id: number; jobId: string; nodeId?: string; type: string; status: ManagedJob["status"]; progress: number; message?: string };
+export type ManagedJobEvent = {
+    id: number;
+    jobId: string;
+    nodeId?: string;
+    type: string;
+    status: ManagedJob["status"];
+    progress: number;
+    message?: string;
+    data?: { downloadedBytes?: number; totalBytes?: number };
+};
 
 export function subscribeProjectJobEvents(projectId: string, onEvent: (event: ManagedJobEvent) => void) {
     const source = new EventSource(`/api/projects/${encodeURIComponent(projectId)}/events`, { withCredentials: true });
-    const types = ["job.created", "job.queued", "job.started", "job.progress", "job.downloading", "job.persisting", "job.completed", "job.failed", "job.retrying", "job.cancel_requested", "job.cancelled"];
+    const types = ["job.created", "job.queued", "job.started", "job.progress", "job.downloading", "job.persisting", "job.completed", "job.failed", "job.retrying", "job.recovering", "job.cancel_requested", "job.cancelled"];
     const listener = (message: MessageEvent<string>) => {
         try {
             onEvent(JSON.parse(message.data) as ManagedJobEvent);

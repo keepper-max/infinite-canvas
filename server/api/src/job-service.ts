@@ -20,6 +20,9 @@ export type JobQueuePort = {
   remove(jobId: string): Promise<boolean>;
 };
 export type JobEventPublisher = (projectId: string) => Promise<unknown>;
+export type TransferQueuePort = {
+  add(jobId: string): Promise<void>;
+};
 
 export class JobService {
   constructor(
@@ -307,6 +310,7 @@ export class JobExecutor {
     private readonly config: JobConfig,
     private readonly publish: JobEventPublisher = async () => undefined,
     private readonly billing?: BillingService,
+    private readonly transferQueue?: TransferQueuePort,
   ) {}
   async execute(jobId: string, attempt: number, signal?: AbortSignal) {
     const row = (
@@ -470,39 +474,21 @@ export class JobExecutor {
         96,
         "正在转存生成结果",
       );
-      await this.pool.query(
-        "update generation_jobs set status='persisting',progress=98,updated_at=now() where id=$1",
-        [jobId],
-      );
-      const artifacts = await this.persistArtifacts(
+      if (
+        row.capability === "video" &&
+        activeProviderJobId &&
+        this.transferQueue
+      ) {
+        await this.transferQueue.add(jobId);
+        return { transferQueued: true };
+      }
+      return this.persistResult(
         row,
         result.artifacts || [],
+        attempt,
         providerSignal,
         activeProviderJobId ? String(activeProviderJobId) : undefined,
       );
-      const versionIds = artifacts
-        .map((artifact) => artifact.assetVersionId)
-        .filter(Boolean);
-      await this.pool.query(
-        "update generation_jobs set status='completed',progress=100,output_asset_version_ids=$2,finished_at=now(),heartbeat_at=now(),updated_at=now() where id=$1 and status <> 'cancel_requested'",
-        [jobId, JSON.stringify(versionIds)],
-      );
-      const current = (
-        await this.pool.query(
-          "select status from generation_jobs where id=$1",
-          [jobId],
-        )
-      ).rows[0];
-      if (current?.status === "cancel_requested")
-        return this.cancel(row, signal);
-      await this.pool.query(
-        "update job_attempts set status='completed',finished_at=now() where job_id=$1 and attempt=$2",
-        [jobId, attempt],
-      );
-      await this.event(row, "job.completed", "completed", 100, "生成完成", {
-        artifacts,
-      });
-      return { artifacts };
     } catch (error) {
       if (
         error instanceof ProviderError &&
@@ -533,6 +519,109 @@ export class JobExecutor {
     } finally {
       clearInterval(cancellationMonitor);
     }
+  }
+  async executeTransfer(jobId: string, signal?: AbortSignal) {
+    const row = (
+      await this.pool.query("select * from generation_jobs where id=$1", [
+        jobId,
+      ])
+    ).rows[0];
+    if (!row || ["completed", "failed", "cancelled"].includes(row.status))
+      return;
+    if (row.status === "cancel_requested") return this.cancel(row, signal);
+    if (!row.provider_job_id)
+      throw new ProviderError(
+        "PROVIDER_RESULT_MISSING",
+        "生成结果缺少任务编号",
+        true,
+      );
+    const cancellationController = new AbortController();
+    const transferSignal = signal
+      ? AbortSignal.any([signal, cancellationController.signal])
+      : cancellationController.signal;
+    const cancellationMonitor = setInterval(() => {
+      void this.pool
+        .query("select status from generation_jobs where id=$1", [jobId])
+        .then((result) => {
+          if (
+            result.rows[0]?.status === "cancel_requested" &&
+            !cancellationController.signal.aborted
+          )
+            cancellationController.abort(new Error("Job cancelled"));
+        })
+        .catch(() => undefined);
+    }, this.config.videoPollIntervalMs);
+    try {
+      const result = await this.provider.get(
+        String(row.provider_job_id),
+        transferSignal,
+      );
+      if (result.status !== "completed")
+        throw new ProviderError(
+          "PROVIDER_RESULT_PENDING",
+          "模型结果仍在准备中",
+          true,
+        );
+      return await this.persistResult(
+        row,
+        result.artifacts || [],
+        Number(row.attempt_count || 1),
+        transferSignal,
+        String(row.provider_job_id),
+      );
+    } catch (error) {
+      const current = await this.pool.query(
+        "select status from generation_jobs where id=$1",
+        [jobId],
+      );
+      if (current.rows[0]?.status === "cancel_requested")
+        return this.cancel(row, signal);
+      const mapped = mapProviderError(error);
+      await this.pool.query(
+        "update generation_jobs set retryable=$2,provider_error_code=$3,provider_error_sanitized=$4,user_error_code=$3,user_error_message=$5,heartbeat_at=now(),updated_at=now() where id=$1",
+        [jobId, mapped.retryable, mapped.code, mapped.details, mapped.message],
+      );
+      throw error;
+    } finally {
+      clearInterval(cancellationMonitor);
+    }
+  }
+
+  private async persistResult(
+    row: Record<string, unknown>,
+    providerArtifacts: ProviderArtifact[],
+    attempt: number,
+    signal?: AbortSignal,
+    providerJobId?: string,
+  ) {
+    const jobId = String(row.id);
+    const artifacts = await this.persistArtifacts(
+      row,
+      providerArtifacts,
+      signal,
+      providerJobId,
+    );
+    const versionIds = artifacts
+      .map((artifact) => artifact.assetVersionId)
+      .filter(Boolean);
+    await this.pool.query(
+      "update generation_jobs set status='completed',progress=100,output_asset_version_ids=$2,finished_at=now(),heartbeat_at=now(),updated_at=now() where id=$1 and status <> 'cancel_requested'",
+      [jobId, JSON.stringify(versionIds)],
+    );
+    const current = (
+      await this.pool.query("select status from generation_jobs where id=$1", [
+        jobId,
+      ])
+    ).rows[0];
+    if (current?.status === "cancel_requested") return this.cancel(row, signal);
+    await this.pool.query(
+      "update job_attempts set status='completed',finished_at=now() where job_id=$1 and attempt=$2",
+      [jobId, attempt],
+    );
+    await this.event(row, "job.completed", "completed", 100, "生成完成", {
+      artifacts,
+    });
+    return { artifacts };
   }
   async markAttemptFailed(jobId: string, final: boolean) {
     const row = (
@@ -585,10 +674,27 @@ export class JobExecutor {
     providerJobId?: string,
   ) {
     const results: Array<Record<string, unknown>> = [];
+    let persistenceStarted = false;
+    const markPersisting = async () => {
+      if (persistenceStarted) return;
+      persistenceStarted = true;
+      await this.pool.query(
+        "update generation_jobs set status='persisting',progress=99,heartbeat_at=now(),updated_at=now() where id=$1 and status <> 'cancel_requested'",
+        [row.id],
+      );
+      await this.event(
+        row,
+        "job.persisting",
+        "persisting",
+        99,
+        "正在写入资产库",
+      );
+    };
     for (let index = 0; index < artifacts.length; index++) {
       const artifact = artifacts[index]!;
       const trace = ((row.input_snapshot || {}) as GenerationInput).trace || {};
       if (artifact.kind === "text") {
+        await markPersisting();
         const id = randomUUID();
         await this.pool.query(
           "insert into job_artifacts(id,job_id,project_id,role,sort_order,mime_type,metadata) values($1,$2,$3,'output',$4,$5,$6)",
@@ -615,7 +721,7 @@ export class JobExecutor {
       const bytes =
         artifact.bytes ||
         (await downloadBytes(
-          artifact.url!,
+          artifact.url || "about:blank",
           signal,
           60_000,
           1_000,
@@ -628,10 +734,46 @@ export class JobExecutor {
                 return refreshed.artifacts?.[index]?.url;
               }
             : undefined,
+          providerJobId
+            ? (range, downloadSignal) =>
+                this.provider.fetchVideoContent(
+                  providerJobId,
+                  range,
+                  downloadSignal,
+                )
+            : undefined,
+          async (downloadedBytes, totalBytes) => {
+            const progress = totalBytes
+              ? Math.min(
+                  98,
+                  96 + Math.floor((downloadedBytes / totalBytes) * 2),
+                )
+              : 96;
+            const message = totalBytes
+              ? `正在下载 ${formatMegabytes(downloadedBytes)} / ${formatMegabytes(totalBytes)}`
+              : `正在下载 ${formatMegabytes(downloadedBytes)}`;
+            await this.pool.query(
+              "update generation_jobs set status='downloading',progress=$2,heartbeat_at=now(),updated_at=now() where id=$1 and status <> 'cancel_requested'",
+              [row.id, progress],
+            );
+            await this.event(
+              row,
+              "job.downloading",
+              "downloading",
+              progress,
+              message,
+              { downloadedBytes, totalBytes },
+            );
+          },
+          30_000,
+          64 * 1024,
+          4 * 1024 * 1024,
+          !artifact.url,
         ));
       const sha256 = createHash("sha256").update(bytes).digest("hex");
       const extension = extensionFor(artifact.mimeType);
       const storageKey = `projects/${row.project_id}/generated/${row.id}/${index}.${extension}`;
+      await markPersisting();
       await this.storage.put(storageKey, bytes, artifact.mimeType, sha256);
       const client = await this.pool.connect();
       try {
@@ -871,26 +1013,59 @@ export async function downloadBytes(
   idleMs = 60_000,
   reconnectDelayMs = 1_000,
   refreshUrl?: () => Promise<string | undefined>,
+  alternateFetch?: (range: string, signal?: AbortSignal) => Promise<Response>,
+  onProgress?: (downloadedBytes: number, totalBytes?: number) => Promise<void>,
+  lowSpeedWindowMs = 30_000,
+  minimumBytesPerSecond = 64 * 1024,
+  rangeChunkBytes = 4 * 1024 * 1024,
+  preferAlternate = false,
 ) {
   let currentUrl = url;
+  const chunks: Uint8Array[] = [];
+  let size = 0;
+  let totalBytes: number | undefined;
+  let useAlternate = preferAlternate && Boolean(alternateFetch);
   for (;;) {
+    if (totalBytes !== undefined && size >= totalBytes) break;
     if (signal?.aborted) throw signal.reason;
-    const idleController = new AbortController();
+    const requestController = new AbortController();
     const requestSignal = signal
-      ? AbortSignal.any([signal, idleController.signal])
-      : idleController.signal;
+      ? AbortSignal.any([signal, requestController.signal])
+      : requestController.signal;
     let idle = false;
+    let slow = false;
     let idleTimer: ReturnType<typeof setTimeout> | undefined;
+    let speedTimer: ReturnType<typeof setInterval> | undefined;
+    let windowStartedAt = Date.now();
+    let windowBytes = 0;
     const resetIdleTimer = () => {
       clearTimeout(idleTimer);
       idleTimer = setTimeout(() => {
         idle = true;
-        idleController.abort();
+        requestController.abort();
       }, idleMs);
     };
     try {
       resetIdleTimer();
-      const response = await fetch(currentUrl, { signal: requestSignal });
+      speedTimer = setInterval(() => {
+        const elapsed = Date.now() - windowStartedAt;
+        if (elapsed < lowSpeedWindowMs) return;
+        if ((windowBytes * 1_000) / elapsed < minimumBytesPerSecond) {
+          slow = true;
+          requestController.abort();
+          return;
+        }
+        windowStartedAt = Date.now();
+        windowBytes = 0;
+      }, 1_000);
+      const range = `bytes=${size}-${size + rangeChunkBytes - 1}`;
+      const response =
+        useAlternate && alternateFetch
+          ? await alternateFetch(range, requestSignal)
+          : await fetch(currentUrl, {
+              signal: requestSignal,
+              headers: { Range: range },
+            });
       if (!response.ok)
         throw new ProviderError(
           "ARTIFACT_DOWNLOAD_FAILED",
@@ -898,33 +1073,64 @@ export async function downloadBytes(
           true,
           { status: response.status },
         );
-      if (!response.body) return new Uint8Array(await response.arrayBuffer());
-      const chunks: Uint8Array[] = [];
-      let size = 0;
+      if (size > 0 && response.status !== 206)
+        throw new ProviderError(
+          "ARTIFACT_DOWNLOAD_FAILED",
+          "生成结果不支持断点续传",
+          true,
+          { status: response.status },
+        );
+      const contentRange = response.headers.get("content-range");
+      const rangeTotal = contentRange?.match(/\/(\d+)$/)?.[1];
+      const contentLengthHeader = response.headers.get("content-length");
+      const contentLength = contentLengthHeader
+        ? Number(contentLengthHeader)
+        : Number.NaN;
+      if (rangeTotal) totalBytes = Number(rangeTotal);
+      else if (response.status === 200 && Number.isFinite(contentLength))
+        totalBytes = contentLength;
+      if (!response.body) {
+        const value = new Uint8Array(await response.arrayBuffer());
+        chunks.push(value);
+        size += value.byteLength;
+        await onProgress?.(size, totalBytes);
+        continue;
+      }
+      const target = totalBytes
+        ? Math.min(totalBytes, size + rangeChunkBytes)
+        : size + rangeChunkBytes;
       const reader = response.body.getReader();
+      let ended = false;
       for (;;) {
         const { done, value } = await reader.read();
-        if (done) break;
+        if (done) {
+          ended = true;
+          break;
+        }
         if (value?.byteLength) {
-          chunks.push(value);
-          size += value.byteLength;
+          const remaining = target - size;
+          const accepted =
+            value.byteLength > remaining ? value.subarray(0, remaining) : value;
+          chunks.push(accepted);
+          size += accepted.byteLength;
+          windowBytes += accepted.byteLength;
           resetIdleTimer();
+          if (size >= target) {
+            await reader.cancel().catch(() => undefined);
+            break;
+          }
         }
       }
-      const bytes = new Uint8Array(size);
-      let offset = 0;
-      for (const chunk of chunks) {
-        bytes.set(chunk, offset);
-        offset += chunk.byteLength;
-      }
-      return bytes;
+      if (ended && totalBytes === undefined) totalBytes = size;
+      await onProgress?.(size, totalBytes);
     } catch (error) {
       if (signal?.aborted) throw error;
       const downloadFailed =
         error instanceof ProviderError &&
         error.code === "ARTIFACT_DOWNLOAD_FAILED";
-      if (!idle && !(error instanceof TypeError) && !downloadFailed)
+      if (!idle && !slow && !(error instanceof TypeError) && !downloadFailed)
         throw error;
+      useAlternate = alternateFetch ? !useAlternate : false;
       if (refreshUrl) {
         try {
           currentUrl = (await refreshUrl()) || currentUrl;
@@ -935,8 +1141,20 @@ export async function downloadBytes(
       await delay(reconnectDelayMs, signal);
     } finally {
       clearTimeout(idleTimer);
+      clearInterval(speedTimer);
     }
   }
+  const bytes = new Uint8Array(size);
+  let offset = 0;
+  for (const chunk of chunks) {
+    bytes.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  return bytes;
+}
+
+function formatMegabytes(bytes: number) {
+  return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
 }
 function extensionFor(mime: string) {
   if (mime.includes("png")) return "png";

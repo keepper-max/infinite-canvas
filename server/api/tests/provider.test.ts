@@ -277,17 +277,13 @@ test("video provider emits documented frame and multimodal reference shapes", as
   }
 });
 
-test("completed video without inline URL downloads canonical content endpoint", async () => {
+test("completed video without inline URL defers canonical content download", async () => {
   const originalFetch = globalThis.fetch;
   const urls: string[] = [];
   globalThis.fetch = async (input) => {
     const url = String(input);
     urls.push(url);
-    return url.includes("format=binary")
-      ? new Response(new Uint8Array([1, 2, 3]), {
-          headers: { "content-type": "video/mp4" },
-        })
-      : Response.json({ id: "video-1", status: "completed" });
+    return Response.json({ id: "video-1", status: "completed" });
   };
   try {
     const provider = new Token360Provider(
@@ -299,11 +295,9 @@ test("completed video without inline URL downloads canonical content endpoint", 
       1_000,
     );
     const result = await provider.get("video-1");
-    assert.equal(result.artifacts?.[0]?.bytes?.byteLength, 3);
-    assert.match(
-      urls[1] || "",
-      /\/v1\/videos\/video-1\/content\?format=binary$/,
-    );
+    assert.equal(result.artifacts?.[0]?.bytes, undefined);
+    assert.equal(result.artifacts?.[0]?.url, undefined);
+    assert.equal(urls.length, 1);
   } finally {
     globalThis.fetch = originalFetch;
   }

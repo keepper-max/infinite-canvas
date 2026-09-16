@@ -97,6 +97,53 @@ test("artifact download refreshes an expired provider URL before reconnecting", 
   }
 });
 
+test("artifact download resumes with Range and switches route after sustained low speed", async () => {
+  const originalFetch = globalThis.fetch;
+  const directRanges: string[] = [];
+  const alternateRanges: string[] = [];
+  globalThis.fetch = async (_input, init) => {
+    directRanges.push(String(new Headers(init?.headers).get("range")));
+    return new Response(
+      new ReadableStream({
+        start(controller) {
+          controller.enqueue(new Uint8Array([1, 2]));
+          init?.signal?.addEventListener(
+            "abort",
+            () => controller.error(init.signal?.reason),
+            { once: true },
+          );
+        },
+      }),
+      { status: 206, headers: { "content-range": "bytes 0-3/4" } },
+    );
+  };
+  try {
+    const result = await downloadBytes(
+      "https://media.example/video.mp4",
+      undefined,
+      1_000,
+      0,
+      undefined,
+      async (range) => {
+        alternateRanges.push(range);
+        return new Response(new Uint8Array([3, 4]), {
+          status: 206,
+          headers: { "content-range": "bytes 2-3/4" },
+        });
+      },
+      undefined,
+      10,
+      1_024,
+      4,
+    );
+    assert.deepEqual([...result], [1, 2, 3, 4]);
+    assert.deepEqual(directRanges, ["bytes=0-3"]);
+    assert.deepEqual(alternateRanges, ["bytes=2-5"]);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
 test("job ID and billing trace use distinct SQL parameters", async () => {
   let insertSql = "";
   let insertValues: unknown[] = [];
@@ -309,6 +356,62 @@ test("active provider jobs are not queued twice during recovery", async () => {
 
   assert.deepEqual(recovered, []);
   assert.equal(added, false);
+});
+
+test("interrupted downloads recover in the transfer queue without resubmitting generation", async () => {
+  const calls: string[] = [];
+  const pool = {
+    async query(sql: string) {
+      calls.push(sql);
+      if (sql.includes("from generation_jobs"))
+        return {
+          rows: [
+            {
+              id: "job-transfer-1",
+              project_id: "project-1",
+              node_key: "node-transfer-1",
+              status: "downloading",
+              progress: 97,
+            },
+          ],
+          rowCount: 1,
+        };
+      if (sql.includes("from job_artifacts")) return { rows: [], rowCount: 0 };
+      return { rows: [], rowCount: 1 };
+    },
+  };
+  let generationQueued = false;
+  const transferJobs: Array<{ name: string; data: { jobId: string } }> = [];
+  const recovered = await recoverInterruptedProviderJobs(
+    pool as never,
+    {
+      async getJob() {
+        return undefined;
+      },
+      async add() {
+        generationQueued = true;
+      },
+    },
+    1,
+    {
+      async getJob() {
+        return undefined;
+      },
+      async add(name, data) {
+        transferJobs.push({ name, data });
+      },
+    },
+  );
+
+  assert.deepEqual(recovered, ["job-transfer-1"]);
+  assert.equal(generationQueued, false);
+  assert.deepEqual(transferJobs, [
+    { name: "transfer", data: { jobId: "job-transfer-1" } },
+  ]);
+  assert.equal(
+    calls.some((sql) => sql.includes("status='downloading'")),
+    true,
+  );
 });
 
 test("resuming a provider job does not depend on the current model catalog", async () => {

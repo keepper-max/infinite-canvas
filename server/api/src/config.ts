@@ -16,6 +16,8 @@ export type OperationsConfig = { adminEmails: string[] };
 export type JobConfig = {
   redisUrl: string;
   queueName: string;
+  transferQueueName: string;
+  transferWorkerConcurrency: number;
   compositionQueueName: string;
   compositionWorkerConcurrency: number;
   ffmpegPath: string;
@@ -56,6 +58,15 @@ export function readConfig(env: NodeJS.ProcessEnv = process.env): ApiConfig {
   const jobs = {
     redisUrl: env.REDIS_URL?.trim() || "redis://redis:6379",
     queueName: env.JOB_QUEUE_NAME?.trim() || "generation-jobs",
+    transferQueueName:
+      env.TRANSFER_QUEUE_NAME?.trim() || "generation-transfers",
+    transferWorkerConcurrency: readInteger(
+      env.TRANSFER_WORKER_CONCURRENCY,
+      4,
+      1,
+      16,
+      "TRANSFER_WORKER_CONCURRENCY",
+    ),
     compositionQueueName:
       env.COMPOSITION_QUEUE_NAME?.trim() || "composition-jobs",
     compositionWorkerConcurrency: readInteger(

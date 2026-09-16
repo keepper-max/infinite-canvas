@@ -508,6 +508,7 @@ function InfiniteCanvasPage() {
                                       ...(node.type === CanvasNodeType.Video ? { videoTaskId: event.jobId, videoTaskProvider: "managed" as const } : {}),
                                       status: event.status === "completed" && node.metadata?.content ? NODE_STATUS_SUCCESS : event.status === "failed" || event.status === "cancelled" ? NODE_STATUS_ERROR : NODE_STATUS_LOADING,
                                       errorDetails: event.status === "failed" ? event.message : undefined,
+                                      jobStatusMessage: event.status === "completed" ? undefined : event.message,
                                   },
                               }
                             : node,

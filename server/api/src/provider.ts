@@ -207,11 +207,6 @@ export class Token360Provider {
           })),
           usage: readUsage(payload),
         };
-      const content = await this.raw(
-        `/v1/videos/${encodeURIComponent(providerJobId)}/content?format=binary`,
-        { method: "GET", signal },
-      );
-      if (!content.ok) await this.throwResponse(content);
       return {
         providerJobId,
         status,
@@ -219,8 +214,7 @@ export class Token360Provider {
         artifacts: [
           {
             kind: "video",
-            mimeType: content.headers.get("content-type") || "video/mp4",
-            bytes: new Uint8Array(await content.arrayBuffer()),
+            mimeType: "video/mp4",
           },
         ],
         usage: readUsage(payload),
@@ -248,6 +242,21 @@ export class Token360Provider {
     );
     if (!response.ok && response.status !== 404 && response.status !== 405)
       await this.throwResponse(response);
+  }
+
+  async fetchVideoContent(
+    providerJobId: string,
+    range: string,
+    signal?: AbortSignal,
+  ) {
+    return this.raw(
+      `/v1/videos/${encodeURIComponent(providerJobId)}/content?format=binary`,
+      {
+        method: "GET",
+        signal,
+        headers: { Accept: "application/octet-stream", Range: range },
+      },
+    );
   }
 
   private json(
