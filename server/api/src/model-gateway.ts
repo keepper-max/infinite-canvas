@@ -146,8 +146,23 @@ export class ModelGateway {
       throw new Error(`RunningHub model registry returned ${response.status}`);
     const payload = (await response.json()) as unknown;
     const candidates = runningHubCatalogItems(payload);
+    return this.replaceRunningHubCatalog("runninghub", candidates);
+  }
+
+  async refreshRunningHubGlobalCatalog() {
+    return this.replaceRunningHubCatalog(
+      "runninghub_global",
+      runningHubGlobalCatalogItems(),
+    );
+  }
+
+  private async replaceRunningHubCatalog(
+    providerId: "runninghub" | "runninghub_global",
+    candidates: Array<Record<string, unknown>>,
+  ) {
     await this.pool.query(
-      "update model_catalog set discovered=false,healthy=false,checked_at=now(),updated_at=now() where provider_id='runninghub'",
+      "update model_catalog set discovered=false,healthy=false,checked_at=now(),updated_at=now() where provider_id=$1",
+      [providerId],
     );
     let imported = 0;
     for (const candidate of candidates) {
@@ -157,7 +172,7 @@ export class ModelGateway {
       const capability =
         profile?.capability ||
         String(candidate.output_type || "unsupported").toLowerCase();
-      const id = `runninghub.${capability}.${createSlug(endpoint)}`.slice(
+      const id = `${providerId}.${capability}.${createSlug(endpoint)}`.slice(
         0,
         190,
       );
@@ -165,11 +180,19 @@ export class ModelGateway {
       const metadata = sanitizeRunningHubEntry(candidate);
       await this.pool.query(
         `insert into model_catalog(id,display_name,capability,upstream_model,provider_id,discovered,enabled,healthy,catalog_metadata,discovered_at,checked_at)
-         values($1,$2,$3,$4,'runninghub',true,$6,true,$5,now(),now())
+         values($1,$2,$3,$4,$5,true,$7,true,$6,now(),now())
          on conflict(id) do update set display_name=excluded.display_name,capability=excluded.capability,
-          upstream_model=excluded.upstream_model,provider_id='runninghub',catalog_metadata=excluded.catalog_metadata,
+          upstream_model=excluded.upstream_model,provider_id=excluded.provider_id,catalog_metadata=excluded.catalog_metadata,
           discovered=true,enabled=excluded.enabled,healthy=true,discovered_at=now(),checked_at=now(),updated_at=now()`,
-        [id, displayName, capability, endpoint, metadata, Boolean(profile)],
+        [
+          id,
+          displayName,
+          capability,
+          endpoint,
+          providerId,
+          metadata,
+          Boolean(profile),
+        ],
       );
       if (profile) await this.upsertCatalogProfile(id, profile);
       imported += 1;
@@ -332,7 +355,8 @@ export class ModelGateway {
       providerId: row.provider_id,
       upstreamParameters,
       providerMetadata:
-        row.provider_id === "runninghub" && isRecord(row.catalog_metadata)
+        ["runninghub", "runninghub_global"].includes(row.provider_id) &&
+        isRecord(row.catalog_metadata)
           ? row.catalog_metadata
           : undefined,
     };
@@ -834,6 +858,68 @@ const RUNNINGHUB_SUPPLEMENTAL_MODELS: Array<Record<string, unknown>> = [
     ],
   },
 ];
+
+const RUNNINGHUB_GLOBAL_IMAGE_PARAMS = [
+  {
+    fieldKey: "prompt",
+    type: "STRING",
+    required: true,
+    description: "图片内容与编辑要求",
+    maxLength: 20_000,
+  },
+  {
+    fieldKey: "size",
+    type: "STRING",
+    description: "由画布尺寸转换为画幅与分辨率",
+  },
+  {
+    fieldKey: "quality",
+    type: "LIST",
+    options: ["low", "medium", "high", "max"],
+  },
+  {
+    fieldKey: "background",
+    type: "LIST",
+    options: ["transparent"],
+  },
+] satisfies Array<Record<string, unknown>>;
+
+const RUNNINGHUB_GLOBAL_MODELS: Array<Record<string, unknown>> = [
+  {
+    class_name: "GptImage25SunburstTextToImageToken",
+    display_name: "GPT Image 2.5 Sunburst · 文生图",
+    name_cn: "GPT Image 2.5 Sunburst 文生图",
+    name_en: "GPT Image 2.5 Sunburst Text to Image Stable Token",
+    endpoint: "rhart-image-g-2.5-official-token/sunburst/text-to-image",
+    output_type: "image",
+    category: "RunningHub Global/GPT Image",
+    params: RUNNINGHUB_GLOBAL_IMAGE_PARAMS,
+  },
+  {
+    class_name: "GptImage25SunburstImageToImageToken",
+    display_name: "GPT Image 2.5 Sunburst · 参考图编辑",
+    name_cn: "GPT Image 2.5 Sunburst 参考图编辑",
+    name_en: "GPT Image 2.5 Sunburst Image to Image Stable Token",
+    endpoint: "rhart-image-g-2.5-official-token/sunburst/image-to-image",
+    output_type: "image",
+    category: "RunningHub Global/GPT Image",
+    params: [
+      ...RUNNINGHUB_GLOBAL_IMAGE_PARAMS,
+      {
+        fieldKey: "imageUrls",
+        type: "IMAGE",
+        required: true,
+        multipleInputs: true,
+        maxInputNum: 16,
+        description: "1–16 张参考图片",
+      },
+    ],
+  },
+];
+
+export function runningHubGlobalCatalogItems() {
+  return RUNNINGHUB_GLOBAL_MODELS;
+}
 
 function normalizeCapability(value: unknown): Capability | null {
   const text = String(value || "").toLowerCase();

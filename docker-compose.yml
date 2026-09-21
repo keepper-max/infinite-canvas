@@ -54,6 +54,8 @@ services:
       RH_API_KEY: ${RH_API_KEY:-}
       RH_API_BASE_URL: ${RH_API_BASE_URL:-https://www.runninghub.cn/openapi/v2}
       RH_MODEL_REGISTRY_URL: ${RH_MODEL_REGISTRY_URL:-https://raw.githubusercontent.com/HM-RunningHub/ComfyUI_RH_OpenAPI/main/developer-kit/model-registry.public.json}
+      RH_GLOBAL_API_KEY: ${RH_GLOBAL_API_KEY:-}
+      RH_GLOBAL_API_BASE_URL: ${RH_GLOBAL_API_BASE_URL:-https://www.runninghub.ai/openapi/v2}
     depends_on:
       db:
         condition: service_healthy
@@ -109,6 +111,8 @@ services:
       RH_API_KEY: ${RH_API_KEY:-}
       RH_API_BASE_URL: ${RH_API_BASE_URL:-https://www.runninghub.cn/openapi/v2}
       RH_MODEL_REGISTRY_URL: ${RH_MODEL_REGISTRY_URL:-https://raw.githubusercontent.com/HM-RunningHub/ComfyUI_RH_OpenAPI/main/developer-kit/model-registry.public.json}
+      RH_GLOBAL_API_KEY: ${RH_GLOBAL_API_KEY:-}
+      RH_GLOBAL_API_BASE_URL: ${RH_GLOBAL_API_BASE_URL:-https://www.runninghub.ai/openapi/v2}
     depends_on:
       db:
         condition: service_healthy

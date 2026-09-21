@@ -56,6 +56,7 @@ export class RunningHubProvider implements GenerationProvider {
       request.references || [],
       requestSignal,
     );
+    normalizeRunningHubImageParameters(request.upstreamModel, body);
     if (
       request.upstreamModel.endsWith(
         "bytedance/seedance-2.5-token/multimodal-video",
@@ -333,6 +334,41 @@ function registryParameters(value: unknown): RegistryParameter[] {
           : [];
       })
     : [];
+}
+
+function normalizeRunningHubImageParameters(
+  upstreamModel: string,
+  body: Record<string, unknown>,
+) {
+  if (!upstreamModel.startsWith("rhart-image-g-2.5-official-token/")) return;
+  const match = String(body.size || "").match(/^(\d+)x(\d+)$/i);
+  delete body.size;
+  if (!match) return;
+  const width = Number(match[1]);
+  const height = Number(match[2]);
+  if (!width || !height) return;
+  const supported = [
+    "1:1",
+    "2:3",
+    "3:2",
+    "4:3",
+    "3:4",
+    "16:9",
+    "9:16",
+    "21:9",
+    "9:21",
+  ];
+  const ratio = width / height;
+  body.aspectRatio = supported.reduce((best, candidate) => {
+    const [candidateWidth, candidateHeight] = candidate.split(":").map(Number);
+    const [bestWidth, bestHeight] = best.split(":").map(Number);
+    return Math.abs(candidateWidth! / candidateHeight! - ratio) <
+      Math.abs(bestWidth! / bestHeight! - ratio)
+      ? candidate
+      : best;
+  }, "1:1");
+  const longEdge = Math.max(width, height);
+  body.resolution = longEdge > 3_000 ? "4k" : longEdge > 2_200 ? "2k" : "1k";
 }
 
 function findPromptField(parameters: RegistryParameter[]) {

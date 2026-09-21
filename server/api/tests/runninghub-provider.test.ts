@@ -4,6 +4,7 @@ import test from "node:test";
 import {
   runningHubCatalogItems,
   runningHubDisplayName,
+  runningHubGlobalCatalogItems,
   runningHubModelProfile,
 } from "../src/model-gateway.js";
 import {
@@ -32,6 +33,24 @@ test("RunningHub supplements Seedance 2.5 standard endpoints until the public re
   assert.equal(multimodalProfile?.limits.maxImages, 30);
   assert.equal(multimodalProfile?.limits.maxVideos, 10);
   assert.equal(multimodalProfile?.limits.maxAudios, 10);
+});
+
+test("RunningHub global catalog exposes GPT Image 2.5 text and reference modes", () => {
+  const models = runningHubGlobalCatalogItems();
+  assert.equal(models.length, 2);
+  const text = models.find((item) =>
+    String(item.endpoint).endsWith("sunburst/text-to-image"),
+  );
+  const image = models.find((item) =>
+    String(item.endpoint).endsWith("sunburst/image-to-image"),
+  );
+  assert.deepEqual(runningHubModelProfile(text!)?.modes, ["t2i"]);
+  const profile = runningHubModelProfile(image!);
+  assert.deepEqual(profile?.modes, ["i2i"]);
+  assert.deepEqual(profile?.requiredParametersByMode, {
+    i2i: ["references"],
+  });
+  assert.equal(profile?.limits.maxImages, 16);
 });
 
 test("RunningHub terminal usage normalizes actual cost, tokens and billing seconds", () => {
@@ -197,6 +216,63 @@ test("RunningHub provider uploads media, submits exact endpoint and reads async 
     assert.equal(result.artifacts?.[0]?.kind, "video");
     assert.equal(result.usage?.third_party_consume_money, "0.25");
     assert.equal(result.usage?.total_tokens, "1200");
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("RunningHub global GPT Image converts canvas size into API ratio and resolution", async () => {
+  const originalFetch = globalThis.fetch;
+  let submitted: Record<string, unknown> | undefined;
+  globalThis.fetch = async (input, init) => {
+    const url = String(input);
+    if (
+      url.endsWith("/rhart-image-g-2.5-official-token/sunburst/text-to-image")
+    ) {
+      submitted = JSON.parse(String(init?.body));
+      return Response.json({ taskId: "rh-global-task-1" });
+    }
+    throw new Error(`unexpected request: ${url}`);
+  };
+  try {
+    const provider = new RunningHubProvider(
+      {
+        baseUrl: "https://www.runninghub.ai/openapi/v2",
+        apiKey: "test-only-global",
+        catalogUrl: "",
+      },
+      0,
+    );
+    const created = await provider.create({
+      modelId: "runninghub_global.image.gpt-image-2-5",
+      upstreamModel: "rhart-image-g-2.5-official-token/sunburst/text-to-image",
+      providerId: "runninghub_global",
+      capability: "image",
+      mode: "t2i",
+      prompt: "高端产品海报",
+      parameters: {},
+      upstreamParameters: {
+        size: "2688x1152",
+        quality: "high",
+        background: "transparent",
+      },
+      providerMetadata: {
+        params: [
+          { fieldKey: "prompt", type: "STRING", required: true },
+          { fieldKey: "size", type: "STRING" },
+          { fieldKey: "quality", type: "LIST" },
+          { fieldKey: "background", type: "LIST" },
+        ],
+      },
+    });
+    assert.equal(created.providerJobId, "rh-global-task-1");
+    assert.deepEqual(submitted, {
+      prompt: "高端产品海报",
+      aspectRatio: "21:9",
+      resolution: "2k",
+      quality: "high",
+      background: "transparent",
+    });
   } finally {
     globalThis.fetch = originalFetch;
   }

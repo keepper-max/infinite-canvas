@@ -359,3 +359,14 @@
 - `ProviderResult` 已有 `usage` 字段，JobExecutor 也会把终态 usage 写入 `billing_meter_usage`；缺口集中在 RunningHub Provider 未解析 usage，以及 BillingService 对非 Token360 一律标记 unavailable。
 - 视频转存是独立队列，恢复时会再次查询终态；为避免崩溃窗口丢用量，普通执行和转存执行都应记录海马云 usage，最终在任务状态写成 completed/failed/cancelled 后幂等落一条 `generation_usage`。
 - 现有 `generation_usage` 已能承载 Token、视频秒数、实际金额、Provider 请求 ID 和原始 usage JSON，无需修改已上线表结构；海马云未返回币种时保留 `currency=null`，管理后台应显示“原始单位”而不是误报“金额未返回”。
+
+# 2026-09-21 海马云国际区 GPT Image 2.5 初始发现
+
+- 用户截图确认国际站模型页面 ID 为 `213310000000800375`，接口路径为 `/rhart-image-g-2.5-official-token/sunburst/text-to-image`，模型名为 `gpt-image-2.5/sunburst/text-to-image/stable-token`。
+- RunningHub 国际站采用 `https://www.runninghub.ai/openapi/v2`，同样通过 Bearer 鉴权提交任务并用 `/query` 查询异步结果；国际站凭证必须与中国区 `RH_API_KEY` 隔离。
+- 官方国际站模型目录还包含 `gpt-image-2.5/sunburst/image-to-image/stable-token`，支持参考图输入；具体字段必须从模型详情契约核实，不能沿用旧版 GPT Image 2 参数猜测。
+- 推荐内部使用独立 Provider 标识承载国际区密钥、基址、任务和消耗归属，管理员界面仍归入“海马云”并按中国区/国际区分组。
+- 用户提供的海外 Key 文件仅作为配置来源；检查和使用过程中不得输出密钥正文或把密钥加入 Git。
+- 国际区当前只引入已核实的两条 GPT Image 2.5 endpoint，不复用中国区动态注册表，避免把区域专属路由误导入另一套凭证。
+- 文生图和参考图编辑共享提示词、画幅、分辨率、质量和透明背景语义；参考图编辑最多接受 16 张图片。
+- 现有消费表可以复用；账单唯一标识必须包含 Provider 区域前缀，否则中外站相同 `taskId` 存在冲突风险。

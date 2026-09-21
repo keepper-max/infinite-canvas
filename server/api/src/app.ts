@@ -308,9 +308,9 @@ export function createApp(
 
   app.get("/api/admin/models", async (context) => {
     const user = await requireUser(context.req.raw, repository, config);
-    const provider = managedProviderId.optional().parse(
-      context.req.query("provider") || undefined,
-    );
+    const provider = managedProviderId
+      .optional()
+      .parse(context.req.query("provider") || undefined);
     return context.json(
       success(context, {
         models: await requireOperationsService(operationsService).adminModels(
@@ -1191,7 +1191,11 @@ const adminStatusInput = z
   })
   .strict();
 const adminRoleInput = z.object({ isAdmin: z.boolean() }).strict();
-const managedProviderId = z.enum(["token360", "runninghub"]);
+const managedProviderId = z.enum([
+  "token360",
+  "runninghub",
+  "runninghub_global",
+]);
 const managedProviderInput = z
   .object({ providerId: managedProviderId })
   .strict();

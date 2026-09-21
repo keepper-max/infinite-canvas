@@ -47,6 +47,7 @@ await gateway
       error instanceof Error ? error.message : "unknown error",
     ),
   );
+await gateway.refreshRunningHubGlobalCatalog();
 const provider = new ProviderRouter(
   new Map<string, GenerationProvider>([
     [
@@ -56,6 +57,13 @@ const provider = new ProviderRouter(
     [
       "runninghub",
       new RunningHubProvider(config.runningHub, config.jobs.submitTimeoutMs),
+    ],
+    [
+      "runninghub_global",
+      new RunningHubProvider(
+        config.runningHubGlobal,
+        config.jobs.submitTimeoutMs,
+      ),
     ],
   ]),
 );

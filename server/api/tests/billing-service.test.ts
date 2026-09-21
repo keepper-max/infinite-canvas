@@ -279,3 +279,46 @@ test("RunningHub terminal usage is settled directly without Token360 reconciliat
   assert.equal(insert.values[16], "rh-task-1");
   assert.match(calls.at(-1)?.sql || "", /billing_status='settled'/);
 });
+
+test("RunningHub global usage keeps a region-specific billing identity", async () => {
+  const calls: Array<{ sql: string; values?: unknown[] }> = [];
+  const pool = {
+    async query(sql: string, values?: unknown[]) {
+      calls.push({ sql, values });
+      if (sql.startsWith("select * from generation_jobs"))
+        return {
+          rows: [
+            {
+              id: "job-rh-global-1",
+              project_id: "project-1",
+              created_by: "user-1",
+              provider: "runninghub_global",
+              provider_job_id: "rh-task-1",
+              model_id: "runninghub_global.image.gpt-image-2-5",
+              capability: "image",
+              billing_status: "pending",
+              parameters: {},
+              billing_meter_usage: {
+                provider_request_id: "rh-task-1",
+                total_tokens: "1234",
+              },
+            },
+          ],
+          rowCount: 1,
+        };
+      return { rows: [], rowCount: 1 };
+    },
+  };
+  const result = await new BillingService(
+    pool as never,
+    config,
+  ).finalizeProviderUsage("job-rh-global-1");
+  assert.deepEqual(result, {
+    status: "settled",
+    requestId: "runninghub_global:rh-task-1",
+  });
+  const insert = calls.find(({ sql }) =>
+    sql.includes("insert into generation_usage"),
+  );
+  assert.equal(insert?.values?.[3], "runninghub_global:rh-task-1");
+});

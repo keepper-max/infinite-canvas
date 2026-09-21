@@ -43,6 +43,7 @@ await modelGateway
       error instanceof Error ? error.message : "unknown error",
     ),
   );
+await modelGateway.refreshRunningHubGlobalCatalog();
 const jobQueue = createQueue(config.jobs);
 const jobService = new JobService(
   pool,
@@ -66,6 +67,7 @@ const operationsService = new OperationsService(
   {
     token360: Boolean(config.provider.apiKey),
     runninghub: Boolean(config.runningHub.apiKey),
+    runninghub_global: Boolean(config.runningHubGlobal.apiKey),
   },
 );
 const textWorkbenchService = new TextWorkbenchService(pool, jobService);

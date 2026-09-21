@@ -9,6 +9,7 @@ export type ApiConfig = {
   jobs: JobConfig;
   provider: ProviderConfig;
   runningHub: RunningHubConfig;
+  runningHubGlobal: RunningHubConfig;
   operations: OperationsConfig;
 };
 
@@ -135,6 +136,13 @@ export function readConfig(env: NodeJS.ProcessEnv = process.env): ApiConfig {
       env.RH_MODEL_REGISTRY_URL?.trim() ||
       "https://raw.githubusercontent.com/HM-RunningHub/ComfyUI_RH_OpenAPI/main/developer-kit/model-registry.public.json",
   };
+  const runningHubGlobal = {
+    baseUrl: (
+      env.RH_GLOBAL_API_BASE_URL || "https://www.runninghub.ai/openapi/v2"
+    ).replace(/\/+$/, ""),
+    apiKey: env.RH_GLOBAL_API_KEY?.trim() || "",
+    catalogUrl: "",
+  };
   const operations = {
     adminEmails: (env.ADMIN_EMAILS || "")
       .split(",")
@@ -155,6 +163,7 @@ export function readConfig(env: NodeJS.ProcessEnv = process.env): ApiConfig {
     jobs,
     provider,
     runningHub,
+    runningHubGlobal,
     operations,
   };
 }

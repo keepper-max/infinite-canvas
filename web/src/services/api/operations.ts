@@ -21,7 +21,7 @@ export type AdminOverview = {
 };
 export type AdminFailure = { id: string; kind: string; status: string; error: { code?: string; message: string; retryable: boolean }; updatedAt: string };
 export type AdminModel = { id: string; displayName: string; capability: string; providerId: string; enabled: boolean; healthy: boolean; discovered: boolean; checkedAt?: string };
-export type AdminProvider = { id: "token360" | "runninghub"; displayName: string; enabled: boolean; configured: boolean; updatedAt?: string };
+export type AdminProvider = { id: "token360" | "runninghub" | "runninghub_global"; displayName: string; enabled: boolean; configured: boolean; updatedAt?: string };
 export type AdminProviders = { activeProviderId: AdminProvider["id"]; providers: AdminProvider[] };
 export type AdminUser = {
     id: string;

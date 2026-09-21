@@ -45,7 +45,7 @@ export class BillingService {
     );
     const job = result.rows[0];
     if (!job) return { status: "missing" };
-    if (job.provider !== "runninghub")
+    if (!isRunningHubProvider(job.provider))
       return { status: String(job.billing_status || "pending") };
     return this.settleRunningHub(job);
   }
@@ -84,7 +84,7 @@ export class BillingService {
         return { status: String(existing.rows[0].billing_status) };
       throw new DomainError("BILLING_JOB_NOT_FOUND", "找不到可对账任务", 404);
     }
-    if (job.provider === "runninghub") return this.settleRunningHub(job);
+    if (isRunningHubProvider(job.provider)) return this.settleRunningHub(job);
     if (job.provider !== "token360") {
       await this.finishUnavailable(jobId, "外部渠道无法进行 Token360 对账");
       return { status: "unavailable" };
@@ -251,7 +251,7 @@ export class BillingService {
       stringValue(usage.provider_request_id) ||
       stringValue(job.provider_job_id) ||
       String(job.id);
-    const billingRequestId = `runninghub:${providerRequestId}`;
+    const billingRequestId = `${String(job.provider)}:${providerRequestId}`;
     const parameters = asRecord(job.parameters);
     const currency = stringValue(usage.currency)?.toUpperCase() || null;
     await this.pool.query(
@@ -305,6 +305,9 @@ function asRecord(value: unknown): Record<string, unknown> {
   return value && typeof value === "object" && !Array.isArray(value)
     ? (value as Record<string, unknown>)
     : {};
+}
+function isRunningHubProvider(value: unknown) {
+  return value === "runninghub" || value === "runninghub_global";
 }
 function stringValue(value: unknown) {
   return typeof value === "string" && value.trim() ? value.trim() : undefined;
