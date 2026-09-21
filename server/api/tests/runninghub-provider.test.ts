@@ -1,7 +1,10 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { runningHubModelProfile } from "../src/model-gateway.js";
+import {
+  runningHubDisplayName,
+  runningHubModelProfile,
+} from "../src/model-gateway.js";
 import { RunningHubProvider } from "../src/runninghub-provider.js";
 
 test("RunningHub registry maps exact endpoint parameters into canvas capabilities", () => {
@@ -24,6 +27,30 @@ test("RunningHub registry maps exact endpoint parameters into canvas capabilitie
   assert.deepEqual(profile?.requiredParametersByMode, { i2v: ["firstFrame"] });
   assert.deepEqual(profile?.limits.durations, ["5", "10"]);
   assert.equal(profile?.parameterMap.duration, "duration");
+});
+
+test("RunningHub marketing aliases expose the real model family and route", () => {
+  assert.equal(
+    runningHubDisplayName({
+      display_name: "RH 全能图片PRO-图生图-官方稳定版",
+      name_en: "nano-banana-pro/edit-official-stable",
+    }),
+    "Nano Banana Pro · 图片编辑 · 官方稳定版",
+  );
+  assert.equal(
+    runningHubDisplayName({
+      display_name: "RH 全能视频V3.1-fast-图生视频-低价渠道版",
+      name_en: "google/veo3.1-fast/image-to-video-channel-low-price",
+    }),
+    "Veo 3.1 Fast · 图生视频 · 低价渠道版",
+  );
+  assert.equal(
+    runningHubDisplayName({
+      display_name: "RH Seedance2.0/文生视频",
+      name_en: "Seedance2.0 Text to Video",
+    }),
+    "RH Seedance2.0/文生视频",
+  );
 });
 
 test("RunningHub provider uploads media, submits exact endpoint and reads async result", async () => {

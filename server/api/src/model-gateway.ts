@@ -160,12 +160,7 @@ export class ModelGateway {
         0,
         190,
       );
-      const displayName = String(
-        candidate.display_name ||
-          candidate.name_cn ||
-          candidate.name_en ||
-          endpoint,
-      ).trim();
+      const displayName = runningHubDisplayName(candidate, endpoint);
       const metadata = sanitizeRunningHubEntry(candidate);
       await this.pool.query(
         `insert into model_catalog(id,display_name,capability,upstream_model,provider_id,discovered,enabled,healthy,catalog_metadata,discovered_at,checked_at)
@@ -433,6 +428,93 @@ export function runningHubModelProfile(
     },
     parameterMap,
   };
+}
+
+export function runningHubDisplayName(
+  candidate: Record<string, unknown>,
+  fallback = "",
+) {
+  const original = String(
+    candidate.display_name ||
+      candidate.name_cn ||
+      candidate.name_en ||
+      fallback,
+  ).trim();
+  if (!/全能(?:图片|视频)/.test(original)) return original;
+  const technicalName = String(candidate.name_en || "").trim();
+  if (!technicalName) return original;
+  const normalized = technicalName.toLowerCase();
+  const family = firstMatchingLabel(normalized, [
+    ["nano-banana2-gemini31flash-lite", "Nano Banana 2（Gemini 3.1 Flash Lite）"],
+    ["nano-banana2-gemini31flash", "Nano Banana 2（Gemini 3.1 Flash）"],
+    ["nano-banana-pro", "Nano Banana Pro"],
+    ["nano-banana", "Nano Banana"],
+    ["gpt-image-1.5", "GPT Image 1.5"],
+    ["gpt-image-2.0", "GPT Image 2"],
+    ["gpt-image-2", "GPT Image 2"],
+    ["grok-4-image", "Grok 4 Image"],
+    ["grok-3-image", "Grok 3 Image"],
+    ["grok-imagine-video-v1.5", "Grok Imagine Video 1.5"],
+    ["grok-imagine-video", "Grok Imagine Video"],
+    [
+      "grok-imagine/image-to-video-channel-low-price-v1.5",
+      "Grok Imagine Video 1.5",
+    ],
+    [
+      "grok-imagine/text-to-video-channel-low-price-v1.5",
+      "Grok Imagine Video 1.5",
+    ],
+    ["grok-imagine/edit-video", "Grok Imagine Video"],
+    ["xai/grok-imagine/", "Grok Imagine Video"],
+    ["rhart-imagine-image-quality", "Grok Imagine Image（高质量）"],
+    ["grok-imagine-image", "Grok Imagine Image"],
+    ["grok-image", "Grok Image"],
+    ["gemini-omni-flash", "Gemini Omni Flash"],
+    ["runwayml/gen4-aleph", "Runway Gen-4 Aleph"],
+    ["runwayml/gen4-turbo", "Runway Gen-4 Turbo"],
+    ["sora-upload-character", "Sora 2"],
+    ["sora-2", "Sora 2"],
+    ["google/veo3.1-fast", "Veo 3.1 Fast"],
+    ["google/veo3.1-lite", "Veo 3.1 Lite"],
+    ["google/veo3.1-pro", "Veo 3.1 Pro"],
+  ]);
+  const task = firstMatchingLabel(normalized, [
+    ["upload-character", "角色上传"],
+    ["reference-to-video", "参考生视频"],
+    ["start-end-to-video", "首尾帧生视频"],
+    ["image-to-video-realistic", "图生视频（真人）"],
+    ["image-to-video-pro", "图生视频 Pro"],
+    ["text-to-video-pro", "文生视频 Pro"],
+    ["image-to-video", "图生视频"],
+    ["text-to-video", "文生视频"],
+    ["video-to-video", "视频编辑"],
+    ["edit-video", "视频编辑"],
+    ["video-edit", "视频编辑"],
+    ["video-extend", "视频扩展"],
+    ["text-to-image", "文生图"],
+    ["image-to-image", "图生图"],
+    ["edit-ultra", "图片编辑 Ultra"],
+    ["/edit", "图片编辑"],
+  ]);
+  const channel = /deprecated|已下架/i.test(`${original} ${technicalName}`)
+    ? "已下架"
+    : normalized.includes("official-stable")
+      ? "官方稳定版"
+      : normalized.endsWith("-official")
+        ? "官方稳定版"
+      : normalized.includes("channel-low-price")
+        ? "低价渠道版"
+        : "";
+  return [family || technicalName.split("/")[0], task, channel]
+    .filter(Boolean)
+    .join(" · ");
+}
+
+function firstMatchingLabel(
+  value: string,
+  candidates: ReadonlyArray<readonly [string, string]>,
+) {
+  return candidates.find(([pattern]) => value.includes(pattern))?.[1] || "";
 }
 
 function runningHubParameters(value: unknown) {

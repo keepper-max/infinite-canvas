@@ -7,6 +7,8 @@ description: Implemented changes that still need manual verification
 
 - 海马云托管渠道：在服务器 `.env` 配置 `RH_API_KEY` 后，管理后台“模型”应显示 Token360/海马云二级菜单，并同步官方 383 个模型；当前画布能精确映射的 291 个生成模型启用，其余 3D、上传、续写和分析等专用端点显示为未启用。切换渠道后，新登录或刷新的普通用户只能看到所选渠道的可用文本、图片、视频和音频模型，且设置页不出现渠道或 API Key。分别验证文生图、图生视频和纯文本/音频任务的媒体预上传、异步状态轮询、结果转存、失败原因、本地手动停止与审计日志；海马云公开接口未提供上游取消端点，因此本地停止不应声称已取消供应商任务。切换渠道前已创建的任务必须继续使用原渠道完成。
 
+- 海马云模型名称：官方目录中的“全能图片/全能视频”包装名应显示为真实模型家族，例如 GPT Image、Nano Banana、Grok、Sora、Veo 或 Runway，并保留文生图、图生视频、官方稳定版、低价渠道版和已下架等区别；Seedance 等本身已经明确的名称保持不变。
+
 - Video result transfer queue: submit several videos concurrently and verify Token360 generation polling remains available while up to four completed results transfer independently. Each result should download in 4 MB Range chunks; a route held below 64 KB/s for 30 seconds should resume from the received byte offset through the alternate official content route without another model submission or charge. The canvas should change from model generation to `正在下载 x / y` and then `正在写入资产库`, while cancellation, Worker restart recovery, immutable asset SHA-256, and completed-node playback remain intact.
 
 - Token360 video return latency: production API and Worker should both run with `VIDEO_POLL_INTERVAL_MS=2000`. After Token360 reaches a terminal video state, the Worker should detect it within roughly two seconds, retain the existing idle reconnect behavior while downloading, persist the immutable asset with its SHA-256, and publish the completed canvas event only after the asset version is available. Manual cancellation and provider rate limits must remain unaffected.
