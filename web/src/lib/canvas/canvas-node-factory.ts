@@ -54,6 +54,10 @@ export function referenceUrl(image: ReferenceImage) {
     return image.storageKey || image.url || (!image.dataUrl.startsWith("data:") ? image.dataUrl : undefined);
 }
 
+function persistedImageReference(image: ReferenceImage) {
+    return image.assetVersionId ? `asset-version:${image.assetVersionId}` : referenceUrl(image);
+}
+
 export function buildImageGenerationMetadata(type: CanvasImageGenerationType, config: AiConfig, count: number, references: ReferenceImage[]): CanvasNodeMetadata {
     return {
         generationType: type,
@@ -62,7 +66,7 @@ export function buildImageGenerationMetadata(type: CanvasImageGenerationType, co
         quality: config.quality,
         ...(config.background ? { background: config.background } : {}),
         count,
-        references: references.map(referenceUrl).filter((url): url is string => Boolean(url)),
+        references: references.map(persistedImageReference).filter((url): url is string => Boolean(url)),
     };
 }
 

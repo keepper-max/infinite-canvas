@@ -31,13 +31,32 @@ export function generationReferenceUrls(context: { referenceImages: ReferenceIma
     ];
 }
 
-export async function resolveMetadataReferences(metadata: CanvasNodeMetadata) {
+export async function resolveMetadataReferences(metadata: CanvasNodeMetadata, nodes: CanvasNodeData[] = []) {
     if (metadata.generationType !== "edit") return [];
     if (!metadata.references?.length) return null;
     const references = await Promise.all(
-        metadata.references.map(async (url, index) => {
-            const dataUrl = url.startsWith("image:") ? await resolveImageUrl(url, "") : url;
-            return dataUrl ? { id: `${index}`, name: `reference-${index}.png`, type: "image/png", dataUrl, storageKey: url.startsWith("image:") ? url : undefined } : null;
+        metadata.references.map(async (reference, index) => {
+            const assetVersionId = reference.startsWith("asset-version:") ? reference.slice("asset-version:".length) : undefined;
+            if (assetVersionId) {
+                const dataUrl = await artifactUrl({ id: assetVersionId, assetVersionId }).catch(() => "");
+                return dataUrl ? { id: `${index}`, name: `reference-${index}.png`, type: "image/png", dataUrl, assetVersionId } : null;
+            }
+            if (reference.startsWith("image:")) {
+                const dataUrl = await resolveImageUrl(reference, "");
+                return dataUrl ? { id: `${index}`, name: `reference-${index}.png`, type: "image/png", dataUrl, storageKey: reference } : null;
+            }
+            const source = nodes.find((node) => node.type === CanvasNodeType.Image && node.metadata?.storageKey === reference);
+            if (source?.metadata?.assetVersionId && source.metadata.content)
+                return {
+                    id: source.id,
+                    name: `${source.title || source.id}.png`,
+                    type: source.metadata.mimeType || "image/png",
+                    dataUrl: source.metadata.content,
+                    storageKey: source.metadata.storageKey,
+                    assetId: source.metadata.assetId,
+                    assetVersionId: source.metadata.assetVersionId,
+                };
+            return /^(?:data:image\/|https?:\/\/)/i.test(reference) ? { id: `${index}`, name: `reference-${index}.png`, type: "image/png", dataUrl: reference } : null;
         }),
     );
     return references.every(Boolean) ? (references as ReferenceImage[]) : null;
