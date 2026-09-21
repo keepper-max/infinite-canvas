@@ -177,7 +177,9 @@ export class RunningHubProvider implements GenerationProvider {
             )
           : remaining;
         if (!matched.length) continue;
-        const selected = field.multipleInputs ? matched : [matched[0]!];
+        // `matched` can be the same array as `remaining`. Keep a snapshot so
+        // removing consumed items does not skip every other reference.
+        const selected = field.multipleInputs ? [...matched] : [matched[0]!];
         body[field.fieldKey] = field.multipleInputs
           ? selected.map((item) => item.url)
           : selected[0]!.url;

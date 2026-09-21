@@ -225,6 +225,87 @@ test("RunningHub provider uploads media, submits exact endpoint and reads async 
   }
 });
 
+test("RunningHub provider submits every image accepted by a multiple-input field", async () => {
+  const originalFetch = globalThis.fetch;
+  let uploadCount = 0;
+  let submitted: Record<string, unknown> | undefined;
+  globalThis.fetch = async (input, init) => {
+    const url = String(input);
+    if (url.startsWith("https://assets.example/reference-"))
+      return new Response(new Uint8Array([1, 2, 3]), {
+        headers: { "content-type": "image/png" },
+      });
+    if (url.endsWith("/media/upload/binary")) {
+      uploadCount += 1;
+      return Response.json({
+        code: 0,
+        data: {
+          download_url: `https://runninghub.example/upload/reference-${uploadCount}.png`,
+        },
+      });
+    }
+    if (url.endsWith("/rhart-image-g-2.5-official-token/sunburst/edit")) {
+      submitted = JSON.parse(String(init?.body));
+      return Response.json({ taskId: "rh-global-edit-task-1" });
+    }
+    throw new Error(`unexpected request: ${url}`);
+  };
+  try {
+    const provider = new RunningHubProvider(
+      {
+        baseUrl: "https://www.runninghub.ai/openapi/v2",
+        apiKey: "test-only-global",
+        catalogUrl: "",
+      },
+      0,
+    );
+    const created = await provider.create({
+      modelId: "runninghub_global.image.gpt-image-2-5-edit",
+      upstreamModel: "rhart-image-g-2.5-official-token/sunburst/edit",
+      providerId: "runninghub_global",
+      capability: "image",
+      mode: "i2i",
+      prompt: "参考角色与表情生成新形象",
+      parameters: {},
+      upstreamParameters: {},
+      references: [
+        {
+          role: "identity_reference",
+          url: "https://assets.example/reference-1.png",
+          mimeType: "image/png",
+        },
+        {
+          role: "identity_reference",
+          url: "https://assets.example/reference-2.png",
+          mimeType: "image/png",
+        },
+      ],
+      providerMetadata: {
+        params: [
+          { fieldKey: "prompt", type: "STRING", required: true },
+          {
+            fieldKey: "imageUrls",
+            type: "IMAGE",
+            required: true,
+            multipleInputs: true,
+            maxInputNum: 16,
+          },
+        ],
+      },
+    });
+    assert.equal(created.providerJobId, "rh-global-edit-task-1");
+    assert.deepEqual(submitted, {
+      prompt: "参考角色与表情生成新形象",
+      imageUrls: [
+        "https://runninghub.example/upload/reference-1.png",
+        "https://runninghub.example/upload/reference-2.png",
+      ],
+    });
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
 test("RunningHub global GPT Image converts canvas size into API ratio and resolution", async () => {
   const originalFetch = globalThis.fetch;
   let submitted: Record<string, unknown> | undefined;
