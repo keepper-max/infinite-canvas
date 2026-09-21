@@ -9,6 +9,7 @@ import {
     getAdminAssetDownload,
     getAdminJobs,
     getAdminModels,
+    getAdminProviders,
     getAdminOverview,
     getAdminProjectContent,
     getAdminUsage,
@@ -18,10 +19,13 @@ import {
     revokeAdminUserSessions,
     setAdminUserRole,
     setAdminUserStatus,
+    setActiveAdminProvider,
     type AdminAuditLog,
     type AdminJob,
     type AdminModel,
     type AdminOverview,
+    type AdminProvider,
+    type AdminProviders,
     type AdminUsage,
     type AdminUser,
     type AdminUserDetail,
@@ -41,8 +45,9 @@ type Section = (typeof sections)[number]["key"];
 
 export default function AdminPage() {
     const { user } = useAuth();
-    const { section = "overview" } = useParams();
+    const { section = "overview", subsection } = useParams();
     const active = sections.some((item) => item.key === section) ? (section as Section) : "overview";
+    const modelProvider: AdminProvider["id"] = subsection === "runninghub" ? "runninghub" : "token360";
     if (!user.isAdmin) return <AdminForbidden />;
     return (
         <div className="flex h-dvh overflow-hidden bg-stone-950 text-stone-100">
@@ -60,14 +65,29 @@ export default function AdminPage() {
                     {sections.map((item) => {
                         const Icon = item.icon;
                         return (
-                            <Link
-                                key={item.key}
-                                to={`/admin/${item.key}`}
-                                className={`flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm transition ${active === item.key ? "bg-white text-stone-950" : "text-stone-400 hover:bg-white/5 hover:text-white"}`}
-                            >
-                                <Icon className="size-4" />
-                                {item.label}
-                            </Link>
+                            <div key={item.key}>
+                                <Link
+                                    to={item.key === "models" ? "/admin/models/token360" : `/admin/${item.key}`}
+                                    className={`flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm transition ${active === item.key ? "bg-white text-stone-950" : "text-stone-400 hover:bg-white/5 hover:text-white"}`}
+                                >
+                                    <Icon className="size-4" />
+                                    {item.label}
+                                </Link>
+                                {item.key === "models" && active === "models" ? (
+                                    <div className="ml-7 mt-1 space-y-1 border-l border-white/10 pl-3">
+                                        {(
+                                            [
+                                                ["token360", "Token360"],
+                                                ["runninghub", "海马云"],
+                                            ] as const
+                                        ).map(([key, label]) => (
+                                            <Link key={key} to={`/admin/models/${key}`} className={`block rounded-md px-3 py-2 text-xs transition ${modelProvider === key ? "bg-white/10 text-white" : "text-stone-500 hover:text-white"}`}>
+                                                {label}
+                                            </Link>
+                                        ))}
+                                    </div>
+                                ) : null}
+                            </div>
                         );
                     })}
                 </nav>
@@ -90,7 +110,7 @@ export default function AdminPage() {
                             只读业务内容 · 操作留痕
                         </Tag>
                     </header>
-                    <AdminSection section={active} />
+                    <AdminSection section={active} modelProvider={modelProvider} />
                 </div>
             </main>
         </div>
@@ -112,12 +132,12 @@ function AdminForbidden() {
     );
 }
 
-function AdminSection({ section }: { section: Section }) {
+function AdminSection({ section, modelProvider }: { section: Section; modelProvider: AdminProvider["id"] }) {
     if (section === "overview") return <Overview />;
     if (section === "users") return <UsersPanel />;
     if (section === "usage") return <UsagePanel />;
     if (section === "jobs") return <JobsPanel />;
-    if (section === "models") return <ModelsPanel />;
+    if (section === "models") return <ModelsPanel provider={modelProvider} />;
     return <AuditPanel />;
 }
 
@@ -583,11 +603,7 @@ function UsagePanel() {
                         { title: "计量", render: (_, item) => `${item.totalTokens || 0} T · ${item.videoDurationSeconds || 0}s · ${item.generatedImages || 0} 图` },
                         {
                             title: "实际金额",
-                            render: (_, item) => (
-                                <b className="font-mono">
-                                    {formatUsageAmount(item.currency, item.totalAmount)}
-                                </b>
-                            ),
+                            render: (_, item) => <b className="font-mono">{formatUsageAmount(item.currency, item.totalAmount)}</b>,
                         },
                         { title: "账单 ID", dataIndex: "billingRequestId", render: copyable },
                         { title: "对账时间", dataIndex: "reconciledAt", render: formatDate },
@@ -739,18 +755,45 @@ function JobsPanel() {
     );
 }
 
-function ModelsPanel() {
+function ModelsPanel({ provider }: { provider: AdminProvider["id"] }) {
     const [items, setItems] = useState<AdminModel[]>();
-    useEffect(() => {
+    const [providers, setProviders] = useState<AdminProviders>();
+    const load = useCallback(() => {
         const controller = new AbortController();
-        getAdminModels(controller.signal)
-            .then(setItems)
+        Promise.all([getAdminModels(provider, controller.signal), getAdminProviders(controller.signal)])
+            .then(([models, providerState]) => {
+                setItems(models);
+                setProviders(providerState);
+            })
             .catch((error) => message.error(error.message));
+        return controller;
+    }, [provider]);
+    useEffect(() => {
+        setItems(undefined);
+        const controller = load();
         return () => controller.abort();
-    }, []);
-    if (!items) return <Loading />;
+    }, [load]);
+    if (!items || !providers) return <Loading />;
+    const current = providers.providers.find((item) => item.id === provider);
+    const active = providers.activeProviderId === provider;
     return (
-        <Panel title="模型健康状态" note={`${items.filter((item) => item.healthy).length}/${items.length} 正常`}>
+        <Panel
+            title={`${current?.displayName || provider} 模型`}
+            note={`${items.filter((item) => item.healthy).length}/${items.length} 正常 · ${current?.configured ? "密钥已配置" : "密钥未配置"}`}
+            actions={
+                <Button
+                    type={active ? "default" : "primary"}
+                    disabled={active || !current?.configured}
+                    onClick={async () => {
+                        const next = await setActiveAdminProvider(provider);
+                        setProviders(next);
+                        message.success(`已切换到 ${current?.displayName || provider}，新任务立即生效`);
+                    }}
+                >
+                    {active ? "当前画布渠道" : current?.configured ? "设为画布渠道" : "请先配置 API Key"}
+                </Button>
+            }
+        >
             <Table
                 rowKey="id"
                 pagination={false}

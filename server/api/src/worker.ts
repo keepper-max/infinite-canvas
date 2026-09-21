@@ -7,7 +7,13 @@ import { applyMigrations } from "./db/migrate.js";
 import { JobExecutor } from "./job-service.js";
 import { ModelGateway } from "./model-gateway.js";
 import { S3ObjectStorage } from "./object-storage.js";
-import { ProviderError, Token360Provider } from "./provider.js";
+import {
+  ProviderError,
+  Token360Provider,
+  type GenerationProvider,
+} from "./provider.js";
+import { RunningHubProvider } from "./runninghub-provider.js";
+import { ProviderRouter } from "./provider-router.js";
 import {
   isStalledQueueJobError,
   recoverInterruptedProviderJobs,
@@ -33,9 +39,25 @@ await gateway
       error instanceof Error ? error.message : "unknown error",
     ),
   );
-const provider = new Token360Provider(
-  config.provider,
-  config.jobs.submitTimeoutMs,
+await gateway
+  .refreshRunningHubCatalog(config.runningHub.catalogUrl)
+  .catch((error) =>
+    console.warn(
+      "[generation-worker] RunningHub catalog refresh skipped:",
+      error instanceof Error ? error.message : "unknown error",
+    ),
+  );
+const provider = new ProviderRouter(
+  new Map<string, GenerationProvider>([
+    [
+      "token360",
+      new Token360Provider(config.provider, config.jobs.submitTimeoutMs),
+    ],
+    [
+      "runninghub",
+      new RunningHubProvider(config.runningHub, config.jobs.submitTimeoutMs),
+    ],
+  ]),
 );
 const billing = new BillingService(pool, config.provider);
 const connection = new Redis(config.jobs.redisUrl, {

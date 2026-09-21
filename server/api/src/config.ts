@@ -8,6 +8,7 @@ export type ApiConfig = {
   objectStorage: ObjectStorageConfig;
   jobs: JobConfig;
   provider: ProviderConfig;
+  runningHub: RunningHubConfig;
   operations: OperationsConfig;
 };
 
@@ -33,6 +34,8 @@ export type ProviderConfig = {
   apiKey: string;
   catalogUrl: string;
 };
+
+export type RunningHubConfig = ProviderConfig;
 
 export type ObjectStorageConfig = {
   endpoint: string;
@@ -123,6 +126,15 @@ export function readConfig(env: NodeJS.ProcessEnv = process.env): ApiConfig {
       env.TOKEN360_CATALOG_URL?.trim() ||
       "https://api.token360.ai/public/models?size=200&current=1",
   };
+  const runningHub = {
+    baseUrl: (
+      env.RH_API_BASE_URL || "https://www.runninghub.cn/openapi/v2"
+    ).replace(/\/+$/, ""),
+    apiKey: env.RH_API_KEY?.trim() || "",
+    catalogUrl:
+      env.RH_MODEL_REGISTRY_URL?.trim() ||
+      "https://raw.githubusercontent.com/HM-RunningHub/ComfyUI_RH_OpenAPI/main/developer-kit/model-registry.public.json",
+  };
   const operations = {
     adminEmails: (env.ADMIN_EMAILS || "")
       .split(",")
@@ -142,6 +154,7 @@ export function readConfig(env: NodeJS.ProcessEnv = process.env): ApiConfig {
     objectStorage,
     jobs,
     provider,
+    runningHub,
     operations,
   };
 }

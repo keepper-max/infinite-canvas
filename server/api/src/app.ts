@@ -308,12 +308,43 @@ export function createApp(
 
   app.get("/api/admin/models", async (context) => {
     const user = await requireUser(context.req.raw, repository, config);
+    const provider = managedProviderId.optional().parse(
+      context.req.query("provider") || undefined,
+    );
     return context.json(
       success(context, {
         models: await requireOperationsService(operationsService).adminModels(
           user.id,
+          provider,
         ),
       }),
+    );
+  });
+
+  app.get("/api/admin/providers", async (context) => {
+    const user = await requireUser(context.req.raw, repository, config);
+    return context.json(
+      success(
+        context,
+        await requireOperationsService(operationsService).adminProviders(
+          user.id,
+        ),
+      ),
+    );
+  });
+
+  app.patch("/api/admin/providers/active", async (context) => {
+    const user = await requireUser(context.req.raw, repository, config);
+    const input = managedProviderInput.parse(await context.req.json());
+    return context.json(
+      success(
+        context,
+        await requireOperationsService(operationsService).setManagedProvider(
+          user.id,
+          input.providerId,
+          context.get("requestId"),
+        ),
+      ),
     );
   });
 
@@ -1160,6 +1191,10 @@ const adminStatusInput = z
   })
   .strict();
 const adminRoleInput = z.object({ isAdmin: z.boolean() }).strict();
+const managedProviderId = z.enum(["token360", "runninghub"]);
+const managedProviderInput = z
+  .object({ providerId: managedProviderId })
+  .strict();
 const adminQueryInput = z.object({
   page: z.coerce.number().int().min(1).default(1),
   pageSize: z.coerce.number().int().min(1).max(100).default(20),

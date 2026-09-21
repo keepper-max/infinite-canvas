@@ -20,7 +20,9 @@ export type AdminOverview = {
     trends: Array<{ day: string; newUsers: number; jobs: number; completedJobs: number }>;
 };
 export type AdminFailure = { id: string; kind: string; status: string; error: { code?: string; message: string; retryable: boolean }; updatedAt: string };
-export type AdminModel = { id: string; displayName: string; capability: string; enabled: boolean; healthy: boolean; discovered: boolean; checkedAt?: string };
+export type AdminModel = { id: string; displayName: string; capability: string; providerId: string; enabled: boolean; healthy: boolean; discovered: boolean; checkedAt?: string };
+export type AdminProvider = { id: "token360" | "runninghub"; displayName: string; enabled: boolean; configured: boolean; updatedAt?: string };
+export type AdminProviders = { activeProviderId: AdminProvider["id"]; providers: AdminProvider[] };
 export type AdminUser = {
     id: string;
     email: string;
@@ -118,8 +120,14 @@ export function getAdminOverview(signal?: AbortSignal) {
 export async function getAdminFailures(signal?: AbortSignal) {
     return (await platformRequest<{ failures: AdminFailure[] }>("/api/admin/failures", { signal })).failures;
 }
-export async function getAdminModels(signal?: AbortSignal) {
-    return (await platformRequest<{ models: AdminModel[] }>("/api/admin/models", { signal })).models;
+export async function getAdminModels(provider?: AdminProvider["id"], signal?: AbortSignal) {
+    return (await platformRequest<{ models: AdminModel[] }>(`/api/admin/models${provider ? `?provider=${encodeURIComponent(provider)}` : ""}`, { signal })).models;
+}
+export function getAdminProviders(signal?: AbortSignal) {
+    return platformRequest<AdminProviders>("/api/admin/providers", { signal });
+}
+export function setActiveAdminProvider(providerId: AdminProvider["id"]) {
+    return platformRequest<AdminProviders>("/api/admin/providers/active", { method: "PATCH", body: JSON.stringify({ providerId }) });
 }
 function adminQuery(input: Record<string, string | number | boolean | undefined>) {
     const params = new URLSearchParams();

@@ -17,6 +17,25 @@ export type ProviderResult = {
   usage?: Record<string, unknown>;
 };
 
+export interface GenerationProvider {
+  create(
+    request: CompiledGenerationRequest,
+    correlationOrSignal?: string | AbortSignal,
+    signal?: AbortSignal,
+  ): Promise<ProviderResult>;
+  get(
+    providerJobId: string,
+    signal?: AbortSignal,
+    capability?: CompiledGenerationRequest["capability"],
+  ): Promise<ProviderResult>;
+  cancel(providerJobId: string, signal?: AbortSignal): Promise<void>;
+  fetchVideoContent(
+    providerJobId: string,
+    range: string,
+    signal?: AbortSignal,
+  ): Promise<Response>;
+}
+
 export class ProviderError extends Error {
   constructor(
     public readonly code: string,
@@ -28,7 +47,7 @@ export class ProviderError extends Error {
   }
 }
 
-export class Token360Provider {
+export class Token360Provider implements GenerationProvider {
   constructor(
     private readonly config: ProviderConfig,
     private readonly submitTimeoutMs: number,

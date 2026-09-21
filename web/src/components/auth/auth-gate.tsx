@@ -5,7 +5,7 @@ import { AuthProvider } from "@/components/auth/auth-context";
 import { fetchManagedModelCatalog } from "@/services/api/image";
 import { getCurrentSession, listProjects, logout as logoutRequest, PlatformApiError, type AuthSession } from "@/services/api/platform";
 import { useCanvasStore } from "@/stores/canvas/use-canvas-store";
-import { modelOptionsFromChannels, useConfigStore } from "@/stores/use-config-store";
+import { encodeChannelModel, modelMatchesCapability, modelOptionsFromChannels, useConfigStore, type ModelCapability } from "@/stores/use-config-store";
 
 export function AuthGate({ children }: { children: ReactNode }) {
     const location = useLocation();
@@ -56,7 +56,22 @@ export function AuthGate({ children }: { children: ReactNode }) {
                 if (controller.signal.aborted || !models.length) return;
                 const latest = useConfigStore.getState().config;
                 const channels = latest.channels.map((channel) => (channel.managed ? { ...channel, models } : channel));
-                useConfigStore.setState({ config: { ...latest, channels, models: modelOptionsFromChannels(channels) } });
+                const next = { ...latest, channels, models: modelOptionsFromChannels(channels) };
+                const managedChannel = channels.find((channel) => channel.managed);
+                const modelFor = (capability: ModelCapability, current: string) => {
+                    if (modelMatchesCapability(next, current, capability)) return current;
+                    const first = managedChannel?.models.find((model) => model.capability === capability);
+                    return first && managedChannel ? encodeChannelModel(managedChannel.id, first.name) : current;
+                };
+                useConfigStore.setState({
+                    config: {
+                        ...next,
+                        imageModel: modelFor("image", latest.imageModel),
+                        videoModel: modelFor("video", latest.videoModel),
+                        textModel: modelFor("text", latest.textModel),
+                        audioModel: modelFor("audio", latest.audioModel),
+                    },
+                });
             })
             .catch((error) => {
                 if (!controller.signal.aborted) console.warn("Managed model catalog sync failed", error);

@@ -10,10 +10,11 @@ import type { ObjectStorage } from "./object-storage.js";
 import { assertProjectAccess } from "./project-access.js";
 import {
   ProviderError,
-  Token360Provider,
   providerUserMessage,
+  type GenerationProvider,
   type ProviderArtifact,
 } from "./provider.js";
+import { ProviderRouter } from "./provider-router.js";
 
 export type JobQueuePort = {
   add(jobId: string, maxAttempts: number): Promise<void>;
@@ -305,7 +306,7 @@ export class JobExecutor {
   constructor(
     private readonly pool: Pool,
     private readonly gateway: ModelGateway,
-    private readonly provider: Token360Provider,
+    private readonly providers: ProviderRouter | GenerationProvider,
     private readonly storage: ObjectStorage,
     private readonly config: JobConfig,
     private readonly publish: JobEventPublisher = async () => undefined,
@@ -358,6 +359,7 @@ export class JobExecutor {
     }, this.config.videoPollIntervalMs);
     let activeProviderJobId = row.provider_job_id;
     try {
+      const provider = this.providerFor(String(row.provider));
       const compiled = row.provider_job_id
         ? undefined
         : await this.gateway.compile(
@@ -367,8 +369,12 @@ export class JobExecutor {
             ),
           );
       let result = row.provider_job_id
-        ? await this.provider.get(String(row.provider_job_id), providerSignal)
-        : await this.provider.create(compiled!, jobId, providerSignal);
+        ? await provider.get(
+            String(row.provider_job_id),
+            providerSignal,
+            row.capability as GenerationInput["capability"],
+          )
+        : await provider.create(compiled!, jobId, providerSignal);
       if (!row.provider_job_id)
         await this.billing
           ?.recordTrace(jobId, result.billingTraceId, result.usage)
@@ -423,7 +429,11 @@ export class JobExecutor {
           );
         if (this.config.maxRuntimeMs > 0 && Date.now() >= deadline)
           throw new ProviderError("PROVIDER_TIMEOUT", "生成任务等待超时", true);
-        result = await this.provider.get(result.providerJobId!, providerSignal);
+        result = await provider.get(
+          result.providerJobId!,
+          providerSignal,
+          row.capability as GenerationInput["capability"],
+        );
         const afterPoll = (
           await this.pool.query(
             "select status from generation_jobs where id=$1",
@@ -552,9 +562,11 @@ export class JobExecutor {
         .catch(() => undefined);
     }, this.config.videoPollIntervalMs);
     try {
-      const result = await this.provider.get(
+      const provider = this.providerFor(String(row.provider));
+      const result = await provider.get(
         String(row.provider_job_id),
         transferSignal,
+        row.capability as GenerationInput["capability"],
       );
       if (result.status !== "completed")
         throw new ProviderError(
@@ -651,7 +663,7 @@ export class JobExecutor {
   }
   private async cancel(row: Record<string, unknown>, signal?: AbortSignal) {
     if (row.provider_job_id)
-      await this.provider
+      await this.providerFor(String(row.provider))
         .cancel(String(row.provider_job_id), signal)
         .catch(() => undefined);
     const updated = await this.pool.query(
@@ -727,16 +739,19 @@ export class JobExecutor {
           1_000,
           providerJobId
             ? async () => {
-                const refreshed = await this.provider.get(
+                const refreshed = await this.providerFor(
+                  String(row.provider),
+                ).get(
                   providerJobId,
                   signal,
+                  row.capability as GenerationInput["capability"],
                 );
                 return refreshed.artifacts?.[index]?.url;
               }
             : undefined,
           providerJobId
             ? (range, downloadSignal) =>
-                this.provider.fetchVideoContent(
+                this.providerFor(String(row.provider)).fetchVideoContent(
                   providerJobId,
                   range,
                   downloadSignal,
@@ -835,6 +850,12 @@ export class JobExecutor {
       }
     }
     return results;
+  }
+
+  private providerFor(providerId: string) {
+    return this.providers instanceof ProviderRouter
+      ? this.providers.for(providerId)
+      : this.providers;
   }
   private async resolveAssetReferences(
     input: GenerationInput,

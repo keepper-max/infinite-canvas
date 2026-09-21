@@ -39,6 +39,9 @@ services:
       TOKEN360_API_KEY: ${TOKEN360_API_KEY:-}
       TOKEN360_UPSTREAM: ${TOKEN360_UPSTREAM:-https://api.token360.ai}
       TOKEN360_CATALOG_URL: ${TOKEN360_CATALOG_URL:-https://api.token360.ai/public/models?size=200&current=1}
+      RH_API_KEY: ${RH_API_KEY:-}
+      RH_API_BASE_URL: ${RH_API_BASE_URL:-https://www.runninghub.cn/openapi/v2}
+      RH_MODEL_REGISTRY_URL: ${RH_MODEL_REGISTRY_URL:-https://raw.githubusercontent.com/HM-RunningHub/ComfyUI_RH_OpenAPI/main/developer-kit/model-registry.public.json}
     healthcheck:
       test: ["CMD", "bun", "-e", "fetch('http://127.0.0.1:3001/healthz').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"]
       interval: 10s

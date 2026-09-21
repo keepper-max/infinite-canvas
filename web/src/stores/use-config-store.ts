@@ -107,7 +107,7 @@ export const DEFAULT_LOCAL_PROXY_URL = "http://127.0.0.1:23210";
 
 const managedChannel: ModelChannel = {
     id: MANAGED_CHANNEL_ID,
-    name: "内置模型",
+    name: "Token360",
     baseUrl: MANAGED_API_BASE_URL,
     apiKey: MANAGED_API_KEY,
     apiFormat: "openai",

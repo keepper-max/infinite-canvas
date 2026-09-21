@@ -63,7 +63,8 @@ export function AppConfigPanel({ showDoneButton = false, initialTab = "channels"
     const { message } = App.useApp();
     const { i18n, t } = useTranslation();
     const configInputRef = useRef<HTMLInputElement>(null);
-    const [activeTab, setActiveTab] = useState<ConfigTabKey>(initialTab);
+    const visibleInitialTab = !BROWSER_PROVIDERS_ENABLED && initialTab === "channels" ? "preferences" : initialTab;
+    const [activeTab, setActiveTab] = useState<ConfigTabKey>(visibleInitialTab);
     const [editingChannelId, setEditingChannelId] = useState("");
     const [testingWebdav, setTestingWebdav] = useState(false);
     const [syncingWebdav, setSyncingWebdav] = useState(false);
@@ -79,7 +80,7 @@ export function AppConfigPanel({ showDoneButton = false, initialTab = "channels"
     const webdavReady = Boolean(webdav.url.trim());
     const editingChannel = config.channels.find((channel) => channel.id === editingChannelId) || null;
     const locale = i18n.resolvedLanguage as AppLocale;
-    useEffect(() => setActiveTab(initialTab), [initialTab]);
+    useEffect(() => setActiveTab(!BROWSER_PROVIDERS_ENABLED && initialTab === "channels" ? "preferences" : initialTab), [initialTab]);
 
     const saveConfig = (nextConfig: AiConfig) => {
         (Object.keys(nextConfig) as Array<keyof AiConfig>).forEach((key) => updateConfig(key, nextConfig[key]));
@@ -196,44 +197,48 @@ export function AppConfigPanel({ showDoneButton = false, initialTab = "channels"
                 activeKey={activeTab}
                 onChange={(key) => setActiveTab(key as ConfigTabKey)}
                 items={[
-                    {
-                        key: "channels",
-                        label: t("config.tabs.channels"),
-                        children: (
-                            <div>
-                                <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-                                    <div className="text-xs text-stone-500">{t("config.channels.description")}</div>
-                                    {BROWSER_PROVIDERS_ENABLED ? (
-                                        <Button type="primary" icon={<Plus className="size-4" />} onClick={addChannel}>
-                                            {t("config.channels.add")}
-                                        </Button>
-                                    ) : null}
-                                </div>
-                                <div className="space-y-2">
-                                    {config.channels.map((channel) => (
-                                        <div key={channel.id} className="flex items-center justify-between gap-3 rounded-lg border border-stone-200 px-4 py-3 dark:border-stone-800">
-                                            <div className="min-w-0">
-                                                <div className="truncate text-sm font-semibold">{channel.name || t("config.channels.unnamed")}</div>
-                                                <div className="mt-1 truncate text-xs text-stone-500">
-                                                    {channel.managed
-                                                        ? t("config.channels.modelCount", { count: channel.models.length })
-                                                        : `${apiFormatLabel(channel.apiFormat)} · ${t("config.channels.modelCount", { count: channel.models.length })} · ${channel.baseUrl || t("config.channels.missingUrl")}`}
-                                                </div>
-                                            </div>
-                                            {BROWSER_PROVIDERS_ENABLED && !channel.managed ? (
-                                                <div className="flex shrink-0 gap-2">
-                                                    <Button size="small" icon={<Pencil className="size-3.5" />} onClick={() => setEditingChannelId(channel.id)}>
-                                                        {t("common.edit")}
-                                                    </Button>
-                                                    <Button size="small" danger icon={<Trash2 className="size-3.5" />} onClick={() => deleteChannel(channel.id)} />
-                                                </div>
-                                            ) : null}
-                                        </div>
-                                    ))}
-                                </div>
-                            </div>
-                        ),
-                    },
+                    ...(BROWSER_PROVIDERS_ENABLED
+                        ? [
+                              {
+                                  key: "channels",
+                                  label: t("config.tabs.channels"),
+                                  children: (
+                                      <div>
+                                          <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+                                              <div className="text-xs text-stone-500">{t("config.channels.description")}</div>
+                                              {BROWSER_PROVIDERS_ENABLED ? (
+                                                  <Button type="primary" icon={<Plus className="size-4" />} onClick={addChannel}>
+                                                      {t("config.channels.add")}
+                                                  </Button>
+                                              ) : null}
+                                          </div>
+                                          <div className="space-y-2">
+                                              {config.channels.map((channel) => (
+                                                  <div key={channel.id} className="flex items-center justify-between gap-3 rounded-lg border border-stone-200 px-4 py-3 dark:border-stone-800">
+                                                      <div className="min-w-0">
+                                                          <div className="truncate text-sm font-semibold">{channel.name || t("config.channels.unnamed")}</div>
+                                                          <div className="mt-1 truncate text-xs text-stone-500">
+                                                              {channel.managed
+                                                                  ? t("config.channels.modelCount", { count: channel.models.length })
+                                                                  : `${apiFormatLabel(channel.apiFormat)} · ${t("config.channels.modelCount", { count: channel.models.length })} · ${channel.baseUrl || t("config.channels.missingUrl")}`}
+                                                          </div>
+                                                      </div>
+                                                      {BROWSER_PROVIDERS_ENABLED && !channel.managed ? (
+                                                          <div className="flex shrink-0 gap-2">
+                                                              <Button size="small" icon={<Pencil className="size-3.5" />} onClick={() => setEditingChannelId(channel.id)}>
+                                                                  {t("common.edit")}
+                                                              </Button>
+                                                              <Button size="small" danger icon={<Trash2 className="size-3.5" />} onClick={() => deleteChannel(channel.id)} />
+                                                          </div>
+                                                      ) : null}
+                                                  </div>
+                                              ))}
+                                          </div>
+                                      </div>
+                                  ),
+                              },
+                          ]
+                        : []),
                     ...(BROWSER_PROVIDERS_ENABLED
                         ? [
                               {

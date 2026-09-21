@@ -18,6 +18,12 @@ API 启动时会按文件名顺序执行 `db/migrations` 中尚未应用的 SQL�
 
 Worker 在生成任务进入终态后读取 `GET /v1/billing/{request_id}`。404 按退避计划继续同步，最长 24 小时；对账只更新账单状态，不重新提交模型任务，也不修改生成结果。
 
+## 托管模型渠道
+
+- Token360 使用 `TOKEN360_API_KEY`、`TOKEN360_UPSTREAM` 和 `TOKEN360_CATALOG_URL`。
+- 海马云使用 `RH_API_KEY`、`RH_API_BASE_URL` 和 `RH_MODEL_REGISTRY_URL`；默认基址与公开模型目录已写入 `.env.example`，部署时只需在服务器项目目录的 `.env` 填写 `RH_API_KEY`。
+- 两个渠道的真实密钥都只注入 API 与 Worker，浏览器和管理接口不会返回密钥。超级管理员在“模型”二级菜单切换新任务使用的渠道，已创建任务继续使用原渠道。
+
 画布接口：
 
 - `GET/PUT /api/projects/:projectId/canvas`

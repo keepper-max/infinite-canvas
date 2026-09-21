@@ -35,6 +35,14 @@ await modelGateway
       error instanceof Error ? error.message : "unknown error",
     ),
   );
+await modelGateway
+  .refreshRunningHubCatalog(config.runningHub.catalogUrl)
+  .catch((error) =>
+    console.warn(
+      "[platform-api] RunningHub catalog refresh skipped:",
+      error instanceof Error ? error.message : "unknown error",
+    ),
+  );
 const jobQueue = createQueue(config.jobs);
 const jobService = new JobService(
   pool,
@@ -55,6 +63,10 @@ const operationsService = new OperationsService(
   pool,
   config.operations,
   billingService,
+  {
+    token360: Boolean(config.provider.apiKey),
+    runninghub: Boolean(config.runningHub.apiKey),
+  },
 );
 const textWorkbenchService = new TextWorkbenchService(pool, jobService);
 const virtualPortraitService = new VirtualPortraitService(

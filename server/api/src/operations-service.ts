@@ -34,7 +34,13 @@ export interface OperationsServicePort {
   ): Promise<unknown>;
   adminOverview(userId: string): Promise<unknown>;
   adminFailures(userId: string): Promise<unknown>;
-  adminModels(userId: string): Promise<unknown>;
+  adminModels(userId: string, providerId?: string): Promise<unknown>;
+  adminProviders(userId: string): Promise<unknown>;
+  setManagedProvider(
+    userId: string,
+    providerId: "token360" | "runninghub",
+    requestId: string,
+  ): Promise<unknown>;
   adminUsers(userId: string, query: AdminListQuery): Promise<unknown>;
   adminUser(userId: string, targetUserId: string): Promise<unknown>;
   setUserStatus(
@@ -96,6 +102,7 @@ export class OperationsService implements OperationsServicePort {
     private readonly pool: Pool,
     private readonly config: OperationsConfig,
     private readonly billing?: BillingService,
+    private readonly providerAvailability: Record<string, boolean> = {},
   ) {}
 
   capabilities() {
@@ -328,22 +335,73 @@ export class OperationsService implements OperationsServicePort {
     }));
   }
 
-  async adminModels(userId: string) {
+  async adminModels(userId: string, providerId?: string) {
     await this.requireAdmin(userId);
     const result = await this.pool.query(
-      `select id,display_name,capability,enabled,healthy,discovered,checked_at,updated_at
-       from model_catalog order by capability,display_name`,
+      `select id,display_name,capability,provider_id,enabled,healthy,discovered,checked_at,updated_at
+       from model_catalog where ($1::text is null or provider_id=$1) order by capability,display_name`,
+      [providerId || null],
     );
     return result.rows.map((row) => ({
       id: row.id,
       displayName: row.display_name,
       capability: row.capability,
+      providerId: row.provider_id,
       enabled: row.enabled,
       healthy: row.healthy,
       discovered: row.discovered,
       checkedAt: iso(row.checked_at),
       updatedAt: iso(row.updated_at),
     }));
+  }
+
+  async adminProviders(userId: string) {
+    await this.requireAdmin(userId);
+    const active = await this.pool.query(
+      "select value->>'providerId' provider_id from platform_settings where key='managed_provider'",
+    );
+    const providers = await this.pool.query(
+      "select provider_id,display_name,enabled,updated_at from provider_configs where provider_id=any($1::text[]) order by provider_id",
+      [["token360", "runninghub"]],
+    );
+    return {
+      activeProviderId: String(active.rows[0]?.provider_id || "token360"),
+      providers: providers.rows.map((row) => ({
+        id: row.provider_id,
+        displayName: row.display_name,
+        enabled: row.enabled,
+        configured: Boolean(this.providerAvailability[row.provider_id]),
+        updatedAt: iso(row.updated_at),
+      })),
+    };
+  }
+
+  async setManagedProvider(
+    userId: string,
+    providerId: "token360" | "runninghub",
+    requestId: string,
+  ) {
+    await this.requireAdmin(userId);
+    if (!this.providerAvailability[providerId])
+      throw new DomainError(
+        "PROVIDER_NOT_CONFIGURED",
+        `${providerId === "runninghub" ? "海马云" : "Token360"} API Key 尚未配置`,
+        422,
+      );
+    await this.pool.query(
+      `insert into platform_settings(key,value,updated_by) values('managed_provider',$1,$2)
+       on conflict(key) do update set value=excluded.value,updated_by=excluded.updated_by,updated_at=now()`,
+      [{ providerId }, userId],
+    );
+    await this.auditDirect(
+      userId,
+      "provider.active.update",
+      "provider",
+      providerId,
+      { providerId },
+      requestId,
+    );
+    return this.adminProviders(userId);
   }
 
   async adminUsers(userId: string, query: AdminListQuery) {

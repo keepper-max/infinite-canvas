@@ -61,6 +61,7 @@ export type CompiledGenerationRequest = GenerationInput & {
   upstreamModel: string;
   providerId: string;
   upstreamParameters: Record<string, unknown>;
+  providerMetadata?: Record<string, unknown>;
 };
 
 type CatalogCapabilityProfile = Pick<
@@ -135,6 +136,51 @@ export class ModelGateway {
     return candidates.length;
   }
 
+  async refreshRunningHubCatalog(catalogUrl: string) {
+    const response = await fetch(catalogUrl, {
+      headers: { Accept: "application/json" },
+      signal: AbortSignal.timeout(30_000),
+    });
+    if (!response.ok)
+      throw new Error(`RunningHub model registry returned ${response.status}`);
+    const payload = (await response.json()) as unknown;
+    const candidates = catalogItems(payload);
+    await this.pool.query(
+      "update model_catalog set discovered=false,healthy=false,checked_at=now(),updated_at=now() where provider_id='runninghub'",
+    );
+    let imported = 0;
+    for (const candidate of candidates) {
+      const endpoint = String(candidate.endpoint || "").trim();
+      const profile = runningHubModelProfile(candidate);
+      if (!endpoint) continue;
+      const capability =
+        profile?.capability ||
+        String(candidate.output_type || "unsupported").toLowerCase();
+      const id = `runninghub.${capability}.${createSlug(endpoint)}`.slice(
+        0,
+        190,
+      );
+      const displayName = String(
+        candidate.display_name ||
+          candidate.name_cn ||
+          candidate.name_en ||
+          endpoint,
+      ).trim();
+      const metadata = sanitizeRunningHubEntry(candidate);
+      await this.pool.query(
+        `insert into model_catalog(id,display_name,capability,upstream_model,provider_id,discovered,enabled,healthy,catalog_metadata,discovered_at,checked_at)
+         values($1,$2,$3,$4,'runninghub',true,$6,true,$5,now(),now())
+         on conflict(id) do update set display_name=excluded.display_name,capability=excluded.capability,
+          upstream_model=excluded.upstream_model,provider_id='runninghub',catalog_metadata=excluded.catalog_metadata,
+          discovered=true,enabled=excluded.enabled,healthy=true,discovered_at=now(),checked_at=now(),updated_at=now()`,
+        [id, displayName, capability, endpoint, metadata, Boolean(profile)],
+      );
+      if (profile) await this.upsertCatalogProfile(id, profile);
+      imported += 1;
+    }
+    return imported;
+  }
+
   private async upsertCatalogProfile(
     id: string,
     profile: CatalogCapabilityProfile,
@@ -168,7 +214,12 @@ export class ModelGateway {
       .query(`select c.id, c.display_name, c.capability, c.catalog_metadata,
                     p.modes, p.accepted_parameters, p.required_parameters_by_mode, p.limits
             from model_catalog c join model_capabilities p on p.model_id = c.id
-            where c.enabled = true and c.healthy = true order by c.capability, c.display_name`);
+            where c.enabled = true and c.healthy = true
+              and c.provider_id=coalesce(
+                (select value->>'providerId' from platform_settings where key='managed_provider'),
+                'token360'
+              )
+            order by c.capability, c.display_name`);
     return result.rows.map((row) => ({
       id: row.id,
       displayName: row.display_name,
@@ -184,7 +235,7 @@ export class ModelGateway {
 
   async compile(input: GenerationInput): Promise<CompiledGenerationRequest> {
     const result = await this.pool.query(
-      `select c.id, c.display_name, c.capability, c.upstream_model, c.provider_id,
+      `select c.id, c.display_name, c.capability, c.upstream_model, c.provider_id,c.catalog_metadata,
             p.modes, p.accepted_parameters, p.required_parameters_by_mode, p.limits, p.parameter_map
             from model_catalog c join model_capabilities p on p.model_id = c.id
             where c.id = $1 and c.enabled = true and c.healthy = true`,
@@ -221,16 +272,20 @@ export class ModelGateway {
       input,
       references,
     );
+    const effectiveParameters = {
+      ...publicParameterDefaults(row.catalog_metadata),
+      ...(input.parameters || {}),
+    };
     validateModelLimits(
       row.limits,
       videoExtension
-        ? { ...(input.parameters || {}), aspectRatio: undefined }
-        : input.parameters || {},
+        ? { ...effectiveParameters, aspectRatio: undefined }
+        : effectiveParameters,
       references,
       input.mode,
     );
     const parameterSource: Record<string, unknown> = {
-      ...(input.parameters || {}),
+      ...effectiveParameters,
     };
     if (videoExtension) parameterSource.aspectRatio = "adaptive";
     const byRole = new Map(
@@ -280,8 +335,217 @@ export class ModelGateway {
       upstreamModel: row.upstream_model,
       providerId: row.provider_id,
       upstreamParameters,
+      providerMetadata:
+        row.provider_id === "runninghub" && isRecord(row.catalog_metadata)
+          ? row.catalog_metadata
+          : undefined,
     };
   }
+}
+
+export function runningHubModelProfile(
+  candidate: Record<string, unknown>,
+): CatalogCapabilityProfile | null {
+  const capability = normalizeCapability(
+    candidate.output_type === "string" ? "text" : candidate.output_type,
+  );
+  if (!capability) return null;
+  const params = runningHubParameters(candidate.params);
+  const scalar = params.filter(
+    (item) =>
+      !["IMAGE", "VIDEO", "AUDIO"].includes(item.sourceType) &&
+      !isPromptField(item.upstreamKey),
+  );
+  const media = params.filter((item) =>
+    ["IMAGE", "VIDEO", "AUDIO"].includes(item.sourceType),
+  );
+  if (!params.some((item) => isPromptField(item.upstreamKey))) return null;
+  if (capability === "text" && media.some((item) => item.required)) return null;
+  const acceptedParameters = scalar.map((item) => item.key);
+  const parameterMap = Object.fromEntries(
+    scalar.map((item) => [item.key, item.upstreamKey]),
+  );
+  const modes: GenerationMode[] = [];
+  const requiredParametersByMode: Partial<Record<GenerationMode, string[]>> =
+    {};
+  if (capability === "text") modes.push("chat");
+  if (capability === "audio") modes.push("tts");
+  if (capability === "image") {
+    const images = media.filter((item) => item.sourceType === "IMAGE");
+    if (!images.some((item) => item.required)) modes.push("t2i");
+    if (images.length) {
+      modes.push("i2i");
+      acceptedParameters.push("references");
+      if (images.some((item) => item.required))
+        requiredParametersByMode.i2i = ["references"];
+    }
+  }
+  if (capability === "video") {
+    const images = media.filter((item) => item.sourceType === "IMAGE");
+    const videos = media.filter((item) => item.sourceType === "VIDEO");
+    const audios = media.filter((item) => item.sourceType === "AUDIO");
+    if (!media.some((item) => item.required)) modes.push("t2v");
+    if (images.length) {
+      const supportsMultiple = images.some((item) => item.multipleInputs);
+      modes.push(
+        supportsMultiple ? "multiref" : images.length > 1 ? "flf2v" : "i2v",
+      );
+      acceptedParameters.push("references", "firstFrame");
+      if (images.length > 1) acceptedParameters.push("lastFrame");
+      if (supportsMultiple) requiredParametersByMode.multiref = ["references"];
+      else if (images.length > 1)
+        requiredParametersByMode.flf2v = ["firstFrame", "lastFrame"];
+      else requiredParametersByMode.i2v = ["firstFrame"];
+    }
+    if (videos.length || audios.length) {
+      if (!modes.includes("multiref")) modes.push("multiref");
+      if (!acceptedParameters.includes("references"))
+        acceptedParameters.push("references");
+      if (media.some((item) => item.required))
+        requiredParametersByMode.multiref = ["references"];
+    }
+    if (!modes.length) modes.push("t2v");
+  }
+  const parameterSchema = scalar.map((item) => item.publicDefinition);
+  const imageLimit = maximumInputCount(media, "IMAGE", 9);
+  const videoLimit = maximumInputCount(media, "VIDEO", 3);
+  const audioLimit = maximumInputCount(media, "AUDIO", 3);
+  const promptLimit = Math.max(
+    1,
+    ...params
+      .filter((item) => isPromptField(item.upstreamKey))
+      .map((item) => item.max || 20_000),
+  );
+  return {
+    capability,
+    modes: Array.from(new Set(modes)),
+    acceptedParameters: Array.from(new Set(acceptedParameters)),
+    requiredParametersByMode,
+    limits: {
+      maxImages: imageLimit,
+      maxVideos: videoLimit,
+      maxAudios: audioLimit,
+      maxPromptChars: promptLimit,
+      parameterSchema,
+      durations: optionsFor(parameterSchema, "duration"),
+      resolutions: optionsFor(parameterSchema, "resolution"),
+      aspectRatios: optionsFor(parameterSchema, "aspectRatio"),
+    },
+    parameterMap,
+  };
+}
+
+function runningHubParameters(value: unknown) {
+  if (!Array.isArray(value)) return [];
+  return value.flatMap((entry) => {
+    if (!isRecord(entry)) return [];
+    const upstreamKey = String(entry.fieldKey || "").trim();
+    const sourceType = String(entry.type || "").toUpperCase();
+    if (!upstreamKey || !sourceType) return [];
+    const key = publicParameterName(upstreamKey) || upstreamKey;
+    const options = Array.isArray(entry.options)
+      ? entry.options.flatMap((option) => {
+          const value = isRecord(option) ? option.value : option;
+          return ["string", "number", "boolean"].includes(typeof value)
+            ? [value as string | number | boolean]
+            : [];
+        })
+      : undefined;
+    const type: PublicModelParameter["type"] =
+      sourceType === "BOOLEAN"
+        ? "boolean"
+        : sourceType === "INT"
+          ? "integer"
+          : sourceType === "FLOAT" || sourceType === "NUMBER"
+            ? "number"
+            : "string";
+    const publicDefinition: PublicModelParameter = {
+      key,
+      type,
+      ...(String(entry.description || "").trim()
+        ? { description: String(entry.description).trim() }
+        : {}),
+      ...(entry.required === true ? { required: true } : {}),
+      ...(entry.defaultValue !== undefined && entry.defaultValue !== null
+        ? { defaultValue: entry.defaultValue }
+        : {}),
+      ...(options?.length ? { options } : {}),
+      ...(Number.isFinite(Number(entry.min)) ? { min: Number(entry.min) } : {}),
+      ...(Number.isFinite(Number(entry.max)) ? { max: Number(entry.max) } : {}),
+      ...(Number.isFinite(Number(entry.step))
+        ? { step: Number(entry.step) }
+        : {}),
+    };
+    return [
+      {
+        key,
+        upstreamKey,
+        sourceType,
+        required: entry.required === true,
+        multipleInputs: entry.multipleInputs === true,
+        maxInputNum: Number(entry.maxInputNum || 0),
+        max: Number(entry.maxLength || 0),
+        publicDefinition,
+      },
+    ];
+  });
+}
+
+function isPromptField(value: string) {
+  return ["prompt", "text_prompt", "text", "content", "lyrics"].includes(value);
+}
+function maximumInputCount(
+  params: ReturnType<typeof runningHubParameters>,
+  type: string,
+  fallback: number,
+) {
+  const matching = params.filter((item) => item.sourceType === type);
+  if (!matching.length) return 0;
+  return matching.reduce(
+    (sum, item) =>
+      sum + (item.multipleInputs ? item.maxInputNum || fallback : 1),
+    0,
+  );
+}
+function optionsFor(parameters: PublicModelParameter[], key: string) {
+  return parameters.find((item) => item.key === key)?.options || [];
+}
+function sanitizeRunningHubEntry(candidate: Record<string, unknown>) {
+  return {
+    endpoint: candidate.endpoint,
+    output_type: candidate.output_type,
+    category: candidate.category,
+    class_name: candidate.class_name,
+    name_cn: candidate.name_cn,
+    name_en: candidate.name_en,
+    params: Array.isArray(candidate.params) ? candidate.params : [],
+    normalizedApiParameterSchema: {
+      fields: runningHubParameters(candidate.params)
+        .filter(
+          (item) =>
+            !["IMAGE", "VIDEO", "AUDIO"].includes(item.sourceType) &&
+            !isPromptField(item.upstreamKey),
+        )
+        .map((item) => ({
+          name: item.upstreamKey,
+          type: item.publicDefinition.type,
+          description: item.publicDefinition.description,
+          required: item.publicDefinition.required,
+          default: item.publicDefinition.defaultValue,
+          enum: item.publicDefinition.options,
+          min: item.publicDefinition.min,
+          max: item.publicDefinition.max,
+          step: item.publicDefinition.step,
+          playground_visible: true,
+          request_role: "model_parameter",
+        })),
+    },
+    effectiveDefaultParams: Object.fromEntries(
+      runningHubParameters(candidate.params)
+        .filter((item) => item.publicDefinition.defaultValue !== undefined)
+        .map((item) => [item.upstreamKey, item.publicDefinition.defaultValue]),
+    ),
+  };
 }
 
 function isSeedanceVideoExtension(

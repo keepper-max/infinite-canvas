@@ -45,7 +45,7 @@ export const router = createBrowserRouter([
         ],
     },
     {
-        path: "/admin/:section?",
+        path: "/admin/:section?/:subsection?",
         element: (
             <AuthGate>
                 <AdminPage />
