@@ -172,7 +172,10 @@ export class ModelGateway {
       const capability =
         profile?.capability ||
         String(candidate.output_type || "unsupported").toLowerCase();
-      const id = `${providerId}.${capability}.${createSlug(endpoint)}`.slice(
+      const identityEndpoint = String(
+        candidate.catalog_identity_endpoint || endpoint,
+      ).trim();
+      const id = `${providerId}.${capability}.${createSlug(identityEndpoint)}`.slice(
         0,
         190,
       );
@@ -900,7 +903,9 @@ const RUNNINGHUB_GLOBAL_MODELS: Array<Record<string, unknown>> = [
     display_name: "GPT Image 2.5 Sunburst · 参考图编辑",
     name_cn: "GPT Image 2.5 Sunburst 参考图编辑",
     name_en: "GPT Image 2.5 Sunburst Image to Image Stable Token",
-    endpoint: "rhart-image-g-2.5-official-token/sunburst/image-to-image",
+    endpoint: "rhart-image-g-2.5-official-token/sunburst/edit",
+    catalog_identity_endpoint:
+      "rhart-image-g-2.5-official-token/sunburst/image-to-image",
     output_type: "image",
     category: "RunningHub Global/GPT Image",
     params: [

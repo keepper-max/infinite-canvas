@@ -42,7 +42,7 @@ test("RunningHub global catalog exposes GPT Image 2.5 text and reference modes",
     String(item.endpoint).endsWith("sunburst/text-to-image"),
   );
   const image = models.find((item) =>
-    String(item.endpoint).endsWith("sunburst/image-to-image"),
+    String(item.endpoint).endsWith("sunburst/edit"),
   );
   assert.deepEqual(runningHubModelProfile(text!)?.modes, ["t2i"]);
   const profile = runningHubModelProfile(image!);
@@ -51,6 +51,10 @@ test("RunningHub global catalog exposes GPT Image 2.5 text and reference modes",
     i2i: ["references"],
   });
   assert.equal(profile?.limits.maxImages, 16);
+  assert.equal(
+    image?.catalog_identity_endpoint,
+    "rhart-image-g-2.5-official-token/sunburst/image-to-image",
+  );
 });
 
 test("RunningHub terminal usage normalizes actual cost, tokens and billing seconds", () => {
