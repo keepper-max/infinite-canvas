@@ -43,6 +43,7 @@ export type GenerationInput = {
     assetVersionId?: string;
     virtualPortraitId?: string;
     mimeType?: string;
+    durationMs?: number;
   }>;
   trace?: {
     workflowKind?: string;
@@ -144,7 +145,7 @@ export class ModelGateway {
     if (!response.ok)
       throw new Error(`RunningHub model registry returned ${response.status}`);
     const payload = (await response.json()) as unknown;
-    const candidates = catalogItems(payload);
+    const candidates = runningHubCatalogItems(payload);
     await this.pool.query(
       "update model_catalog set discovered=false,healthy=false,checked_at=now(),updated_at=now() where provider_id='runninghub'",
     );
@@ -382,15 +383,20 @@ export function runningHubModelProfile(
     if (!media.some((item) => item.required)) modes.push("t2v");
     if (images.length) {
       const supportsMultiple = images.some((item) => item.multipleInputs);
-      modes.push(
-        supportsMultiple ? "multiref" : images.length > 1 ? "flf2v" : "i2v",
-      );
+      if (supportsMultiple) modes.push("multiref");
+      else if (images.length > 1) {
+        if (images.filter((item) => item.required).length <= 1)
+          modes.push("i2v");
+        modes.push("flf2v");
+      } else modes.push("i2v");
       acceptedParameters.push("references", "firstFrame");
       if (images.length > 1) acceptedParameters.push("lastFrame");
       if (supportsMultiple) requiredParametersByMode.multiref = ["references"];
-      else if (images.length > 1)
+      else if (images.length > 1) {
+        if (modes.includes("i2v"))
+          requiredParametersByMode.i2v = ["firstFrame"];
         requiredParametersByMode.flf2v = ["firstFrame", "lastFrame"];
-      else requiredParametersByMode.i2v = ["firstFrame"];
+      } else requiredParametersByMode.i2v = ["firstFrame"];
     }
     if (videos.length || audios.length) {
       if (!modes.includes("multiref")) modes.push("multiref");
@@ -400,6 +406,8 @@ export function runningHubModelProfile(
         requiredParametersByMode.multiref = ["references"];
     }
     if (!modes.length) modes.push("t2v");
+    if (candidate.requires_reference === true)
+      requiredParametersByMode.multiref = ["references"];
   }
   const parameterSchema = scalar.map((item) => item.publicDefinition);
   const imageLimit = maximumInputCount(media, "IMAGE", 9);
@@ -425,6 +433,7 @@ export function runningHubModelProfile(
       durations: optionsFor(parameterSchema, "duration"),
       resolutions: optionsFor(parameterSchema, "resolution"),
       aspectRatios: optionsFor(parameterSchema, "aspectRatio"),
+      ...runningHubReferenceDurationLimits(candidate.reference_duration_limits),
     },
     parameterMap,
   };
@@ -445,7 +454,10 @@ export function runningHubDisplayName(
   if (!technicalName) return original;
   const normalized = technicalName.toLowerCase();
   const family = firstMatchingLabel(normalized, [
-    ["nano-banana2-gemini31flash-lite", "Nano Banana 2（Gemini 3.1 Flash Lite）"],
+    [
+      "nano-banana2-gemini31flash-lite",
+      "Nano Banana 2（Gemini 3.1 Flash Lite）",
+    ],
     ["nano-banana2-gemini31flash", "Nano Banana 2（Gemini 3.1 Flash）"],
     ["nano-banana-pro", "Nano Banana Pro"],
     ["nano-banana", "Nano Banana"],
@@ -502,9 +514,9 @@ export function runningHubDisplayName(
       ? "官方稳定版"
       : normalized.endsWith("-official")
         ? "官方稳定版"
-      : normalized.includes("channel-low-price")
-        ? "低价渠道版"
-        : "";
+        : normalized.includes("channel-low-price")
+          ? "低价渠道版"
+          : "";
   return [family || technicalName.split("/")[0], task, channel]
     .filter(Boolean)
     .join(" · ");
@@ -589,6 +601,19 @@ function maximumInputCount(
     0,
   );
 }
+function runningHubReferenceDurationLimits(value: unknown) {
+  if (!isRecord(value)) return {};
+  const entries: Array<[string, number]> = [];
+  for (const [key, raw] of [
+    ["minReferenceSeconds", value.minSeconds],
+    ["maxReferenceSeconds", value.maxSeconds],
+    ["maxReferenceTotalSeconds", value.maxTotalSeconds],
+  ] as const) {
+    const parsed = Number(raw);
+    if (Number.isFinite(parsed) && parsed >= 0) entries.push([key, parsed]);
+  }
+  return Object.fromEntries(entries);
+}
 function optionsFor(parameters: PublicModelParameter[], key: string) {
   return parameters.find((item) => item.key === key)?.options || [];
 }
@@ -655,6 +680,161 @@ function catalogItems(payload: unknown): Array<Record<string, unknown>> {
   }
   return [];
 }
+
+export function runningHubCatalogItems(
+  payload: unknown,
+): Array<Record<string, unknown>> {
+  const byEndpoint = new Map(
+    RUNNINGHUB_SUPPLEMENTAL_MODELS.map((item) => [String(item.endpoint), item]),
+  );
+  for (const item of catalogItems(payload)) {
+    const endpoint = String(item.endpoint || "").trim();
+    if (endpoint) byEndpoint.set(endpoint, item);
+  }
+  return Array.from(byEndpoint.values());
+}
+
+const RUNNINGHUB_SEEDANCE_25_COMMON_PARAMS = [
+  {
+    fieldKey: "prompt",
+    type: "STRING",
+    required: true,
+    description: "视频内容、镜头、动作与声音提示词",
+    maxLength: 20_000,
+  },
+  {
+    fieldKey: "resolution",
+    type: "LIST",
+    required: true,
+    defaultValue: "720p",
+    options: ["480p", "720p", "1080p", "2k", "4k"],
+  },
+  {
+    fieldKey: "duration",
+    type: "LIST",
+    required: true,
+    defaultValue: "5",
+    options: Array.from({ length: 27 }, (_, index) => String(index + 4)),
+  },
+  {
+    fieldKey: "generateAudio",
+    type: "BOOLEAN",
+    defaultValue: true,
+  },
+  { fieldKey: "watermark", type: "BOOLEAN", defaultValue: false },
+  {
+    fieldKey: "ratio",
+    type: "LIST",
+    defaultValue: "adaptive",
+    options: ["adaptive", "21:9", "16:9", "4:3", "1:1", "3:4", "9:16"],
+  },
+  {
+    fieldKey: "bitrateMode",
+    type: "LIST",
+    defaultValue: "standard",
+    options: ["standard", "high"],
+  },
+  {
+    fieldKey: "seed",
+    type: "INT",
+    defaultValue: -1,
+    min: -1,
+    max: 2_147_483_647,
+    step: 1,
+  },
+  {
+    fieldKey: "outputFormat",
+    type: "LIST",
+    defaultValue: "mp4",
+    options: ["mp4"],
+  },
+] satisfies Array<Record<string, unknown>>;
+
+const RUNNINGHUB_SUPPLEMENTAL_MODELS: Array<Record<string, unknown>> = [
+  {
+    class_name: "ByteDanceSeedance25TokenTextToVideo",
+    display_name: "Seedance 2.5 · 文生视频 · Token",
+    name_cn: "Seedance 2.5 文生视频 Token",
+    name_en: "Seedance 2.5 Token Text to Video",
+    endpoint: "bytedance/seedance-2.5-token/text-to-video",
+    output_type: "video",
+    category: "RunningHub/Seedance",
+    params: [
+      ...RUNNINGHUB_SEEDANCE_25_COMMON_PARAMS,
+      { fieldKey: "webSearch", type: "BOOLEAN", defaultValue: false },
+      { fieldKey: "returnLastFrame", type: "BOOLEAN", defaultValue: false },
+    ],
+  },
+  {
+    class_name: "ByteDanceSeedance25TokenImageToVideo",
+    display_name: "Seedance 2.5 · 首帧/首尾帧视频 · Token",
+    name_cn: "Seedance 2.5 图生视频 Token",
+    name_en: "Seedance 2.5 Token Image to Video",
+    endpoint: "bytedance/seedance-2.5-token/image-to-video",
+    output_type: "video",
+    category: "RunningHub/Seedance",
+    params: [
+      ...RUNNINGHUB_SEEDANCE_25_COMMON_PARAMS,
+      {
+        fieldKey: "firstFrameUrl",
+        type: "IMAGE",
+        required: true,
+        description: "首帧图片",
+      },
+      {
+        fieldKey: "lastFrameUrl",
+        type: "IMAGE",
+        required: false,
+        description: "可选尾帧图片",
+      },
+    ],
+  },
+  {
+    class_name: "ByteDanceSeedance25TokenMultimodalVideo",
+    display_name: "Seedance 2.5 · 多模态视频 · Token",
+    name_cn: "Seedance 2.5 多模态视频 Token",
+    name_en: "Seedance 2.5 Token Multimodal Video",
+    endpoint: "bytedance/seedance-2.5-token/multimodal-video",
+    output_type: "video",
+    category: "RunningHub/Seedance",
+    requires_reference: true,
+    reference_duration_limits: {
+      minSeconds: 2,
+      maxSeconds: 30,
+      maxTotalSeconds: 30,
+    },
+    params: [
+      ...RUNNINGHUB_SEEDANCE_25_COMMON_PARAMS,
+      {
+        fieldKey: "imageUrls",
+        type: "IMAGE",
+        multipleInputs: true,
+        maxInputNum: 30,
+      },
+      {
+        fieldKey: "videoUrls",
+        type: "VIDEO",
+        multipleInputs: true,
+        maxInputNum: 10,
+      },
+      {
+        fieldKey: "audioUrls",
+        type: "AUDIO",
+        multipleInputs: true,
+        maxInputNum: 10,
+      },
+      { fieldKey: "returnLastFrame", type: "BOOLEAN", defaultValue: false },
+      { fieldKey: "realPersonMode", type: "BOOLEAN", defaultValue: true },
+      {
+        fieldKey: "omniReferenceTaskType",
+        type: "LIST",
+        defaultValue: "auto",
+        options: ["auto"],
+      },
+    ],
+  },
+];
+
 function normalizeCapability(value: unknown): Capability | null {
   const text = String(value || "").toLowerCase();
   if (text.includes("speech_to_text") || text.includes("speech-to-text"))
@@ -844,7 +1024,7 @@ const PUBLIC_PARAMETER_NAMES: Record<string, string> = {
 
 function publicParameterName(value: unknown) {
   const name = String(value || "").trim();
-  if (!/^[a-z][a-z0-9_]*$/.test(name)) return "";
+  if (!/^[a-z][a-zA-Z0-9_]*$/.test(name)) return "";
   return (
     PUBLIC_PARAMETER_NAMES[name] ||
     name.replace(/_([a-z0-9])/g, (_, character: string) =>
@@ -1098,6 +1278,42 @@ function validateModelLimits(
   }
   if (mode !== "multiref") return;
   const referenceList = references || [];
+  const timedReferences = referenceList.filter(
+    (item) =>
+      item.mimeType?.startsWith("video/") ||
+      item.mimeType?.startsWith("audio/") ||
+      item.role === "video_input" ||
+      item.role === "motion_reference" ||
+      item.role === "audio_reference",
+  );
+  const knownDurations = timedReferences.flatMap((item) => {
+    const seconds = Number(item.durationMs) / 1_000;
+    return Number.isFinite(seconds) && seconds > 0 ? [seconds] : [];
+  });
+  const minimumSeconds = Number(limits.minReferenceSeconds);
+  const maximumSeconds = Number(limits.maxReferenceSeconds);
+  for (const seconds of knownDurations) {
+    if (
+      (Number.isFinite(minimumSeconds) && seconds < minimumSeconds) ||
+      (Number.isFinite(maximumSeconds) && seconds > maximumSeconds)
+    )
+      throw new DomainError(
+        "INVALID_MODEL_PARAMETER",
+        `单段参考音视频时长需在 ${minimumSeconds}–${maximumSeconds} 秒之间`,
+        422,
+      );
+  }
+  const maximumTotalSeconds = Number(limits.maxReferenceTotalSeconds);
+  if (
+    Number.isFinite(maximumTotalSeconds) &&
+    knownDurations.reduce((total, seconds) => total + seconds, 0) >
+      maximumTotalSeconds
+  )
+    throw new DomainError(
+      "INVALID_MODEL_PARAMETER",
+      `参考音视频总时长不能超过 ${maximumTotalSeconds} 秒`,
+      422,
+    );
   const counts = {
     maxImages: referenceList.filter(
       (item) => !item.mimeType || item.mimeType.startsWith("image/"),

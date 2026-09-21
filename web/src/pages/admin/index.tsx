@@ -188,7 +188,7 @@ function Overview() {
                             {data.usage.map((item) => (
                                 <div key={item.currency} className="rounded-xl border border-stone-200 p-4 dark:border-white/10">
                                     <div className="flex items-center justify-between">
-                                        <b>{isAmountMissing(item.currency) ? "待计费" : item.currency}</b>
+                                        <b>{usageAmountLabel(item.currency, item.totalAmount, true)}</b>
                                         <span className="font-mono text-xl">{formatUsageAmount(item.currency, item.totalAmount)}</span>
                                     </div>
                                     <p className="mt-2 text-xs text-stone-500">
@@ -574,12 +574,7 @@ function UsagePanel() {
         <div className="space-y-5">
             <div className="grid gap-4 md:grid-cols-3">
                 {data.summary.map((item) => (
-                    <Metric
-                        key={item.currency}
-                        label={isAmountMissing(item.currency) ? "待计费金额" : `${item.currency} 实际金额`}
-                        value={formatUsageAmount(item.currency, item.totalAmount)}
-                        note={`${item.totalTokens} Tokens · ${item.videoDurationSeconds}s`}
-                    />
+                    <Metric key={item.currency} label={usageAmountLabel(item.currency, item.totalAmount)} value={formatUsageAmount(item.currency, item.totalAmount)} note={`${item.totalTokens} Tokens · ${item.videoDurationSeconds}s`} />
                 ))}
             </div>
             <UsageBreakdownGrid breakdowns={data.breakdowns} />
@@ -600,6 +595,7 @@ function UsagePanel() {
                             ),
                         },
                         { title: "模型", dataIndex: "modelId" },
+                        { title: "渠道", dataIndex: "provider", render: (value) => (value === "runninghub" ? "海马云" : "Token360") },
                         { title: "计量", render: (_, item) => `${item.totalTokens || 0} T · ${item.videoDurationSeconds || 0}s · ${item.generatedImages || 0} 图` },
                         {
                             title: "实际金额",
@@ -925,11 +921,17 @@ function formatBytes(value: number) {
     const index = Math.min(units.length - 1, Math.floor(Math.log(value) / Math.log(1024)));
     return `${(value / 1024 ** index).toFixed(index ? 1 : 0)} ${units[index]}`;
 }
-function isAmountMissing(currency?: string) {
-    return !currency || currency === "UNKNOWN";
+function isAmountMissing(amount?: string) {
+    return amount === undefined || amount === null || amount === "";
 }
 function formatUsageAmount(currency?: string, amount?: string) {
-    return isAmountMissing(currency) || amount === undefined || amount === null ? "金额未返回" : `${currency} ${amount}`;
+    if (isAmountMissing(amount)) return "金额未返回";
+    return !currency || currency === "UNKNOWN" ? `原始单位 ${amount}` : `${currency} ${amount}`;
+}
+function usageAmountLabel(currency?: string, amount?: string, compact = false) {
+    if (isAmountMissing(amount)) return compact ? "待计费" : "待计费金额";
+    if (!currency || currency === "UNKNOWN") return compact ? "原始单位" : "原始单位实际金额";
+    return compact ? currency : `${currency} 实际金额`;
 }
 function copyable(value?: string) {
     if (!value) return "—";

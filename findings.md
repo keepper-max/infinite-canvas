@@ -345,3 +345,17 @@
 - 全局渠道选择保存在 PostgreSQL `platform_settings`，普通用户 `/api/models` 只读取当前渠道；任务表继续保存创建时的 provider，切换渠道不会改变已创建任务。
 - 海马云没有复用 Token360 账单接口，相关任务按外部渠道显示无法进行 Token360 对账，避免产生伪账单。
 - 公开价格表只能用于成本感知，不能替代最终账单或直接向用户承诺价格。
+
+# 2026-09-21 海马云 Seedance 2.5 与消耗入账初始发现
+
+- 海马云 Seedance 2.5 提供独立文生、图生和多模态视频 endpoint，不能直接依赖当前尚未收录它们的公开模型注册表。
+- 用户提供的真实终态响应包含 `thirdPartyConsumeMoney`、`tokenUsage.usage.completion_tokens`、`tokenUsage.usage.total_tokens`、`billingSeconds`、`consumeCoins` 和 `taskCostTime`，可作为单次任务实际用量来源。
+- 当前结论需修正：海马云任务能够提供实际用量；但金额币种若未随响应返回，不能自行标成 USD 或 CNY。
+- 生成结果与消耗入账必须解耦：先完成结果转存，再幂等记录用量；用量缺失或格式异常只影响对账状态。
+- 官方实时文档确认三条标准接口：`text-to-video`、`image-to-video`、`multimodal-video`；图生支持首帧/首尾帧，多模态最多 30 图、10 视频、10 音频，单段音视频 2–30 秒且参考总长不超过 30 秒。
+- 三类示例共同返回异步任务并通过 `/query` 取终态；现有海马云上传和轮询实现可以复用，主要缺口是模型目录补充、终态 usage 解析与入账。
+- 多模态接口使用 `imageUrls`/`videoUrls`/`audioUrls` 数组；图生使用 `firstFrameUrl`/`lastFrameUrl`；文生不携带媒体字段。公共参数包含 `resolution`、`duration`、`generateAudio`、`watermark`、`ratio`、`bitrateMode`、`seed`、`outputFormat`，另有路由特有参数。
+- 当前公开 `model-registry.public.json` 仍未收录 Bytedance Seedance 2.5 三个 endpoint，因此仅刷新注册表不会出现模型；需要服务端补充目录，并在将来官方注册表收录后按 endpoint 去重、优先采用官方条目。
+- `ProviderResult` 已有 `usage` 字段，JobExecutor 也会把终态 usage 写入 `billing_meter_usage`；缺口集中在 RunningHub Provider 未解析 usage，以及 BillingService 对非 Token360 一律标记 unavailable。
+- 视频转存是独立队列，恢复时会再次查询终态；为避免崩溃窗口丢用量，普通执行和转存执行都应记录海马云 usage，最终在任务状态写成 completed/failed/cancelled 后幂等落一条 `generation_usage`。
+- 现有 `generation_usage` 已能承载 Token、视频秒数、实际金额、Provider 请求 ID 和原始 usage JSON，无需修改已上线表结构；海马云未返回币种时保留 `currency=null`，管理后台应显示“原始单位”而不是误报“金额未返回”。

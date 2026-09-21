@@ -2,10 +2,70 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
+  runningHubCatalogItems,
   runningHubDisplayName,
   runningHubModelProfile,
 } from "../src/model-gateway.js";
-import { RunningHubProvider } from "../src/runninghub-provider.js";
+import {
+  RunningHubProvider,
+  runningHubUsage,
+} from "../src/runninghub-provider.js";
+
+test("RunningHub supplements Seedance 2.5 standard endpoints until the public registry catches up", () => {
+  const models = runningHubCatalogItems([]);
+  const text = models.find(
+    (item) => item.endpoint === "bytedance/seedance-2.5-token/text-to-video",
+  );
+  const image = models.find(
+    (item) => item.endpoint === "bytedance/seedance-2.5-token/image-to-video",
+  );
+  const multimodal = models.find(
+    (item) => item.endpoint === "bytedance/seedance-2.5-token/multimodal-video",
+  );
+  assert.deepEqual(runningHubModelProfile(text!)?.modes, ["t2v"]);
+  assert.deepEqual(runningHubModelProfile(image!)?.modes, ["i2v", "flf2v"]);
+  const multimodalProfile = runningHubModelProfile(multimodal!);
+  assert.deepEqual(multimodalProfile?.modes, ["t2v", "multiref"]);
+  assert.deepEqual(multimodalProfile?.requiredParametersByMode.multiref, [
+    "references",
+  ]);
+  assert.equal(multimodalProfile?.limits.maxImages, 30);
+  assert.equal(multimodalProfile?.limits.maxVideos, 10);
+  assert.equal(multimodalProfile?.limits.maxAudios, 10);
+});
+
+test("RunningHub terminal usage normalizes actual cost, tokens and billing seconds", () => {
+  assert.deepEqual(
+    runningHubUsage(
+      {
+        data: {
+          taskId: "rh-task-usage",
+          usage: {
+            thirdPartyConsumeMoney: "3.398",
+            consumeCoins: null,
+            taskCostTime: "0",
+            tokenUsage: {
+              usage: {
+                completion_tokens: "38830",
+                total_tokens: "38830",
+              },
+            },
+            billingSeconds: "4",
+          },
+        },
+      },
+      "rh-task-usage",
+    ),
+    {
+      provider_request_id: "rh-task-usage",
+      third_party_consume_money: "3.398",
+      task_cost_time: "0",
+      billing_seconds: "4",
+      completion_tokens: "38830",
+      total_tokens: "38830",
+    },
+  );
+});
 
 test("RunningHub registry maps exact endpoint parameters into canvas capabilities", () => {
   const profile = runningHubModelProfile({
@@ -76,6 +136,11 @@ test("RunningHub provider uploads media, submits exact endpoint and reads async 
         data: {
           status: "SUCCESS",
           results: [{ url: "https://runninghub.example/result/video" }],
+          usage: {
+            thirdPartyConsumeMoney: "0.25",
+            tokenUsage: { usage: { total_tokens: "1200" } },
+            billingSeconds: "5",
+          },
         },
       });
     throw new Error(`unexpected request: ${url}`);
@@ -130,6 +195,8 @@ test("RunningHub provider uploads media, submits exact endpoint and reads async 
     const result = await provider.get("rh-task-1", undefined, "video");
     assert.equal(result.status, "completed");
     assert.equal(result.artifacts?.[0]?.kind, "video");
+    assert.equal(result.usage?.third_party_consume_money, "0.25");
+    assert.equal(result.usage?.total_tokens, "1200");
   } finally {
     globalThis.fetch = originalFetch;
   }

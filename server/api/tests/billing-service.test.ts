@@ -227,3 +227,55 @@ test("terminal meter usage cannot overwrite the initial submission trace", async
   assert.doesNotMatch(calls[1]?.sql || "", /billing_trace_id/);
   assert.deepEqual(calls[1]?.values, ["job-4", JSON.stringify({ seconds: 6 })]);
 });
+
+test("RunningHub terminal usage is settled directly without Token360 reconciliation", async () => {
+  const calls: Array<{ sql: string; values?: unknown[] }> = [];
+  const job = {
+    id: "job-rh-1",
+    project_id: "project-1",
+    created_by: "user-1",
+    provider: "runninghub",
+    provider_job_id: "rh-task-1",
+    model_id: "runninghub.video.seedance-2-5",
+    capability: "video",
+    billing_status: "pending",
+    parameters: { duration: "5" },
+    billing_meter_usage: {
+      provider_request_id: "rh-task-1",
+      third_party_consume_money: "3.398",
+      completion_tokens: "38830",
+      total_tokens: "38830",
+      billing_seconds: "4",
+    },
+  };
+  const pool = {
+    async query(sql: string, values?: unknown[]) {
+      calls.push({ sql, values });
+      if (sql.startsWith("select * from generation_jobs"))
+        return { rows: [job], rowCount: 1 };
+      return { rows: [], rowCount: 1 };
+    },
+  };
+  const result = await new BillingService(
+    pool as never,
+    config,
+  ).finalizeProviderUsage("job-rh-1");
+  assert.deepEqual(result, {
+    status: "settled",
+    requestId: "runninghub:rh-task-1",
+  });
+  const insert = calls.find(({ sql }) =>
+    sql.includes("insert into generation_usage"),
+  );
+  assert.ok(insert?.values);
+  assert.equal(insert.values[3], "runninghub:rh-task-1");
+  assert.equal(insert.values[7], true);
+  assert.equal(insert.values[9], 38830);
+  assert.equal(insert.values[10], 38830);
+  assert.equal(insert.values[12], "4");
+  assert.equal(insert.values[13], "5");
+  assert.equal(insert.values[14], "3.398");
+  assert.equal(insert.values[15], null);
+  assert.equal(insert.values[16], "rh-task-1");
+  assert.match(calls.at(-1)?.sql || "", /billing_status='settled'/);
+});

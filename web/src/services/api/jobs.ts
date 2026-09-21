@@ -13,6 +13,7 @@ export type ManagedReference = {
     assetVersionId?: string;
     virtualPortraitId?: string;
     mimeType?: string;
+    durationMs?: number;
 };
 export type ManagedJobTrace = {
     workflowKind?: string;

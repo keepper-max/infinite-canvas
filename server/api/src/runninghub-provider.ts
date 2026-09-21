@@ -56,6 +56,15 @@ export class RunningHubProvider implements GenerationProvider {
       request.references || [],
       requestSignal,
     );
+    if (
+      request.upstreamModel.endsWith(
+        "bytedance/seedance-2.5-token/multimodal-video",
+      ) &&
+      body.conversionSlots === undefined
+    )
+      body.conversionSlots = ["all"];
+    if (typeof body.conversionSlots === "string")
+      body.conversionSlots = [body.conversionSlots];
     const payload = await this.json(
       `/${request.upstreamModel.replace(/^\/+/, "")}`,
       body,
@@ -81,19 +90,21 @@ export class RunningHubProvider implements GenerationProvider {
       { taskId: providerJobId },
       signal,
     );
+    const usage = runningHubUsage(payload, providerJobId);
     const status = normalizeStatus(payload);
     if (status === "failed")
       throw new ProviderError(
         "PROVIDER_REJECTED",
         providerUserMessage(readError(payload), "海马云生成失败"),
         false,
-        { upstreamMessage: sanitize(readError(payload)) },
+        { upstreamMessage: sanitize(readError(payload)), usage },
       );
     if (status !== "completed")
       return {
         providerJobId,
         status,
         progress: readProgress(payload),
+        ...(Object.keys(usage).length ? { usage } : {}),
       };
     const artifacts = readArtifacts(payload, capability);
     if (!artifacts.length)
@@ -101,8 +112,15 @@ export class RunningHubProvider implements GenerationProvider {
         "PROVIDER_RESULT_MISSING",
         "海马云任务已完成，但没有返回可用结果",
         true,
+        { usage },
       );
-    return { providerJobId, status, progress: 100, artifacts };
+    return {
+      providerJobId,
+      status,
+      progress: 100,
+      artifacts,
+      ...(Object.keys(usage).length ? { usage } : {}),
+    };
   }
 
   async cancel(_providerJobId: string, _signal?: AbortSignal) {
@@ -397,6 +415,40 @@ function readError(value: unknown) {
       root.error_code ||
       "",
   );
+}
+
+export function runningHubUsage(
+  value: unknown,
+  providerJobId?: string,
+): Record<string, unknown> {
+  const envelope = asRecord(value);
+  const data = asRecord(unwrap(value));
+  const billing = asRecord(data.usage || envelope.usage);
+  const tokenUsage = asRecord(billing.tokenUsage || data.tokenUsage);
+  const tokens = asRecord(tokenUsage.usage || billing.token_usage);
+  const values: Record<string, unknown> = {
+    provider_request_id:
+      providerJobId || stringValue(data.taskId) || stringValue(data.task_id),
+    third_party_consume_money:
+      billing.thirdPartyConsumeMoney ?? data.thirdPartyConsumeMoney,
+    consume_money: billing.consumeMoney ?? data.consumeMoney,
+    consume_coins: billing.consumeCoins ?? data.consumeCoins,
+    task_cost_time: billing.taskCostTime ?? data.taskCostTime,
+    billing_seconds: billing.billingSeconds ?? data.billingSeconds,
+    prompt_tokens: tokens.prompt_tokens,
+    completion_tokens: tokens.completion_tokens,
+    total_tokens: tokens.total_tokens,
+    currency: billing.currency ?? data.currency,
+  };
+  return Object.fromEntries(
+    Object.entries(values).filter(
+      ([, item]) => item !== undefined && item !== null && item !== "",
+    ),
+  );
+}
+
+function stringValue(value: unknown) {
+  return typeof value === "string" && value.trim() ? value.trim() : undefined;
 }
 function unwrap(value: unknown) {
   const record = asRecord(value);

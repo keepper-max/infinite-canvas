@@ -17,13 +17,23 @@ const referenceSchema = z
     url: z
       .string()
       .url()
-      .refine((value) => ["http:", "https:"].includes(new URL(value).protocol), "参考素材 URL 只支持 HTTP 或 HTTPS")
+      .refine(
+        (value) => ["http:", "https:"].includes(new URL(value).protocol),
+        "参考素材 URL 只支持 HTTP 或 HTTPS",
+      )
       .optional(),
     dataUrl: z.string().max(30_000_000).optional(),
     mimeType: z.string().max(128).optional(),
+    durationMs: z.number().finite().min(0).max(86_400_000).optional(),
   })
   .refine(
-    (value) => Boolean(value.assetVersionId || value.virtualPortraitId || value.url || value.dataUrl),
+    (value) =>
+      Boolean(
+        value.assetVersionId ||
+        value.virtualPortraitId ||
+        value.url ||
+        value.dataUrl,
+      ),
     "参考素材缺少来源",
   );
 
@@ -64,7 +74,7 @@ export const createJobSchema = z
     ]),
     prompt: z.string().min(1).max(120_000),
     parameters: z.record(z.string(), z.unknown()).default({}),
-    references: z.array(referenceSchema).max(15).default([]),
+    references: z.array(referenceSchema).max(50).default([]),
     trace: traceSchema.optional(),
     idempotencyKey: z.string().min(8).max(200),
   })

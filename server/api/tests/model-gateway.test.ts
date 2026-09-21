@@ -442,6 +442,72 @@ test("multiref enforces explicit zero limits without rejecting frame modes", asy
   );
 });
 
+test("Seedance 2.5 reference duration limits reject invalid clips before submission", async () => {
+  const row = {
+    ...definition,
+    limits: {
+      ...definition.limits,
+      maxVideos: 10,
+      maxAudios: 10,
+      minReferenceSeconds: 2,
+      maxReferenceSeconds: 30,
+      maxReferenceTotalSeconds: 30,
+    },
+  };
+  await assert.rejects(
+    () =>
+      gateway(row).compile({
+        modelId: definition.id,
+        capability: "video",
+        mode: "multiref",
+        prompt: "延续动作",
+        references: [
+          {
+            role: "motion_reference",
+            url: "https://example.com/a.mp4",
+            mimeType: "video/mp4",
+            durationMs: 20_000,
+          },
+          {
+            role: "audio_reference",
+            url: "https://example.com/b.mp3",
+            mimeType: "audio/mpeg",
+            durationMs: 11_000,
+          },
+        ],
+      }),
+    (error: unknown) =>
+      error instanceof DomainError && error.code === "INVALID_MODEL_PARAMETER",
+  );
+});
+
+test("managed job contract accepts the official 50-reference multimodal ceiling", () => {
+  const references = Array.from({ length: 50 }, (_, index) => ({
+    role: "identity_reference" as const,
+    url: `https://example.com/reference-${index}.png`,
+    mimeType: "image/png",
+  }));
+  const base = {
+    modelId: definition.id,
+    capability: "video" as const,
+    mode: "multiref" as const,
+    prompt: "多模态参考",
+    parameters: {},
+    idempotencyKey: "reference-limit-50",
+  };
+  assert.equal(
+    createJobSchema.safeParse({ ...base, references }).success,
+    true,
+  );
+  assert.equal(
+    createJobSchema.safeParse({
+      ...base,
+      references: [...references, references[0]],
+    }).success,
+    false,
+  );
+});
+
 test("video quality and format parameters map to provider field names", async () => {
   const compiled = await gateway().compile({
     modelId: definition.id,

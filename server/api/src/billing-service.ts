@@ -38,6 +38,18 @@ export class BillingService {
     );
   }
 
+  async finalizeProviderUsage(jobId: string) {
+    const result = await this.pool.query(
+      "select * from generation_jobs where id=$1",
+      [jobId],
+    );
+    const job = result.rows[0];
+    if (!job) return { status: "missing" };
+    if (job.provider !== "runninghub")
+      return { status: String(job.billing_status || "pending") };
+    return this.settleRunningHub(job);
+  }
+
   async runDue(limit = 20) {
     const due = await this.pool.query(
       `select id from generation_jobs where status=any($1::text[]) and billing_trace_id is not null
@@ -72,6 +84,7 @@ export class BillingService {
         return { status: String(existing.rows[0].billing_status) };
       throw new DomainError("BILLING_JOB_NOT_FOUND", "找不到可对账任务", 404);
     }
+    if (job.provider === "runninghub") return this.settleRunningHub(job);
     if (job.provider !== "token360") {
       await this.finishUnavailable(jobId, "外部渠道无法进行 Token360 对账");
       return { status: "unavailable" };
@@ -208,6 +221,76 @@ export class BillingService {
       "update generation_jobs set billing_status='failed',billing_error=$2,billing_next_check_at=null,updated_at=now() where id=$1",
       [jobId, sanitize(message)],
     );
+  }
+
+  private async settleRunningHub(job: Record<string, unknown>) {
+    const usage = asRecord(job.billing_meter_usage);
+    const amount =
+      decimalValue(usage.third_party_consume_money) ||
+      decimalValue(usage.consume_money);
+    const promptTokens = integerValue(usage.prompt_tokens);
+    const completionTokens = integerValue(usage.completion_tokens);
+    const totalTokens = integerValue(usage.total_tokens);
+    const billingSeconds = decimalValue(usage.billing_seconds);
+    const consumedCoins = decimalValue(usage.consume_coins);
+    if (
+      amount === null &&
+      promptTokens === null &&
+      completionTokens === null &&
+      totalTokens === null &&
+      billingSeconds === null &&
+      consumedCoins === null
+    ) {
+      await this.finishUnavailable(
+        String(job.id),
+        "海马云终态未返回可记录的实际用量",
+      );
+      return { status: "unavailable" };
+    }
+    const providerRequestId =
+      stringValue(usage.provider_request_id) ||
+      stringValue(job.provider_job_id) ||
+      String(job.id);
+    const billingRequestId = `runninghub:${providerRequestId}`;
+    const parameters = asRecord(job.parameters);
+    const currency = stringValue(usage.currency)?.toUpperCase() || null;
+    await this.pool.query(
+      `insert into generation_usage(job_id,project_id,user_id,billing_request_id,provider,model_id,capability,status,billed,
+        prompt_tokens,completion_tokens,total_tokens,audio_duration_seconds,video_duration_seconds,requested_seconds,
+        total_amount,currency,provider_request_id,usage,reconciled_at,updated_at)
+       values($1,$2,$3,$4,$5,$6,$7,'settled',$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,now(),now())
+       on conflict(job_id) do update set billing_request_id=excluded.billing_request_id,status=excluded.status,
+        billed=excluded.billed,prompt_tokens=excluded.prompt_tokens,completion_tokens=excluded.completion_tokens,
+        total_tokens=excluded.total_tokens,audio_duration_seconds=excluded.audio_duration_seconds,
+        video_duration_seconds=excluded.video_duration_seconds,requested_seconds=excluded.requested_seconds,
+        total_amount=excluded.total_amount,currency=excluded.currency,provider_request_id=excluded.provider_request_id,
+        usage=excluded.usage,reconciled_at=now(),updated_at=now()`,
+      [
+        job.id,
+        job.project_id,
+        job.created_by,
+        billingRequestId,
+        job.provider,
+        job.model_id,
+        job.capability,
+        amount !== null,
+        promptTokens,
+        completionTokens,
+        totalTokens,
+        job.capability === "audio" ? billingSeconds : null,
+        job.capability === "video" ? billingSeconds : null,
+        decimalValue(parameters.duration),
+        amount,
+        currency,
+        providerRequestId,
+        JSON.stringify(usage),
+      ],
+    );
+    await this.pool.query(
+      "update generation_jobs set billing_status='settled',billing_error=null,billing_next_check_at=null,billing_last_checked_at=now(),updated_at=now() where id=$1",
+      [job.id],
+    );
+    return { status: "settled", requestId: billingRequestId };
   }
 
   private async finishUnavailable(jobId: string, message: string) {

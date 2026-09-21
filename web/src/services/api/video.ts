@@ -208,16 +208,16 @@ async function createManagedVideoTask(config: AiConfig, model: string, prompt: s
     );
     const videos = await Promise.all(
         (options?.videos || []).map(async (video) => {
-            if (video.assetVersionId) return { assetVersionId: video.assetVersionId, mimeType: video.type, role: video.role };
+            if (video.assetVersionId) return { assetVersionId: video.assetVersionId, mimeType: video.type, role: video.role, durationMs: video.durationMs };
             const file = await referenceMediaToFile(video, "ref.mp4", "invalidReferenceVideo", options);
-            return { ...(await stageManagedReference(projectId, file, "video", video.name, video.storageKey, options?.signal)), role: video.role };
+            return { ...(await stageManagedReference(projectId, file, "video", video.name, video.storageKey, options?.signal)), role: video.role, durationMs: video.durationMs };
         }),
     );
     const audios = await Promise.all(
         (options?.audios || []).map(async (audio) => {
-            if (audio.assetVersionId) return { assetVersionId: audio.assetVersionId, mimeType: audio.type };
+            if (audio.assetVersionId) return { assetVersionId: audio.assetVersionId, mimeType: audio.type, durationMs: audio.durationMs };
             const file = await referenceMediaToFile(audio, "ref.mp3", "invalidReferenceAudio", options);
-            return stageManagedReference(projectId, file, "audio", audio.name, audio.storageKey, options?.signal);
+            return { ...(await stageManagedReference(projectId, file, "audio", audio.name, audio.storageKey, options?.signal)), durationMs: audio.durationMs };
         }),
     );
     const generationMode = normalizeVideoGenerationMode(config.videoMode, supportedVideoModes(modelDefinition), images.length);

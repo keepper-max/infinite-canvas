@@ -500,6 +500,10 @@ export class JobExecutor {
         activeProviderJobId ? String(activeProviderJobId) : undefined,
       );
     } catch (error) {
+      if (error instanceof ProviderError && isRecord(error.safeDetails.usage))
+        await this.billing
+          ?.recordMeterUsage(jobId, error.safeDetails.usage)
+          .catch(() => undefined);
       if (
         error instanceof ProviderError &&
         typeof error.safeDetails.billingTraceId === "string"
@@ -568,6 +572,10 @@ export class JobExecutor {
         transferSignal,
         row.capability as GenerationInput["capability"],
       );
+      if (result.usage)
+        await this.billing
+          ?.recordMeterUsage(jobId, result.usage)
+          .catch(() => undefined);
       if (result.status !== "completed")
         throw new ProviderError(
           "PROVIDER_RESULT_PENDING",
@@ -582,6 +590,10 @@ export class JobExecutor {
         String(row.provider_job_id),
       );
     } catch (error) {
+      if (error instanceof ProviderError && isRecord(error.safeDetails.usage))
+        await this.billing
+          ?.recordMeterUsage(jobId, error.safeDetails.usage)
+          .catch(() => undefined);
       const current = await this.pool.query(
         "select status from generation_jobs where id=$1",
         [jobId],
@@ -630,6 +642,7 @@ export class JobExecutor {
       "update job_attempts set status='completed',finished_at=now() where job_id=$1 and attempt=$2",
       [jobId, attempt],
     );
+    await this.billing?.finalizeProviderUsage(jobId).catch(() => undefined);
     await this.event(row, "job.completed", "completed", 100, "生成完成", {
       artifacts,
     });
@@ -653,6 +666,8 @@ export class JobExecutor {
       "update generation_jobs set status=$2,finished_at=case when $3 then now() else null end,updated_at=now() where id=$1",
       [jobId, status, final],
     );
+    if (final)
+      await this.billing?.finalizeProviderUsage(jobId).catch(() => undefined);
     await this.event(
       row,
       final ? "job.failed" : "job.retrying",
@@ -671,6 +686,9 @@ export class JobExecutor {
       [row.id],
     );
     if (!updated.rowCount) return;
+    await this.billing
+      ?.finalizeProviderUsage(String(row.id))
+      .catch(() => undefined);
     await this.event(
       row,
       "job.cancelled",
@@ -1176,6 +1194,9 @@ export async function downloadBytes(
 
 function formatMegabytes(bytes: number) {
   return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
+}
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
 }
 function extensionFor(mime: string) {
   if (mime.includes("png")) return "png";
