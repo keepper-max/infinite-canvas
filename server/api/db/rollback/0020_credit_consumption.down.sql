@@ -1,0 +1,11 @@
+delete from platform_settings where key='credit_pricing';
+drop index if exists generation_usage_credit_status_idx;
+alter table generation_usage drop column if exists credit_ledger_id;
+alter table generation_usage drop column if exists points_per_cny;
+alter table generation_usage drop column if exists markup;
+alter table generation_usage drop column if exists exchange_rate;
+alter table generation_usage drop column if exists cost_cny;
+alter table generation_usage drop column if exists credit_points;
+alter table generation_usage drop column if exists credit_status;
+drop table if exists credit_lot_allocations;
+drop table if exists credit_lots;

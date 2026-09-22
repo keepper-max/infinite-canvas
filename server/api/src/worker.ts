@@ -24,6 +24,7 @@ import {
   CompositionExecutor,
 } from "./composition-service.js";
 import { BillingService } from "./billing-service.js";
+import { CreditService } from "./credit-service.js";
 
 const config = readConfig();
 const { pool } = createDatabase(config.databaseUrl);
@@ -67,7 +68,8 @@ const provider = new ProviderRouter(
     ],
   ]),
 );
-const billing = new BillingService(pool, config.provider);
+const credits = new CreditService(pool);
+const billing = new BillingService(pool, config.provider, credits);
 const connection = new Redis(config.jobs.redisUrl, {
   maxRetriesPerRequest: null,
 });

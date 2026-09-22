@@ -487,8 +487,8 @@ export const creditAccounts = pgTable("credit_accounts", {
     .notNull()
     .unique()
     .references(() => users.id, { onDelete: "cascade" }),
-  balance: bigint("balance", { mode: "number" }).default(0).notNull(),
-  reserved: bigint("reserved", { mode: "number" }).default(0).notNull(),
+  balance: bigint("balance", { mode: "bigint" }).default(0n).notNull(),
+  reserved: bigint("reserved", { mode: "bigint" }).default(0n).notNull(),
   createdAt: timestamp("created_at", { withTimezone: true })
     .defaultNow()
     .notNull(),
@@ -498,13 +498,13 @@ export const creditAccounts = pgTable("credit_accounts", {
 });
 
 export const creditLedger = pgTable("credit_ledger", {
-  id: bigserial("id", { mode: "number" }).primaryKey(),
+  id: bigserial("id", { mode: "bigint" }).primaryKey(),
   accountId: uuid("account_id")
     .notNull()
     .references(() => creditAccounts.id, { onDelete: "cascade" }),
   entryType: text("entry_type").notNull(),
-  delta: bigint("delta", { mode: "number" }).notNull(),
-  balanceAfter: bigint("balance_after", { mode: "number" }).notNull(),
+  delta: bigint("delta", { mode: "bigint" }).notNull(),
+  balanceAfter: bigint("balance_after", { mode: "bigint" }).notNull(),
   referenceType: text("reference_type"),
   referenceId: text("reference_id"),
   idempotencyKey: text("idempotency_key").notNull().unique(),
@@ -513,6 +513,57 @@ export const creditLedger = pgTable("credit_ledger", {
     .defaultNow()
     .notNull(),
 });
+
+export const creditLots = pgTable("credit_lots", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  accountId: uuid("account_id")
+    .notNull()
+    .references(() => creditAccounts.id, { onDelete: "cascade" }),
+  source: text("source").notNull(),
+  credits: bigint("credits", { mode: "bigint" }).notNull(),
+  remaining: bigint("remaining", { mode: "bigint" }).notNull(),
+  referenceType: text("reference_type"),
+  referenceId: text("reference_id"),
+  expiresAt: timestamp("expires_at", { withTimezone: true }),
+  metadata: jsonb("metadata").default({}).notNull(),
+  createdBy: uuid("created_by").references(() => users.id, {
+    onDelete: "set null",
+  }),
+  createdAt: timestamp("created_at", { withTimezone: true })
+    .defaultNow()
+    .notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true })
+    .defaultNow()
+    .notNull(),
+});
+
+export const activationCodes = pgTable("activation_codes", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  codeHash: text("code_hash").notNull().unique(),
+  codeHint: text("code_hint").notNull(),
+  credits: bigint("credits", { mode: "bigint" }).notNull(),
+  expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+  createdBy: uuid("created_by").notNull().references(() => users.id, { onDelete: "restrict" }),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  redeemedBy: uuid("redeemed_by").references(() => users.id, { onDelete: "set null" }),
+  redeemedAt: timestamp("redeemed_at", { withTimezone: true }),
+  revokedBy: uuid("revoked_by").references(() => users.id, { onDelete: "set null" }),
+  revokedAt: timestamp("revoked_at", { withTimezone: true }),
+});
+
+export const creditLotAllocations = pgTable(
+  "credit_lot_allocations",
+  {
+    ledgerId: bigint("ledger_id", { mode: "bigint" })
+      .notNull()
+      .references(() => creditLedger.id, { onDelete: "restrict" }),
+    lotId: uuid("lot_id")
+      .notNull()
+      .references(() => creditLots.id, { onDelete: "restrict" }),
+    credits: bigint("credits", { mode: "bigint" }).notNull(),
+  },
+  (table) => [primaryKey({ columns: [table.ledgerId, table.lotId] })],
+);
 
 export const billingPlans = pgTable("billing_plans", {
   id: text("id").primaryKey(),
@@ -647,6 +698,8 @@ export const schema = {
   smsVerificationRequests,
   creditAccounts,
   creditLedger,
+  creditLots,
+  creditLotAllocations,
   billingPlans,
   paymentOrders,
   paymentCallbackReceipts,

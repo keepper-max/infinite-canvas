@@ -355,6 +355,7 @@ export default {
         text: "AI Text Studio",
         prompts: "Prompt Library",
         assets: "My Assets",
+        credits: "Credits",
         config: "Settings",
         operations: "Platform",
     },

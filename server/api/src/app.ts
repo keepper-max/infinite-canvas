@@ -217,6 +217,13 @@ export function createApp(
     );
   });
 
+  app.post("/api/billing/activation-codes/redeem", async (context) => {
+    const user = await requireUser(context.req.raw, repository, config);
+    const input = z.object({ code: z.string() }).strict().parse(await readJson(context.req.raw));
+    return context.json(success(context,
+      await requireOperationsService(operationsService).redeemActivationCode(user.id, input.code)));
+  });
+
   app.post("/api/payments/orders", async (context) => {
     const user = await requireUser(context.req.raw, repository, config);
     await requireOperationsService(operationsService).createPaymentOrder(
@@ -348,6 +355,51 @@ export function createApp(
     );
   });
 
+  app.get("/api/admin/credits/pricing", async (context) => {
+    const user = await requireUser(context.req.raw, repository, config);
+    return context.json(
+      success(
+        context,
+        await requireOperationsService(operationsService).creditPricing(
+          user.id,
+        ),
+      ),
+    );
+  });
+
+  app.get("/api/admin/credits/activation-codes", async (context) => {
+    const user = await requireUser(context.req.raw, repository, config);
+    return context.json(success(context, {
+      codes: await requireOperationsService(operationsService).listActivationCodes(user.id),
+    }));
+  });
+
+  app.post("/api/admin/credits/activation-codes", async (context) => {
+    const user = await requireUser(context.req.raw, repository, config);
+    const input = z.object({
+      credits: z.number().int().positive().max(1_000_000_000),
+      expiresAt: z.string().datetime(),
+    }).strict().parse(await readJson(context.req.raw));
+    return context.json(success(context,
+      await requireOperationsService(operationsService).issueActivationCode(
+        user.id, input.credits, input.expiresAt, context.get("requestId"))), 201);
+  });
+
+  app.patch("/api/admin/credits/pricing", async (context) => {
+    const user = await requireUser(context.req.raw, repository, config);
+    const input = creditPricingInput.parse(await readJson(context.req.raw));
+    return context.json(
+      success(
+        context,
+        await requireOperationsService(operationsService).setCreditPricing(
+          user.id,
+          input.usdCnyRate,
+          context.get("requestId"),
+        ),
+      ),
+    );
+  });
+
   app.get("/api/admin/users", async (context) => {
     const user = await requireUser(context.req.raw, repository, config);
     return context.json(
@@ -421,6 +473,23 @@ export function createApp(
           context.get("requestId"),
         ),
       ),
+    );
+  });
+
+  app.post("/api/admin/users/:userId/credits", async (context) => {
+    const user = await requireUser(context.req.raw, repository, config);
+    const input = creditGrantInput.parse(await readJson(context.req.raw));
+    return context.json(
+      success(
+        context,
+        await requireOperationsService(operationsService).grantCredits(
+          user.id,
+          uuidParam.parse(context.req.param("userId")),
+          input,
+          context.get("requestId"),
+        ),
+      ),
+      201,
     );
   });
 
@@ -1191,6 +1260,24 @@ const adminStatusInput = z
   })
   .strict();
 const adminRoleInput = z.object({ isAdmin: z.boolean() }).strict();
+const creditPricingInput = z
+  .object({
+    usdCnyRate: z
+      .string()
+      .trim()
+      .max(32)
+      .regex(/^\d+(?:\.\d{1,8})?$/),
+  })
+  .strict();
+const creditGrantInput = z
+  .object({
+    credits: z.number().int().positive().max(1_000_000_000),
+    source: z.enum(["purchase", "promotion", "compensation"]),
+    note: z.string().trim().min(1).max(500),
+    expiresAt: z.string().datetime().optional(),
+    idempotencyKey: z.string().uuid(),
+  })
+  .strict();
 const managedProviderId = z.enum([
   "token360",
   "runninghub",

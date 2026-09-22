@@ -17,6 +17,7 @@ import TextWorkbenchPage from "@/pages/text";
 import WorkspaceEntryPage from "@/pages/workspace-entry";
 import OperationsPage from "@/pages/operations";
 import AdminPage from "@/pages/admin";
+import CreditsPage from "@/pages/credits";
 
 export const router = createBrowserRouter([
     { path: "/login", element: <AuthPage mode="login" /> },
@@ -42,6 +43,7 @@ export const router = createBrowserRouter([
             { path: "/canvas/:id", element: <CanvasProjectPage /> },
             { path: "/config", element: <ConfigPage /> },
             { path: "/operations", element: <OperationsPage /> },
+            { path: "/credits", element: <CreditsPage /> },
         ],
     },
     {

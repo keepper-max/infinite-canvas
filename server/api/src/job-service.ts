@@ -3,6 +3,7 @@ import type { Pool, PoolClient } from "pg";
 
 import type { JobConfig } from "./config.js";
 import type { BillingService } from "./billing-service.js";
+import type { CreditService } from "./credit-service.js";
 import { DomainError } from "./domain.js";
 import type { CreateJobInput } from "./job-contract.js";
 import { ModelGateway, type GenerationInput } from "./model-gateway.js";
@@ -32,6 +33,7 @@ export class JobService {
     private readonly gateway: ModelGateway,
     private readonly config: JobConfig,
     private readonly publish: JobEventPublisher = async () => undefined,
+    private readonly credits?: CreditService,
   ) {}
 
   async create(
@@ -57,6 +59,7 @@ export class JobService {
         );
       return serializeJob(duplicate.rows[0]);
     }
+    await this.credits?.assertCanCreate(userId);
     const compiled = await this.gateway.compile(input);
     const maxAttempts = generationJobAttempts();
     const client = await this.pool.connect();

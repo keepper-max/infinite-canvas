@@ -93,7 +93,7 @@ export default function OperationsPage() {
                 <div className="flex items-center justify-between">
                     <div>
                         <h1 className="text-2xl font-semibold">平台与团队</h1>
-                        <p className="mt-1 text-sm text-stone-500">查看平台能力、积分占位、团队和运行状态。</p>
+                        <p className="mt-1 text-sm text-stone-500">查看平台能力、积分账户、团队和运行状态。</p>
                     </div>
                     <Button type="text" icon={<RefreshCw className="size-4" />} onClick={() => void load()}>
                         刷新

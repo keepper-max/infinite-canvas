@@ -1,4 +1,4 @@
-import { FileText, Gauge, ImagePlus, Images, Maximize2, MessageSquareText, Settings2, Video } from "lucide-react";
+import { Coins, FileText, Gauge, ImagePlus, Images, Maximize2, MessageSquareText, Settings2, Video } from "lucide-react";
 
 export const navigationTools = [
     {
@@ -24,6 +24,10 @@ export const navigationTools = [
     {
         slug: "assets",
         icon: Images,
+    },
+    {
+        slug: "credits",
+        icon: Coins,
     },
     {
         slug: "config",

@@ -1,7 +1,35 @@
 import { PlatformApiError, platformRequest } from "./platform";
 
 export type OperationsCapabilities = { sms: boolean; credits: boolean; payments: boolean; teams: boolean; admin: boolean };
-export type CreditAccount = { account: { id: string; balance: number; reserved: number }; ledger: Array<{ id: number; type: string; delta: number; balanceAfter: number; createdAt: string }>; enabled: boolean };
+export type CreditPricing = { pointsPerCny: 100; markup: "1.2"; rounding: "ceil"; usdCnyRate?: string };
+export type CreditLedgerItem = {
+    id: string;
+    type: string;
+    delta: string;
+    balanceAfter: string;
+    referenceType?: string;
+    referenceId?: string;
+    metadata: Record<string, unknown>;
+    createdAt: string;
+};
+export type CreditLot = {
+    id: string;
+    source: string;
+    credits: string;
+    remaining: string;
+    expiresAt?: string;
+    metadata: Record<string, unknown>;
+    createdAt: string;
+};
+export type CreditAccount = {
+    account: { id: string; balance: string; reserved: string };
+    ledger: CreditLedgerItem[];
+    lots: CreditLot[];
+    pendingCharges: number;
+    pricing: CreditPricing;
+    enabled: boolean;
+};
+export type ActivationCodeRecord = { id: string; codeHint: string; credits: string; expiresAt: string; createdAt: string; redeemedAt?: string; revokedAt?: string };
 export type Team = { id: string; name: string; ownerId: string; role: string; createdAt: string; updatedAt: string };
 export type TeamMember = { userId: string; email: string; role: "owner" | "admin" | "editor" | "viewer"; createdAt: string };
 export type UsageSummary = { currency: string; calls: number; totalTokens: string; generatedImages: string; videoDurationSeconds: string; audioDurationSeconds: string; totalAmount: string };
@@ -37,6 +65,7 @@ export type AdminUser = {
     storageBytes: number;
     activeSessions: number;
     usageAmounts: Record<string, string>;
+    creditBalance: string;
 };
 export type AdminUsage = {
     jobId: string;
@@ -59,6 +88,10 @@ export type AdminUsage = {
     voucherAmount?: string;
     currency?: string;
     providerRequestId?: string;
+    creditStatus?: string;
+    creditPoints?: string;
+    costCny?: string;
+    exchangeRate?: string;
     reconciledAt: string;
 };
 export type AdminJob = {
@@ -91,6 +124,7 @@ export type AdminUserDetail = {
     projects: Array<{ id: string; name: string; description: string; jobCount: number; assetCount: number; createdAt: string; updatedAt: string }>;
     usage: UsageSummary[];
     usageBreakdowns: UsageBreakdown;
+    credits: CreditAccount | null;
 };
 
 export function getOperationsCapabilities(signal?: AbortSignal) {
@@ -98,6 +132,15 @@ export function getOperationsCapabilities(signal?: AbortSignal) {
 }
 export function getCreditAccount(signal?: AbortSignal) {
     return platformRequest<CreditAccount>("/api/billing/account", { signal });
+}
+export function redeemActivationCode(code: string) {
+    return platformRequest<{ credits: string; balance: string }>("/api/billing/activation-codes/redeem", { method: "POST", body: JSON.stringify({ code }) });
+}
+export async function getAdminActivationCodes(signal?: AbortSignal) {
+    return (await platformRequest<{ codes: ActivationCodeRecord[] }>("/api/admin/credits/activation-codes", { signal })).codes;
+}
+export function issueAdminActivationCode(credits: number, expiresAt: string) {
+    return platformRequest<ActivationCodeRecord & { code: string }>("/api/admin/credits/activation-codes", { method: "POST", body: JSON.stringify({ credits, expiresAt }) });
 }
 export async function listTeams(signal?: AbortSignal) {
     return (await platformRequest<{ teams: Team[] }>("/api/teams", { signal })).teams;
@@ -129,6 +172,12 @@ export function getAdminProviders(signal?: AbortSignal) {
 export function setActiveAdminProvider(providerId: AdminProvider["id"]) {
     return platformRequest<AdminProviders>("/api/admin/providers/active", { method: "PATCH", body: JSON.stringify({ providerId }) });
 }
+export function getAdminCreditPricing(signal?: AbortSignal) {
+    return platformRequest<CreditPricing>("/api/admin/credits/pricing", { signal });
+}
+export function setAdminCreditPricing(usdCnyRate: string) {
+    return platformRequest<CreditPricing>("/api/admin/credits/pricing", { method: "PATCH", body: JSON.stringify({ usdCnyRate }) });
+}
 function adminQuery(input: Record<string, string | number | boolean | undefined>) {
     const params = new URLSearchParams();
     Object.entries(input).forEach(([key, value]) => {
@@ -151,6 +200,12 @@ export function revokeAdminUserSessions(userId: string) {
 }
 export function setAdminUserRole(userId: string, isAdmin: boolean) {
     return platformRequest<AdminUser>(`/api/admin/users/${encodeURIComponent(userId)}/admin`, { method: "PATCH", body: JSON.stringify({ isAdmin }) });
+}
+export function grantAdminUserCredits(userId: string, input: { credits: number; source: "purchase" | "promotion" | "compensation"; note: string; expiresAt?: string; idempotencyKey: string }) {
+    return platformRequest<{ account: CreditAccount["account"]; ledger: CreditLedgerItem; lot: CreditLot }>(`/api/admin/users/${encodeURIComponent(userId)}/credits`, {
+        method: "POST",
+        body: JSON.stringify(input),
+    });
 }
 export function getAdminUsage(input: Record<string, string | number | boolean | undefined> = {}, signal?: AbortSignal) {
     return platformRequest<PageResult<AdminUsage> & { summary: UsageSummary[]; breakdowns: UsageBreakdown }>(`/api/admin/usage${adminQuery(input)}`, { signal });

@@ -12,13 +12,18 @@ import {
     getAdminProviders,
     getAdminOverview,
     getAdminProjectContent,
+    getAdminCreditPricing,
+    getAdminActivationCodes,
     getAdminUsage,
     getAdminUser,
     getAdminUsers,
+    grantAdminUserCredits,
+    issueAdminActivationCode,
     reconcileAdminJob,
     revokeAdminUserSessions,
     setAdminUserRole,
     setAdminUserStatus,
+    setAdminCreditPricing,
     setActiveAdminProvider,
     type AdminAuditLog,
     type AdminJob,
@@ -29,6 +34,8 @@ import {
     type AdminUsage,
     type AdminUser,
     type AdminUserDetail,
+    type CreditPricing,
+    type ActivationCodeRecord,
     type UsageBreakdown,
 } from "@/services/api/operations";
 
@@ -332,6 +339,7 @@ function UsersPanel() {
                         ),
                     },
                     { title: "项目 / 任务", render: (_, record) => `${record.projectCount} / ${record.jobCount}` },
+                    { title: "积分", dataIndex: "creditBalance", render: (value) => <span className="font-mono">{formatPoints(value)}</span> },
                     { title: "存储", dataIndex: "storageBytes", render: formatBytes },
                     {
                         title: "实际消耗",
@@ -370,6 +378,11 @@ function UserDrawer({ userId, onClose, onChanged }: { userId?: string; onClose: 
     const [usagePage, setUsagePage] = useState(1);
     const [jobs, setJobs] = useState<{ items: AdminJob[]; total: number }>({ items: [], total: 0 });
     const [usage, setUsage] = useState<{ items: AdminUsage[]; total: number }>({ items: [], total: 0 });
+    const [grantOpen, setGrantOpen] = useState(false);
+    const [grantCredits, setGrantCredits] = useState("");
+    const [grantSource, setGrantSource] = useState<"purchase" | "promotion" | "compensation">("purchase");
+    const [grantNote, setGrantNote] = useState("");
+    const [grantKey, setGrantKey] = useState(() => crypto.randomUUID());
     useEffect(() => {
         setDetail(undefined);
         if (!userId) return;
@@ -408,6 +421,21 @@ function UserDrawer({ userId, onClose, onChanged }: { userId?: string; onClose: 
         setDetail(await getAdminUser(userId));
         onChanged();
     };
+    const submitGrant = async () => {
+        const credits = Number(grantCredits);
+        if (!Number.isSafeInteger(credits) || credits <= 0 || !grantNote.trim()) {
+            message.error("请输入正整数积分和发放说明");
+            return;
+        }
+        await grantAdminUserCredits(userId, { credits, source: grantSource, note: grantNote.trim(), idempotencyKey: grantKey });
+        message.success("积分已发放并写入审计流水");
+        setGrantOpen(false);
+        setGrantCredits("");
+        setGrantNote("");
+        setGrantKey(crypto.randomUUID());
+        setDetail(await getAdminUser(userId));
+        onChanged();
+    };
     return (
         <Drawer open width={720} onClose={onClose} title="用户详情" destroyOnHidden>
             {!detail ? (
@@ -427,6 +455,27 @@ function UserDrawer({ userId, onClose, onChanged }: { userId?: string; onClose: 
                         <Button onClick={() => void mutate("sessions")}>强制下线全部会话</Button>
                         <Button onClick={() => void mutate("admin")}>{detail.user.isAdmin ? "取消管理员" : "设为管理员"}</Button>
                     </Space>
+                    <Panel
+                        title="积分账户"
+                        note="购买和管理员发放积分默认 12 个月有效"
+                        actions={
+                            <Button
+                                type="primary"
+                                onClick={() => {
+                                    setGrantKey(crypto.randomUUID());
+                                    setGrantOpen(true);
+                                }}
+                            >
+                                发放积分
+                            </Button>
+                        }
+                    >
+                        <div className="grid gap-3 sm:grid-cols-3">
+                            <Metric label="当前余额" value={formatPoints(detail.credits?.account.balance || "0")} />
+                            <Metric label="待计费" value={String(detail.credits?.pendingCharges || 0)} />
+                            <Metric label="有效批次" value={String(detail.credits?.lots.filter((lot) => BigInt(lot.remaining) > BigInt(0)).length || 0)} />
+                        </div>
+                    </Panel>
                     <Panel title="实际消耗">
                         {detail.usage.length ? (
                             detail.usage.map((item) => (
@@ -464,6 +513,7 @@ function UserDrawer({ userId, onClose, onChanged }: { userId?: string; onClose: 
                                 { title: "项目", dataIndex: "projectName" },
                                 { title: "模型", dataIndex: "modelId" },
                                 { title: "金额", render: (_, item) => formatUsageAmount(item.currency, item.totalAmount) },
+                                { title: "积分", render: (_, item) => (item.creditPoints ? `${formatPoints(item.creditPoints)} 分` : creditStatusLabel(item.creditStatus)) },
                             ]}
                         />
                     </Panel>
@@ -492,6 +542,23 @@ function UserDrawer({ userId, onClose, onChanged }: { userId?: string; onClose: 
             )}
             <Modal open={Boolean(content)} width={900} title="只读项目内容" footer={null} onCancel={() => setContent(undefined)}>
                 {content ? <ProjectContent content={content} /> : null}
+            </Modal>
+            <Modal open={grantOpen} title="发放积分" okText="确认发放" cancelText="取消" onOk={() => void submitGrant()} onCancel={() => setGrantOpen(false)}>
+                <div className="space-y-4">
+                    <Input value={grantCredits} inputMode="numeric" placeholder="积分数量，例如 10000" onChange={(event) => setGrantCredits(event.target.value.replace(/\D/g, ""))} />
+                    <Select
+                        value={grantSource}
+                        className="w-full"
+                        onChange={setGrantSource}
+                        options={[
+                            { value: "purchase", label: "购买到账" },
+                            { value: "promotion", label: "活动赠送" },
+                            { value: "compensation", label: "人工补偿" },
+                        ]}
+                    />
+                    <Input.TextArea value={grantNote} maxLength={500} showCount placeholder="发放原因或关联订单号" onChange={(event) => setGrantNote(event.target.value)} />
+                    <p className="text-xs text-stone-500">积分仅通过新增批次和流水入账，不能直接覆盖余额。</p>
+                </div>
             </Modal>
         </Drawer>
     );
@@ -566,6 +633,13 @@ function UsagePanel() {
     }>({ items: [], total: 0, summary: [], breakdowns: { model: [], project: [], capability: [], day: [] } });
     const [page, setPage] = useState(1);
     const [loading, setLoading] = useState(true);
+    const [pricing, setPricing] = useState<CreditPricing>();
+    const [usdRate, setUsdRate] = useState("");
+    const [codeCredits, setCodeCredits] = useState("");
+    const [codeExpiry, setCodeExpiry] = useState("");
+    const [issuedCode, setIssuedCode] = useState("");
+    const [codes, setCodes] = useState<ActivationCodeRecord[]>([]);
+    const [issuingCode, setIssuingCode] = useState(false);
     useEffect(() => {
         const controller = new AbortController();
         setLoading(true);
@@ -575,8 +649,69 @@ function UsagePanel() {
             .finally(() => setLoading(false));
         return () => controller.abort();
     }, [page]);
+    useEffect(() => {
+        const controller = new AbortController();
+        getAdminCreditPricing(controller.signal)
+            .then((value) => {
+                setPricing(value);
+                setUsdRate(value.usdCnyRate || "");
+            })
+            .catch((error) => message.error(error.message));
+        return () => controller.abort();
+    }, []);
+    useEffect(() => {
+        const controller = new AbortController();
+        getAdminActivationCodes(controller.signal).then(setCodes).catch((error) => message.error(error.message));
+        return () => controller.abort();
+    }, []);
+    const saveRate = async () => {
+        const value = await setAdminCreditPricing(usdRate);
+        setPricing(value);
+        setUsdRate(value.usdCnyRate || "");
+        message.success("USD/CNY 结算汇率已更新，待计费任务将自动重试");
+    };
+    const issueCode = async () => {
+        const credits = Number(codeCredits);
+        if (!Number.isSafeInteger(credits) || credits <= 0 || credits > 1_000_000_000 || !codeExpiry) {
+            message.error("请输入有效积分和兑换截止时间");
+            return;
+        }
+        setIssuingCode(true);
+        setIssuedCode("");
+        try {
+            const created = await issueAdminActivationCode(credits, new Date(codeExpiry).toISOString());
+            setIssuedCode(created.code);
+            setCodes(await getAdminActivationCodes());
+            message.success("激活码已生成，完整码仅显示这一次");
+        } catch (error) {
+            message.error(error instanceof Error ? error.message : "激活码生成失败");
+        } finally {
+            setIssuingCode(false);
+        }
+    };
     return (
         <div className="space-y-5">
+            <Panel title="积分定价" note="固定 1 元 = 100 积分，实际成本加价 20%，不足 1 积分向上取整">
+                <div className="flex flex-wrap items-end gap-3">
+                    <label className="text-sm">
+                        <span className="mb-1 block text-stone-500">USD/CNY 结算汇率</span>
+                        <Input value={usdRate} className="w-52 font-mono" placeholder="例如 7.20000000" onChange={(event) => setUsdRate(event.target.value)} />
+                    </label>
+                    <Button type="primary" disabled={!usdRate || usdRate === pricing?.usdCnyRate} onClick={() => void saveRate()}>
+                        保存汇率
+                    </Button>
+                    <span className="pb-2 text-xs text-stone-500">Token360 返回 USD 时按此汇率换算；CNY 账单不使用汇率。</span>
+                </div>
+            </Panel>
+            <Panel title="积分激活码" note="与其他积分共用余额；完整激活码仅在生成时显示一次">
+                <div className="flex flex-wrap items-end gap-3">
+                    <label className="text-sm"><span className="mb-1 block text-stone-500">积分数量</span><Input value={codeCredits} inputMode="numeric" className="w-40" onChange={(event) => setCodeCredits(event.target.value.replace(/\D/g, ""))} /></label>
+                    <label className="text-sm"><span className="mb-1 block text-stone-500">兑换截止时间</span><Input type="datetime-local" value={codeExpiry} className="w-56" onChange={(event) => setCodeExpiry(event.target.value)} /></label>
+                    <Button type="primary" loading={issuingCode} onClick={() => void issueCode()}>生成激活码</Button>
+                </div>
+                {issuedCode && <div className="mt-4 flex flex-wrap items-center gap-3 rounded-xl bg-emerald-500/10 p-3"><code className="break-all font-mono">{issuedCode}</code><Button size="small" onClick={() => void navigator.clipboard.writeText(issuedCode)}>复制</Button></div>}
+                <div className="mt-4 space-y-1 text-xs text-stone-500">{codes.map((item) => <div key={item.id} className="flex flex-wrap gap-3"><span>尾号 {item.codeHint}</span><span>{formatPoints(item.credits)} 积分</span><span>{item.redeemedAt ? "已兑换" : new Date(item.expiresAt) <= new Date() ? "已过期" : "待兑换"}</span></div>)}</div>
+            </Panel>
             <div className="grid gap-4 md:grid-cols-3">
                 {data.summary.map((item) => (
                     <Metric key={item.currency} label={usageAmountLabel(item.currency, item.totalAmount)} value={formatUsageAmount(item.currency, item.totalAmount)} note={`${item.totalTokens} Tokens · ${item.videoDurationSeconds}s`} />
@@ -606,6 +741,7 @@ function UsagePanel() {
                             title: "实际金额",
                             render: (_, item) => <b className="font-mono">{formatUsageAmount(item.currency, item.totalAmount)}</b>,
                         },
+                        { title: "扣除积分", render: (_, item) => (item.creditPoints ? <b className="font-mono">{formatPoints(item.creditPoints)}</b> : creditStatusLabel(item.creditStatus)) },
                         { title: "账单 ID", dataIndex: "billingRequestId", render: copyable },
                         { title: "对账时间", dataIndex: "reconciledAt", render: formatDate },
                     ]}
@@ -924,6 +1060,20 @@ function Loading() {
 }
 function formatDate(value?: string) {
     return value ? new Date(value).toLocaleString("zh-CN") : "—";
+}
+function formatPoints(value: string | number) {
+    return new Intl.NumberFormat("zh-CN").format(BigInt(String(value || 0)));
+}
+function creditStatusLabel(value?: string) {
+    const labels: Record<string, string> = {
+        pending: "待计费",
+        pending_rate: "待设置汇率",
+        pending_currency: "待确认币种",
+        unsupported_currency: "币种不支持",
+        unavailable: "无实际金额",
+        free: "0 分",
+    };
+    return labels[value || ""] || "—";
 }
 function formatBytes(value: number) {
     if (!value) return "0 B";

@@ -30,8 +30,9 @@ test("billing reconciliation stores official usage fields and decimal amounts as
     },
   };
   const originalFetch = globalThis.fetch;
-  globalThis.fetch = async () =>
-    Response.json({
+  globalThis.fetch = async (input) => {
+    assert.match(String(input), /\/v1\/billing\/requests\/job-1$/);
+    return Response.json({
       code: 200,
       data: {
         id: "job-1",
@@ -56,6 +57,7 @@ test("billing reconciliation stores official usage fields and decimal amounts as
         },
       },
     });
+  };
   try {
     const result = await new BillingService(pool as never, config).reconcileJob(
       "job-1",
@@ -246,6 +248,7 @@ test("RunningHub terminal usage is settled directly without Token360 reconciliat
       completion_tokens: "38830",
       total_tokens: "38830",
       billing_seconds: "4",
+      currency: "USD",
     },
   };
   const pool = {
@@ -275,7 +278,7 @@ test("RunningHub terminal usage is settled directly without Token360 reconciliat
   assert.equal(insert.values[12], "4");
   assert.equal(insert.values[13], "5");
   assert.equal(insert.values[14], "3.398");
-  assert.equal(insert.values[15], null);
+  assert.equal(insert.values[15], "CNY");
   assert.equal(insert.values[16], "rh-task-1");
   assert.match(calls.at(-1)?.sql || "", /billing_status='settled'/);
 });

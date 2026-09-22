@@ -1,6 +1,7 @@
 import type { Pool } from "pg";
 
 import type { ProviderConfig } from "./config.js";
+import type { CreditService } from "./credit-service.js";
 import { DomainError } from "./domain.js";
 
 const TERMINAL_JOB_STATUSES = ["completed", "failed", "cancelled"];
@@ -11,6 +12,7 @@ export class BillingService {
   constructor(
     private readonly pool: Pool,
     private readonly config: ProviderConfig,
+    private readonly credits?: CreditService,
   ) {}
 
   async recordTrace(
@@ -59,6 +61,7 @@ export class BillingService {
       [TERMINAL_JOB_STATUSES, limit],
     );
     for (const row of due.rows) await this.reconcileJob(String(row.id));
+    await this.credits?.runPending(limit);
     return due.rowCount || 0;
   }
 
@@ -91,7 +94,7 @@ export class BillingService {
     }
     try {
       const response = await fetch(
-        `${this.config.baseUrl}/v1/billing/${encodeURIComponent(String(job.billing_trace_id))}`,
+        `${this.config.baseUrl}/v1/billing/requests/${encodeURIComponent(String(job.billing_trace_id))}`,
         {
           headers: {
             Authorization: `Bearer ${this.config.apiKey}`,
@@ -127,12 +130,13 @@ export class BillingService {
         requestId !== String(job.id) ||
         String(job.billing_trace_id) !== String(job.id);
       await this.pool.query(
-        `insert into generation_usage(job_id,project_id,user_id,billing_request_id,provider,model_id,capability,status,billed,
+        `insert into generation_usage(job_id,project_id,user_id,billing_request_id,provider,model_id,capability,status,billed,credit_status,
           prompt_tokens,completion_tokens,input_tokens,output_tokens,total_tokens,generated_images,audio_duration_seconds,
           video_duration_seconds,requested_seconds,amount_base,amount_final,total_amount,wallet_amount,voucher_amount,price,
           currency,provider_request_id,usage,reconciled_at,updated_at)
-         values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,now(),now())
+         values($1,$2,$3,$4,$5,$6,$7,$8,$9,'pending',$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,now(),now())
          on conflict(job_id) do update set billing_request_id=excluded.billing_request_id,status=excluded.status,billed=excluded.billed,
+          credit_status=case when generation_usage.credit_status in ('charged','free','historical') then generation_usage.credit_status else 'pending' end,
           prompt_tokens=excluded.prompt_tokens,completion_tokens=excluded.completion_tokens,input_tokens=excluded.input_tokens,
           output_tokens=excluded.output_tokens,total_tokens=excluded.total_tokens,generated_images=excluded.generated_images,
           audio_duration_seconds=excluded.audio_duration_seconds,video_duration_seconds=excluded.video_duration_seconds,
@@ -184,6 +188,7 @@ export class BillingService {
         "update generation_jobs set billing_status=$2,billing_error=null,billing_next_check_at=null,billing_last_checked_at=now(),updated_at=now() where id=$1",
         [jobId, mismatch ? "mismatch" : "settled"],
       );
+      await this.credits?.settleUsage(jobId).catch(() => undefined);
       return { status: mismatch ? "mismatch" : "settled", requestId };
     } catch (error) {
       await this.markFailed(
@@ -253,13 +258,16 @@ export class BillingService {
       String(job.id);
     const billingRequestId = `${String(job.provider)}:${providerRequestId}`;
     const parameters = asRecord(job.parameters);
-    const currency = stringValue(usage.currency)?.toUpperCase() || null;
+    // RunningHub's consume-money fields are denominated in CNY. Do not let an
+    // incidental currency label route these charges through USD conversion.
+    const currency = "CNY";
     await this.pool.query(
-      `insert into generation_usage(job_id,project_id,user_id,billing_request_id,provider,model_id,capability,status,billed,
+      `insert into generation_usage(job_id,project_id,user_id,billing_request_id,provider,model_id,capability,status,billed,credit_status,
         prompt_tokens,completion_tokens,total_tokens,audio_duration_seconds,video_duration_seconds,requested_seconds,
         total_amount,currency,provider_request_id,usage,reconciled_at,updated_at)
-       values($1,$2,$3,$4,$5,$6,$7,'settled',$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,now(),now())
+       values($1,$2,$3,$4,$5,$6,$7,'settled',$8,'pending',$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,now(),now())
        on conflict(job_id) do update set billing_request_id=excluded.billing_request_id,status=excluded.status,
+        credit_status=case when generation_usage.credit_status in ('charged','free','historical') then generation_usage.credit_status else 'pending' end,
         billed=excluded.billed,prompt_tokens=excluded.prompt_tokens,completion_tokens=excluded.completion_tokens,
         total_tokens=excluded.total_tokens,audio_duration_seconds=excluded.audio_duration_seconds,
         video_duration_seconds=excluded.video_duration_seconds,requested_seconds=excluded.requested_seconds,
@@ -290,6 +298,7 @@ export class BillingService {
       "update generation_jobs set billing_status='settled',billing_error=null,billing_next_check_at=null,billing_last_checked_at=now(),updated_at=now() where id=$1",
       [job.id],
     );
+    await this.credits?.settleUsage(String(job.id)).catch(() => undefined);
     return { status: "settled", requestId: billingRequestId };
   }
 

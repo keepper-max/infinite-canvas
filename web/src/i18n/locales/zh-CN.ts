@@ -355,6 +355,7 @@ export default {
         text: "AI 文本工作台",
         prompts: "提示词库",
         assets: "我的资产",
+        credits: "积分账户",
         config: "配置",
         operations: "平台状态",
     },

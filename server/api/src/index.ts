@@ -19,6 +19,7 @@ import {
   VirtualPortraitService,
 } from "./virtual-portrait-service.js";
 import { BillingService } from "./billing-service.js";
+import { CreditService } from "./credit-service.js";
 
 const config = readConfig();
 const { db, pool } = createDatabase(config.databaseUrl);
@@ -45,12 +46,14 @@ await modelGateway
   );
 await modelGateway.refreshRunningHubGlobalCatalog();
 const jobQueue = createQueue(config.jobs);
+  const creditService = new CreditService(pool, config.operations.adminEmails);
 const jobService = new JobService(
   pool,
   jobQueue.port,
   modelGateway,
   config.jobs,
   jobQueue.publish,
+  creditService,
 );
 const compositionQueue = createCompositionQueue(config.jobs);
 const compositionService = new CompositionService(
@@ -59,11 +62,12 @@ const compositionService = new CompositionService(
   config.jobs,
   compositionQueue.publish,
 );
-const billingService = new BillingService(pool, config.provider);
+const billingService = new BillingService(pool, config.provider, creditService);
 const operationsService = new OperationsService(
   pool,
   config.operations,
   billingService,
+  creditService,
   {
     token360: Boolean(config.provider.apiKey),
     runninghub: Boolean(config.runningHub.apiKey),

@@ -2,6 +2,7 @@ import type { Pool, PoolClient } from "pg";
 
 import type { OperationsConfig } from "./config.js";
 import type { BillingService } from "./billing-service.js";
+import type { CreditGrantInput, CreditService } from "./credit-service.js";
 import { DomainError } from "./domain.js";
 import type {
   PaymentOrderInput,
@@ -14,6 +15,21 @@ import type {
 export interface OperationsServicePort {
   capabilities(): Record<string, boolean>;
   account(userId: string): Promise<unknown>;
+  creditPricing(userId: string): Promise<unknown>;
+  setCreditPricing(
+    userId: string,
+    usdCnyRate: string,
+    requestId: string,
+  ): Promise<unknown>;
+  grantCredits(
+    userId: string,
+    targetUserId: string,
+    input: CreditGrantInput,
+    requestId: string,
+  ): Promise<unknown>;
+  listActivationCodes(userId: string): Promise<unknown>;
+  issueActivationCode(userId: string, credits: number, expiresAt: string, requestId: string): Promise<unknown>;
+  redeemActivationCode(userId: string, code: string): Promise<unknown>;
   plans(): Promise<unknown[]>;
   requestSms(input: SmsRequestInput): Promise<never>;
   verifySms(input: SmsVerifyInput): Promise<never>;
@@ -102,13 +118,14 @@ export class OperationsService implements OperationsServicePort {
     private readonly pool: Pool,
     private readonly config: OperationsConfig,
     private readonly billing?: BillingService,
+    private readonly credits?: CreditService,
     private readonly providerAvailability: Record<string, boolean> = {},
   ) {}
 
   capabilities() {
     return {
       sms: false,
-      credits: false,
+      credits: Boolean(this.credits),
       payments: false,
       teams: true,
       admin: true,
@@ -116,6 +133,7 @@ export class OperationsService implements OperationsServicePort {
   }
 
   async account(userId: string) {
+    if (this.credits) return this.credits.account(userId);
     const result = await this.pool.query(
       `insert into credit_accounts(user_id) values($1) on conflict(user_id) do update set user_id=excluded.user_id
        returning id,user_id,balance,reserved,created_at,updated_at`,
@@ -131,6 +149,44 @@ export class OperationsService implements OperationsServicePort {
       ledger: ledger.rows.map(serializeLedger),
       enabled: false,
     };
+  }
+
+  async creditPricing(userId: string) {
+    await this.requireAdmin(userId);
+    return this.requireCredits().pricing();
+  }
+
+  async setCreditPricing(
+    userId: string,
+    usdCnyRate: string,
+    requestId: string,
+  ) {
+    await this.requireAdmin(userId);
+    return this.requireCredits().setUsdCnyRate(userId, usdCnyRate, requestId);
+  }
+
+  async grantCredits(
+    userId: string,
+    targetUserId: string,
+    input: CreditGrantInput,
+    requestId: string,
+  ) {
+    await this.requireAdmin(userId);
+    return this.requireCredits().grant(userId, targetUserId, input, requestId);
+  }
+
+  async listActivationCodes(userId: string) {
+    await this.requireAdmin(userId);
+    return this.requireCredits().listActivationCodes(userId);
+  }
+
+  async issueActivationCode(userId: string, credits: number, expiresAt: string, requestId: string) {
+    await this.requireAdmin(userId);
+    return this.requireCredits().issueActivationCode(userId, credits, expiresAt, requestId);
+  }
+
+  async redeemActivationCode(userId: string, code: string) {
+    return this.requireCredits().redeemActivationCode(userId, code);
   }
 
   async plans() {
@@ -442,6 +498,7 @@ export class OperationsService implements OperationsServicePort {
         (select count(*)::int from generation_jobs j where j.created_by=u.id) job_count,
         (select coalesce(sum(v.bytes),0)::bigint from asset_versions v where v.created_by=u.id) storage_bytes,
         (select count(*)::int from sessions s where s.user_id=u.id and s.expires_at>now()) active_sessions,
+        (select balance from credit_accounts ca where ca.user_id=u.id) credit_balance,
         (select coalesce(jsonb_object_agg(x.currency,x.amount),'{}'::jsonb) from
           (select coalesce(gu.currency,'UNKNOWN') currency,sum(coalesce(gu.total_amount,gu.amount_final,0))::text amount
            from generation_usage gu where gu.user_id=u.id group by coalesce(gu.currency,'UNKNOWN')) x) usage_amounts
@@ -464,6 +521,7 @@ export class OperationsService implements OperationsServicePort {
         (select count(*)::int from generation_jobs j where j.created_by=u.id) job_count,
         (select coalesce(sum(v.bytes),0)::bigint from asset_versions v where v.created_by=u.id) storage_bytes,
         (select count(*)::int from sessions s where s.user_id=u.id and s.expires_at>now()) active_sessions,
+        (select balance from credit_accounts ca where ca.user_id=u.id) credit_balance,
         (select coalesce(jsonb_object_agg(x.currency,x.amount),'{}'::jsonb) from
           (select coalesce(gu.currency,'UNKNOWN') currency,sum(coalesce(gu.total_amount,gu.amount_final,0))::text amount
            from generation_usage gu where gu.user_id=u.id group by coalesce(gu.currency,'UNKNOWN')) x) usage_amounts
@@ -484,6 +542,7 @@ export class OperationsService implements OperationsServicePort {
       projects: projects.rows.map(serializeProject),
       usage: await this.usageSummary(targetUserId),
       usageBreakdowns: await this.usageBreakdowns(targetUserId),
+      credits: this.credits ? await this.credits.account(targetUserId) : null,
     };
   }
 
@@ -914,6 +973,12 @@ export class OperationsService implements OperationsServicePort {
     )
       throw new DomainError("ADMIN_FORBIDDEN", "需要管理员权限", 403);
   }
+
+  private requireCredits() {
+    if (!this.credits)
+      throw new DomainError("CREDITS_DISABLED", "积分服务尚未启用", 503);
+    return this.credits;
+  }
 }
 
 function disabled(code: string, message: string) {
@@ -1014,6 +1079,7 @@ function serializeAdminUser(row: Record<string, unknown>) {
     storageBytes: Number(row.storage_bytes || 0),
     activeSessions: Number(row.active_sessions || 0),
     usageAmounts: row.usage_amounts || {},
+    creditBalance: String(row.credit_balance || 0),
   };
 }
 
@@ -1057,6 +1123,13 @@ function serializeUsage(row: Record<string, unknown>) {
     voucherAmount: money(row.voucher_amount),
     currency: row.currency,
     providerRequestId: row.provider_request_id,
+    creditStatus: row.credit_status,
+    creditPoints:
+      row.credit_points === null || row.credit_points === undefined
+        ? null
+        : String(row.credit_points),
+    costCny: money(row.cost_cny),
+    exchangeRate: money(row.exchange_rate),
     reconciledAt: iso(row.reconciled_at),
   };
 }
