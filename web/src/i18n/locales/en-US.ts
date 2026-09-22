@@ -1,12 +1,12 @@
 export default {
     meta: {
-        title: "Infinite Canvas",
-        description: "An infinite canvas creation tool",
+        title: "Shoushou Canvas",
+        description: "Shoushou Canvas AI creation tool",
     },
     theme: { toggle: "Toggle theme" },
     auth: {
         workspace: "AI drama production workspace",
-        loginTitle: "Welcome back to Jingjie",
+        loginTitle: "Welcome back to Shoushou Canvas",
         registerTitle: "Create your workspace",
         directEntry: "Sign in and go straight to your default canvas—no project setup required.",
         email: "Email",
@@ -65,7 +65,7 @@ export default {
         returns: { image: "Text-to-image and image editing use different APIs; distinguish them by whether images is empty. Return an image URL or data URL, an array of them, or [{ dataUrl }] / [{ url }] / [{ b64_json }].", video: "Poll inside the script and return { url }, { blob }, or a video URL string.", audio: "Return a Blob, base64/data URL string, or { b64_json } / { data } / { url }.", text: "Push streaming output with onDelta(text), then return the complete text string." },
         templates: { openai: "OpenAI format", gemini: "Gemini format" },
         authoring: {
-            intro: "Write a model request script for Infinite Canvas. Capability: {{capability}}. Target model: {{model}}.",
+            intro: "Write a model request script for Shoushou Canvas. Capability: {{capability}}. Target model: {{model}}.",
             shape: "Write an async function whose parameter list names the variables you use, and unpack params into fields such as size, quality, and count. Do not import modules or use Markdown fences. Send the request and return the result inside the function. The runtime injects matching locals, so finish with return await functionName({ the same arguments }).",
             returnTitle: "Return requirements",
             variablesTitle: "Available variables",
@@ -238,9 +238,9 @@ export default {
         empty: "No video generated yet",
     },
     canvas: {
-        defaultTitle: "Infinite Canvas {{count}}",
+        defaultTitle: "Shoushou Canvas {{count}}",
         library: "Canvas library",
-        title: "Infinite Canvas",
+        title: "Shoushou Canvas",
         imported: "Imported {{count}} canvases",
         importFailed: "Import failed. Select a valid canvas package.",
         opening: "Opening canvas...",
@@ -285,7 +285,7 @@ export default {
             select: "Select {{name}}", stats: "{{nodes}} nodes · {{connections}} connections", updated: "Updated {{date}}", saveName: "Save name", cancelRename: "Cancel rename", export: "Export", rename: "Rename", delete: "Delete",
             deleteTitle: "Delete canvases?", deleteDescription: "This will delete {{count}} canvases along with their nodes and connections.",
         },
-        export: { defaultProjectName: "Infinite Canvas", defaultNodesName: "Canvas elements", item: "Element" },
+        export: { defaultProjectName: "Shoushou Canvas", defaultNodesName: "Canvas elements", item: "Element" },
         createMenu: {
             fromNode: "Generate from this node", close: "Close", text: "Generate text", textDescription: "Scripts, ad copy, and brand content", image: "Generate image", video: "Generate video", audio: "Audio reference", config: "Configuration node", configDescription: "Model, size, count, and input order", select: "Select a node",
         },
@@ -375,7 +375,7 @@ export default {
     },
     home: {
         promptError: "Failed to load prompts",
-        description: "Generate, connect, and reshape <content>images, text, and graphics</content> in <canvas>Infinite Canvas</canvas>, turning one-off generations into a continuous creative process.",
+        description: "Generate, connect, and reshape <content>images, text, and graphics</content> in <canvas>Shoushou Canvas</canvas>, turning one-off generations into a continuous creative process.",
         start: "Get started",
         openCanvas: "Open canvas",
         showcaseTitle: "Keep every great result",
@@ -383,11 +383,11 @@ export default {
         viewPrompts: "View prompt library",
     },
     version: {
-        viewUpdates: "View Jingjie updates",
+        viewUpdates: "View Shoushou Canvas updates",
         publicLabel: "Updates",
-        title: "Jingjie updates",
+        title: "Shoushou Canvas updates",
         heroTitle: "A smoother creative workflow with every update",
-        heroDescription: "See the latest features, refinements, and fixes added to Jingjie Studio.",
+        heroDescription: "See the latest features, refinements, and fixes added to Shoushou Canvas.",
         latestUpdate: "Latest update",
         previousUpdate: "Previous update",
         currentVersion: "Current version",
@@ -429,7 +429,7 @@ export default {
         },
         localStorage: {
             title: "IndexedDB storage usage",
-            description: "View browser data saved by Infinite Canvas, grouped by object store.",
+            description: "View browser data saved by Shoushou Canvas, grouped by object store.",
             indexedDbUsage: "IndexedDB usage",
             siteUsage: "Total site usage",
             quota: "Available quota",
@@ -437,7 +437,7 @@ export default {
             siteUsageHint: "Includes IndexedDB and other site data",
             quotaHint: "Allocated dynamically by the browser",
             quotaProgress: "Site quota usage",
-            mainDatabase: "Infinite Canvas data",
+            mainDatabase: "Shoushou Canvas data",
             records: "{{count}} records",
             refresh: "Refresh usage",
             readFailed: "Failed to read local storage",

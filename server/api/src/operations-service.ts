@@ -500,8 +500,8 @@ export class OperationsService implements OperationsServicePort {
         (select count(*)::int from sessions s where s.user_id=u.id and s.expires_at>now()) active_sessions,
         (select balance from credit_accounts ca where ca.user_id=u.id) credit_balance,
         (select coalesce(jsonb_object_agg(x.currency,x.amount),'{}'::jsonb) from
-          (select coalesce(gu.currency,'UNKNOWN') currency,sum(coalesce(gu.total_amount,gu.amount_final,0))::text amount
-           from generation_usage gu where gu.user_id=u.id group by coalesce(gu.currency,'UNKNOWN')) x) usage_amounts
+          (select ${usageCurrencySql("gu")} currency,sum(coalesce(gu.total_amount,gu.amount_final,0))::text amount
+           from generation_usage gu where gu.user_id=u.id group by ${usageCurrencySql("gu")}) x) usage_amounts
        from users u ${where} order by u.created_at desc limit $${values.length - 1} offset $${values.length}`,
       values,
     );
@@ -523,8 +523,8 @@ export class OperationsService implements OperationsServicePort {
         (select count(*)::int from sessions s where s.user_id=u.id and s.expires_at>now()) active_sessions,
         (select balance from credit_accounts ca where ca.user_id=u.id) credit_balance,
         (select coalesce(jsonb_object_agg(x.currency,x.amount),'{}'::jsonb) from
-          (select coalesce(gu.currency,'UNKNOWN') currency,sum(coalesce(gu.total_amount,gu.amount_final,0))::text amount
-           from generation_usage gu where gu.user_id=u.id group by coalesce(gu.currency,'UNKNOWN')) x) usage_amounts
+          (select ${usageCurrencySql("gu")} currency,sum(coalesce(gu.total_amount,gu.amount_final,0))::text amount
+           from generation_usage gu where gu.user_id=u.id group by ${usageCurrencySql("gu")}) x) usage_amounts
        from users u where u.id=$1`,
       [targetUserId],
     );
@@ -653,7 +653,7 @@ export class OperationsService implements OperationsServicePort {
     );
     values.push(query.pageSize, (query.page - 1) * query.pageSize);
     const result = await this.pool.query(
-      `select gu.*,u.email,p.name project_name from generation_usage gu join users u on u.id=gu.user_id join projects p on p.id=gu.project_id
+      `select gu.*,${usageCurrencySql("gu")} display_currency,u.email,p.name project_name from generation_usage gu join users u on u.id=gu.user_id join projects p on p.id=gu.project_id
        ${where} order by gu.reconciled_at desc limit $${values.length - 1} offset $${values.length}`,
       values,
     );
@@ -826,13 +826,13 @@ export class OperationsService implements OperationsServicePort {
 
   private async usageSummary(userId?: string) {
     const result = await this.pool.query(
-      `select coalesce(currency,'UNKNOWN') currency,count(*)::int calls,
+      `select ${usageCurrencySql("gu")} currency,count(*)::int calls,
         coalesce(sum(total_tokens),0)::bigint total_tokens,
         coalesce(sum(generated_images),0)::bigint generated_images,
         coalesce(sum(video_duration_seconds),0)::text video_duration_seconds,
         coalesce(sum(audio_duration_seconds),0)::text audio_duration_seconds,
         coalesce(sum(coalesce(total_amount,amount_final,0)),0)::text total_amount
-       from generation_usage where ($1::uuid is null or user_id=$1) group by coalesce(currency,'UNKNOWN') order by currency`,
+       from generation_usage gu where ($1::uuid is null or gu.user_id=$1) group by ${usageCurrencySql("gu")} order by currency`,
       [userId || null],
     );
     return result.rows.map((row) => ({
@@ -873,12 +873,12 @@ export class OperationsService implements OperationsServicePort {
     const entries = await Promise.all(
       Object.entries(dimensions).map(async ([name, expression]) => {
         const result = await this.pool.query(
-          `select ${expression} key,coalesce(gu.currency,'UNKNOWN') currency,count(*)::int calls,
+          `select ${expression} key,${usageCurrencySql("gu")} currency,count(*)::int calls,
             coalesce(sum(gu.total_tokens),0)::text total_tokens,
             coalesce(sum(coalesce(gu.total_amount,gu.amount_final,0)),0)::text total_amount
            from generation_usage gu join projects p on p.id=gu.project_id
            where ($1::uuid is null or gu.user_id=$1)
-           group by ${expression},coalesce(gu.currency,'UNKNOWN') order by sum(coalesce(gu.total_amount,gu.amount_final,0)) desc limit 100`,
+           group by ${expression},${usageCurrencySql("gu")} order by sum(coalesce(gu.total_amount,gu.amount_final,0)) desc limit 100`,
           [userId || null],
         );
         return [
@@ -1121,7 +1121,7 @@ function serializeUsage(row: Record<string, unknown>) {
     totalAmount: money(row.total_amount ?? row.amount_final),
     walletAmount: money(row.wallet_amount),
     voucherAmount: money(row.voucher_amount),
-    currency: row.currency,
+    currency: row.display_currency ?? row.currency,
     providerRequestId: row.provider_request_id,
     creditStatus: row.credit_status,
     creditPoints:
@@ -1132,6 +1132,12 @@ function serializeUsage(row: Record<string, unknown>) {
     exchangeRate: money(row.exchange_rate),
     reconciledAt: iso(row.reconciled_at),
   };
+}
+
+function usageCurrencySql(alias: string) {
+  return `case when ${alias}.provider in ('runninghub','runninghub_global')
+    and (${alias}.currency is null or upper(${alias}.currency)='UNKNOWN')
+    then 'CNY' else coalesce(${alias}.currency,'UNKNOWN') end`;
 }
 
 function serializeAdminJob(row: Record<string, unknown>) {

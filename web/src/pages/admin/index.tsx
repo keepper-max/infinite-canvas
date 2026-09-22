@@ -1087,12 +1087,13 @@ function isAmountMissing(amount?: string) {
 }
 function formatUsageAmount(currency?: string, amount?: string) {
     if (isAmountMissing(amount)) return "金额未返回";
-    return !currency || currency === "UNKNOWN" ? `原始单位 ${amount}` : `${currency} ${amount}`;
+    return !currency || currency === "UNKNOWN" ? `币种未确认 ${amount}` : `${currency === "CNY" ? "人民币" : currency} ${amount}`;
 }
 function usageAmountLabel(currency?: string, amount?: string, compact = false) {
     if (isAmountMissing(amount)) return compact ? "待计费" : "待计费金额";
-    if (!currency || currency === "UNKNOWN") return compact ? "原始单位" : "原始单位实际金额";
-    return compact ? currency : `${currency} 实际金额`;
+    if (!currency || currency === "UNKNOWN") return compact ? "币种未确认" : "币种未确认的实际金额";
+    const label = currency === "CNY" ? "人民币" : currency;
+    return compact ? label : `${label}实际金额`;
 }
 function copyable(value?: string) {
     if (!value) return "—";

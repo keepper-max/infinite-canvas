@@ -35,9 +35,9 @@ export default function AuthPage({ mode }: { mode: "login" | "register" }) {
             <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_18%_15%,rgba(139,92,246,0.2),transparent_32%),radial-gradient(circle_at_82%_78%,rgba(59,130,246,0.12),transparent_28%)]" />
             <section className="relative w-full max-w-md rounded-[28px] border border-white/10 bg-[#191817]/95 p-8 shadow-2xl shadow-black/40 backdrop-blur-xl sm:p-10">
                 <div className="flex items-center gap-3">
-                    <span className="flex size-11 items-center justify-center rounded-2xl bg-stone-100 text-xl font-semibold text-stone-950">镜</span>
+                    <img src="/shoushou-logo.png" alt="" className="size-11 rounded-xl bg-black object-contain" />
                     <div>
-                        <p className="text-xs tracking-[0.24em] text-stone-500">JINGJIE STUDIO</p>
+                        <p className="text-xs tracking-[0.24em] text-stone-500">守守画布</p>
                         <p className="mt-1 text-sm text-stone-300">{t("auth.workspace")}</p>
                     </div>
                 </div>

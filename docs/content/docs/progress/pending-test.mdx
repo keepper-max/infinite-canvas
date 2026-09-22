@@ -5,6 +5,8 @@ description: Implemented changes that still need manual verification
 
 # Pending Tests
 
+- Shoushou Canvas branding and currency: navigation, home, sign-in/up, browser title and favicon use the new name and supplied logo; new canvases use the new default name, while existing names and local storage remain intact. In admin summaries and usage rows, legacy RunningHub bills with unknown currency display as CNY and merge with new CNY bills. Unknown Token360 currency must remain unconfirmed and must not cause back-charging.
+
 - HTTP admin page: opening `/admin`, viewing a user, and granting credits from the current HTTP IP origin must not crash with `crypto.randomUUID is not a function`; a retried grant should use a new request ID.
 
 - Activation codes: an admin can issue a code with a credit amount and expiry; the full code appears only once. Redemption adds to the shared balance. Reuse, expiry, and invalid codes must fail. Codes made with the local `credits:code` command must redeem online. RunningHub CNY charges use no FX; Token360 USD charges use the admin-configured rate. Alipay stays disabled.
