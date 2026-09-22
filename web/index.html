@@ -6,6 +6,27 @@
         <meta name="description" content="守守画布 AI 创作工具" />
         <link rel="icon" type="image/png" href="/shoushou-logo.png" />
         <title>守守画布</title>
+        <style>
+            @keyframes startup-prelude-drift {
+                to {
+                    transform: perspective(660px) rotateX(66deg) scale(1.45) translateY(6%);
+                }
+            }
+            @keyframes startup-prelude-sweep {
+                from {
+                    left: -45%;
+                }
+                to {
+                    left: 115%;
+                }
+            }
+            @media (prefers-reduced-motion: reduce) {
+                #startup-prelude-grid,
+                #startup-prelude-sweep {
+                    animation: none !important;
+                }
+            }
+        </style>
         <script>
             try {
                 var s = JSON.parse(localStorage.getItem("infinite-canvas:theme_store") || "{}");
@@ -16,6 +37,25 @@
         </script>
     </head>
     <body class="bg-background text-foreground antialiased">
+        <div id="startup-prelude" aria-hidden="true" style="position: fixed; inset: 0; z-index: 9999; overflow: hidden; background: radial-gradient(circle at center, #1a1917 0, #080808 58%)">
+            <div
+                id="startup-prelude-grid"
+                style="
+                    position: absolute;
+                    inset: -35% -20%;
+                    background-image: linear-gradient(#c9c4b624 1px, transparent 1px), linear-gradient(90deg, #c9c4b624 1px, transparent 1px);
+                    background-size: 66px 66px;
+                    transform: perspective(660px) rotateX(66deg) scale(1.65) translateY(10%);
+                    transform-origin: center 70%;
+                    opacity: 0.6;
+                    animation: startup-prelude-drift 2s ease-out infinite alternate;
+                "
+            ></div>
+            <div
+                id="startup-prelude-sweep"
+                style="position: absolute; top: 52%; left: -45%; width: 45%; height: 1px; background: linear-gradient(90deg, transparent, #cbb99699, transparent); box-shadow: 0 0 18px #cbb99655; animation: startup-prelude-sweep 1.5s ease-in-out infinite"
+            ></div>
+        </div>
         <div id="root"></div>
         <script src="/config.js"></script>
         <script type="module" src="/src/main.tsx"></script>

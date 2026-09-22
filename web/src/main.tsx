@@ -6,6 +6,7 @@ import "./styles/globals.css";
 import { RouterProvider } from "react-router-dom";
 
 import { AppProviders } from "@/components/layout/app-providers";
+import { StartupIntro } from "@/components/layout/startup-intro";
 import "@/i18n";
 import { initAnalytics } from "@/lib/analytics";
 import { router } from "@/router";
@@ -18,6 +19,7 @@ createRoot(document.getElementById("root")!).render(
     <React.StrictMode>
         <AppProviders>
             <RouterProvider router={router} />
+            <StartupIntro />
         </AppProviders>
     </React.StrictMode>,
 );
