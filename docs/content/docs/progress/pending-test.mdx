@@ -5,6 +5,8 @@ description: Implemented changes that still need manual verification
 
 # Pending Tests
 
+- 画布图片预览性能：上传或生成一张超过 768 像素长边的图片，缩小画布浏览时应优先使用本地 WebP 缩略图，放大到需要更高像素时自动切回原图；刷新后缩略图应从本地缓存恢复。下载、编辑、生成、导出仍应使用原图，清理图片时不应留下孤立缩略图。
+
 - 积分账户前台：余额、待计费任务和积分流水保持可见；不再显示“成本 × 120”、供应商成本说明或 USD/CNY 汇率，管理员后台定价设置和实际扣费规则不变。
 
 - Shoushou Canvas branding and currency: navigation, home, sign-in/up, browser title and favicon use the new name and supplied logo; new canvases use the new default name, while existing names and local storage remain intact. In admin summaries and usage rows, legacy RunningHub bills with unknown currency display as CNY and merge with new CNY bills. Unknown Token360 currency must remain unconfirmed and must not cause back-charging.
