@@ -5,6 +5,8 @@ description: Implemented changes that still need manual verification
 
 # Pending Tests
 
+- 积分账户前台：余额、待计费任务和积分流水保持可见；不再显示“成本 × 120”、供应商成本说明或 USD/CNY 汇率，管理员后台定价设置和实际扣费规则不变。
+
 - Shoushou Canvas branding and currency: navigation, home, sign-in/up, browser title and favicon use the new name and supplied logo; new canvases use the new default name, while existing names and local storage remain intact. In admin summaries and usage rows, legacy RunningHub bills with unknown currency display as CNY and merge with new CNY bills. Unknown Token360 currency must remain unconfirmed and must not cause back-charging.
 
 - HTTP admin page: opening `/admin`, viewing a user, and granting credits from the current HTTP IP origin must not crash with `crypto.randomUUID is not a function`; a retried grant should use a new request ID.

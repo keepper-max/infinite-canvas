@@ -1,5 +1,5 @@
 import { App, Button, Empty, Input, Spin, Table, Tag } from "antd";
-import { ArrowDownRight, CalendarClock, Coins, RefreshCw, ReceiptText } from "lucide-react";
+import { CalendarClock, Coins, RefreshCw, ReceiptText } from "lucide-react";
 import { useCallback, useEffect, useState, type ReactNode } from "react";
 
 import { getCreditAccount, redeemActivationCode, type CreditAccount, type CreditLedgerItem } from "@/services/api/operations";
@@ -63,14 +63,14 @@ export default function CreditsPage() {
                     <div>
                         <p className="font-mono text-xs uppercase tracking-[0.22em] text-amber-700 dark:text-amber-400">Credit ledger</p>
                         <h1 className="mt-2 text-3xl font-semibold tracking-tight">积分账户</h1>
-                        <p className="mt-2 text-sm text-stone-500">每笔生成按供应商实际结算成本记账，流水不可删除。</p>
+                        <p className="mt-2 text-sm text-stone-500">查看可用积分、待计费任务和积分流水。</p>
                     </div>
                     <Button type="text" icon={<RefreshCw className="size-4" />} loading={loading} onClick={() => void load()}>
                         刷新
                     </Button>
                 </header>
 
-                <section className="grid gap-4 lg:grid-cols-[1.5fr_1fr_1fr]">
+                <section className="grid gap-4 lg:grid-cols-[1.5fr_1fr]">
                     <div className="relative overflow-hidden rounded-3xl bg-stone-950 p-7 text-white shadow-2xl shadow-stone-950/10">
                         <div className="absolute -right-14 -top-16 size-44 rounded-full border border-amber-300/20" />
                         <Coins className="size-5 text-amber-300" />
@@ -78,8 +78,7 @@ export default function CreditsPage() {
                         <p className={`mt-1 font-mono text-5xl font-semibold tracking-tight ${balance < BigInt(0) ? "text-red-400" : "text-white"}`}>{formatPoints(data.account.balance)}</p>
                         {balance < BigInt(0) ? <p className="mt-3 text-sm text-red-300">余额不足，补足积分后可继续提交托管生成任务。</p> : null}
                     </div>
-                    <Metric icon={<ArrowDownRight className="size-4" />} label="结算规则" value="成本 × 120" note="1 元 = 100 积分，再乘 1.2" />
-                    <Metric icon={<ReceiptText className="size-4" />} label="待计费任务" value={String(data.pendingCharges)} note={data.pricing.usdCnyRate ? `USD/CNY ${data.pricing.usdCnyRate}` : "USD 汇率待管理员设置"} />
+                    <Metric icon={<ReceiptText className="size-4" />} label="待计费任务" value={String(data.pendingCharges)} note="完成结算后，积分流水会自动更新" />
                 </section>
 
                 <section className="rounded-3xl border border-stone-200/80 bg-white/70 p-5 dark:border-white/10 dark:bg-white/[0.03]">
