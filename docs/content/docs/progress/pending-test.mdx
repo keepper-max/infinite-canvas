@@ -5,6 +5,8 @@ description: Implemented changes that still need manual verification
 
 # Pending Tests
 
+- HTTP admin page: opening `/admin`, viewing a user, and granting credits from the current HTTP IP origin must not crash with `crypto.randomUUID is not a function`; a retried grant should use a new request ID.
+
 - Activation codes: an admin can issue a code with a credit amount and expiry; the full code appears only once. Redemption adds to the shared balance. Reuse, expiry, and invalid codes must fail. Codes made with the local `credits:code` command must redeem online. RunningHub CNY charges use no FX; Token360 USD charges use the admin-configured rate. Alipay stays disabled.
 
 - Account credit charging: set the USD/CNY settlement rate in `/admin`, then grant credits to a test account. CNY bills must charge `actual amount × 100 × 1.2`; USD bills must first use the saved exchange rate, and fractional points must round up. Reconciliation of the same job must never charge twice. Credits should consume the earliest-expiring lot first. An insufficient balance blocks only new managed jobs; submitted jobs finish and may create a temporary negative balance, which later grants cover before creating spendable lot value. Historical usage must not be back-charged, while missing amount, currency, or exchange rate remains pending. Users can inspect lots and ledger entries in Credits; admin grants and rate changes must be audited. Alipay recharge remains disabled.

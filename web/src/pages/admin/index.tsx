@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 
 import { useAuth } from "@/components/auth/auth-context";
+import { randomId } from "@/lib/utils";
 import {
     getAdminAuditLogs,
     getAdminAssetDownload,
@@ -382,7 +383,7 @@ function UserDrawer({ userId, onClose, onChanged }: { userId?: string; onClose: 
     const [grantCredits, setGrantCredits] = useState("");
     const [grantSource, setGrantSource] = useState<"purchase" | "promotion" | "compensation">("purchase");
     const [grantNote, setGrantNote] = useState("");
-    const [grantKey, setGrantKey] = useState(() => crypto.randomUUID());
+    const [grantKey, setGrantKey] = useState(randomId);
     useEffect(() => {
         setDetail(undefined);
         if (!userId) return;
@@ -432,7 +433,7 @@ function UserDrawer({ userId, onClose, onChanged }: { userId?: string; onClose: 
         setGrantOpen(false);
         setGrantCredits("");
         setGrantNote("");
-        setGrantKey(crypto.randomUUID());
+        setGrantKey(randomId());
         setDetail(await getAdminUser(userId));
         onChanged();
     };
@@ -462,7 +463,7 @@ function UserDrawer({ userId, onClose, onChanged }: { userId?: string; onClose: 
                             <Button
                                 type="primary"
                                 onClick={() => {
-                                    setGrantKey(crypto.randomUUID());
+                                    setGrantKey(randomId());
                                     setGrantOpen(true);
                                 }}
                             >
