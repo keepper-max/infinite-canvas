@@ -8,7 +8,7 @@ import { useTranslation } from "react-i18next";
 import { requestEdit, requestGeneration, requestImageQuestion } from "@/services/api/image";
 import { requestAudioGeneration, storeGeneratedAudio } from "@/services/api/audio";
 import { createVideoGenerationTask, storeGeneratedVideo, waitForVideoGenerationTask } from "@/services/api/video";
-import { abortForManualJobCancellation, getManagedJob, retryManagedJob, subscribeProjectJobEvents } from "@/services/api/jobs";
+import { abortForManualJobCancellation, getManagedJob, retryManagedJob, subscribeProjectJobEvents, type ManagedJobEvent } from "@/services/api/jobs";
 import { createCanvasDraft, type CanvasDraft } from "@/services/api/canvas";
 import { defaultConfig, useConfigStore, useEffectiveConfig } from "@/stores/use-config-store";
 import { uploadImage } from "@/services/image-storage";
@@ -165,6 +165,14 @@ const NODE_STATUS_IDLE = "idle" as const;
 const NODE_STATUS_LOADING = "loading" as const;
 const NODE_STATUS_SUCCESS = "success" as const;
 const NODE_STATUS_ERROR = "error" as const;
+
+function visibleJobProgress(event: ManagedJobEvent) {
+    if (event.type !== "job.downloading") return event.progress;
+    const downloaded = event.data?.downloadedBytes;
+    const total = event.data?.totalBytes;
+    if (typeof downloaded !== "number" || typeof total !== "number" || total <= 0) return undefined;
+    return Math.max(0, Math.min(100, (downloaded / total) * 100));
+}
 
 function applyGeneratedVideo(item: CanvasNodeData, video: UploadedFile, extra: CanvasNodeData["metadata"] = {}): CanvasNodeData {
     const videoSize = fitNodeSize(video.width || item.width, video.height || item.height, VIDEO_NODE_MAX_WIDTH, VIDEO_NODE_MAX_HEIGHT);
@@ -509,6 +517,7 @@ function InfiniteCanvasPage() {
                                       status: event.status === "completed" && node.metadata?.content ? NODE_STATUS_SUCCESS : event.status === "failed" || event.status === "cancelled" ? NODE_STATUS_ERROR : NODE_STATUS_LOADING,
                                       errorDetails: event.status === "failed" ? event.message : undefined,
                                       jobStatusMessage: event.status === "completed" ? undefined : event.message,
+                                      jobProgress: event.status === "completed" ? undefined : visibleJobProgress(event),
                                   },
                               }
                             : node,

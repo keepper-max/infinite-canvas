@@ -57,6 +57,7 @@ export type CanvasNodeMetadata = {
     status?: CanvasNodeStatus;
     errorDetails?: string;
     jobStatusMessage?: string;
+    jobProgress?: number;
     fontSize?: number;
     generationMode?: CanvasGenerationMode;
     generationType?: CanvasImageGenerationType;

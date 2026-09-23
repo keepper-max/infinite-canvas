@@ -534,10 +534,23 @@ function GroupNodeContent({ node, theme, groupChildCount }: NodeContentRendererP
 
 function LoadingContent({ node, theme }: Pick<NodeContentRendererProps, "node" | "theme">) {
     const { t } = useTranslation();
+    const rawProgress = node.metadata?.jobProgress;
+    const progress = typeof rawProgress === "number" && Number.isFinite(rawProgress) ? Math.max(0, Math.min(100, Math.round(rawProgress))) : undefined;
     return (
-        <div className="flex h-full w-full flex-col items-center justify-center gap-3" style={{ color: theme.node.activeStroke }}>
+        <div className="flex h-full w-full flex-col items-center justify-center gap-3.5" style={{ color: theme.node.activeStroke }}>
             <div className="size-10 animate-spin rounded-full border-2" style={{ borderColor: theme.node.stroke, borderTopColor: theme.node.activeStroke }} />
-            <span className="max-w-[85%] truncate text-[10px] tracking-[0.12em]">{node.metadata?.jobStatusMessage || t("canvas.node.generating")}</span>
+            <div className="flex w-[min(70%,220px)] flex-col gap-2">
+                <div className="flex items-center justify-between gap-3 text-[10px] tracking-[0.12em]">
+                    <span className="min-w-0 flex-1 truncate">{node.metadata?.jobStatusMessage || t("canvas.node.generating")}</span>
+                    {progress !== undefined ? <span className="shrink-0 tabular-nums" style={{ color: theme.node.muted }}>{progress}%</span> : null}
+                </div>
+                <div className="h-1 overflow-hidden rounded-full" style={{ background: theme.node.stroke }}>
+                    <div
+                        className={progress === undefined ? "h-full w-1/3 animate-pulse rounded-full" : "h-full rounded-full transition-[width] duration-500 ease-out"}
+                        style={{ background: theme.node.activeStroke, width: progress === undefined ? undefined : `${progress}%` }}
+                    />
+                </div>
+            </div>
         </div>
     );
 }
