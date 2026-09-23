@@ -524,7 +524,9 @@ export function providerUserMessage(value: string, fallback: string) {
     return "首帧或尾帧参数不符合模型要求";
   if (message.includes("content") && message.includes("policy"))
     return "生成内容未通过模型安全检查";
-  return sanitizeProviderDetail(value) || fallback;
+  return sanitizeProviderDetail(value)
+    .replace(/\b(?:Token\s*360|Running\s*Hub|RH)\b/gi, "模型服务")
+    .replace(/海马云/g, "模型服务") || fallback;
 }
 function sanitizeProviderDetail(value: string) {
   if (!value) return "";

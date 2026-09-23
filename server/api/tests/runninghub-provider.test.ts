@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
+  publicModelDisplayName,
   runningHubCatalogItems,
   runningHubDisplayName,
   runningHubGlobalCatalogItems,
@@ -210,6 +211,26 @@ test("RunningHub marketing aliases expose the real model family and route", () =
     }),
     "RH Seedance2.0/文生视频",
   );
+});
+
+test("public model names hide supplier branding without changing model families", () => {
+  assert.equal(
+    publicModelDisplayName("RH Seedance2.0/文生视频"),
+    "Seedance2.0/文生视频",
+  );
+  assert.equal(
+    publicModelDisplayName("[RunningHub] GPT Image 2.5"),
+    "GPT Image 2.5",
+  );
+  assert.equal(
+    publicModelDisplayName("海马云 · 即梦图片 4.6"),
+    "即梦图片 4.6",
+  );
+  assert.equal(
+    publicModelDisplayName("Token360 - Seedance 2.5"),
+    "Seedance 2.5",
+  );
+  assert.equal(publicModelDisplayName("Qwen Image 2.5"), "Qwen Image 2.5");
 });
 
 test("RunningHub provider uploads media, submits exact endpoint and reads async result", async () => {

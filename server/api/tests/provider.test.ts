@@ -2,7 +2,22 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import type { CompiledGenerationRequest } from "../src/model-gateway.js";
-import { ProviderError, Token360Provider } from "../src/provider.js";
+import {
+  ProviderError,
+  providerUserMessage,
+  Token360Provider,
+} from "../src/provider.js";
+
+test("provider errors returned to users hide supplier branding", () => {
+  assert.equal(
+    providerUserMessage("RunningHub request rejected by 海马云", "生成失败"),
+    "模型服务 request rejected by 模型服务",
+  );
+  assert.equal(
+    providerUserMessage("Token360 upstream failed", "生成失败"),
+    "模型服务 upstream failed",
+  );
+});
 
 test("provider reports request timeout separately from connection failures", async () => {
   const originalFetch = globalThis.fetch;

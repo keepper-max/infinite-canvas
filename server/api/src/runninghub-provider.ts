@@ -33,7 +33,7 @@ export class RunningHubProvider implements GenerationProvider {
     if (!this.config.apiKey)
       throw new ProviderError(
         "PROVIDER_AUTH_FAILED",
-        "海马云服务尚未配置",
+        "模型服务尚未配置",
         false,
       );
     const metadata = asRecord(request.providerMetadata);
@@ -47,7 +47,7 @@ export class RunningHubProvider implements GenerationProvider {
     else if (request.prompt.trim())
       throw new ProviderError(
         "PROVIDER_SCHEMA_UNSUPPORTED",
-        "该海马云模型没有可识别的文本输入字段",
+        "该模型没有可识别的文本输入字段",
         false,
       );
     await this.attachMedia(
@@ -75,7 +75,7 @@ export class RunningHubProvider implements GenerationProvider {
     if (!taskId)
       throw new ProviderError(
         "PROVIDER_REJECTED",
-        "海马云没有返回任务编号",
+        "模型服务没有返回任务编号",
         false,
       );
     return { providerJobId: taskId, status: "pending", progress: 1 };
@@ -96,7 +96,7 @@ export class RunningHubProvider implements GenerationProvider {
     if (status === "failed")
       throw new ProviderError(
         "PROVIDER_REJECTED",
-        providerUserMessage(readError(payload), "海马云生成失败"),
+        providerUserMessage(readError(payload), "生成失败"),
         false,
         { upstreamMessage: sanitize(readError(payload)), usage },
       );
@@ -111,7 +111,7 @@ export class RunningHubProvider implements GenerationProvider {
     if (!artifacts.length)
       throw new ProviderError(
         "PROVIDER_RESULT_MISSING",
-        "海马云任务已完成，但没有返回可用结果",
+        "生成任务已完成，但没有返回可用结果",
         true,
         { usage },
       );
@@ -161,7 +161,7 @@ export class RunningHubProvider implements GenerationProvider {
       if (!fields.length)
         throw new ProviderError(
           "PROVIDER_SCHEMA_UNSUPPORTED",
-          `所选海马云模型不接受${mediaLabel(type)}参考素材`,
+          `所选模型不接受${mediaLabel(type)}参考素材`,
           false,
         );
       const remaining = [...candidates];
@@ -189,7 +189,7 @@ export class RunningHubProvider implements GenerationProvider {
       if (remaining.length)
         throw new ProviderError(
           "PROVIDER_SCHEMA_UNSUPPORTED",
-          `参考${mediaLabel(type)}数量或角色与海马云模型不匹配`,
+          `参考${mediaLabel(type)}数量或角色与所选模型不匹配`,
           false,
         );
     }
@@ -226,7 +226,7 @@ export class RunningHubProvider implements GenerationProvider {
     if (!/^https?:\/\//i.test(url))
       throw new ProviderError(
         "PROVIDER_UPLOAD_FAILED",
-        "海马云没有返回素材地址",
+        "模型服务没有返回素材地址",
         true,
       );
     return url;
@@ -264,7 +264,7 @@ export class RunningHubProvider implements GenerationProvider {
     } catch (error) {
       throw new ProviderError(
         "PROVIDER_UNAVAILABLE",
-        "海马云服务连接失败",
+        "模型服务连接失败",
         true,
         { errorName: error instanceof Error ? error.name : "UnknownError" },
       );
@@ -291,26 +291,26 @@ export class RunningHubProvider implements GenerationProvider {
     if (status === 401 || status === 403)
       throw new ProviderError(
         "PROVIDER_AUTH_FAILED",
-        "海马云服务授权失败",
+        "模型服务授权失败",
         false,
       );
     if (status === 429)
       throw new ProviderError(
         "PROVIDER_RATE_LIMITED",
-        "海马云服务繁忙，请稍后重试",
+        "模型服务繁忙，请稍后重试",
         true,
       );
     if (status >= 500)
       throw new ProviderError(
         "PROVIDER_UNAVAILABLE",
-        "海马云服务暂时不可用",
+        "模型服务暂时不可用",
         true,
       );
     throw new ProviderError(
       "PROVIDER_REJECTED",
       providerUserMessage(
         message,
-        "海马云拒绝了当前请求，请检查参数和参考素材",
+        "模型服务拒绝了当前请求，请检查参数和参考素材",
       ),
       false,
       { status, upstreamMessage: sanitize(message) },

@@ -75,6 +75,22 @@ type CatalogCapabilityProfile = Pick<
   | "parameterMap"
 >;
 
+export function publicModelDisplayName(value: unknown) {
+  let displayName = String(value || "").trim();
+  let previous = "";
+  while (displayName && displayName !== previous) {
+    previous = displayName;
+    displayName = displayName
+      .replace(/^\s*\[\s*(?:RH|Running\s*Hub|Token\s*360|海马云)\s*\]\s*/i, "")
+      .replace(
+        /^\s*(?:RH|Running\s*Hub|Token\s*360|海马云)(?=\s|[·:：|/_-]|[\u3400-\u9fff])\s*[·:：|/_-]*\s*/i,
+        "",
+      )
+      .trim();
+  }
+  return displayName || "模型";
+}
+
 export class ModelGateway {
   constructor(private readonly pool: Pool) {}
 
@@ -239,7 +255,7 @@ export class ModelGateway {
             order by c.capability, c.display_name`);
     return result.rows.map((row) => ({
       id: row.id,
-      displayName: row.display_name,
+      displayName: publicModelDisplayName(row.display_name),
       capability: row.capability,
       modes: row.modes || [],
       acceptedParameters: row.accepted_parameters || [],
