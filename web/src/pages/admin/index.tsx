@@ -438,7 +438,8 @@ function UserDrawer({ userId, onClose, onChanged }: { userId?: string; onClose: 
         onChanged();
     };
     return (
-        <Drawer open width={720} onClose={onClose} title="用户详情" destroyOnHidden>
+        <>
+            <Drawer open width={720} onClose={onClose} title="用户详情" destroyOnHidden>
             {!detail ? (
                 <Loading />
             ) : (
@@ -544,7 +545,8 @@ function UserDrawer({ userId, onClose, onChanged }: { userId?: string; onClose: 
             <Modal open={Boolean(content)} width={900} title="只读项目内容" footer={null} onCancel={() => setContent(undefined)}>
                 {content ? <ProjectContent content={content} /> : null}
             </Modal>
-            <Modal open={grantOpen} title="发放积分" okText="确认发放" cancelText="取消" onOk={() => void submitGrant()} onCancel={() => setGrantOpen(false)}>
+            </Drawer>
+            <Modal open={grantOpen} zIndex={1600} title="发放积分" okText="确认发放" cancelText="取消" onOk={() => void submitGrant()} onCancel={() => setGrantOpen(false)}>
                 <div className="space-y-4">
                     <Input value={grantCredits} inputMode="numeric" placeholder="积分数量，例如 10000" onChange={(event) => setGrantCredits(event.target.value.replace(/\D/g, ""))} />
                     <Select
@@ -561,7 +563,7 @@ function UserDrawer({ userId, onClose, onChanged }: { userId?: string; onClose: 
                     <p className="text-xs text-stone-500">积分仅通过新增批次和流水入账，不能直接覆盖余额。</p>
                 </div>
             </Modal>
-        </Drawer>
+        </>
     );
 }
 
