@@ -561,9 +561,28 @@ test(
       );
       const overview = (await operations.adminOverview(
         firstUser.rows[0]!.id,
-      )) as { users: number; projects: number };
+      )) as {
+        users: number;
+        projects: number;
+        userActivity: { active30d: number; new30d: number };
+        jobActivity: { jobs30d: number; successRate30d: number };
+        creditActivity: { consumed30d: string };
+        alerts: { pendingBillingJobs: number; pendingCreditCharges: number };
+        usage30d: unknown[];
+        trends: Array<{ activeUsers: number; creditPoints: string }>;
+      };
       assert.ok(overview.users >= 2);
       assert.ok(overview.projects >= 2);
+      assert.ok(overview.userActivity.active30d >= 0);
+      assert.ok(overview.userActivity.new30d >= 0);
+      assert.ok(overview.jobActivity.jobs30d >= 0);
+      assert.ok(overview.jobActivity.successRate30d >= 0);
+      assert.match(overview.creditActivity.consumed30d, /^\d+$/);
+      assert.ok(overview.alerts.pendingBillingJobs >= 0);
+      assert.ok(overview.alerts.pendingCreditCharges >= 0);
+      assert.ok(Array.isArray(overview.usage30d));
+      assert.equal(overview.trends.length, 30);
+      assert.ok(overview.trends.every((item) => item.activeUsers >= 0 && /^\d+$/.test(item.creditPoints)));
     } finally {
       await pool.end();
     }

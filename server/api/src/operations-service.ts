@@ -350,11 +350,30 @@ export class OperationsService implements OperationsServicePort {
     const result = await this.pool.query(
       `select
         (select count(*)::int from users) users,
+        (select count(*)::int from users where created_at>=now()-interval '24 hours') new_users_24h,
+        (select count(*)::int from users where created_at>=now()-interval '7 days') new_users_7d,
+        (select count(*)::int from users where created_at>=now()-interval '30 days') new_users_30d,
+        (select count(*)::int from users u where u.last_login_at>=now()-interval '24 hours' or exists(select 1 from generation_jobs j where j.created_by=u.id and j.created_at>=now()-interval '24 hours')) active_users_24h,
+        (select count(*)::int from users u where u.last_login_at>=now()-interval '7 days' or exists(select 1 from generation_jobs j where j.created_by=u.id and j.created_at>=now()-interval '7 days')) active_users_7d,
+        (select count(*)::int from users u where u.last_login_at>=now()-interval '30 days' or exists(select 1 from generation_jobs j where j.created_by=u.id and j.created_at>=now()-interval '30 days')) active_users_30d,
+        (select count(distinct user_id)::int from sessions where expires_at>now()) active_session_users,
         (select count(*)::int from projects where deleted_at is null) projects,
         (select count(*)::int from assets where status='active') assets,
         (select coalesce(sum(bytes),0)::bigint from asset_versions) asset_bytes,
         (select count(*)::int from generation_jobs where status not in ('completed','failed','cancelled')) active_jobs,
         (select count(*)::int from generation_jobs where status='failed') failed_jobs,
+        (select count(*)::int from generation_jobs where created_at>=now()-interval '24 hours') jobs_24h,
+        (select count(*)::int from generation_jobs where created_at>=now()-interval '7 days') jobs_7d,
+        (select count(*)::int from generation_jobs where created_at>=now()-interval '30 days') jobs_30d,
+        (select count(*)::int from generation_jobs where status='failed' and created_at>=now()-interval '24 hours') failed_jobs_24h,
+        (select count(*)::int from generation_jobs where status='completed' and created_at>=now()-interval '30 days') completed_jobs_30d,
+        (select count(*)::int from generation_jobs where status='failed' and created_at>=now()-interval '30 days') failed_jobs_30d,
+        (select coalesce(avg(extract(epoch from (finished_at-coalesce(started_at,created_at)))) filter(where status='completed' and finished_at is not null and created_at>=now()-interval '30 days'),0)::float8 from generation_jobs) avg_completion_seconds_30d,
+        (select count(*)::int from generation_jobs where billing_status in ('pending','reconciling')) pending_billing_jobs,
+        (select count(*)::int from generation_usage where credit_status in ('pending','pending_rate','pending_currency')) pending_credit_charges,
+        (select coalesce(-sum(delta) filter(where entry_type='generation' and created_at>=now()-interval '24 hours'),0)::bigint from credit_ledger) credits_consumed_24h,
+        (select coalesce(-sum(delta) filter(where entry_type='generation' and created_at>=now()-interval '7 days'),0)::bigint from credit_ledger) credits_consumed_7d,
+        (select coalesce(-sum(delta) filter(where entry_type='generation' and created_at>=now()-interval '30 days'),0)::bigint from credit_ledger) credits_consumed_30d,
         (select count(*)::int from composition_jobs where status not in ('completed','failed','cancelled')) active_compositions,
         (select count(*)::int from composition_jobs where status='failed') failed_compositions,
         (select count(*)::int from generation_jobs) total_jobs,
@@ -363,6 +382,15 @@ export class OperationsService implements OperationsServicePort {
     const row = result.rows[0];
     return {
       users: row.users,
+      userActivity: {
+        new24h: row.new_users_24h,
+        new7d: row.new_users_7d,
+        new30d: row.new_users_30d,
+        active24h: row.active_users_24h,
+        active7d: row.active_users_7d,
+        active30d: row.active_users_30d,
+        activeSessionUsers: row.active_session_users,
+      },
       projects: row.projects,
       assets: row.assets,
       assetBytes: Number(row.asset_bytes),
@@ -372,7 +400,29 @@ export class OperationsService implements OperationsServicePort {
       failedCompositions: row.failed_compositions,
       totalJobs: row.total_jobs,
       successRate: row.total_jobs ? row.completed_jobs / row.total_jobs : 0,
+      jobActivity: {
+        jobs24h: row.jobs_24h,
+        jobs7d: row.jobs_7d,
+        jobs30d: row.jobs_30d,
+        failed24h: row.failed_jobs_24h,
+        successRate30d:
+          row.completed_jobs_30d + row.failed_jobs_30d
+            ? row.completed_jobs_30d /
+              (row.completed_jobs_30d + row.failed_jobs_30d)
+            : 0,
+        avgCompletionSeconds30d: Number(row.avg_completion_seconds_30d || 0),
+      },
+      creditActivity: {
+        consumed24h: String(row.credits_consumed_24h),
+        consumed7d: String(row.credits_consumed_7d),
+        consumed30d: String(row.credits_consumed_30d),
+      },
+      alerts: {
+        pendingBillingJobs: row.pending_billing_jobs,
+        pendingCreditCharges: row.pending_credit_charges,
+      },
       usage: await this.usageSummary(),
+      usage30d: await this.usageSummary(undefined, 30),
       trends: await this.adminTrends(),
     };
   }
@@ -869,7 +919,7 @@ export class OperationsService implements OperationsServicePort {
     await this.auditDirect(userId, action, targetType, targetId, {}, requestId);
   }
 
-  private async usageSummary(userId?: string) {
+  private async usageSummary(userId?: string, sinceDays?: number) {
     const result = await this.pool.query(
       `select ${usageCurrencySql("gu")} currency,count(*)::int calls,
         coalesce(sum(total_tokens),0)::bigint total_tokens,
@@ -877,8 +927,10 @@ export class OperationsService implements OperationsServicePort {
         coalesce(sum(video_duration_seconds),0)::text video_duration_seconds,
         coalesce(sum(audio_duration_seconds),0)::text audio_duration_seconds,
         coalesce(sum(coalesce(total_amount,amount_final,0)),0)::text total_amount
-       from generation_usage gu where ($1::uuid is null or gu.user_id=$1) group by ${usageCurrencySql("gu")} order by currency`,
-      [userId || null],
+       from generation_usage gu where ($1::uuid is null or gu.user_id=$1)
+        and ($2::int is null or gu.reconciled_at>=now()-($2::int*interval '1 day'))
+       group by ${usageCurrencySql("gu")} order by currency`,
+      [userId || null, sinceDays || null],
     );
     return result.rows.map((row) => ({
       currency: row.currency,
@@ -896,15 +948,19 @@ export class OperationsService implements OperationsServicePort {
       `with days as (select generate_series(current_date-29,current_date,interval '1 day')::date as day)
        select d.day::text,
         (select count(*)::int from users u where u.created_at>=d.day and u.created_at<d.day+1) new_users,
+        (select count(*)::int from users u where (u.last_login_at>=d.day and u.last_login_at<d.day+1) or exists(select 1 from generation_jobs j where j.created_by=u.id and j.created_at>=d.day and j.created_at<d.day+1)) active_users,
         (select count(*)::int from generation_jobs j where j.created_at>=d.day and j.created_at<d.day+1) jobs,
-        (select count(*)::int from generation_jobs j where j.status='completed' and j.created_at>=d.day and j.created_at<d.day+1) completed_jobs
+        (select count(*)::int from generation_jobs j where j.status='completed' and j.created_at>=d.day and j.created_at<d.day+1) completed_jobs,
+        (select coalesce(-sum(l.delta) filter(where l.entry_type='generation'),0)::bigint from credit_ledger l where l.created_at>=d.day and l.created_at<d.day+1) credit_points
        from days d order by d.day`,
     );
     return result.rows.map((row) => ({
       day: row.day,
       newUsers: row.new_users,
+      activeUsers: row.active_users,
       jobs: row.jobs,
       completedJobs: row.completed_jobs,
+      creditPoints: String(row.credit_points),
     }));
   }
 

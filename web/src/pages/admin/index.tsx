@@ -168,54 +168,73 @@ function Overview() {
     if (error) return <Empty description={error} />;
     if (!data) return <Loading />;
     const metrics = [
-        ["用户", data.users],
-        ["项目", data.projects],
-        ["素材", data.assets],
-        ["任务", data.totalJobs],
-        ["运行中", data.activeJobs],
-        ["失败", data.failedJobs],
+        { label: "用户总量", value: formatCount(data.users), note: `近 30 天新增 ${data.userActivity.new30d}` },
+        { label: "24 小时活跃", value: formatCount(data.userActivity.active24h), note: `新增 ${data.userActivity.new24h} 人` },
+        { label: "30 天活跃", value: formatCount(data.userActivity.active30d), note: `活跃率 ${formatPercent(data.users ? data.userActivity.active30d / data.users : 0)}` },
+        { label: "30 天任务", value: formatCount(data.jobActivity.jobs30d), note: `成功率 ${formatPercent(data.jobActivity.successRate30d)}` },
+        { label: "30 天积分消耗", value: formatPoints(data.creditActivity.consumed30d), note: `近 7 天 ${formatPoints(data.creditActivity.consumed7d)}` },
+        { label: "素材存储", value: formatBytes(data.assetBytes), note: `${formatCount(data.assets)} 个有效素材` },
     ];
-    const peak = Math.max(1, ...data.trends.map((item) => item.jobs));
+    const peak = Math.max(1, ...data.trends.flatMap((item) => [item.jobs, item.activeUsers]));
+    const usageCurrencies = Array.from(new Set([...data.usage30d, ...data.usage].map((item) => item.currency)));
     return (
         <div className="space-y-6">
             <div className="grid grid-cols-2 gap-4 xl:grid-cols-6">
-                {metrics.map(([label, value]) => (
-                    <Metric key={String(label)} label={String(label)} value={String(value)} />
+                {metrics.map((item) => (
+                    <Metric key={item.label} label={item.label} value={item.value} note={item.note} />
                 ))}
             </div>
             <div className="grid gap-6 xl:grid-cols-[1.5fr_1fr]">
-                <Panel title="近 30 天任务趋势" note={`成功率 ${(data.successRate * 100).toFixed(1)}%`}>
-                    <div className="flex h-56 items-end gap-1">
+                <Panel title="近 30 天活跃趋势" note="活跃用户按登录或提交生成任务统计">
+                    <div className="mb-5 flex items-center gap-5 text-xs text-stone-500">
+                        <span className="flex items-center gap-2"><i className="size-2 rounded-full bg-stone-200" />任务</span>
+                        <span className="flex items-center gap-2"><i className="size-2 rounded-full bg-emerald-400" />活跃用户</span>
+                    </div>
+                    <div className="flex h-52 items-end gap-1">
                         {data.trends.map((item) => (
-                            <div key={item.day} className="group relative flex h-full flex-1 items-end">
-                                <div className="w-full rounded-t-sm bg-stone-900/80 transition group-hover:bg-blue-600 dark:bg-stone-200" style={{ height: `${Math.max(3, (item.jobs / peak) * 100)}%` }} />
-                                <span className="pointer-events-none absolute bottom-full left-1/2 z-10 hidden -translate-x-1/2 whitespace-nowrap rounded bg-black px-2 py-1 text-[10px] text-white group-hover:block">
-                                    {item.day} · {item.jobs} 个任务
+                            <div key={item.day} className="group relative flex h-full min-w-0 flex-1 items-end justify-center gap-px">
+                                <div className="w-1/2 max-w-2 rounded-t-sm bg-stone-300 transition group-hover:bg-white dark:bg-stone-200" style={{ height: `${Math.max(2, (item.jobs / peak) * 100)}%` }} />
+                                <div className="w-1/2 max-w-2 rounded-t-sm bg-emerald-500/70 transition group-hover:bg-emerald-400" style={{ height: `${Math.max(2, (item.activeUsers / peak) * 100)}%` }} />
+                                <span className="pointer-events-none absolute bottom-full left-1/2 z-10 hidden -translate-x-1/2 whitespace-nowrap rounded-lg border border-white/10 bg-black px-2.5 py-1.5 text-[10px] text-white shadow-xl group-hover:block">
+                                    {item.day} · {item.jobs} 任务 · {item.activeUsers} 活跃 · +{item.newUsers} 用户
                                 </span>
                             </div>
                         ))}
                     </div>
                 </Panel>
-                <Panel title="实际结算消耗" note="按币种隔离汇总">
-                    {data.usage.length ? (
+                <Panel title="供应商实际成本" note="近 30 天与历史累计，按币种隔离">
+                    {usageCurrencies.length ? (
                         <div className="space-y-3">
-                            {data.usage.map((item) => (
-                                <div key={item.currency} className="rounded-xl border border-stone-200 p-4 dark:border-white/10">
+                            {usageCurrencies.map((currency) => {
+                                const recent = data.usage30d.find((item) => item.currency === currency);
+                                const total = data.usage.find((item) => item.currency === currency);
+                                return <div key={currency} className="rounded-xl border border-stone-200 bg-stone-50/60 p-4 dark:border-white/10 dark:bg-white/[0.025]">
                                     <div className="flex items-center justify-between">
-                                        <b>{usageAmountLabel(item.currency, item.totalAmount, true)}</b>
-                                        <span className="font-mono text-xl">{formatUsageAmount(item.currency, item.totalAmount)}</span>
+                                        <b>{usageAmountLabel(currency, recent?.totalAmount || total?.totalAmount, true)}</b>
+                                        <span className="font-mono text-xl">{formatUsageAmount(currency, recent?.totalAmount || "0")}</span>
                                     </div>
-                                    <p className="mt-2 text-xs text-stone-500">
-                                        {item.calls} 笔 · {item.totalTokens} Tokens · {item.videoDurationSeconds}s 视频
-                                    </p>
-                                </div>
-                            ))}
+                                    <div className="mt-3 flex items-center justify-between text-xs text-stone-500">
+                                        <span>30 天 {recent?.calls || 0} 笔</span>
+                                        <span>累计 {formatUsageAmount(currency, total?.totalAmount || "0")}</span>
+                                    </div>
+                                </div>;
+                            })}
                         </div>
                     ) : (
                         <Empty description="暂无已对账账单" />
                     )}
                 </Panel>
             </div>
+            <Panel title="运行监控" note="优先关注红色和黄色指标">
+                <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-6">
+                    <OperationalSignal label="有效登录用户" value={formatCount(data.userActivity.activeSessionUsers)} note="当前未过期会话" />
+                    <OperationalSignal label="运行中任务" value={formatCount(data.activeJobs)} note="生成队列实时值" tone={data.activeJobs > 10 ? "warning" : "normal"} />
+                    <OperationalSignal label="24 小时失败" value={formatCount(data.jobActivity.failed24h)} note="需要排查失败原因" tone={data.jobActivity.failed24h ? "danger" : "normal"} />
+                    <OperationalSignal label="待对账" value={formatCount(data.alerts.pendingBillingJobs)} note="供应商账单处理中" tone={data.alerts.pendingBillingJobs ? "warning" : "normal"} />
+                    <OperationalSignal label="待扣积分" value={formatCount(data.alerts.pendingCreditCharges)} note="计费尚未最终入账" tone={data.alerts.pendingCreditCharges ? "warning" : "normal"} />
+                    <OperationalSignal label="平均生成耗时" value={formatDuration(data.jobActivity.avgCompletionSeconds30d)} note="近 30 天成功任务" />
+                </div>
+            </Panel>
         </div>
     );
 }
@@ -1102,6 +1121,21 @@ function Metric({ label, value, note }: { label: string; value: string; note?: s
             {note ? <p className="mt-2 text-xs text-stone-500">{note}</p> : null}
         </div>
     );
+}
+function OperationalSignal({ label, value, note, tone = "normal" }: { label: string; value: string; note: string; tone?: "normal" | "warning" | "danger" }) {
+    const toneClass = tone === "danger" ? "border-red-500/30 bg-red-500/[0.06] text-red-500" : tone === "warning" ? "border-amber-500/30 bg-amber-500/[0.06] text-amber-500" : "border-stone-200 bg-stone-50 text-stone-950 dark:border-white/10 dark:bg-white/[0.025] dark:text-stone-100";
+    return <div className={`rounded-xl border p-4 ${toneClass}`}><p className="text-xs opacity-60">{label}</p><p className="mt-2 font-mono text-2xl font-semibold tracking-tight">{value}</p><p className="mt-2 text-[11px] opacity-55">{note}</p></div>;
+}
+function formatCount(value: number) {
+    return new Intl.NumberFormat("zh-CN").format(value || 0);
+}
+function formatPercent(value: number) {
+    return `${Math.max(0, value * 100).toFixed(1)}%`;
+}
+function formatDuration(value: number) {
+    if (!value) return "—";
+    if (value < 60) return `${Math.round(value)} 秒`;
+    return `${(value / 60).toFixed(value < 600 ? 1 : 0)} 分钟`;
 }
 function providerLabel(value?: string) {
     if (value === "runninghub_global") return "海马云 · 国际区";

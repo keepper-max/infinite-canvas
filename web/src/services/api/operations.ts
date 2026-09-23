@@ -35,6 +35,7 @@ export type TeamMember = { userId: string; email: string; role: "owner" | "admin
 export type UsageSummary = { currency: string; calls: number; totalTokens: string; generatedImages: string; videoDurationSeconds: string; audioDurationSeconds: string; totalAmount: string };
 export type AdminOverview = {
     users: number;
+    userActivity: { new24h: number; new7d: number; new30d: number; active24h: number; active7d: number; active30d: number; activeSessionUsers: number };
     projects: number;
     assets: number;
     assetBytes: number;
@@ -44,8 +45,12 @@ export type AdminOverview = {
     failedCompositions: number;
     totalJobs: number;
     successRate: number;
+    jobActivity: { jobs24h: number; jobs7d: number; jobs30d: number; failed24h: number; successRate30d: number; avgCompletionSeconds30d: number };
+    creditActivity: { consumed24h: string; consumed7d: string; consumed30d: string };
+    alerts: { pendingBillingJobs: number; pendingCreditCharges: number };
     usage: UsageSummary[];
-    trends: Array<{ day: string; newUsers: number; jobs: number; completedJobs: number }>;
+    usage30d: UsageSummary[];
+    trends: Array<{ day: string; newUsers: number; activeUsers: number; jobs: number; completedJobs: number; creditPoints: string }>;
 };
 export type AdminFailure = { id: string; kind: string; status: string; error: { code?: string; message: string; retryable: boolean }; updatedAt: string };
 export type AdminModel = { id: string; displayName: string; capability: string; providerId: string; enabled: boolean; configurable: boolean; healthy: boolean; discovered: boolean; checkedAt?: string };

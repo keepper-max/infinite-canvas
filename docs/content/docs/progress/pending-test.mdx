@@ -5,6 +5,8 @@ description: Implemented changes that still need manual verification
 
 # Pending Tests
 
+- Admin overview monitoring: verify total/new/active users, 24-hour/7-day/30-day jobs, success rate, average completion time, point consumption, 30-day and lifetime provider costs, active sessions, failures, pending billing, pending credit charges, and asset storage against database samples.
+
 - Prompt access: ordinary accounts must not see NSFW-tagged prompts in the Prompt Center, home showcase, workbench picker, canvas side panel, source preview, or Agent search; super administrators must retain access.
 
 - 管理员积分发放请求：从 HTTP 地址打开管理后台，填写积分、来源和说明后确认，应显示提交状态并成功入账；快速重复点击只能产生一笔流水。接口拒绝或网络失败时弹窗恢复可操作并显示原因，使用同一请求号重试不得重复发放。
