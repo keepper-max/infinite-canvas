@@ -170,6 +170,11 @@ function overviewPresetRange(preset: Exclude<OverviewRangePreset, "custom">): [D
     if (preset === "month") return [today.startOf("month"), today];
     return [today, today];
 }
+function overviewTrendTicks<T>(items: T[]) {
+    if (items.length <= 1) return items;
+    const last = items.length - 1;
+    return Array.from(new Set([0, Math.round(last * 0.25), Math.round(last * 0.5), Math.round(last * 0.75), last])).map((index) => items[index]!);
+}
 
 function Overview() {
     const [data, setData] = useState<AdminOverview>();
@@ -177,6 +182,10 @@ function Overview() {
     const [loading, setLoading] = useState(true);
     const [rangePreset, setRangePreset] = useState<OverviewRangePreset>("month");
     const [range, setRange] = useState<[Dayjs, Dayjs]>(() => overviewPresetRange("month"));
+    const [rangeJobs, setRangeJobs] = useState<AdminJob[]>([]);
+    const [rangeJobsTotal, setRangeJobsTotal] = useState(0);
+    const [rangeJobsPage, setRangeJobsPage] = useState(1);
+    const [rangeJobsLoading, setRangeJobsLoading] = useState(true);
     const dateFrom = range[0].format("YYYY-MM-DD");
     const dateTo = range[1].format("YYYY-MM-DD");
     useEffect(() => {
@@ -193,6 +202,23 @@ function Overview() {
             controller.abort();
         };
     }, [dateFrom, dateTo]);
+    useEffect(() => {
+        const controller = new AbortController();
+        let active = true;
+        setRangeJobsLoading(true);
+        getAdminJobs({ page: rangeJobsPage, pageSize: 10, createdFrom: dateFrom, createdTo: dateTo }, controller.signal)
+            .then((value) => {
+                if (!active) return;
+                setRangeJobs(value.items);
+                setRangeJobsTotal(value.total);
+            })
+            .catch((value) => active && message.error(value instanceof Error ? value.message : "任务明细加载失败"))
+            .finally(() => active && setRangeJobsLoading(false));
+        return () => {
+            active = false;
+            controller.abort();
+        };
+    }, [dateFrom, dateTo, rangeJobsPage]);
     if (error && !data) return <Empty description={error} />;
     if (!data) return <Loading />;
     const rangeLabel = formatOverviewRangeLabel(data.range.from, data.range.to);
@@ -205,9 +231,11 @@ function Overview() {
         { label: "素材存储", value: formatBytes(data.assetBytes), note: `${formatCount(data.assets)} 个有效素材` },
     ];
     const peak = Math.max(1, ...data.trends.flatMap((item) => [item.jobs, item.activeUsers]));
+    const trendTicks = overviewTrendTicks(data.trends);
     const usageCurrencies = Array.from(new Set([...data.usageRange, ...data.usage].map((item) => item.currency)));
     const applyPreset = (preset: Exclude<OverviewRangePreset, "custom">) => {
         setRangePreset(preset);
+        setRangeJobsPage(1);
         setRange(overviewPresetRange(preset));
     };
     return (
@@ -223,8 +251,10 @@ function Overview() {
                         <button
                             key={preset}
                             type="button"
+                            aria-pressed={rangePreset === preset}
                             onClick={() => applyPreset(preset)}
-                            className={`rounded-lg border px-3.5 py-2 text-sm transition ${rangePreset === preset ? "border-stone-950 bg-stone-950 text-white dark:border-white dark:bg-white dark:text-stone-950" : "border-stone-200 bg-transparent text-stone-500 hover:border-stone-400 hover:text-stone-950 dark:border-white/10 dark:hover:border-white/30 dark:hover:text-white"}`}
+                            style={rangePreset === preset ? { backgroundColor: "#f5f5f4", borderColor: "#f5f5f4", color: "#0c0a09" } : undefined}
+                            className={`rounded-lg border px-3.5 py-2 text-sm font-medium transition ${rangePreset === preset ? "shadow-sm" : "border-stone-200 bg-transparent text-stone-600 hover:border-stone-400 hover:text-stone-950 dark:border-white/15 dark:text-stone-300 dark:hover:border-white/40 dark:hover:text-white"}`}
                         >
                             {overviewPresetLabel[preset]}
                         </button>
@@ -240,6 +270,7 @@ function Overview() {
                                 return;
                             }
                             setRangePreset("custom");
+                            setRangeJobsPage(1);
                             setRange([values[0], values[1]]);
                         }}
                         className={`h-[38px] w-[250px] ${rangePreset === "custom" ? "ring-1 ring-stone-950 dark:ring-white" : ""}`}
@@ -253,7 +284,7 @@ function Overview() {
             </div>
             <div className="grid gap-6 xl:grid-cols-[1.5fr_1fr]">
                 <Panel title={`${rangeLabel}活跃趋势`} note="活跃用户按登录或提交生成任务统计">
-                    <div className="mb-5 flex items-center gap-5 text-xs text-stone-500">
+                    <div className="mb-5 flex items-center gap-5 text-xs text-stone-600 dark:text-stone-300">
                         <span className="flex items-center gap-2"><i className="size-2 rounded-full bg-stone-200" />任务</span>
                         <span className="flex items-center gap-2"><i className="size-2 rounded-full bg-emerald-400" />活跃用户</span>
                     </div>
@@ -268,6 +299,9 @@ function Overview() {
                             </div>
                         ))}
                     </div>
+                    <div className="mt-3 flex justify-between border-t border-stone-200 pt-2 font-mono text-[11px] text-stone-600 dark:border-white/10 dark:text-stone-400">
+                        {trendTicks.map((item) => <span key={item.day}>{dayjs(item.day).format("M/D")}</span>)}
+                    </div>
                 </Panel>
                 <Panel title="供应商实际成本" note={`${rangeLabel}与历史累计，按币种隔离`}>
                     {usageCurrencies.length ? (
@@ -280,7 +314,7 @@ function Overview() {
                                         <b>{usageAmountLabel(currency, recent?.totalAmount || total?.totalAmount, true)}</b>
                                         <span className="font-mono text-xl">{formatUsageAmount(currency, recent?.totalAmount || "0")}</span>
                                     </div>
-                                    <div className="mt-3 flex items-center justify-between text-xs text-stone-500">
+                                    <div className="mt-3 flex items-center justify-between text-xs text-stone-600 dark:text-stone-400">
                                         <span>{rangeLabel} {recent?.calls || 0} 笔</span>
                                         <span>累计 {formatUsageAmount(currency, total?.totalAmount || "0")}</span>
                                     </div>
@@ -301,6 +335,37 @@ function Overview() {
                     <OperationalSignal label="待扣积分" value={formatCount(data.alerts.pendingCreditCharges)} note="计费尚未最终入账" tone={data.alerts.pendingCreditCharges ? "warning" : "normal"} />
                     <OperationalSignal label="平均生成耗时" value={formatDuration(data.jobActivity.avgCompletionSecondsInRange)} note={`${rangeLabel}成功任务`} />
                 </div>
+            </Panel>
+            <Panel title="所选周期任务明细" note={`${rangeLabel}共 ${formatCount(rangeJobsTotal)} 个任务，按提交时间倒序`}>
+                <Table
+                    rowKey="id"
+                    loading={rangeJobsLoading}
+                    dataSource={rangeJobs}
+                    scroll={{ x: 1080 }}
+                    pagination={{ current: rangeJobsPage, pageSize: 10, total: rangeJobsTotal, showSizeChanger: false, onChange: setRangeJobsPage }}
+                    columns={[
+                        { title: "提交时间", dataIndex: "createdAt", width: 170, render: formatDate },
+                        {
+                            title: "用户 / 项目",
+                            width: 230,
+                            render: (_, item) => <><span className="block font-medium text-stone-900 dark:text-stone-100">{item.userEmail}</span><small className="text-stone-600 dark:text-stone-400">{item.projectName}</small></>,
+                        },
+                        {
+                            title: "模型 / 能力",
+                            width: 240,
+                            render: (_, item) => <><span className="block">{item.modelId}</span><small className="text-stone-600 dark:text-stone-400">{item.capability}</small></>,
+                        },
+                        { title: "任务状态", dataIndex: "status", width: 110, render: (value) => <StatusTag value={value} /> },
+                        { title: "对账状态", dataIndex: "billingStatus", width: 110, render: (value) => <StatusTag value={value} /> },
+                        { title: "耗时", width: 100, render: (_, item) => formatJobDuration(item.createdAt, item.finishedAt) },
+                        {
+                            title: "任务 ID",
+                            dataIndex: "id",
+                            width: 150,
+                            render: copyable,
+                        },
+                    ]}
+                />
             </Panel>
         </div>
         </Spin>
@@ -1173,7 +1238,7 @@ function Panel({ title, note, actions, children }: { title: string; note?: strin
             <header className="mb-5 flex flex-wrap items-center justify-between gap-3">
                 <div>
                     <h2 className="font-semibold">{title}</h2>
-                    {note ? <p className="mt-0.5 text-xs text-stone-500">{note}</p> : null}
+                    {note ? <p className="mt-0.5 text-xs text-stone-600 dark:text-stone-400">{note}</p> : null}
                 </div>
                 {actions}
             </header>
@@ -1184,15 +1249,15 @@ function Panel({ title, note, actions, children }: { title: string; note?: strin
 function Metric({ label, value, note }: { label: string; value: string; note?: string }) {
     return (
         <div className="rounded-2xl border border-stone-200 bg-white p-5 dark:border-white/10 dark:bg-stone-950">
-            <p className="text-xs font-medium text-stone-500">{label}</p>
+            <p className="text-xs font-medium text-stone-600 dark:text-stone-400">{label}</p>
             <p className="mt-2 text-3xl font-semibold tracking-tight">{value}</p>
-            {note ? <p className="mt-2 text-xs text-stone-500">{note}</p> : null}
+            {note ? <p className="mt-2 text-xs text-stone-600 dark:text-stone-400">{note}</p> : null}
         </div>
     );
 }
 function OperationalSignal({ label, value, note, tone = "normal" }: { label: string; value: string; note: string; tone?: "normal" | "warning" | "danger" }) {
     const toneClass = tone === "danger" ? "border-red-500/30 bg-red-500/[0.06] text-red-500" : tone === "warning" ? "border-amber-500/30 bg-amber-500/[0.06] text-amber-500" : "border-stone-200 bg-stone-50 text-stone-950 dark:border-white/10 dark:bg-white/[0.025] dark:text-stone-100";
-    return <div className={`rounded-xl border p-4 ${toneClass}`}><p className="text-xs opacity-60">{label}</p><p className="mt-2 font-mono text-2xl font-semibold tracking-tight">{value}</p><p className="mt-2 text-[11px] opacity-55">{note}</p></div>;
+    return <div className={`rounded-xl border p-4 ${toneClass}`}><p className="text-xs opacity-75">{label}</p><p className="mt-2 font-mono text-2xl font-semibold tracking-tight">{value}</p><p className="mt-2 text-[11px] opacity-70">{note}</p></div>;
 }
 function formatCount(value: number) {
     return new Intl.NumberFormat("zh-CN").format(value || 0);
@@ -1204,6 +1269,10 @@ function formatDuration(value: number) {
     if (!value) return "—";
     if (value < 60) return `${Math.round(value)} 秒`;
     return `${(value / 60).toFixed(value < 600 ? 1 : 0)} 分钟`;
+}
+function formatJobDuration(createdAt: string, finishedAt?: string) {
+    if (!finishedAt) return "—";
+    return formatDuration(Math.max(0, dayjs(finishedAt).diff(dayjs(createdAt), "second", true)));
 }
 function providerLabel(value?: string) {
     if (value === "runninghub_global") return "海马云 · 国际区";

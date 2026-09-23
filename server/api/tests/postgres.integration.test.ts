@@ -603,6 +603,12 @@ test(
       assert.match(dailyOverview.creditActivity.consumedInRange, /^\d+$/);
       assert.ok(Array.isArray(dailyOverview.usageRange));
       assert.equal(dailyOverview.trends.length, 1);
+      const historicalJobs = (await operations.adminJobs(
+        firstUser.rows[0]!.id,
+        { page: 1, pageSize: 20, createdFrom: "1900-01-01", createdTo: "1900-01-01" },
+      )) as { total: number; items: unknown[] };
+      assert.equal(historicalJobs.total, 0);
+      assert.deepEqual(historicalJobs.items, []);
     } finally {
       await pool.end();
     }

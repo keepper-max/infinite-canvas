@@ -1350,6 +1350,14 @@ function adminJobFilters(query: AdminListQuery, alias: string) {
       `lower(${alias}.id::text||' '||coalesce(${alias}.provider_job_id,'')||' '||coalesce(${alias}.billing_trace_id,'')) like $${values.length}`,
     );
   }
+  if (query.createdFrom) {
+    values.push(query.createdFrom);
+    filters.push(`${alias}.created_at>=$${values.length}::date`);
+  }
+  if (query.createdTo) {
+    values.push(query.createdTo);
+    filters.push(`${alias}.created_at<($${values.length}::date+interval '1 day')`);
+  }
   return {
     where: filters.length ? `where ${filters.join(" and ")}` : "",
     values,
