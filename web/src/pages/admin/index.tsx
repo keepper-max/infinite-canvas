@@ -1,5 +1,6 @@
 import { ArrowLeft, Boxes, CircleDollarSign, ClipboardList, LayoutDashboard, ShieldCheck, Users } from "lucide-react";
-import { Button, Drawer, Empty, Input, Modal, Select, Space, Spin, Switch, Table, Tag, Tooltip, message } from "antd";
+import { Button, DatePicker, Drawer, Empty, Input, Modal, Select, Space, Spin, Switch, Table, Tag, Tooltip, message } from "antd";
+import dayjs, { type Dayjs } from "dayjs";
 import { useCallback, useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 
@@ -155,37 +156,103 @@ function AdminSection({ section, modelProvider }: { section: Section; modelProvi
     return <AuditPanel />;
 }
 
+type OverviewRangePreset = "today" | "yesterday" | "week" | "month" | "custom";
+const overviewPresetLabel: Record<Exclude<OverviewRangePreset, "custom">, string> = {
+    today: "今日",
+    yesterday: "昨日",
+    week: "本周",
+    month: "本月",
+};
+function overviewPresetRange(preset: Exclude<OverviewRangePreset, "custom">): [Dayjs, Dayjs] {
+    const today = dayjs().startOf("day");
+    if (preset === "yesterday") return [today.subtract(1, "day"), today.subtract(1, "day")];
+    if (preset === "week") return [today.subtract((today.day() + 6) % 7, "day"), today];
+    if (preset === "month") return [today.startOf("month"), today];
+    return [today, today];
+}
+
 function Overview() {
     const [data, setData] = useState<AdminOverview>();
     const [error, setError] = useState("");
+    const [loading, setLoading] = useState(true);
+    const [rangePreset, setRangePreset] = useState<OverviewRangePreset>("month");
+    const [range, setRange] = useState<[Dayjs, Dayjs]>(() => overviewPresetRange("month"));
+    const dateFrom = range[0].format("YYYY-MM-DD");
+    const dateTo = range[1].format("YYYY-MM-DD");
     useEffect(() => {
         const controller = new AbortController();
-        getAdminOverview(controller.signal)
-            .then(setData)
-            .catch((value) => setError(value instanceof Error ? value.message : "加载失败"));
-        return () => controller.abort();
-    }, []);
-    if (error) return <Empty description={error} />;
+        let active = true;
+        setLoading(true);
+        setError("");
+        getAdminOverview({ dateFrom, dateTo }, controller.signal)
+            .then((value) => active && setData(value))
+            .catch((value) => active && setError(value instanceof Error ? value.message : "加载失败"))
+            .finally(() => active && setLoading(false));
+        return () => {
+            active = false;
+            controller.abort();
+        };
+    }, [dateFrom, dateTo]);
+    if (error && !data) return <Empty description={error} />;
     if (!data) return <Loading />;
+    const rangeLabel = formatOverviewRangeLabel(data.range.from, data.range.to);
     const metrics = [
-        { label: "用户总量", value: formatCount(data.users), note: `近 30 天新增 ${data.userActivity.new30d}` },
-        { label: "24 小时活跃", value: formatCount(data.userActivity.active24h), note: `新增 ${data.userActivity.new24h} 人` },
-        { label: "30 天活跃", value: formatCount(data.userActivity.active30d), note: `活跃率 ${formatPercent(data.users ? data.userActivity.active30d / data.users : 0)}` },
-        { label: "30 天任务", value: formatCount(data.jobActivity.jobs30d), note: `成功率 ${formatPercent(data.jobActivity.successRate30d)}` },
-        { label: "30 天积分消耗", value: formatPoints(data.creditActivity.consumed30d), note: `近 7 天 ${formatPoints(data.creditActivity.consumed7d)}` },
+        { label: "用户总量", value: formatCount(data.users), note: `${rangeLabel}新增 ${data.userActivity.newInRange}` },
+        { label: "区间活跃用户", value: formatCount(data.userActivity.activeInRange), note: `活跃率 ${formatPercent(data.users ? data.userActivity.activeInRange / data.users : 0)}` },
+        { label: "区间新增用户", value: formatCount(data.userActivity.newInRange), note: `${rangeLabel}注册` },
+        { label: "区间任务", value: formatCount(data.jobActivity.jobsInRange), note: `成功率 ${formatPercent(data.jobActivity.successRateInRange)}` },
+        { label: "区间积分消耗", value: formatPoints(data.creditActivity.consumedInRange), note: rangeLabel },
         { label: "素材存储", value: formatBytes(data.assetBytes), note: `${formatCount(data.assets)} 个有效素材` },
     ];
     const peak = Math.max(1, ...data.trends.flatMap((item) => [item.jobs, item.activeUsers]));
-    const usageCurrencies = Array.from(new Set([...data.usage30d, ...data.usage].map((item) => item.currency)));
+    const usageCurrencies = Array.from(new Set([...data.usageRange, ...data.usage].map((item) => item.currency)));
+    const applyPreset = (preset: Exclude<OverviewRangePreset, "custom">) => {
+        setRangePreset(preset);
+        setRange(overviewPresetRange(preset));
+    };
     return (
+        <Spin spinning={loading} tip="正在更新数据">
         <div className="space-y-6">
+            <div className="flex flex-wrap items-center justify-between gap-4 rounded-2xl border border-stone-200 bg-white px-5 py-4 shadow-sm shadow-stone-200/40 dark:border-white/10 dark:bg-stone-950 dark:shadow-none">
+                <div>
+                    <p className="text-xs font-medium text-stone-500">数据周期</p>
+                    <p className="mt-1 text-sm font-semibold">{rangeLabel}</p>
+                </div>
+                <div className="flex flex-wrap items-center gap-2">
+                    {(["today", "yesterday", "week", "month"] as const).map((preset) => (
+                        <button
+                            key={preset}
+                            type="button"
+                            onClick={() => applyPreset(preset)}
+                            className={`rounded-lg border px-3.5 py-2 text-sm transition ${rangePreset === preset ? "border-stone-950 bg-stone-950 text-white dark:border-white dark:bg-white dark:text-stone-950" : "border-stone-200 bg-transparent text-stone-500 hover:border-stone-400 hover:text-stone-950 dark:border-white/10 dark:hover:border-white/30 dark:hover:text-white"}`}
+                        >
+                            {overviewPresetLabel[preset]}
+                        </button>
+                    ))}
+                    <DatePicker.RangePicker
+                        value={range}
+                        allowClear={false}
+                        format="YYYY-MM-DD"
+                        onChange={(values) => {
+                            if (!values?.[0] || !values?.[1]) return;
+                            if (values[1].diff(values[0], "day") > 365) {
+                                message.warning("自定义统计范围最多为 366 天");
+                                return;
+                            }
+                            setRangePreset("custom");
+                            setRange([values[0], values[1]]);
+                        }}
+                        className={`h-[38px] w-[250px] ${rangePreset === "custom" ? "ring-1 ring-stone-950 dark:ring-white" : ""}`}
+                    />
+                </div>
+            </div>
             <div className="grid grid-cols-2 gap-4 xl:grid-cols-6">
                 {metrics.map((item) => (
                     <Metric key={item.label} label={item.label} value={item.value} note={item.note} />
                 ))}
             </div>
             <div className="grid gap-6 xl:grid-cols-[1.5fr_1fr]">
-                <Panel title="近 30 天活跃趋势" note="活跃用户按登录或提交生成任务统计">
+                <Panel title={`${rangeLabel}活跃趋势`} note="活跃用户按登录或提交生成任务统计">
                     <div className="mb-5 flex items-center gap-5 text-xs text-stone-500">
                         <span className="flex items-center gap-2"><i className="size-2 rounded-full bg-stone-200" />任务</span>
                         <span className="flex items-center gap-2"><i className="size-2 rounded-full bg-emerald-400" />活跃用户</span>
@@ -202,11 +269,11 @@ function Overview() {
                         ))}
                     </div>
                 </Panel>
-                <Panel title="供应商实际成本" note="近 30 天与历史累计，按币种隔离">
+                <Panel title="供应商实际成本" note={`${rangeLabel}与历史累计，按币种隔离`}>
                     {usageCurrencies.length ? (
                         <div className="space-y-3">
                             {usageCurrencies.map((currency) => {
-                                const recent = data.usage30d.find((item) => item.currency === currency);
+                                const recent = data.usageRange.find((item) => item.currency === currency);
                                 const total = data.usage.find((item) => item.currency === currency);
                                 return <div key={currency} className="rounded-xl border border-stone-200 bg-stone-50/60 p-4 dark:border-white/10 dark:bg-white/[0.025]">
                                     <div className="flex items-center justify-between">
@@ -214,7 +281,7 @@ function Overview() {
                                         <span className="font-mono text-xl">{formatUsageAmount(currency, recent?.totalAmount || "0")}</span>
                                     </div>
                                     <div className="mt-3 flex items-center justify-between text-xs text-stone-500">
-                                        <span>30 天 {recent?.calls || 0} 笔</span>
+                                        <span>{rangeLabel} {recent?.calls || 0} 笔</span>
                                         <span>累计 {formatUsageAmount(currency, total?.totalAmount || "0")}</span>
                                     </div>
                                 </div>;
@@ -229,13 +296,14 @@ function Overview() {
                 <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-6">
                     <OperationalSignal label="有效登录用户" value={formatCount(data.userActivity.activeSessionUsers)} note="当前未过期会话" />
                     <OperationalSignal label="运行中任务" value={formatCount(data.activeJobs)} note="生成队列实时值" tone={data.activeJobs > 10 ? "warning" : "normal"} />
-                    <OperationalSignal label="24 小时失败" value={formatCount(data.jobActivity.failed24h)} note="需要排查失败原因" tone={data.jobActivity.failed24h ? "danger" : "normal"} />
+                    <OperationalSignal label="区间失败" value={formatCount(data.jobActivity.failedInRange)} note="需要排查失败原因" tone={data.jobActivity.failedInRange ? "danger" : "normal"} />
                     <OperationalSignal label="待对账" value={formatCount(data.alerts.pendingBillingJobs)} note="供应商账单处理中" tone={data.alerts.pendingBillingJobs ? "warning" : "normal"} />
                     <OperationalSignal label="待扣积分" value={formatCount(data.alerts.pendingCreditCharges)} note="计费尚未最终入账" tone={data.alerts.pendingCreditCharges ? "warning" : "normal"} />
-                    <OperationalSignal label="平均生成耗时" value={formatDuration(data.jobActivity.avgCompletionSeconds30d)} note="近 30 天成功任务" />
+                    <OperationalSignal label="平均生成耗时" value={formatDuration(data.jobActivity.avgCompletionSecondsInRange)} note={`${rangeLabel}成功任务`} />
                 </div>
             </Panel>
         </div>
+        </Spin>
     );
 }
 function UsersPanel() {
@@ -1160,6 +1228,11 @@ function Loading() {
 }
 function formatDate(value?: string) {
     return value ? new Date(value).toLocaleString("zh-CN") : "—";
+}
+function formatOverviewRangeLabel(from: string, to: string) {
+    if (from === to) return dayjs(from).format("M月D日");
+    if (dayjs(from).year() === dayjs(to).year()) return `${dayjs(from).format("M月D日")}–${dayjs(to).format("M月D日")}`;
+    return `${dayjs(from).format("YYYY年M月D日")}–${dayjs(to).format("YYYY年M月D日")}`;
 }
 function formatPoints(value: string | number) {
     return new Intl.NumberFormat("zh-CN").format(BigInt(String(value || 0)));

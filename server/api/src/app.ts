@@ -292,11 +292,13 @@ export function createApp(
 
   app.get("/api/admin/overview", async (context) => {
     const user = await requireUser(context.req.raw, repository, config);
+    const range = adminOverviewQueryInput.parse(context.req.query());
     return context.json(
       success(
         context,
         await requireOperationsService(operationsService).adminOverview(
           user.id,
+          range,
         ),
       ),
     );
@@ -1314,6 +1316,25 @@ const managedProviderInput = z
   .object({ providerId: managedProviderId })
   .strict();
 const modelEnabledInput = z.object({ enabled: z.boolean() }).strict();
+const adminOverviewQueryInput = z
+  .object({
+    dateFrom: z.string().date().optional(),
+    dateTo: z.string().date().optional(),
+  })
+  .refine(
+    ({ dateFrom, dateTo }) => !dateFrom || !dateTo || dateFrom <= dateTo,
+    { message: "开始日期不能晚于结束日期" },
+  )
+  .refine(
+    ({ dateFrom, dateTo }) =>
+      !dateFrom ||
+      !dateTo ||
+      (new Date(`${dateTo}T00:00:00Z`).getTime() -
+        new Date(`${dateFrom}T00:00:00Z`).getTime()) /
+        86_400_000 <=
+        365,
+    { message: "统计范围最多为 366 天" },
+  );
 const adminQueryInput = z.object({
   page: z.coerce.number().int().min(1).default(1),
   pageSize: z.coerce.number().int().min(1).max(100).default(20),

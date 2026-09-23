@@ -48,7 +48,7 @@ export interface OperationsServicePort {
     userId: string,
     projectId: string,
   ): Promise<unknown>;
-  adminOverview(userId: string): Promise<unknown>;
+  adminOverview(userId: string, range?: AdminOverviewRange): Promise<unknown>;
   adminFailures(userId: string): Promise<unknown>;
   adminModels(userId: string, providerId?: string): Promise<unknown>;
   setModelEnabled(
@@ -117,6 +117,11 @@ export type AdminListQuery = {
   isAdmin?: boolean;
   createdFrom?: string;
   createdTo?: string;
+};
+
+export type AdminOverviewRange = {
+  dateFrom?: string;
+  dateTo?: string;
 };
 
 export class OperationsService implements OperationsServicePort {
@@ -345,10 +350,12 @@ export class OperationsService implements OperationsServicePort {
     });
   }
 
-  async adminOverview(userId: string) {
+  async adminOverview(userId: string, range: AdminOverviewRange = {}) {
     await this.requireAdmin(userId);
     const result = await this.pool.query(
       `select
+        coalesce($1::date,current_date-29)::text range_from,
+        coalesce($2::date,current_date)::text range_to,
         (select count(*)::int from users) users,
         (select count(*)::int from users where created_at>=now()-interval '24 hours') new_users_24h,
         (select count(*)::int from users where created_at>=now()-interval '7 days') new_users_7d,
@@ -356,6 +363,8 @@ export class OperationsService implements OperationsServicePort {
         (select count(*)::int from users u where u.last_login_at>=now()-interval '24 hours' or exists(select 1 from generation_jobs j where j.created_by=u.id and j.created_at>=now()-interval '24 hours')) active_users_24h,
         (select count(*)::int from users u where u.last_login_at>=now()-interval '7 days' or exists(select 1 from generation_jobs j where j.created_by=u.id and j.created_at>=now()-interval '7 days')) active_users_7d,
         (select count(*)::int from users u where u.last_login_at>=now()-interval '30 days' or exists(select 1 from generation_jobs j where j.created_by=u.id and j.created_at>=now()-interval '30 days')) active_users_30d,
+        (select count(*)::int from users where created_at>=coalesce($1::date,current_date-29) and created_at<coalesce($2::date,current_date)+1) new_users_range,
+        (select count(*)::int from users u where (u.last_login_at>=coalesce($1::date,current_date-29) and u.last_login_at<coalesce($2::date,current_date)+1) or exists(select 1 from generation_jobs j where j.created_by=u.id and j.created_at>=coalesce($1::date,current_date-29) and j.created_at<coalesce($2::date,current_date)+1)) active_users_range,
         (select count(distinct user_id)::int from sessions where expires_at>now()) active_session_users,
         (select count(*)::int from projects where deleted_at is null) projects,
         (select count(*)::int from assets where status='active') assets,
@@ -369,19 +378,26 @@ export class OperationsService implements OperationsServicePort {
         (select count(*)::int from generation_jobs where status='completed' and created_at>=now()-interval '30 days') completed_jobs_30d,
         (select count(*)::int from generation_jobs where status='failed' and created_at>=now()-interval '30 days') failed_jobs_30d,
         (select coalesce(avg(extract(epoch from (finished_at-coalesce(started_at,created_at)))) filter(where status='completed' and finished_at is not null and created_at>=now()-interval '30 days'),0)::float8 from generation_jobs) avg_completion_seconds_30d,
+        (select count(*)::int from generation_jobs where created_at>=coalesce($1::date,current_date-29) and created_at<coalesce($2::date,current_date)+1) jobs_range,
+        (select count(*)::int from generation_jobs where status='failed' and created_at>=coalesce($1::date,current_date-29) and created_at<coalesce($2::date,current_date)+1) failed_jobs_range,
+        (select count(*)::int from generation_jobs where status='completed' and created_at>=coalesce($1::date,current_date-29) and created_at<coalesce($2::date,current_date)+1) completed_jobs_range,
+        (select coalesce(avg(extract(epoch from (finished_at-coalesce(started_at,created_at)))) filter(where status='completed' and finished_at is not null and created_at>=coalesce($1::date,current_date-29) and created_at<coalesce($2::date,current_date)+1),0)::float8 from generation_jobs) avg_completion_seconds_range,
         (select count(*)::int from generation_jobs where billing_status in ('pending','reconciling')) pending_billing_jobs,
         (select count(*)::int from generation_usage where credit_status in ('pending','pending_rate','pending_currency')) pending_credit_charges,
         (select coalesce(-sum(delta) filter(where entry_type='generation' and created_at>=now()-interval '24 hours'),0)::bigint from credit_ledger) credits_consumed_24h,
         (select coalesce(-sum(delta) filter(where entry_type='generation' and created_at>=now()-interval '7 days'),0)::bigint from credit_ledger) credits_consumed_7d,
         (select coalesce(-sum(delta) filter(where entry_type='generation' and created_at>=now()-interval '30 days'),0)::bigint from credit_ledger) credits_consumed_30d,
+        (select coalesce(-sum(delta) filter(where entry_type='generation' and created_at>=coalesce($1::date,current_date-29) and created_at<coalesce($2::date,current_date)+1),0)::bigint from credit_ledger) credits_consumed_range,
         (select count(*)::int from composition_jobs where status not in ('completed','failed','cancelled')) active_compositions,
         (select count(*)::int from composition_jobs where status='failed') failed_compositions,
         (select count(*)::int from generation_jobs) total_jobs,
         (select count(*)::int from generation_jobs where status='completed') completed_jobs`,
+      [range.dateFrom || null, range.dateTo || null],
     );
     const row = result.rows[0];
     return {
       users: row.users,
+      range: { from: row.range_from, to: row.range_to },
       userActivity: {
         new24h: row.new_users_24h,
         new7d: row.new_users_7d,
@@ -389,6 +405,8 @@ export class OperationsService implements OperationsServicePort {
         active24h: row.active_users_24h,
         active7d: row.active_users_7d,
         active30d: row.active_users_30d,
+        newInRange: row.new_users_range,
+        activeInRange: row.active_users_range,
         activeSessionUsers: row.active_session_users,
       },
       projects: row.projects,
@@ -411,11 +429,20 @@ export class OperationsService implements OperationsServicePort {
               (row.completed_jobs_30d + row.failed_jobs_30d)
             : 0,
         avgCompletionSeconds30d: Number(row.avg_completion_seconds_30d || 0),
+        jobsInRange: row.jobs_range,
+        failedInRange: row.failed_jobs_range,
+        successRateInRange:
+          row.completed_jobs_range + row.failed_jobs_range
+            ? row.completed_jobs_range /
+              (row.completed_jobs_range + row.failed_jobs_range)
+            : 0,
+        avgCompletionSecondsInRange: Number(row.avg_completion_seconds_range || 0),
       },
       creditActivity: {
         consumed24h: String(row.credits_consumed_24h),
         consumed7d: String(row.credits_consumed_7d),
         consumed30d: String(row.credits_consumed_30d),
+        consumedInRange: String(row.credits_consumed_range),
       },
       alerts: {
         pendingBillingJobs: row.pending_billing_jobs,
@@ -423,7 +450,8 @@ export class OperationsService implements OperationsServicePort {
       },
       usage: await this.usageSummary(),
       usage30d: await this.usageSummary(undefined, 30),
-      trends: await this.adminTrends(),
+      usageRange: await this.usageSummary(undefined, undefined, row.range_from, row.range_to),
+      trends: await this.adminTrends(row.range_from, row.range_to),
     };
   }
 
@@ -919,7 +947,7 @@ export class OperationsService implements OperationsServicePort {
     await this.auditDirect(userId, action, targetType, targetId, {}, requestId);
   }
 
-  private async usageSummary(userId?: string, sinceDays?: number) {
+  private async usageSummary(userId?: string, sinceDays?: number, dateFrom?: string, dateTo?: string) {
     const result = await this.pool.query(
       `select ${usageCurrencySql("gu")} currency,count(*)::int calls,
         coalesce(sum(total_tokens),0)::bigint total_tokens,
@@ -929,8 +957,10 @@ export class OperationsService implements OperationsServicePort {
         coalesce(sum(coalesce(total_amount,amount_final,0)),0)::text total_amount
        from generation_usage gu where ($1::uuid is null or gu.user_id=$1)
         and ($2::int is null or gu.reconciled_at>=now()-($2::int*interval '1 day'))
+        and ($3::date is null or gu.reconciled_at>=$3::date)
+        and ($4::date is null or gu.reconciled_at<$4::date+1)
        group by ${usageCurrencySql("gu")} order by currency`,
-      [userId || null, sinceDays || null],
+      [userId || null, sinceDays || null, dateFrom || null, dateTo || null],
     );
     return result.rows.map((row) => ({
       currency: row.currency,
@@ -943,9 +973,9 @@ export class OperationsService implements OperationsServicePort {
     }));
   }
 
-  private async adminTrends() {
+  private async adminTrends(dateFrom?: string, dateTo?: string) {
     const result = await this.pool.query(
-      `with days as (select generate_series(current_date-29,current_date,interval '1 day')::date as day)
+      `with days as (select generate_series(coalesce($1::date,current_date-29),coalesce($2::date,current_date),interval '1 day')::date as day)
        select d.day::text,
         (select count(*)::int from users u where u.created_at>=d.day and u.created_at<d.day+1) new_users,
         (select count(*)::int from users u where (u.last_login_at>=d.day and u.last_login_at<d.day+1) or exists(select 1 from generation_jobs j where j.created_by=u.id and j.created_at>=d.day and j.created_at<d.day+1)) active_users,
@@ -953,6 +983,7 @@ export class OperationsService implements OperationsServicePort {
         (select count(*)::int from generation_jobs j where j.status='completed' and j.created_at>=d.day and j.created_at<d.day+1) completed_jobs,
         (select coalesce(-sum(l.delta) filter(where l.entry_type='generation'),0)::bigint from credit_ledger l where l.created_at>=d.day and l.created_at<d.day+1) credit_points
        from days d order by d.day`,
+      [dateFrom || null, dateTo || null],
     );
     return result.rows.map((row) => ({
       day: row.day,

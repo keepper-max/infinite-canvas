@@ -35,7 +35,8 @@ export type TeamMember = { userId: string; email: string; role: "owner" | "admin
 export type UsageSummary = { currency: string; calls: number; totalTokens: string; generatedImages: string; videoDurationSeconds: string; audioDurationSeconds: string; totalAmount: string };
 export type AdminOverview = {
     users: number;
-    userActivity: { new24h: number; new7d: number; new30d: number; active24h: number; active7d: number; active30d: number; activeSessionUsers: number };
+    range: { from: string; to: string };
+    userActivity: { new24h: number; new7d: number; new30d: number; active24h: number; active7d: number; active30d: number; newInRange: number; activeInRange: number; activeSessionUsers: number };
     projects: number;
     assets: number;
     assetBytes: number;
@@ -45,11 +46,12 @@ export type AdminOverview = {
     failedCompositions: number;
     totalJobs: number;
     successRate: number;
-    jobActivity: { jobs24h: number; jobs7d: number; jobs30d: number; failed24h: number; successRate30d: number; avgCompletionSeconds30d: number };
-    creditActivity: { consumed24h: string; consumed7d: string; consumed30d: string };
+    jobActivity: { jobs24h: number; jobs7d: number; jobs30d: number; failed24h: number; successRate30d: number; avgCompletionSeconds30d: number; jobsInRange: number; failedInRange: number; successRateInRange: number; avgCompletionSecondsInRange: number };
+    creditActivity: { consumed24h: string; consumed7d: string; consumed30d: string; consumedInRange: string };
     alerts: { pendingBillingJobs: number; pendingCreditCharges: number };
     usage: UsageSummary[];
     usage30d: UsageSummary[];
+    usageRange: UsageSummary[];
     trends: Array<{ day: string; newUsers: number; activeUsers: number; jobs: number; completedJobs: number; creditPoints: string }>;
 };
 export type AdminFailure = { id: string; kind: string; status: string; error: { code?: string; message: string; retryable: boolean }; updatedAt: string };
@@ -162,8 +164,8 @@ export async function addTeamMember(teamId: string, email: string, role: "admin"
 export function attachTeamProject(teamId: string, projectId: string) {
     return platformRequest<{ teamProject: { teamId: string; projectId: string } }>(`/api/teams/${encodeURIComponent(teamId)}/projects`, { method: "POST", body: JSON.stringify({ projectId }) });
 }
-export function getAdminOverview(signal?: AbortSignal) {
-    return platformRequest<AdminOverview>("/api/admin/overview", { signal });
+export function getAdminOverview(input: { dateFrom?: string; dateTo?: string } = {}, signal?: AbortSignal) {
+    return platformRequest<AdminOverview>(`/api/admin/overview${adminQuery(input)}`, { signal });
 }
 export async function getAdminFailures(signal?: AbortSignal) {
     return (await platformRequest<{ failures: AdminFailure[] }>("/api/admin/failures", { signal })).failures;

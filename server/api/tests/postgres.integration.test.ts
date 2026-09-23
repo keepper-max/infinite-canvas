@@ -583,6 +583,26 @@ test(
       assert.ok(Array.isArray(overview.usage30d));
       assert.equal(overview.trends.length, 30);
       assert.ok(overview.trends.every((item) => item.activeUsers >= 0 && /^\d+$/.test(item.creditPoints)));
+      const today = new Date().toISOString().slice(0, 10);
+      const dailyOverview = (await operations.adminOverview(
+        firstUser.rows[0]!.id,
+        { dateFrom: today, dateTo: today },
+      )) as {
+        range: { from: string; to: string };
+        userActivity: { newInRange: number; activeInRange: number };
+        jobActivity: { jobsInRange: number; failedInRange: number };
+        creditActivity: { consumedInRange: string };
+        usageRange: unknown[];
+        trends: unknown[];
+      };
+      assert.deepEqual(dailyOverview.range, { from: today, to: today });
+      assert.ok(dailyOverview.userActivity.newInRange >= 0);
+      assert.ok(dailyOverview.userActivity.activeInRange >= 0);
+      assert.ok(dailyOverview.jobActivity.jobsInRange >= 0);
+      assert.ok(dailyOverview.jobActivity.failedInRange >= 0);
+      assert.match(dailyOverview.creditActivity.consumedInRange, /^\d+$/);
+      assert.ok(Array.isArray(dailyOverview.usageRange));
+      assert.equal(dailyOverview.trends.length, 1);
     } finally {
       await pool.end();
     }
