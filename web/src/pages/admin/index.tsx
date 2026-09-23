@@ -4,7 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 
 import { useAuth } from "@/components/auth/auth-context";
-import { randomId } from "@/lib/utils";
+import { randomUuid } from "@/lib/utils";
 import {
     getAdminAuditLogs,
     getAdminAssetDownload,
@@ -384,7 +384,8 @@ function UserDrawer({ userId, onClose, onChanged }: { userId?: string; onClose: 
     const [grantCredits, setGrantCredits] = useState("");
     const [grantSource, setGrantSource] = useState<"purchase" | "promotion" | "compensation">("purchase");
     const [grantNote, setGrantNote] = useState("");
-    const [grantKey, setGrantKey] = useState(randomId);
+    const [grantKey, setGrantKey] = useState(randomUuid);
+    const [granting, setGranting] = useState(false);
     useEffect(() => {
         setDetail(undefined);
         if (!userId) return;
@@ -424,19 +425,31 @@ function UserDrawer({ userId, onClose, onChanged }: { userId?: string; onClose: 
         onChanged();
     };
     const submitGrant = async () => {
+        if (granting) return;
         const credits = Number(grantCredits);
-        if (!Number.isSafeInteger(credits) || credits <= 0 || !grantNote.trim()) {
+        if (!Number.isSafeInteger(credits) || credits <= 0 || credits > 1_000_000_000 || !grantNote.trim()) {
             message.error("请输入正整数积分和发放说明");
             return;
         }
-        await grantAdminUserCredits(userId, { credits, source: grantSource, note: grantNote.trim(), idempotencyKey: grantKey });
-        message.success("积分已发放并写入审计流水");
-        setGrantOpen(false);
-        setGrantCredits("");
-        setGrantNote("");
-        setGrantKey(randomId());
-        setDetail(await getAdminUser(userId));
-        onChanged();
+        setGranting(true);
+        try {
+            await grantAdminUserCredits(userId, { credits, source: grantSource, note: grantNote.trim(), idempotencyKey: grantKey });
+            message.success("积分已发放并写入审计流水");
+            setGrantOpen(false);
+            setGrantCredits("");
+            setGrantNote("");
+            setGrantKey(randomUuid());
+            onChanged();
+            try {
+                setDetail(await getAdminUser(userId));
+            } catch {
+                message.warning("积分已发放，但详情刷新失败，请重新打开用户详情");
+            }
+        } catch (error) {
+            message.error(error instanceof Error ? error.message : "积分发放失败");
+        } finally {
+            setGranting(false);
+        }
     };
     return (
         <>
@@ -465,7 +478,7 @@ function UserDrawer({ userId, onClose, onChanged }: { userId?: string; onClose: 
                             <Button
                                 type="primary"
                                 onClick={() => {
-                                    setGrantKey(randomId());
+                                    setGrantKey(randomUuid());
                                     setGrantOpen(true);
                                 }}
                             >
@@ -547,7 +560,19 @@ function UserDrawer({ userId, onClose, onChanged }: { userId?: string; onClose: 
                 {content ? <ProjectContent content={content} /> : null}
             </Modal>
             </Drawer>
-            <Modal open={grantOpen} zIndex={1600} title="发放积分" okText="确认发放" cancelText="取消" onOk={() => void submitGrant()} onCancel={() => setGrantOpen(false)}>
+            <Modal
+                open={grantOpen}
+                zIndex={1600}
+                title="发放积分"
+                okText="确认发放"
+                cancelText="取消"
+                confirmLoading={granting}
+                cancelButtonProps={{ disabled: granting }}
+                maskClosable={!granting}
+                keyboard={!granting}
+                onOk={() => void submitGrant()}
+                onCancel={() => setGrantOpen(false)}
+            >
                 <div className="space-y-4">
                     <Input value={grantCredits} inputMode="numeric" placeholder="积分数量，例如 10000" onChange={(event) => setGrantCredits(event.target.value.replace(/\D/g, ""))} />
                     <Select
