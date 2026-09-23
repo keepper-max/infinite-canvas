@@ -51,6 +51,12 @@ export interface OperationsServicePort {
   adminOverview(userId: string): Promise<unknown>;
   adminFailures(userId: string): Promise<unknown>;
   adminModels(userId: string, providerId?: string): Promise<unknown>;
+  setModelEnabled(
+    userId: string,
+    modelId: string,
+    enabled: boolean,
+    requestId: string,
+  ): Promise<unknown>;
   adminProviders(userId: string): Promise<unknown>;
   setManagedProvider(
     userId: string,
@@ -394,8 +400,9 @@ export class OperationsService implements OperationsServicePort {
   async adminModels(userId: string, providerId?: string) {
     await this.requireAdmin(userId);
     const result = await this.pool.query(
-      `select id,display_name,capability,provider_id,enabled,healthy,discovered,checked_at,updated_at
-       from model_catalog where ($1::text is null or provider_id=$1) order by capability,display_name`,
+      `select c.id,c.display_name,c.capability,c.provider_id,c.enabled,c.healthy,c.discovered,c.checked_at,c.updated_at,
+        exists(select 1 from model_capabilities p where p.model_id=c.id) configurable
+       from model_catalog c where ($1::text is null or c.provider_id=$1) order by c.capability,c.display_name`,
       [providerId || null],
     );
     return result.rows.map((row) => ({
@@ -404,11 +411,49 @@ export class OperationsService implements OperationsServicePort {
       capability: row.capability,
       providerId: row.provider_id,
       enabled: row.enabled,
+      configurable: row.configurable,
       healthy: row.healthy,
       discovered: row.discovered,
       checkedAt: iso(row.checked_at),
       updatedAt: iso(row.updated_at),
     }));
+  }
+
+  async setModelEnabled(
+    userId: string,
+    modelId: string,
+    enabled: boolean,
+    requestId: string,
+  ) {
+    await this.requireAdmin(userId);
+    const current = await this.pool.query(
+      `select c.id,c.provider_id,c.enabled,
+        exists(select 1 from model_capabilities p where p.model_id=c.id) configurable
+       from model_catalog c where c.id=$1`,
+      [modelId],
+    );
+    const model = current.rows[0];
+    if (!model)
+      throw new DomainError("MODEL_NOT_FOUND", "模型不存在", 404);
+    if (enabled && !model.configurable)
+      throw new DomainError(
+        "MODEL_NOT_CONFIGURABLE",
+        "该模型能力暂未接入画布，不能启用",
+        422,
+      );
+    await this.pool.query(
+      "update model_catalog set enabled=$2,updated_at=now() where id=$1",
+      [modelId, enabled],
+    );
+    await this.auditDirect(
+      userId,
+      "model.enabled.update",
+      "model",
+      modelId,
+      { enabled, providerId: model.provider_id },
+      requestId,
+    );
+    return { id: modelId, enabled };
   }
 
   async adminProviders(userId: string) {

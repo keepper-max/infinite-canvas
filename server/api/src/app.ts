@@ -328,6 +328,23 @@ export function createApp(
     );
   });
 
+  app.patch("/api/admin/models/:modelId", async (context) => {
+    const user = await requireUser(context.req.raw, repository, config);
+    const modelId = z.string().trim().min(1).max(200).parse(context.req.param("modelId"));
+    const input = modelEnabledInput.parse(await context.req.json());
+    return context.json(
+      success(
+        context,
+        await requireOperationsService(operationsService).setModelEnabled(
+          user.id,
+          modelId,
+          input.enabled,
+          context.get("requestId"),
+        ),
+      ),
+    );
+  });
+
   app.get("/api/admin/providers", async (context) => {
     const user = await requireUser(context.req.raw, repository, config);
     return context.json(
@@ -1296,6 +1313,7 @@ const managedProviderId = z.enum([
 const managedProviderInput = z
   .object({ providerId: managedProviderId })
   .strict();
+const modelEnabledInput = z.object({ enabled: z.boolean() }).strict();
 const adminQueryInput = z.object({
   page: z.coerce.number().int().min(1).default(1),
   pageSize: z.coerce.number().int().min(1).max(100).default(20),

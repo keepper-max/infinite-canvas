@@ -115,7 +115,7 @@ export class ModelGateway {
         await this.pool.query(
           `insert into model_catalog(id,display_name,capability,upstream_model,provider_id,discovered,enabled,healthy,catalog_metadata,discovered_at,checked_at)
                     values($1,$2,$3,$4,'token360',true,true,true,$5,now(),now())
-                    on conflict(id) do update set display_name=excluded.display_name,capability=excluded.capability,upstream_model=excluded.upstream_model,catalog_metadata=excluded.catalog_metadata,discovered=true,enabled=true,healthy=true,discovered_at=now(),checked_at=now(),updated_at=now()`,
+                    on conflict(id) do update set display_name=excluded.display_name,capability=excluded.capability,upstream_model=excluded.upstream_model,catalog_metadata=excluded.catalog_metadata,discovered=true,healthy=true,discovered_at=now(),checked_at=now(),updated_at=now()`,
           [
             id,
             displayName,
@@ -123,12 +123,6 @@ export class ModelGateway {
             name,
             sanitizeCatalogEntry(candidate),
           ],
-        );
-      }
-      if (id.startsWith("catalog.")) {
-        await this.pool.query(
-          "update model_catalog set enabled=true,healthy=true,updated_at=now() where id=$1",
-          [id],
         );
       }
       if (id.startsWith("catalog.") || profile.capability === "video")
@@ -186,7 +180,7 @@ export class ModelGateway {
          values($1,$2,$3,$4,$5,true,$7,true,$6,now(),now())
          on conflict(id) do update set display_name=excluded.display_name,capability=excluded.capability,
           upstream_model=excluded.upstream_model,provider_id=excluded.provider_id,catalog_metadata=excluded.catalog_metadata,
-          discovered=true,enabled=excluded.enabled,healthy=true,discovered_at=now(),checked_at=now(),updated_at=now()`,
+          discovered=true,healthy=true,discovered_at=now(),checked_at=now(),updated_at=now()`,
         [
           id,
           displayName,

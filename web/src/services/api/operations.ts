@@ -48,7 +48,7 @@ export type AdminOverview = {
     trends: Array<{ day: string; newUsers: number; jobs: number; completedJobs: number }>;
 };
 export type AdminFailure = { id: string; kind: string; status: string; error: { code?: string; message: string; retryable: boolean }; updatedAt: string };
-export type AdminModel = { id: string; displayName: string; capability: string; providerId: string; enabled: boolean; healthy: boolean; discovered: boolean; checkedAt?: string };
+export type AdminModel = { id: string; displayName: string; capability: string; providerId: string; enabled: boolean; configurable: boolean; healthy: boolean; discovered: boolean; checkedAt?: string };
 export type AdminProvider = { id: "token360" | "runninghub" | "runninghub_global"; displayName: string; enabled: boolean; configured: boolean; updatedAt?: string };
 export type AdminProviders = { activeProviderId: AdminProvider["id"]; providers: AdminProvider[] };
 export type AdminUser = {
@@ -165,6 +165,9 @@ export async function getAdminFailures(signal?: AbortSignal) {
 }
 export async function getAdminModels(provider?: AdminProvider["id"], signal?: AbortSignal) {
     return (await platformRequest<{ models: AdminModel[] }>(`/api/admin/models${provider ? `?provider=${encodeURIComponent(provider)}` : ""}`, { signal })).models;
+}
+export function setAdminModelEnabled(modelId: string, enabled: boolean) {
+    return platformRequest<{ id: string; enabled: boolean }>(`/api/admin/models/${encodeURIComponent(modelId)}`, { method: "PATCH", body: JSON.stringify({ enabled }) });
 }
 export function getAdminProviders(signal?: AbortSignal) {
     return platformRequest<AdminProviders>("/api/admin/providers", { signal });

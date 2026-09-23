@@ -1,5 +1,5 @@
 import { ArrowLeft, Boxes, CircleDollarSign, ClipboardList, LayoutDashboard, ShieldCheck, Users } from "lucide-react";
-import { Button, Drawer, Empty, Input, Modal, Select, Space, Spin, Switch, Table, Tag, message } from "antd";
+import { Button, Drawer, Empty, Input, Modal, Select, Space, Spin, Switch, Table, Tag, Tooltip, message } from "antd";
 import { useCallback, useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 
@@ -24,6 +24,7 @@ import {
     revokeAdminUserSessions,
     setAdminUserRole,
     setAdminUserStatus,
+    setAdminModelEnabled,
     setAdminCreditPricing,
     setActiveAdminProvider,
     type AdminAuditLog,
@@ -898,6 +899,7 @@ function JobsPanel() {
 function ModelsPanel({ provider }: { provider: AdminProvider["id"] }) {
     const [items, setItems] = useState<AdminModel[]>();
     const [providers, setProviders] = useState<AdminProviders>();
+    const [updatingModelId, setUpdatingModelId] = useState<string>();
     const load = useCallback(() => {
         const controller = new AbortController();
         Promise.all([getAdminModels(provider, controller.signal), getAdminProviders(controller.signal)])
@@ -949,7 +951,43 @@ function ModelsPanel({ provider }: { provider: AdminProvider["id"] }) {
                         ),
                     },
                     { title: "能力", dataIndex: "capability" },
-                    { title: "启用", dataIndex: "enabled", render: (value) => <Switch size="small" checked={value} disabled /> },
+                    {
+                        title: "启用",
+                        render: (_, item) => {
+                            if (!item.configurable)
+                                return (
+                                    <Tooltip title="该模型已从供应商同步，但画布还没有对应的生成节点和参数映射">
+                                        <Tag bordered={false}>画布未接入</Tag>
+                                    </Tooltip>
+                                );
+                            const unavailable = !item.healthy && !item.enabled;
+                            const hint = unavailable ? "模型当前不健康，暂不能启用" : item.enabled ? "停用后新任务将不再显示此模型" : "启用此模型";
+                            return (
+                                <Tooltip title={hint}>
+                                    <span>
+                                        <Switch
+                                            size="small"
+                                            checked={item.enabled}
+                                            disabled={unavailable}
+                                            loading={updatingModelId === item.id}
+                                            onChange={async (enabled) => {
+                                                setUpdatingModelId(item.id);
+                                                try {
+                                                    await setAdminModelEnabled(item.id, enabled);
+                                                    setItems((currentItems) => currentItems?.map((currentItem) => (currentItem.id === item.id ? { ...currentItem, enabled } : currentItem)));
+                                                    message.success(`${item.displayName} 已${enabled ? "启用" : "停用"}`);
+                                                } catch (error) {
+                                                    message.error(error instanceof Error ? error.message : "模型状态更新失败");
+                                                } finally {
+                                                    setUpdatingModelId(undefined);
+                                                }
+                                            }}
+                                        />
+                                    </span>
+                                </Tooltip>
+                            );
+                        },
+                    },
                     { title: "健康", dataIndex: "healthy", render: (value) => <StatusTag value={value ? "healthy" : "unhealthy"} /> },
                     { title: "检查时间", dataIndex: "checkedAt", render: formatDate },
                 ]}
