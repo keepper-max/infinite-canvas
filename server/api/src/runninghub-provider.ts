@@ -375,13 +375,13 @@ function normalizeRunningHubImageParameters(
 
 function findPromptField(parameters: RegistryParameter[]) {
   const names = ["prompt", "text_prompt", "text", "content", "lyrics"];
-  return names
-    .map((name) =>
-      parameters.find(
-        (item) => item.type === "STRING" && item.fieldKey === name,
-      ),
-    )
-    .find(Boolean);
+  return [...parameters]
+    .filter((item) => item.type === "STRING" && names.includes(item.fieldKey))
+    .sort(
+      (left, right) =>
+        Number(right.required) - Number(left.required) ||
+        names.indexOf(left.fieldKey) - names.indexOf(right.fieldKey),
+    )[0];
 }
 
 function readTaskId(value: unknown) {

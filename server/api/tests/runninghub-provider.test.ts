@@ -112,6 +112,82 @@ test("RunningHub registry maps exact endpoint parameters into canvas capabilitie
   assert.equal(profile?.parameterMap.duration, "duration");
 });
 
+test("RunningHub preserves secondary text inputs and classifies verified audio routes", () => {
+  const profile = runningHubModelProfile({
+    endpoint: "mureka-ai/mureka-v8/generate-song",
+    output_type: "string",
+    params: [
+      { fieldKey: "lyrics", type: "STRING", required: true, maxLength: 3500 },
+      {
+        fieldKey: "prompt",
+        type: "STRING",
+        required: false,
+        defaultValue: "流行音乐",
+      },
+      { fieldKey: "n", type: "INT", required: false, defaultValue: 1 },
+    ],
+  });
+  assert.equal(profile?.capability, "audio");
+  assert.deepEqual(profile?.modes, ["tts"]);
+  assert.ok(profile?.acceptedParameters.includes("prompt"));
+  assert.equal(profile?.parameterMap.prompt, "prompt");
+  assert.equal(profile?.limits.maxPromptChars, 3500);
+});
+
+test("RunningHub keeps provider enum casing in public parameter schemas", () => {
+  const profile = runningHubModelProfile({
+    endpoint: "minimax/hailuo-h3-max/text-to-video",
+    output_type: "video",
+    params: [
+      { fieldKey: "prompt", type: "STRING", required: true },
+      { fieldKey: "resolution", type: "LIST", options: [{ value: "768P" }] },
+    ],
+  });
+  assert.deepEqual(profile?.limits.resolutions, ["768P"]);
+});
+
+test("RunningHub uses the required semantic text field without dropping the secondary one", async () => {
+  const originalFetch = globalThis.fetch;
+  let submitted: Record<string, unknown> | undefined;
+  globalThis.fetch = async (input, init) => {
+    const url = String(input);
+    if (url.endsWith("/mureka-ai/mureka-v8/generate-song")) {
+      submitted = JSON.parse(String(init?.body));
+      return Response.json({ taskId: "rh-song-task-1" });
+    }
+    throw new Error(`unexpected request: ${url}`);
+  };
+  try {
+    const provider = new RunningHubProvider(
+      {
+        baseUrl: "https://www.runninghub.cn/openapi/v2",
+        apiKey: "test-only",
+        catalogUrl: "",
+      },
+      0,
+    );
+    await provider.create({
+      modelId: "runninghub.audio.mureka-v8-song",
+      upstreamModel: "mureka-ai/mureka-v8/generate-song",
+      providerId: "runninghub",
+      capability: "audio",
+      mode: "tts",
+      prompt: "主歌歌词",
+      parameters: {},
+      upstreamParameters: { prompt: "清澈流行曲风" },
+      providerMetadata: {
+        params: [
+          { fieldKey: "lyrics", type: "STRING", required: true },
+          { fieldKey: "prompt", type: "STRING", required: false },
+        ],
+      },
+    });
+    assert.deepEqual(submitted, { lyrics: "主歌歌词", prompt: "清澈流行曲风" });
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
 test("RunningHub marketing aliases expose the real model family and route", () => {
   assert.equal(
     runningHubDisplayName({

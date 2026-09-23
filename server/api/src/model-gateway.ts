@@ -169,10 +169,11 @@ export class ModelGateway {
       const identityEndpoint = String(
         candidate.catalog_identity_endpoint || endpoint,
       ).trim();
-      const id = `${providerId}.${capability}.${createSlug(identityEndpoint)}`.slice(
-        0,
-        190,
-      );
+      const id =
+        `${providerId}.${capability}.${createSlug(identityEndpoint)}`.slice(
+          0,
+          190,
+        );
       const displayName = runningHubDisplayName(candidate, endpoint);
       const metadata = sanitizeRunningHubEntry(candidate);
       await this.pool.query(
@@ -363,20 +364,19 @@ export class ModelGateway {
 export function runningHubModelProfile(
   candidate: Record<string, unknown>,
 ): CatalogCapabilityProfile | null {
-  const capability = normalizeCapability(
-    candidate.output_type === "string" ? "text" : candidate.output_type,
-  );
+  const capability = runningHubCapability(candidate);
   if (!capability) return null;
   const params = runningHubParameters(candidate.params);
+  const promptField = findRunningHubPromptField(params);
   const scalar = params.filter(
     (item) =>
       !["IMAGE", "VIDEO", "AUDIO"].includes(item.sourceType) &&
-      !isPromptField(item.upstreamKey),
+      item !== promptField,
   );
   const media = params.filter((item) =>
     ["IMAGE", "VIDEO", "AUDIO"].includes(item.sourceType),
   );
-  if (!params.some((item) => isPromptField(item.upstreamKey))) return null;
+  if (!promptField) return null;
   if (capability === "text" && media.some((item) => item.required)) return null;
   const acceptedParameters = scalar.map((item) => item.key);
   const parameterMap = Object.fromEntries(
@@ -434,12 +434,7 @@ export function runningHubModelProfile(
   const imageLimit = maximumInputCount(media, "IMAGE", 9);
   const videoLimit = maximumInputCount(media, "VIDEO", 3);
   const audioLimit = maximumInputCount(media, "AUDIO", 3);
-  const promptLimit = Math.max(
-    1,
-    ...params
-      .filter((item) => isPromptField(item.upstreamKey))
-      .map((item) => item.max || 20_000),
-  );
+  const promptLimit = Math.max(1, promptField.max || 20_000);
   return {
     capability,
     modes: Array.from(new Set(modes)),
@@ -609,6 +604,38 @@ function runningHubParameters(value: unknown) {
 function isPromptField(value: string) {
   return ["prompt", "text_prompt", "text", "content", "lyrics"].includes(value);
 }
+function findRunningHubPromptField(
+  params: ReturnType<typeof runningHubParameters>,
+) {
+  const names = ["prompt", "text_prompt", "text", "content", "lyrics"];
+  return [...params]
+    .filter(
+      (item) => item.sourceType === "STRING" && isPromptField(item.upstreamKey),
+    )
+    .sort(
+      (left, right) =>
+        Number(right.required) - Number(left.required) ||
+        names.indexOf(left.upstreamKey) - names.indexOf(right.upstreamKey),
+    )[0];
+}
+function runningHubCapability(candidate: Record<string, unknown>) {
+  const endpoint = String(candidate.endpoint || "").replace(/^\/+/, "");
+  if (
+    [
+      "bytedance/doubao-seed-tts-2.0",
+      "alibaba/qwen3-tts-flash",
+      "alibaba/qwen3-tts-instruct-flash",
+    ].includes(endpoint) ||
+    /^mureka-ai\/mureka-(?:o2|v7\.6|v8|v9)\/generate-(?:song|bgm)$/.test(
+      endpoint,
+    ) ||
+    endpoint === "mureka-o2/instrumental-generate"
+  )
+    return "audio" as const;
+  return normalizeCapability(
+    candidate.output_type === "string" ? "text" : candidate.output_type,
+  );
+}
 function maximumInputCount(
   params: ReturnType<typeof runningHubParameters>,
   type: string,
@@ -639,6 +666,8 @@ function optionsFor(parameters: PublicModelParameter[], key: string) {
   return parameters.find((item) => item.key === key)?.options || [];
 }
 function sanitizeRunningHubEntry(candidate: Record<string, unknown>) {
+  const params = runningHubParameters(candidate.params);
+  const promptField = findRunningHubPromptField(params);
   return {
     endpoint: candidate.endpoint,
     output_type: candidate.output_type,
@@ -648,11 +677,11 @@ function sanitizeRunningHubEntry(candidate: Record<string, unknown>) {
     name_en: candidate.name_en,
     params: Array.isArray(candidate.params) ? candidate.params : [],
     normalizedApiParameterSchema: {
-      fields: runningHubParameters(candidate.params)
+      fields: params
         .filter(
           (item) =>
             !["IMAGE", "VIDEO", "AUDIO"].includes(item.sourceType) &&
-            !isPromptField(item.upstreamKey),
+            item !== promptField,
         )
         .map((item) => ({
           name: item.upstreamKey,
@@ -669,7 +698,7 @@ function sanitizeRunningHubEntry(candidate: Record<string, unknown>) {
         })),
     },
     effectiveDefaultParams: Object.fromEntries(
-      runningHubParameters(candidate.params)
+      params
         .filter((item) => item.publicDefinition.defaultValue !== undefined)
         .map((item) => [item.upstreamKey, item.publicDefinition.defaultValue]),
     ),

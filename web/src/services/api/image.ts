@@ -1,7 +1,20 @@
 import axios from "axios";
 
 import i18n from "@/i18n";
-import { buildApiUrl, guessCapability, isServerManagedConfig, resolveModelRequestConfig, resolveModelScript, withLocalProxy, type AiConfig, type ChannelModel, type ModelCapability, type ModelChannel } from "@/stores/use-config-store";
+import {
+    buildApiUrl,
+    guessCapability,
+    isServerManagedConfig,
+    modelDefinitionOf,
+    resolveModelRequestConfig,
+    resolveModelScript,
+    withLocalProxy,
+    type AiConfig,
+    type ChannelModel,
+    type ModelCapability,
+    type ModelChannel,
+    type ModelParameterDefinition,
+} from "@/stores/use-config-store";
 import { normalizePluginImages, runModelPlugin } from "./model-plugin";
 import { nanoid } from "nanoid";
 import { dataUrlToFile } from "@/lib/image-utils";
@@ -194,6 +207,91 @@ function resolveRequestSize(quality: string | undefined, size: string) {
     }
     if (value.includes(":")) return resolveSize(quality, value);
     throw new Error(apiText("invalidImageSizeFormat"));
+}
+
+function managedImageParameters(config: AiConfig, model: ChannelModel | undefined, count: number) {
+    const quality = normalizeQuality(config.quality);
+    const size = resolveRequestSize(quality, config.size);
+    const background = normalizeBackground(config.background);
+    const definitions = model?.parameters || [];
+    if (!definitions.length) return { count, size, quality, background };
+    const dimensions = size ? parseImageDimensions(size) : null;
+    const ratio = dimensions ? `${dimensions.width}:${dimensions.height}` : config.size;
+    const hasDimensions = definitions.some((item) => item.key === "width") && definitions.some((item) => item.key === "height");
+    return Object.fromEntries(
+        definitions.flatMap((definition): Array<[string, unknown]> => {
+            let value: unknown;
+            if (["count", "imageNum", "n"].includes(definition.key)) value = closestCountOption(definition, count);
+            else if (definition.key === "size" && dimensions) value = closestImageSizeOption(definition, dimensions);
+            else if (definition.key === "width" && dimensions) value = dimensions.width;
+            else if (definition.key === "height" && dimensions) value = dimensions.height;
+            else if (definition.key === "aspectRatio" && ratio && ratio !== "auto") value = closestRatioOption(definition, ratio);
+            else if (definition.key === "resolution") value = hasDimensions && optionValue(definition, "empty") !== undefined ? "empty" : qualityScale(quality, definition);
+            else if (definition.key === "quality") value = quality;
+            else if (definition.key === "background") value = background;
+            else value = definition.defaultValue;
+            const normalized = parameterValue(definition, value);
+            return normalized === undefined || normalized === "" ? [] : [[definition.key, normalized]];
+        }),
+    );
+}
+
+function parameterValue(definition: ModelParameterDefinition, value: unknown) {
+    if (value === undefined || value === null) return undefined;
+    const matched = optionValue(definition, value);
+    const selected = matched ?? value;
+    if (definition.type === "boolean") return selected === true || String(selected).toLowerCase() === "true";
+    if (definition.type === "integer" || definition.type === "number") {
+        const number = Number(selected);
+        return Number.isFinite(number) ? number : undefined;
+    }
+    return String(selected);
+}
+
+function optionValue(definition: ModelParameterDefinition, value: unknown) {
+    return definition.options?.find((option) => String(option).toLowerCase() === String(value).toLowerCase());
+}
+
+function qualityScale(quality: string | undefined, definition: ModelParameterDefinition) {
+    if (!quality) return definition.defaultValue;
+    const preferred = quality === "high" ? "4k" : quality === "medium" || quality === "hd" ? "2k" : "1k";
+    return optionValue(definition, preferred) ?? definition.defaultValue;
+}
+
+function closestCountOption(definition: ModelParameterDefinition, count: number) {
+    const options = (definition.options || []).filter((option) => Number.isFinite(Number(option)));
+    if (!options.length) return count;
+    return options.reduce((best, current) => (Math.abs(Number(current) - count) < Math.abs(Number(best) - count) ? current : best));
+}
+
+function closestImageSizeOption(definition: ModelParameterDefinition, dimensions: { width: number; height: number }) {
+    const options = (definition.options || []).flatMap((option) => {
+        const match = String(option).match(/^(\d+)[x*](\d+)$/i);
+        return match ? [{ option, width: Number(match[1]), height: Number(match[2]) }] : [];
+    });
+    if (!options.length) return `${dimensions.width}x${dimensions.height}`;
+    const targetRatio = dimensions.width / dimensions.height;
+    const targetPixels = dimensions.width * dimensions.height;
+    return options.reduce((best, current) => {
+        const score = Math.abs(Math.log(current.width / current.height / targetRatio)) * 10 + Math.abs(Math.log((current.width * current.height) / targetPixels));
+        const bestScore = Math.abs(Math.log(best.width / best.height / targetRatio)) * 10 + Math.abs(Math.log((best.width * best.height) / targetPixels));
+        return score < bestScore ? current : best;
+    }).option;
+}
+
+function closestRatioOption(definition: ModelParameterDefinition, value: string) {
+    const exact = optionValue(definition, value);
+    if (exact !== undefined) return exact;
+    const target = parseRatioValue(value);
+    const options = (definition.options || []).flatMap((option) => {
+        try {
+            return [{ option, ratio: parseRatioValue(String(option)) }];
+        } catch {
+            return [];
+        }
+    });
+    if (!options.length) return value;
+    return options.reduce((best, current) => (Math.abs(current.ratio.width / current.ratio.height - target.width / target.height) < Math.abs(best.ratio.width / best.ratio.height - target.width / target.height) ? current : best)).option;
 }
 
 function resolveGeminiImageConfig(config: AiConfig) {
@@ -694,6 +792,7 @@ function parseGeminiImagePayload(payload: GeminiPayload) {
 }
 
 export async function requestGeneration(config: AiConfig, prompt: string, options?: RequestOptions) {
+    const modelDefinition = modelDefinitionOf(config, config.model || config.imageModel);
     const requestConfig = resolveModelRequestConfig(config, config.model || config.imageModel);
     const n = Math.max(1, Math.min(15, Math.floor(Math.abs(Number(config.count)) || 1)));
     if (isServerManagedConfig(requestConfig)) {
@@ -705,7 +804,7 @@ export async function requestGeneration(config: AiConfig, prompt: string, option
                         capability: "image",
                         mode: "t2i",
                         prompt: withSystemPrompt(requestConfig, prompt),
-                        parameters: { count: n, size: resolveRequestSize(normalizeQuality(config.quality), config.size), quality: normalizeQuality(config.quality), background: normalizeBackground(config.background) },
+                        parameters: managedImageParameters(config, modelDefinition, n),
                     },
                     { projectId: options?.projectId, nodeId: options?.nodeId, nodeRevision: options?.nodeRevision, idempotencyKey: options?.idempotencyKey, signal: options?.signal },
                 )
@@ -781,6 +880,7 @@ export async function requestGeneration(config: AiConfig, prompt: string, option
 }
 
 export async function requestEdit(config: AiConfig, prompt: string, references: ReferenceImage[], options?: RequestOptions) {
+    const modelDefinition = modelDefinitionOf(config, config.model || config.imageModel);
     const requestConfig = resolveModelRequestConfig(config, config.model || config.imageModel);
     const n = Math.max(1, Math.min(15, Math.floor(Math.abs(Number(config.count)) || 1)));
     const requestPrompt = buildImageReferencePromptText(prompt, references);
@@ -811,7 +911,7 @@ export async function requestEdit(config: AiConfig, prompt: string, references: 
                         capability: "image",
                         mode: "i2i",
                         prompt: withSystemPrompt(requestConfig, requestPrompt),
-                        parameters: { count: n, size: resolveRequestSize(normalizeQuality(config.quality), config.size), quality: normalizeQuality(config.quality) },
+                        parameters: managedImageParameters(config, modelDefinition, n),
                         references: refs,
                     },
                     { projectId, nodeId: options?.nodeId, nodeRevision: options?.nodeRevision, idempotencyKey: options?.idempotencyKey, signal: options?.signal },
@@ -981,8 +1081,30 @@ export async function fetchChannelModels(channel: ModelChannel) {
 }
 
 export async function fetchManagedModelCatalog(_channel: ModelChannel, signal?: AbortSignal): Promise<ChannelModel[]> {
-    const response = await platformRequest<{ models: Array<{ id: string; displayName: string; capability: ModelCapability; acceptedParameters?: string[]; modes?: ChannelModel["modes"]; requiredParametersByMode?: ChannelModel["requiredParametersByMode"]; parameters?: ChannelModel["parameters"]; defaults?: ChannelModel["defaults"]; limits?: ChannelModel["limits"] }> }>("/api/models", { signal });
-    return response.models.map((model) => ({ name: model.id, displayName: model.displayName, capability: model.capability || guessCapability(model.id), supportedParameters: model.acceptedParameters, modes: model.modes, requiredParametersByMode: model.requiredParametersByMode, parameters: model.parameters, defaults: model.defaults, limits: model.limits }));
+    const response = await platformRequest<{
+        models: Array<{
+            id: string;
+            displayName: string;
+            capability: ModelCapability;
+            acceptedParameters?: string[];
+            modes?: ChannelModel["modes"];
+            requiredParametersByMode?: ChannelModel["requiredParametersByMode"];
+            parameters?: ChannelModel["parameters"];
+            defaults?: ChannelModel["defaults"];
+            limits?: ChannelModel["limits"];
+        }>;
+    }>("/api/models", { signal });
+    return response.models.map((model) => ({
+        name: model.id,
+        displayName: model.displayName,
+        capability: model.capability || guessCapability(model.id),
+        supportedParameters: model.acceptedParameters,
+        modes: model.modes,
+        requiredParametersByMode: model.requiredParametersByMode,
+        parameters: model.parameters,
+        defaults: model.defaults,
+        limits: model.limits,
+    }));
 }
 
 const defaultGeminiConfig: Pick<AiConfig, "baseUrl" | "apiKey" | "apiFormat" | "model" | "systemPrompt"> = {

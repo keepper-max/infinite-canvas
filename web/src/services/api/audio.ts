@@ -3,7 +3,7 @@ import axios from "axios";
 import i18n from "@/i18n";
 import { audioMimeType, normalizeAudioFormatValue, normalizeAudioSpeedValue, normalizeAudioVoiceValue } from "@/lib/audio-generation";
 import { uploadMediaFile, type UploadedFile } from "@/services/file-storage";
-import { buildApiUrl, isServerManagedConfig, resolveModelRequestConfig, resolveModelScript, withLocalProxy, type AiConfig } from "@/stores/use-config-store";
+import { buildApiUrl, isServerManagedConfig, modelDefinitionOf, resolveModelRequestConfig, resolveModelScript, withLocalProxy, type AiConfig, type ChannelModel, type ModelParameterDefinition } from "@/stores/use-config-store";
 import { runModelPlugin } from "./model-plugin";
 import { artifactUrl, createManagedJob, waitForManagedJob } from "./jobs";
 
@@ -23,20 +23,13 @@ function aiHeaders(config: AiConfig) {
 }
 
 export async function requestAudioGeneration(config: AiConfig, prompt: string, options?: RequestOptions): Promise<AudioGenerationResult> {
+    const modelDefinition = modelDefinitionOf(config, config.model || config.audioModel);
     const requestConfig = resolveModelRequestConfig(config, config.model || config.audioModel);
     const model = requestConfig.model.trim();
     const format = normalizeAudioFormatValue(config.audioFormat);
     const script = resolveModelScript(config, config.model || config.audioModel);
     if (isServerManagedConfig(requestConfig)) {
-        const job = await waitForManagedJob(
-            (
-                await createManagedJob(
-                    { model, capability: "audio", mode: "tts", prompt, parameters: { voice: normalizeAudioVoiceValue(config.audioVoice), format, speed: Number(normalizeAudioSpeedValue(config.audioSpeed)), instructions: config.audioInstructions.trim() } },
-                    { signal: options?.signal },
-                )
-            ).id,
-            options?.signal,
-        );
+        const job = await waitForManagedJob((await createManagedJob({ model, capability: "audio", mode: "tts", prompt, parameters: managedAudioParameters(config, modelDefinition) }, { signal: options?.signal })).id, options?.signal);
         const artifact = job.artifacts?.find((item) => item.assetVersionId);
         if (!artifact) throw new Error(apiText("audioGenerationFailed"));
         const response = await fetch(await artifactUrl(artifact, options?.signal), { signal: options?.signal });
@@ -82,6 +75,46 @@ export async function requestAudioGeneration(config: AiConfig, prompt: string, o
     } catch (error) {
         throw new Error(readAxiosError(error, apiText("audioGenerationFailed")));
     }
+}
+
+function managedAudioParameters(config: AiConfig, model: ChannelModel | undefined) {
+    const definitions = model?.parameters || [];
+    const legacy = {
+        voice: normalizeAudioVoiceValue(config.audioVoice),
+        format: normalizeAudioFormatValue(config.audioFormat),
+        speed: Number(normalizeAudioSpeedValue(config.audioSpeed)),
+        instructions: config.audioInstructions.trim(),
+    };
+    if (!definitions.length) return legacy;
+    const secondaryText = config.audioInstructions.trim();
+    return Object.fromEntries(
+        definitions.flatMap((definition): Array<[string, unknown]> => {
+            const value =
+                definition.key === "voice"
+                    ? legacy.voice
+                    : definition.key === "format"
+                      ? legacy.format
+                      : definition.key === "speed"
+                        ? legacy.speed
+                        : definition.key === "instructions" || ["prompt", "textPrompt", "text", "content", "lyrics"].includes(definition.key)
+                          ? secondaryText || definition.defaultValue
+                          : definition.defaultValue;
+            const normalized = audioParameterValue(definition, value);
+            return normalized === undefined || normalized === "" ? [] : [[definition.key, normalized]];
+        }),
+    );
+}
+
+function audioParameterValue(definition: ModelParameterDefinition, value: unknown) {
+    if (value === undefined || value === null) return undefined;
+    const option = definition.options?.find((item) => String(item).toLowerCase() === String(value).toLowerCase());
+    const selected = option ?? value;
+    if (definition.type === "boolean") return selected === true || String(selected).toLowerCase() === "true";
+    if (definition.type === "integer" || definition.type === "number") {
+        const number = Number(selected);
+        return Number.isFinite(number) ? number : undefined;
+    }
+    return String(selected);
 }
 
 async function audioPluginBlob(result: unknown, format: string): Promise<Blob> {

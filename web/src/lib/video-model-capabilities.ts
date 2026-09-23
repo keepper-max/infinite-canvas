@@ -57,8 +57,10 @@ export function videoParameterValue(config: AiConfig, model: ChannelModel | unde
     const configValue = modelValue ?? legacyValue;
     const definition = videoParameter(model, key);
     const options = definition?.options?.map(String) || [];
-    const normalized = key === "resolution" ? String(configValue || "").toLowerCase() : String(configValue || "");
-    if (normalized && (!options.length || options.some((option) => option.toLowerCase() === normalized.toLowerCase()))) return normalized;
+    const normalized = String(configValue || "");
+    const matchedOption = options.find((option) => option.toLowerCase() === normalized.toLowerCase());
+    if (normalized && !options.length) return normalized;
+    if (matchedOption !== undefined) return matchedOption;
     if (definition?.defaultValue !== undefined && definition.defaultValue !== null) return String(definition.defaultValue);
     return options[0] || fallback;
 }
