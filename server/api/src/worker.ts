@@ -25,12 +25,14 @@ import {
 } from "./composition-service.js";
 import { BillingService } from "./billing-service.js";
 import { CreditService } from "./credit-service.js";
+import { PostgresAssetService } from "./asset-service.js";
 
 const config = readConfig();
-const { pool } = createDatabase(config.databaseUrl);
+const { db, pool } = createDatabase(config.databaseUrl);
 await applyMigrations(pool);
 const storage = new S3ObjectStorage(config.objectStorage);
 await storage.ensureReady();
+const assetService = new PostgresAssetService(db, storage, pool);
 const gateway = new ModelGateway(pool);
 await gateway
   .refreshCatalog(config.provider.catalogUrl)
@@ -221,6 +223,28 @@ const billingTimer = setInterval(() => {
     );
 }, 30_000);
 
+let assetCleanupRunning = false;
+async function cleanExpiredAssets() {
+  if (assetCleanupRunning) return;
+  assetCleanupRunning = true;
+  try {
+    const queued = await assetService.purgeExpired(
+      config.assetTrashRetentionDays,
+    );
+    if (queued)
+      console.log(`[asset-cleanup] queued ${queued} expired asset(s)`);
+  } catch (error) {
+    console.error(
+      "[asset-cleanup]",
+      error instanceof Error ? error.message : "unknown error",
+    );
+  } finally {
+    assetCleanupRunning = false;
+  }
+}
+void cleanExpiredAssets();
+const assetCleanupTimer = setInterval(() => void cleanExpiredAssets(), 3_600_000);
+
 const compositionWorker = new Worker<{ jobId: string }>(
   config.jobs.compositionQueueName,
   async (job: Job<{ jobId: string }>) => {
@@ -260,6 +284,7 @@ async function shutdown() {
   if (closing) return;
   closing = true;
   clearInterval(billingTimer);
+  clearInterval(assetCleanupTimer);
   await worker.close(false);
   await transferWorker.close(false);
   await compositionWorker.close(false);

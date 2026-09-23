@@ -427,6 +427,32 @@ export const trashItems = pgTable(
   ],
 );
 
+export const assetPurgeJobs = pgTable(
+  "asset_purge_jobs",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    projectId: uuid("project_id").notNull(),
+    assetId: uuid("asset_id").notNull().unique(),
+    storageKeys: jsonb("storage_keys").default([]).notNull(),
+    status: text("status").default("pending").notNull(),
+    attempts: integer("attempts").default(0).notNull(),
+    lastError: text("last_error"),
+    requestedBy: uuid("requested_by").references(() => users.id, {
+      onDelete: "set null",
+    }),
+    requestedAt: timestamp("requested_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    completedAt: timestamp("completed_at", { withTimezone: true }),
+  },
+  (table) => [
+    index("asset_purge_jobs_status_requested_idx").on(
+      table.status,
+      table.requestedAt,
+    ),
+  ],
+);
+
 export const assetUploads = pgTable(
   "asset_uploads",
   {
@@ -694,6 +720,7 @@ export const schema = {
   assetVersions,
   assetLinks,
   trashItems,
+  assetPurgeJobs,
   assetUploads,
   smsVerificationRequests,
   creditAccounts,

@@ -344,6 +344,23 @@ test("asset routes keep immutable versions, regenerate downloads, and isolate pr
     {},
   );
   assert.equal(restored.body.data.asset.status, "active");
+  await postJson(
+    app,
+    `/api/assets/${completed.body.data.asset.id}/trash`,
+    firstCookie,
+    { reason: "purge test" },
+  );
+  const purged = await app.request(
+    `/api/assets/${completed.body.data.asset.id}`,
+    { method: "DELETE", headers: { cookie: firstCookie } },
+  );
+  assert.equal(purged.status, 200);
+  assert.equal((await purged.json() as any).data.purge.storageStatus, "completed");
+  const afterPurge = await app.request(
+    `/api/projects/${projectId}/assets?status=all`,
+    { headers: { cookie: firstCookie } },
+  );
+  assert.equal(((await afterPurge.json()) as any).data.assets.length, 0);
 });
 
 async function jsonRequest(
@@ -785,6 +802,15 @@ class MemoryAssetService implements AssetServicePort {
     asset.status = "active";
     asset.trashedAt = null;
     return asset;
+  }
+
+  async purge(assetId: string, userId: string) {
+    const asset = this.assets.get(assetId);
+    if (!asset || !this.repository.owns(asset.projectId, userId)) return null;
+    if (asset.status !== "trashed")
+      throw new DomainError("ASSET_NOT_TRASHED", "请先将素材移入回收站", 409);
+    this.assets.delete(assetId);
+    return { assetId, storageStatus: "completed" as const };
   }
 }
 

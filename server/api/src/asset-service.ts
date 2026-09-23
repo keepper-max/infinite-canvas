@@ -5,6 +5,7 @@ import type {
   NodePgTransaction,
 } from "drizzle-orm/node-postgres";
 import type { ExtractTablesWithRelations } from "drizzle-orm";
+import type { Pool } from "pg";
 
 import type {
   AssetDocument,
@@ -61,12 +62,17 @@ export interface AssetServicePort {
     reason: string,
   ): Promise<AssetDocument | null>;
   restore(assetId: string, userId: string): Promise<AssetDocument | null>;
+  purge(
+    assetId: string,
+    userId: string,
+  ): Promise<{ assetId: string; storageStatus: "completed" | "pending" } | null>;
 }
 
 export class PostgresAssetService implements AssetServicePort {
   constructor(
     private readonly db: Database,
     private readonly storage: ObjectStorage,
+    private readonly pool?: Pool,
   ) {}
 
   async list(projectId: string, userId: string, includeTrashed = false) {
@@ -468,6 +474,186 @@ export class PostgresAssetService implements AssetServicePort {
         );
     });
     return this.readAsset(assetId, userId);
+  }
+
+  async purge(assetId: string, userId: string) {
+    await assertAssetEditAccess(this.db, assetId, userId);
+    return this.queuePurge(assetId, userId, true);
+  }
+
+  async purgeExpired(retentionDays: number) {
+    const pool = this.requirePool();
+    await this.processPendingPurges();
+    const expired = await pool.query<{ id: string }>(
+      `select id from assets
+       where status='trashed' and trashed_at <= now() - ($1::text || ' days')::interval
+       order by trashed_at`,
+      [retentionDays],
+    );
+    let queued = 0;
+    for (const asset of expired.rows) {
+      try {
+        if (await this.queuePurge(asset.id, null, false)) queued += 1;
+      } catch (error) {
+        if (!(error instanceof DomainError) || error.code !== "ASSET_IN_USE")
+          throw error;
+      }
+    }
+    await this.processPendingPurges();
+    return queued;
+  }
+
+  async processPendingPurges(assetId?: string) {
+    const pool = this.requirePool();
+    const pending = await pool.query<{ id: string; storage_keys: unknown }>(
+      `select id,storage_keys from asset_purge_jobs
+       where status='pending' and ($1::uuid is null or asset_id=$1)
+       order by requested_at`,
+      [assetId || null],
+    );
+    for (const job of pending.rows) {
+      const keys = Array.isArray(job.storage_keys)
+        ? job.storage_keys.filter((key): key is string => typeof key === "string")
+        : [];
+      try {
+        for (const key of keys) await this.storage.delete(key);
+        await pool.query(
+          "update asset_purge_jobs set status='completed',completed_at=now(),last_error=null where id=$1",
+          [job.id],
+        );
+      } catch (error) {
+        await pool.query(
+          "update asset_purge_jobs set attempts=attempts+1,last_error=$2 where id=$1",
+          [
+            job.id,
+            (error instanceof Error ? error.message : "unknown error").slice(
+              0,
+              500,
+            ),
+          ],
+        );
+      }
+    }
+  }
+
+  private async queuePurge(
+    assetId: string,
+    requestedBy: string | null,
+    processNow: boolean,
+  ) {
+    const pool = this.requirePool();
+    const client = await pool.connect();
+    let storageKeys: string[] = [];
+    try {
+      await client.query("begin");
+      const asset = await client.query<{ id: string; project_id: string; status: string }>(
+        "select id,project_id,status from assets where id=$1 for update",
+        [assetId],
+      );
+      if (!asset.rows[0]) {
+        await client.query("rollback");
+        return null;
+      }
+      if (asset.rows[0].status !== "trashed")
+        throw new DomainError(
+          "ASSET_NOT_TRASHED",
+          "请先将素材移入回收站",
+          409,
+        );
+      const references = await client.query<{ canvas_links: number; portraits: number }>(
+        `select
+           (select count(*)::int from asset_links l join asset_versions v on v.id=l.asset_version_id where v.asset_id=$1) canvas_links,
+           (select count(*)::int from virtual_portraits where source_asset_id=$1) portraits`,
+        [assetId],
+      );
+      if (
+        (references.rows[0]?.canvas_links || 0) > 0 ||
+        (references.rows[0]?.portraits || 0) > 0
+      )
+        throw new DomainError(
+          "ASSET_IN_USE",
+          "素材仍被画布或虚拟角色引用，请先移除引用",
+          409,
+        );
+      const versions = await client.query<{
+        id: string;
+        storage_key: string;
+        thumbnail_storage_key: string | null;
+      }>(
+        "select id,storage_key,thumbnail_storage_key from asset_versions where asset_id=$1",
+        [assetId],
+      );
+      const versionIds = versions.rows.map((version) => version.id);
+      storageKeys = [
+        ...versions.rows.map((version) => version.storage_key),
+        ...versions.rows.map((version) => version.thumbnail_storage_key),
+      ].filter((key): key is string => Boolean(key));
+      await client.query(
+        `insert into asset_purge_jobs(project_id,asset_id,storage_keys,requested_by)
+         values($1,$2,$3::jsonb,$4)
+         on conflict(asset_id) do update set storage_keys=excluded.storage_keys,status='pending',last_error=null,requested_by=excluded.requested_by,requested_at=now(),completed_at=null`,
+        [
+          asset.rows[0].project_id,
+          assetId,
+          JSON.stringify(storageKeys),
+          requestedBy,
+        ],
+      );
+      if (versionIds.length) {
+        await client.query(
+          `update generation_jobs g
+           set output_asset_version_ids=coalesce((
+             select jsonb_agg(value) from jsonb_array_elements(g.output_asset_version_ids) value
+             where value #>> '{}' <> all($1::text[])
+           ),'[]'::jsonb)
+           where output_asset_version_ids ?| $1::text[]`,
+          [versionIds],
+        );
+        await client.query(
+          `update job_artifacts
+           set asset_id=null,asset_version_id=null,storage_key=null,
+               metadata=coalesce(metadata,'{}'::jsonb) || '{"assetPurged":true}'::jsonb
+           where asset_id=$1 or asset_version_id=any($2::uuid[])`,
+          [assetId, versionIds],
+        );
+      }
+      await client.query(
+        "update assets set current_version_id=null where id=$1",
+        [assetId],
+      );
+      await client.query(
+        "delete from trash_items where object_type='asset' and object_id=$1",
+        [assetId],
+      );
+      await client.query("delete from assets where id=$1", [assetId]);
+      await client.query("commit");
+    } catch (error) {
+      await client.query("rollback").catch(() => undefined);
+      throw error;
+    } finally {
+      client.release();
+    }
+    if (processNow) await this.processPendingPurges(assetId);
+    const state = await pool.query<{ status: string }>(
+      "select status from asset_purge_jobs where asset_id=$1",
+      [assetId],
+    );
+    return {
+      assetId,
+      storageStatus:
+        state.rows[0]?.status === "completed" ? "completed" : "pending",
+    } as const;
+  }
+
+  private requirePool() {
+    if (!this.pool)
+      throw new DomainError(
+        "ASSET_PURGE_UNAVAILABLE",
+        "永久删除服务暂时不可用",
+        503,
+        true,
+      );
+    return this.pool;
   }
 
   private async readAsset(

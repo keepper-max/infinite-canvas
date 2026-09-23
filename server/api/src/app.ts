@@ -1069,6 +1069,16 @@ export function createApp(
     return context.json(success(context, { asset }));
   });
 
+  app.delete("/api/assets/:assetId", async (context) => {
+    const user = await requireUser(context.req.raw, repository, config);
+    const purge = await requireAssetService(assetService).purge(
+      context.req.param("assetId"),
+      user.id,
+    );
+    if (!purge) throw new DomainError("ASSET_NOT_FOUND", "找不到该素材", 404);
+    return context.json(success(context, { purge }));
+  });
+
   app.notFound((context) =>
     apiError(context, new DomainError("NOT_FOUND", "接口不存在", 404)),
   );

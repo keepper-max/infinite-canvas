@@ -11,6 +11,7 @@ export type ApiConfig = {
   runningHub: RunningHubConfig;
   runningHubGlobal: RunningHubConfig;
   operations: OperationsConfig;
+  assetTrashRetentionDays: number;
 };
 
 export type OperationsConfig = { adminEmails: string[] };
@@ -149,6 +150,13 @@ export function readConfig(env: NodeJS.ProcessEnv = process.env): ApiConfig {
       .map((value) => value.trim().toLowerCase())
       .filter(Boolean),
   };
+  const assetTrashRetentionDays = readInteger(
+    env.ASSET_TRASH_RETENTION_DAYS,
+    14,
+    1,
+    365,
+    "ASSET_TRASH_RETENTION_DAYS",
+  );
   return {
     port,
     databaseUrl,
@@ -165,6 +173,7 @@ export function readConfig(env: NodeJS.ProcessEnv = process.env): ApiConfig {
     runningHub,
     runningHubGlobal,
     operations,
+    assetTrashRetentionDays,
   };
 }
 

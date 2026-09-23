@@ -1,6 +1,6 @@
 import { ArchiveRestore, Download, History, RefreshCw, Search, Trash2, Upload } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { App, Button, Card, Drawer, Empty, Input, Segmented, Select, Space, Spin, Tag, Typography } from "antd";
+import { App, Button, Card, Drawer, Empty, Input, Popconfirm, Segmented, Select, Space, Spin, Tag, Typography } from "antd";
 
 import { useAuth } from "@/components/auth/auth-context";
 import { formatBytes } from "@/lib/image-utils";
@@ -10,6 +10,7 @@ import {
     currentVersion,
     getCloudAssetDownloadUrl,
     listCloudAssets,
+    permanentlyDeleteCloudAsset,
     restoreCloudAsset,
     setCloudAssetCurrentVersion,
     trashCloudAsset,
@@ -136,6 +137,17 @@ export default function AssetsPage() {
         }
     };
 
+    const permanentlyDelete = async (asset: CloudAsset) => {
+        try {
+            const result = await permanentlyDeleteCloudAsset(asset.id);
+            message.success(result.storageStatus === "completed" ? "素材已永久删除" : "素材记录已删除，文件正在后台清理");
+            if (selected?.id === asset.id) setSelected(null);
+            await load();
+        } catch (error) {
+            message.error(error instanceof Error ? error.message : "永久删除失败");
+        }
+    };
+
     const chooseVersion = async (asset: CloudAsset, versionId: string) => {
         try {
             const updated = await setCloudAssetCurrentVersion(asset.id, versionId);
@@ -175,7 +187,7 @@ export default function AssetsPage() {
                     {!loading && !visibleAssets.length ? <Empty className="py-24" description={view === "trash" ? "回收站为空" : "还没有云端素材，可上传或迁移本地素材"} /> : null}
                     {!loading && visibleAssets.length ? (
                         <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-                            {visibleAssets.map((asset) => <CloudAssetCard key={asset.id} asset={asset} onOpen={() => setSelected(asset)} onTrash={() => void moveToTrash(asset)} onRestore={() => void restore(asset)} />)}
+                            {visibleAssets.map((asset) => <CloudAssetCard key={asset.id} asset={asset} onOpen={() => setSelected(asset)} onTrash={() => void moveToTrash(asset)} onRestore={() => void restore(asset)} onPurge={() => void permanentlyDelete(asset)} />)}
                         </div>
                     ) : null}
                 </div>
@@ -203,7 +215,7 @@ export default function AssetsPage() {
     );
 }
 
-function CloudAssetCard({ asset, onOpen, onTrash, onRestore }: { asset: CloudAsset; onOpen: () => void; onTrash: () => void; onRestore: () => void }) {
+function CloudAssetCard({ asset, onOpen, onTrash, onRestore, onPurge }: { asset: CloudAsset; onOpen: () => void; onTrash: () => void; onRestore: () => void; onPurge: () => void }) {
     const version = currentVersion(asset);
     return (
         <Card hoverable className="overflow-hidden" styles={{ body: { padding: 0 } }} cover={<button type="button" className="block aspect-[4/3] w-full overflow-hidden bg-stone-100 dark:bg-stone-900" onClick={onOpen}><AssetPreview asset={asset} compact /></button>}>
@@ -213,7 +225,7 @@ function CloudAssetCard({ asset, onOpen, onTrash, onRestore }: { asset: CloudAss
             </button>
             <div className="flex gap-2 px-4 pb-4">
                 <Button size="small" icon={<History className="size-3.5" />} onClick={onOpen}>版本</Button>
-                {asset.status === "active" ? <Button size="small" danger icon={<Trash2 className="size-3.5" />} onClick={onTrash}>回收</Button> : <Button size="small" icon={<ArchiveRestore className="size-3.5" />} onClick={onRestore}>恢复</Button>}
+                {asset.status === "active" ? <Button size="small" danger icon={<Trash2 className="size-3.5" />} onClick={onTrash}>回收</Button> : <><Button size="small" icon={<ArchiveRestore className="size-3.5" />} onClick={onRestore}>恢复</Button><Popconfirm title="永久删除素材？" description="文件和所有历史版本将永久删除，无法恢复。" okText="永久删除" cancelText="取消" okButtonProps={{ danger: true }} onConfirm={onPurge}><Button size="small" danger icon={<Trash2 className="size-3.5" />}>永久删除</Button></Popconfirm></>}
             </div>
         </Card>
     );

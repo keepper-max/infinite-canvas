@@ -94,6 +94,10 @@ export async function restoreCloudAsset(assetId: string) {
     return (await platformRequest<{ asset: CloudAsset }>(`/api/assets/${encodeURIComponent(assetId)}/restore`, { method: "POST", body: "{}" })).asset;
 }
 
+export async function permanentlyDeleteCloudAsset(assetId: string) {
+    return (await platformRequest<{ purge: { assetId: string; storageStatus: "completed" | "pending" } }>(`/api/assets/${encodeURIComponent(assetId)}`, { method: "DELETE" })).purge;
+}
+
 export async function getCloudAssetDownloadUrl(versionId: string) {
     return (await platformRequest<{ url: string }>(`/api/asset-versions/${encodeURIComponent(versionId)}/download`)).url;
 }

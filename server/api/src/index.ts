@@ -83,7 +83,7 @@ const virtualPortraitService = new VirtualPortraitService(
 const app = createApp(
   new PostgresPlatformRepository(db),
   config,
-  new PostgresAssetService(db, objectStorage),
+  new PostgresAssetService(db, objectStorage, pool),
   jobService,
   modelGateway,
   compositionService,

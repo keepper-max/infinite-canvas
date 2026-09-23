@@ -21,7 +21,7 @@ test(
       await applyMigrations(pool);
       const repository = new PostgresPlatformRepository(db);
       const objectStorage = new MemoryObjectStorage();
-      const assetService = new PostgresAssetService(db, objectStorage);
+      const assetService = new PostgresAssetService(db, objectStorage, pool);
       const config: ApiConfig = {
         port: 3002,
         databaseUrl: databaseUrl!,
@@ -378,6 +378,12 @@ test(
         ).body.data.asset.status,
         "trashed",
       );
+      const blockedPurge = await restartedApp.request(
+        `/api/assets/${assetId}`,
+        { method: "DELETE", headers: { cookie: first.cookie } },
+      );
+      assert.equal(blockedPurge.status, 409);
+      assert.equal((await blockedPurge.json() as any).error.code, "ASSET_IN_USE");
       assert.equal(
         (
           await postJson(
@@ -472,6 +478,60 @@ test(
         bulkCanvasWrite(4, 80),
       );
       assert.equal(bulkSaved.response.status, 200);
+      await postJson(
+        restartedApp,
+        `/api/assets/${assetId}/trash`,
+        first.cookie,
+        { reason: "permanent-delete" },
+      );
+      const permanentDelete = await restartedApp.request(
+        `/api/assets/${assetId}`,
+        { method: "DELETE", headers: { cookie: first.cookie } },
+      );
+      assert.equal(permanentDelete.status, 200);
+      assert.equal(
+        ((await permanentDelete.json()) as any).data.purge.storageStatus,
+        "completed",
+      );
+      assert.equal(await objectStorage.stat(firstUpload.body.data.upload.storageKey), null);
+      assert.equal(await objectStorage.stat(secondUpload.body.data.upload.storageKey), null);
+      assert.equal(
+        (await pool.query("select count(*)::int count from assets where id=$1", [assetId])).rows[0].count,
+        0,
+      );
+      const expiredUpload = await postJson(
+        restartedApp,
+        `/api/projects/${first.workspaceId}/assets/uploads`,
+        first.cookie,
+        assetUpload("expired.png"),
+      );
+      objectStorage.put(expiredUpload.body.data.upload.storageKey, {
+        bytes: 4,
+        mimeType: "image/png",
+        sha256: "a".repeat(64),
+      });
+      const expiredAsset = await postJson(
+        restartedApp,
+        `/api/projects/${first.workspaceId}/assets/uploads/${expiredUpload.body.data.upload.uploadId}/complete`,
+        first.cookie,
+        {},
+      );
+      const expiredAssetId = expiredAsset.body.data.asset.id;
+      await postJson(
+        restartedApp,
+        `/api/assets/${expiredAssetId}/trash`,
+        first.cookie,
+        { reason: "retention-test" },
+      );
+      await pool.query(
+        "update assets set trashed_at=now()-interval '15 days' where id=$1",
+        [expiredAssetId],
+      );
+      assert.equal(await assetService.purgeExpired(14), 1);
+      assert.equal(
+        await objectStorage.stat(expiredUpload.body.data.upload.storageKey),
+        null,
+      );
       const bulkRestored = await restartedApp.request(
         `/api/projects/${first.workspaceId}/canvas`,
         { headers: { cookie: first.cookie } },
