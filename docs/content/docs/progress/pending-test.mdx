@@ -5,6 +5,8 @@ description: Implemented changes that still need manual verification
 
 # Pending Tests
 
+- Prompt access: ordinary accounts must not see NSFW-tagged prompts in the Prompt Center, home showcase, workbench picker, canvas side panel, source preview, or Agent search; super administrators must retain access.
+
 - 管理员积分发放请求：从 HTTP 地址打开管理后台，填写积分、来源和说明后确认，应显示提交状态并成功入账；快速重复点击只能产生一笔流水。接口拒绝或网络失败时弹窗恢复可操作并显示原因，使用同一请求号重试不得重复发放。
 
 - 画布任务进度条：托管任务生成时节点应显示模型任务进度；进入“正在转存生成结果”后，在文件总大小可知时按已下载字节显示转存百分比，未知时显示无数字的流动状态；“正在写入资产库”继续显示阶段状态，完成后进度条消失。本地任务没有真实进度时同样不得伪造百分比。

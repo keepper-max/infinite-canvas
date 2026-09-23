@@ -8,6 +8,7 @@ import { fetchPrompts, type Prompt } from "@/services/api/prompts";
 import { navigationTools } from "@/constant/navigation-tools";
 import i18n from "@/i18n";
 import { cn } from "@/lib/utils";
+import { useAuth } from "@/components/auth/auth-context";
 
 function Highlighter({ action, color, children }: { action: "highlight" | "underline"; color: string; children?: ReactNode }) {
     return (
@@ -23,6 +24,7 @@ function Highlighter({ action, color, children }: { action: "highlight" | "under
 }
 
 export default function IndexPage() {
+    const { user } = useAuth();
     const { message } = App.useApp();
     const { t } = useTranslation();
     const navigate = useNavigate();
@@ -32,10 +34,10 @@ export default function IndexPage() {
     const [previewOpen, setPreviewOpen] = useState(false);
 
     useEffect(() => {
-        void fetchPrompts({ pageSize: 12 })
+        void fetchPrompts({ pageSize: 12, includeRestricted: user.isAdmin })
             .then((data) => setPromptShowcase(data.items))
             .catch((error) => message.error(error instanceof Error ? error.message : i18n.t("home.promptError")));
-    }, [message]);
+    }, [message, user.isAdmin]);
 
     return (
         <main className="relative h-full overflow-y-auto bg-background bg-[radial-gradient(#e5e7eb_1px,transparent_1px)] [background-size:16px_16px] text-stone-950 dark:bg-[radial-gradient(rgba(245,245,244,.18)_1px,transparent_1px)] dark:text-stone-100">

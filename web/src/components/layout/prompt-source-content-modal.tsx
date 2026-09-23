@@ -8,8 +8,10 @@ import { useCopyText } from "@/hooks/use-copy-text";
 import { useAssetStore } from "@/stores/use-asset-store";
 import { fetchSourcePrompts, refreshSource, type Prompt } from "@/services/api/prompts";
 import type { PromptSource } from "@/services/api/prompt-source-presets";
+import { useAuth } from "@/components/auth/auth-context";
 
 export function PromptSourceContentModal({ source, onClose }: { source: PromptSource | null; onClose: () => void }) {
+    const { user } = useAuth();
     const { message } = App.useApp();
     const { t } = useTranslation();
     const [items, setItems] = useState<Prompt[]>([]);
@@ -23,14 +25,14 @@ export function PromptSourceContentModal({ source, onClose }: { source: PromptSo
             if (!source) return;
             setLoading(true);
             try {
-                setItems(force ? await refreshSourceItems(source.id) : await fetchSourcePrompts(source.id));
+                setItems(force ? await refreshSourceItems(source.id, user.isAdmin) : await fetchSourcePrompts(source.id, user.isAdmin));
             } catch (error) {
                 message.error(error instanceof Error ? error.message : t("config.promptSources.content.loadFailed"));
             } finally {
                 setLoading(false);
             }
         },
-        [source, message, t],
+        [source, message, t, user.isAdmin],
     );
 
     useEffect(() => {
@@ -126,7 +128,7 @@ export function PromptSourceContentModal({ source, onClose }: { source: PromptSo
     );
 }
 
-async function refreshSourceItems(sourceId: string) {
+async function refreshSourceItems(sourceId: string, includeRestricted: boolean) {
     await refreshSource(sourceId);
-    return fetchSourcePrompts(sourceId);
+    return fetchSourcePrompts(sourceId, includeRestricted);
 }

@@ -11,6 +11,7 @@ import { getNodeDefinition } from "@/lib/canvas/node-registry";
 import { cn } from "@/lib/utils";
 import { PromptDetailDialog } from "@/pages/prompts/components/prompt-detail-dialog";
 import { fetchSourcePrompts, type Prompt } from "@/services/api/prompts";
+import { useAuth } from "@/components/auth/auth-context";
 import { uploadMediaFile } from "@/services/file-storage";
 import { uploadImage } from "@/services/image-storage";
 import { useAssetStore, type Asset, type AssetKind } from "@/stores/use-asset-store";
@@ -544,9 +545,10 @@ function PromptSourceGroup({
     onView: (prompt: Prompt) => void;
 }) {
     const { t } = useTranslation();
+    const { user } = useAuth();
     // Cache a source after its first expansion to avoid repeated requests; search results also need the data for counts.
     const showResults = open || !!keyword.trim();
-    const query = useQuery({ queryKey: ["side-panel-prompts", sourceId], queryFn: () => fetchSourcePrompts(sourceId), enabled: showResults, staleTime: 1000 * 60 * 60 });
+    const query = useQuery({ queryKey: ["side-panel-prompts", sourceId, user.isAdmin], queryFn: () => fetchSourcePrompts(sourceId, user.isAdmin), enabled: showResults, staleTime: 1000 * 60 * 60 });
 
     const filtered = useMemo(() => {
         const items = query.data || [];

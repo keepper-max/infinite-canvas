@@ -66,6 +66,7 @@ import { AgentHistoryView } from "./agent-history-view";
 import { AgentLogView } from "./agent-log-view";
 import { AgentPanelTabs } from "./agent-panel-tabs";
 import { AgentSkillsView } from "./agent-skills-view";
+import { useAuth } from "@/components/auth/auth-context";
 
 const MAX_ATTACHMENTS = 6;
 const MAX_ATTACHMENT_PAYLOAD_BYTES = 28 * 1024 * 1024;
@@ -124,6 +125,7 @@ function conversationBootstrapView(conversation: AgentConversationState) {
 }
 
 export function LocalAgentPanel({ embedded, headless, autoConnect }: { embedded?: boolean; headless?: boolean; autoConnect?: boolean }) {
+    const { user } = useAuth();
     const { t } = useTranslation();
     const theme = canvasThemes[useThemeStore((state) => state.theme)];
     const { message, modal } = App.useApp();
@@ -808,7 +810,7 @@ export function LocalAgentPanel({ embedded, headless, autoConnect }: { embedded?
         if (isSiteTool(payload.name)) {
             try {
                 addEventLog(toolName(payload.name), payload, payload);
-                const result = await runSiteTool(payload.name, payload.input || {}, navigate, { canvasSnapshot: canvasContextRef.current?.snapshot || null });
+                const result = await runSiteTool(payload.name, payload.input || {}, navigate, { canvasSnapshot: canvasContextRef.current?.snapshot || null, includeRestrictedPrompts: user.isAdmin });
                 await postToolResult(endpoint, token, clientIdRef.current, { requestId: payload.requestId, result });
                 addEventLog(rt("toolCompleted", { tool: toolName(payload.name) }), result, result);
             } catch (error) {

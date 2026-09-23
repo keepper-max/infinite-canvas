@@ -50,7 +50,7 @@ export const SITE_TOOL_LABELS: Record<SiteToolName, string> = {
 };
 
 type SiteToolInput = Record<string, unknown>;
-type SiteToolContext = { canvasSnapshot?: CanvasAgentSnapshot | null };
+type SiteToolContext = { canvasSnapshot?: CanvasAgentSnapshot | null; includeRestrictedPrompts?: boolean };
 type GenerationStatus = "idle" | "queued" | "running" | "succeeded" | "failed";
 type GenerationStatusItem = { id: string; source: "canvas" | "image" | "video"; status: GenerationStatus; kind?: string; title?: string; prompt?: string; projectId?: string; createdAt?: string; updatedAt?: string; successCount?: number; failCount?: number; error?: string };
 
@@ -69,7 +69,7 @@ export async function runSiteTool(name: SiteToolName, input: SiteToolInput, navi
         case "workbench_video_generate":
             return runVideoWorkbench(input, navigate);
         case "prompts_search":
-            return searchPrompts(input);
+            return searchPrompts(input, Boolean(context.includeRestrictedPrompts));
         case "assets_list":
             return listAssets(input);
         case "assets_add":
@@ -255,11 +255,11 @@ function runVideoWorkbench(input: SiteToolInput, navigate: NavigateFunction) {
     return { ok: true, navigated: "/video", prompt, run, taskId, applied, note: siteText(run ? "videoGenerationStarted" : "videoConfigApplied") };
 }
 
-async function searchPrompts(input: SiteToolInput) {
+async function searchPrompts(input: SiteToolInput, includeRestricted: boolean) {
     const page = Math.max(1, Math.floor(Number(input.page)) || 1);
     const pageSize = Math.max(1, Math.min(50, Math.floor(Number(input.pageSize)) || 20));
     const tags = Array.isArray(input.tags) ? input.tags.filter((tag): tag is string => typeof tag === "string") : [];
-    const result = await fetchPrompts({ keyword: String(input.keyword || ""), category: String(input.category || i18n.t("common.all")), tag: tags, page, pageSize });
+    const result = await fetchPrompts({ keyword: String(input.keyword || ""), category: String(input.category || i18n.t("common.all")), tag: tags, page, pageSize, includeRestricted });
     return {
         total: result.total,
         page,

@@ -3,6 +3,7 @@ import localforage from "localforage";
 import { runPromptSource, type RawPrompt } from "./prompt-source-runtime";
 import { usePromptSourceStore } from "@/stores/use-prompt-source-store";
 import i18n from "@/i18n";
+import { filterRestrictedPrompts } from "@/lib/prompt-access";
 import type { PromptSource } from "./prompt-source-presets";
 
 export type Prompt = RawPrompt & {
@@ -136,8 +137,15 @@ async function getAllPrompts(): Promise<Prompt[]> {
     return settled.flat();
 }
 
-export async function fetchPrompts({ keyword = "", tag = [], category = ALL_PROMPTS_OPTION, page = 1, pageSize = 20 }: { keyword?: string; tag?: string[]; category?: string; page?: number; pageSize?: number } = {}) {
-    const items = await getAllPrompts();
+export async function fetchPrompts({
+    keyword = "",
+    tag = [],
+    category = ALL_PROMPTS_OPTION,
+    page = 1,
+    pageSize = 20,
+    includeRestricted = false,
+}: { keyword?: string; tag?: string[]; category?: string; page?: number; pageSize?: number; includeRestricted?: boolean } = {}) {
+    const items = filterRestrictedPrompts(await getAllPrompts(), includeRestricted);
     const normalizedKeyword = keyword.trim().toLowerCase();
     const normalizedPage = Math.max(1, page);
     const normalizedPageSize = Math.max(1, Math.min(100, pageSize));
@@ -153,10 +161,10 @@ export async function fetchPrompts({ keyword = "", tag = [], category = ALL_PROM
     };
 }
 
-export async function fetchSourcePrompts(sourceId: string): Promise<Prompt[]> {
+export async function fetchSourcePrompts(sourceId: string, includeRestricted = false): Promise<Prompt[]> {
     const source = usePromptSourceStore.getState().sources.find((item) => item.id === sourceId);
     if (!source) throw new Error(i18n.t("prompts.sourceMissing"));
-    return getSourcePrompts(source);
+    return filterRestrictedPrompts(await getSourcePrompts(source), includeRestricted);
 }
 
 export async function refreshSource(sourceId: string): Promise<PromptSourceRefreshResult> {
