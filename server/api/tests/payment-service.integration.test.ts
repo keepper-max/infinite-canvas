@@ -146,12 +146,49 @@ test("Alipay order creation and settlement credit exactly once", { skip: !databa
       },
       client,
     );
+    await pool.query(
+      `insert into platform_settings(key,value,updated_by) values('payment_access',$1,$2)
+       on conflict(key) do update set value=excluded.value,updated_by=excluded.updated_by,updated_at=now()`,
+      [JSON.stringify({ publicRechargeEnabled: false }), userId],
+    );
     await assert.rejects(
       adminOnlyPayments.createOrder(userId, false, {
         planId: "alipay-package-990",
         idempotencyKey: crypto.randomUUID(),
       }),
       (error: unknown) => error instanceof Error && error.message === "支付宝充值正在验收中",
+    );
+    const paymentOperations = new OperationsService(
+      pool,
+      { adminEmails: [] },
+      undefined,
+      new CreditService(pool),
+      {},
+      adminOnlyPayments,
+    );
+    const opened = await paymentOperations.setAdminPaymentSettings(
+      userId,
+      true,
+      `open-${suffix}`,
+    ) as { publicRechargeEnabled: boolean; totalUserCredits: string; providerReserveCny: string };
+    assert.equal(opened.publicRechargeEnabled, true);
+    const expectedBalances = await pool.query<{ total_credits: string }>(
+      "select coalesce(sum(greatest(balance,0)),0)::text total_credits from credit_accounts",
+    );
+    assert.equal(opened.totalUserCredits, expectedBalances.rows[0]!.total_credits);
+    assert.equal(
+      Number(opened.providerReserveCny).toFixed(8),
+      (Number(opened.totalUserCredits) / 120).toFixed(8),
+    );
+    assert.equal(await adminOnlyPayments.publicRechargeEnabled(), true);
+    assert.equal(
+      (
+        await adminOnlyPayments.createOrder(userId, false, {
+          planId: "alipay-package-990",
+          idempotencyKey: crypto.randomUUID(),
+        })
+      ).order.status,
+      "pending",
     );
 
     assert.equal(await payments.receiveNotify({ ...fields, notify_id: `wrong-${suffix}`, app_id: "other" }), false);

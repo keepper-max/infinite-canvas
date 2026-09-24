@@ -230,16 +230,27 @@ export class BillingService {
 
   private async settleRunningHub(job: Record<string, unknown>) {
     const usage = asRecord(job.billing_meter_usage);
-    const amount =
+    const providerPaidAmount =
       decimalValue(usage.third_party_consume_money) ||
       decimalValue(usage.consume_money);
+    const originalAmount = runningHubOriginalAmount(job.model_id, providerPaidAmount);
+    const normalizedUsage =
+      providerPaidAmount !== null && originalAmount !== providerPaidAmount
+        ? {
+            ...usage,
+            provider_paid_amount: providerPaidAmount,
+            original_amount: originalAmount,
+            billing_discount_rate: "0.8",
+            billing_amount_source: "seedance_2_5_discount_restore",
+          }
+        : usage;
     const promptTokens = integerValue(usage.prompt_tokens);
     const completionTokens = integerValue(usage.completion_tokens);
     const totalTokens = integerValue(usage.total_tokens);
     const billingSeconds = decimalValue(usage.billing_seconds);
     const consumedCoins = decimalValue(usage.consume_coins);
     if (
-      amount === null &&
+      providerPaidAmount === null &&
       promptTokens === null &&
       completionTokens === null &&
       totalTokens === null &&
@@ -264,14 +275,14 @@ export class BillingService {
     await this.pool.query(
       `insert into generation_usage(job_id,project_id,user_id,billing_request_id,provider,model_id,capability,status,billed,credit_status,
         prompt_tokens,completion_tokens,total_tokens,audio_duration_seconds,video_duration_seconds,requested_seconds,
-        total_amount,currency,provider_request_id,usage,reconciled_at,updated_at)
-       values($1,$2,$3,$4,$5,$6,$7,'settled',$8,'pending',$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,now(),now())
+        amount_final,total_amount,currency,provider_request_id,usage,reconciled_at,updated_at)
+       values($1,$2,$3,$4,$5,$6,$7,'settled',$8,'pending',$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,now(),now())
        on conflict(job_id) do update set billing_request_id=excluded.billing_request_id,status=excluded.status,
         credit_status=case when generation_usage.credit_status in ('charged','free','historical') then generation_usage.credit_status else 'pending' end,
         billed=excluded.billed,prompt_tokens=excluded.prompt_tokens,completion_tokens=excluded.completion_tokens,
         total_tokens=excluded.total_tokens,audio_duration_seconds=excluded.audio_duration_seconds,
         video_duration_seconds=excluded.video_duration_seconds,requested_seconds=excluded.requested_seconds,
-        total_amount=excluded.total_amount,currency=excluded.currency,provider_request_id=excluded.provider_request_id,
+        amount_final=excluded.amount_final,total_amount=excluded.total_amount,currency=excluded.currency,provider_request_id=excluded.provider_request_id,
         usage=excluded.usage,reconciled_at=now(),updated_at=now()`,
       [
         job.id,
@@ -281,17 +292,18 @@ export class BillingService {
         job.provider,
         job.model_id,
         job.capability,
-        amount !== null,
+        providerPaidAmount !== null,
         promptTokens,
         completionTokens,
         totalTokens,
         job.capability === "audio" ? billingSeconds : null,
         job.capability === "video" ? billingSeconds : null,
         decimalValue(parameters.duration),
-        amount,
+        providerPaidAmount,
+        originalAmount,
         currency,
         providerRequestId,
-        JSON.stringify(usage),
+        JSON.stringify(normalizedUsage),
       ],
     );
     await this.pool.query(
@@ -317,6 +329,37 @@ function asRecord(value: unknown): Record<string, unknown> {
 }
 function isRunningHubProvider(value: unknown) {
   return value === "runninghub" || value === "runninghub_global";
+}
+export function runningHubOriginalAmount(modelId: unknown, providerPaidAmount: string | null) {
+  if (providerPaidAmount === null || !isSeedance25Model(modelId)) return providerPaidAmount;
+  return multiplyDecimalRatio(providerPaidAmount, 5n, 4n);
+}
+function isSeedance25Model(value: unknown) {
+  const modelId = String(value || "").toLowerCase();
+  return (
+    modelId.includes("seedance-2.5") ||
+    modelId.includes("seedance-2-5") ||
+    modelId.includes("seedance_2_5")
+  );
+}
+function multiplyDecimalRatio(value: string, numerator: bigint, denominator: bigint) {
+  const match = /^(\d+)(?:\.(\d+))?$/.exec(value);
+  if (!match) return value;
+  const fraction = match[2] || "";
+  const scale = 10n ** BigInt(fraction.length);
+  const scaled = BigInt(match[1]!) * scale + BigInt(fraction || "0");
+  let product = scaled * numerator;
+  let places = fraction.length;
+  while (product % denominator !== 0n && places < 8) {
+    product *= 10n;
+    places += 1;
+  }
+  const result = product / denominator;
+  const digits = result.toString().padStart(places + 1, "0");
+  if (!places) return digits;
+  const whole = digits.slice(0, -places) || "0";
+  const decimal = digits.slice(-places).replace(/0+$/, "");
+  return decimal ? `${whole}.${decimal}` : whole;
 }
 function stringValue(value: unknown) {
   return typeof value === "string" && value.trim() ? value.trim() : undefined;

@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { BillingService } from "../src/billing-service.js";
+import { BillingService, runningHubOriginalAmount } from "../src/billing-service.js";
 
 const config = {
   baseUrl: "https://example.invalid",
@@ -278,9 +278,32 @@ test("RunningHub terminal usage is settled directly without Token360 reconciliat
   assert.equal(insert.values[12], "4");
   assert.equal(insert.values[13], "5");
   assert.equal(insert.values[14], "3.398");
-  assert.equal(insert.values[15], "CNY");
-  assert.equal(insert.values[16], "rh-task-1");
+  assert.equal(insert.values[15], "4.2475");
+  assert.equal(insert.values[16], "CNY");
+  assert.equal(insert.values[17], "rh-task-1");
+  assert.deepEqual(JSON.parse(String(insert.values[18])), {
+    ...job.billing_meter_usage,
+    provider_paid_amount: "3.398",
+    original_amount: "4.2475",
+    billing_discount_rate: "0.8",
+    billing_amount_source: "seedance_2_5_discount_restore",
+  });
   assert.match(calls.at(-1)?.sql || "", /billing_status='settled'/);
+});
+
+test("RunningHub Seedance 2.5 restores the original 80%-discount price exactly", () => {
+  assert.equal(
+    runningHubOriginalAmount(
+      "runninghub.video.bytedance-seedance-2.5-token-multimodal-video",
+      "11.419",
+    ),
+    "14.27375",
+  );
+  assert.equal(
+    runningHubOriginalAmount("runninghub.video.seedance-2-0", "11.419"),
+    "11.419",
+  );
+  assert.equal(runningHubOriginalAmount("runninghub.video.seedance-2.5", null), null);
 });
 
 test("RunningHub global usage keeps a region-specific billing identity", async () => {

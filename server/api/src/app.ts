@@ -185,7 +185,7 @@ export function createApp(
     return context.json(
       success(
         context,
-        requireOperationsService(operationsService).capabilities(publicUser(user, config).isAdmin),
+        await requireOperationsService(operationsService).capabilities(publicUser(user, config).isAdmin),
       ),
     );
   });
@@ -363,6 +363,25 @@ export function createApp(
     const user = await requireUser(context.req.raw, repository, config);
     return context.json(success(context, {
       plans: await requireOperationsService(operationsService).adminPaymentPlans(user.id),
+    }));
+  });
+
+  app.get("/api/admin/payments/settings", async (context) => {
+    const user = await requireUser(context.req.raw, repository, config);
+    return context.json(success(context, {
+      settings: await requireOperationsService(operationsService).adminPaymentSettings(user.id),
+    }));
+  });
+
+  app.patch("/api/admin/payments/settings", async (context) => {
+    const user = await requireUser(context.req.raw, repository, config);
+    const input = paymentAccessInput.parse(await readJson(context.req.raw));
+    return context.json(success(context, {
+      settings: await requireOperationsService(operationsService).setAdminPaymentSettings(
+        user.id,
+        input.publicRechargeEnabled,
+        context.get("requestId"),
+      ),
     }));
   });
 
@@ -1406,6 +1425,7 @@ const managedProviderInput = z
   .object({ providerId: managedProviderId })
   .strict();
 const modelEnabledInput = z.object({ enabled: z.boolean() }).strict();
+const paymentAccessInput = z.object({ publicRechargeEnabled: z.boolean() }).strict();
 const adminOverviewQueryInput = z
   .object({
     dateFrom: z.string().date().optional(),

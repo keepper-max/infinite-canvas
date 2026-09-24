@@ -16,7 +16,7 @@ import type {
 } from "./operations-contract.js";
 
 export interface OperationsServicePort {
-  capabilities(isAdmin?: boolean): Record<string, boolean>;
+  capabilities(isAdmin?: boolean): Promise<Record<string, boolean>>;
   account(userId: string): Promise<unknown>;
   creditPricing(userId: string): Promise<unknown>;
   setCreditPricing(
@@ -45,6 +45,8 @@ export interface OperationsServicePort {
   adminPaymentPlans(userId: string): Promise<unknown[]>;
   createAdminPaymentPlan(userId: string, input: PaymentPlanInput, requestId: string): Promise<unknown>;
   updateAdminPaymentPlan(userId: string, planId: string, input: PaymentPlanInput, requestId: string): Promise<unknown>;
+  adminPaymentSettings(userId: string): Promise<unknown>;
+  setAdminPaymentSettings(userId: string, publicRechargeEnabled: boolean, requestId: string): Promise<unknown>;
   listTeams(userId: string): Promise<unknown[]>;
   createTeam(userId: string, input: TeamCreateInput): Promise<unknown>;
   listTeamMembers(teamId: string, userId: string): Promise<unknown[]>;
@@ -144,11 +146,12 @@ export class OperationsService implements OperationsServicePort {
     private readonly payments?: PaymentService,
   ) {}
 
-  capabilities(isAdmin = false) {
+  async capabilities(isAdmin = false) {
+    const publicRechargeEnabled = await this.payments?.publicRechargeEnabled();
     return {
       sms: false,
       credits: Boolean(this.credits),
-      payments: Boolean(this.payments?.enabled() && (!this.payments.adminOnly() || isAdmin)),
+      payments: Boolean(this.payments?.enabled() && (publicRechargeEnabled || isAdmin)),
       teams: true,
       admin: true,
     };
@@ -326,6 +329,63 @@ export class OperationsService implements OperationsServicePort {
       const plan = serializeBillingPlan(updated.rows[0]);
       await audit(client, userId, "payment.plan.update", "billing_plan", planId, { previous, next: plan }, requestId);
       return plan;
+    });
+  }
+
+  async adminPaymentSettings(userId: string) {
+    await this.requireAdmin(userId);
+    const balances = await this.pool.query(
+      `select coalesce(sum(greatest(balance,0)),0)::text total_credits,
+        (coalesce(sum(greatest(balance,0)),0)::numeric/120)::text provider_reserve_cny
+       from credit_accounts`,
+    );
+    const row = balances.rows[0];
+    return {
+      publicRechargeEnabled: await this.requirePayments().publicRechargeEnabled(),
+      totalUserCredits: String(row.total_credits),
+      providerReserveCny: String(row.provider_reserve_cny),
+      pointsPerProviderCny: 120,
+    };
+  }
+
+  async setAdminPaymentSettings(
+    userId: string,
+    publicRechargeEnabled: boolean,
+    requestId: string,
+  ) {
+    await this.requireAdmin(userId);
+    return inTransaction(this.pool, async (client) => {
+      const previous = await client.query(
+        "select value from platform_settings where key='payment_access' for update",
+      );
+      await client.query(
+        `insert into platform_settings(key,value,updated_by) values('payment_access',$1,$2)
+         on conflict(key) do update set value=excluded.value,updated_by=excluded.updated_by,updated_at=now()`,
+        [JSON.stringify({ publicRechargeEnabled }), userId],
+      );
+      await audit(
+        client,
+        userId,
+        "payment.access.update",
+        "platform_setting",
+        "payment_access",
+        {
+          previous: previous.rows[0]?.value || null,
+          next: { publicRechargeEnabled },
+        },
+        requestId,
+      );
+      const balances = await client.query(
+        `select coalesce(sum(greatest(balance,0)),0)::text total_credits,
+          (coalesce(sum(greatest(balance,0)),0)::numeric/120)::text provider_reserve_cny
+         from credit_accounts`,
+      );
+      return {
+        publicRechargeEnabled,
+        totalUserCredits: String(balances.rows[0].total_credits),
+        providerReserveCny: String(balances.rows[0].provider_reserve_cny),
+        pointsPerProviderCny: 120,
+      };
     });
   }
 
@@ -1365,6 +1425,7 @@ function serializeUsage(row: Record<string, unknown>) {
     videoDurationSeconds: money(row.video_duration_seconds),
     audioDurationSeconds: money(row.audio_duration_seconds),
     totalAmount: money(row.total_amount ?? row.amount_final),
+    providerPaidAmount: money(row.amount_final),
     walletAmount: money(row.wallet_amount),
     voucherAmount: money(row.voucher_amount),
     currency: row.display_currency ?? row.currency,

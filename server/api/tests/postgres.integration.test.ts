@@ -413,7 +413,7 @@ test(
       };
       assert.equal(account.account.balance, 0);
       assert.equal(account.enabled, false);
-      assert.deepEqual(operations.capabilities(), {
+      assert.deepEqual(await operations.capabilities(), {
         sms: false,
         credits: false,
         payments: false,

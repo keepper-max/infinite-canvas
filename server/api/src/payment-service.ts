@@ -42,8 +42,14 @@ export class PaymentService {
     );
   }
 
-  adminOnly() {
-    return this.config.adminOnly;
+  async publicRechargeEnabled() {
+    const result = await this.pool.query(
+      "select value->>'publicRechargeEnabled' enabled from platform_settings where key='payment_access'",
+    );
+    const value = result.rows[0]?.enabled;
+    if (value === "true") return true;
+    if (value === "false") return false;
+    return !this.config.adminOnly;
   }
 
   configured() {
@@ -58,7 +64,7 @@ export class PaymentService {
 
   async createOrder(userId: string, isAdmin: boolean, input: PaymentOrderInput) {
     this.assertEnabled();
-    if (this.config.adminOnly && !isAdmin)
+    if (!isAdmin && !(await this.publicRechargeEnabled()))
       throw new DomainError("PAYMENTS_ADMIN_ONLY", "支付宝充值正在验收中", 403);
     const timeoutMinutes = this.config.orderTimeoutMinutes!;
     const expiresAt = new Date(Date.now() + timeoutMinutes * 60_000);

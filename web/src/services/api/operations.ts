@@ -31,6 +31,12 @@ export type CreditAccount = {
 };
 export type BillingPlan = { id: string; name: string; credits: number; priceCents: number; currency: "CNY"; enabled: boolean; metadata: Record<string, unknown>; createdAt?: string; updatedAt?: string };
 export type PaymentPlanInput = Pick<BillingPlan, "name" | "credits" | "priceCents" | "enabled">;
+export type AdminPaymentSettings = {
+    publicRechargeEnabled: boolean;
+    totalUserCredits: string;
+    providerReserveCny: string;
+    pointsPerProviderCny: 120;
+};
 export type PaymentOrder = {
     id: string;
     userId: string;
@@ -112,6 +118,7 @@ export type AdminUsage = {
     videoDurationSeconds?: string;
     audioDurationSeconds?: string;
     totalAmount?: string;
+    providerPaidAmount?: string;
     walletAmount?: string;
     voucherAmount?: string;
     currency?: string;
@@ -187,6 +194,15 @@ export async function syncAdminPaymentOrder(orderId: string) {
 }
 export async function getAdminPaymentPlans(signal?: AbortSignal) {
     return (await platformRequest<{ plans: BillingPlan[] }>("/api/admin/payments/plans", { signal })).plans;
+}
+export async function getAdminPaymentSettings(signal?: AbortSignal) {
+    return (await platformRequest<{ settings: AdminPaymentSettings }>("/api/admin/payments/settings", { signal })).settings;
+}
+export async function setAdminPaymentSettings(publicRechargeEnabled: boolean) {
+    return (await platformRequest<{ settings: AdminPaymentSettings }>("/api/admin/payments/settings", {
+        method: "PATCH",
+        body: JSON.stringify({ publicRechargeEnabled }),
+    })).settings;
 }
 export async function createAdminPaymentPlan(input: PaymentPlanInput) {
     return (await platformRequest<{ plan: BillingPlan }>("/api/admin/payments/plans", { method: "POST", body: JSON.stringify(input) })).plan;

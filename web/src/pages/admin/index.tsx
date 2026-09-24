@@ -14,6 +14,7 @@ import {
     getAdminProviders,
     getAdminPaymentOrders,
     getAdminPaymentPlans,
+    getAdminPaymentSettings,
     getAdminOverview,
     getAdminProjectContent,
     getAdminCreditPricing,
@@ -33,6 +34,7 @@ import {
     syncAdminPaymentOrder,
     createAdminPaymentPlan,
     updateAdminPaymentPlan,
+    setAdminPaymentSettings,
     type AdminAuditLog,
     type AdminJob,
     type AdminModel,
@@ -40,6 +42,7 @@ import {
     type PaymentOrder,
     type BillingPlan,
     type PaymentPlanInput,
+    type AdminPaymentSettings,
     type AdminProvider,
     type AdminProviders,
     type AdminUsage,
@@ -313,7 +316,7 @@ function Overview() {
                         {trendTicks.map((item) => <span key={item.day}>{dayjs(item.day).format("M/D")}</span>)}
                     </div>
                 </Panel>
-                <Panel title="供应商实际成本" note={`${rangeLabel}与历史累计，按币种隔离`}>
+                <Panel title="供应商原始费用" note={`${rangeLabel}与历史累计；优惠实付另见消耗流水`}>
                     {usageCurrencies.length ? (
                         <div className="space-y-3">
                             {usageCurrencies.map((currency) => {
@@ -882,7 +885,7 @@ function UsagePanel() {
     };
     return (
         <div className="space-y-5">
-            <Panel title="积分定价" note="固定 1 元 = 100 积分，实际成本加价 20%，不足 1 积分向上取整">
+            <Panel title="积分定价" note="固定 1 元 = 100 积分，原始费用加价 20%，不足 1 积分向上取整">
                 <div className="flex flex-wrap items-end gap-3">
                     <label className="text-sm">
                         <span className="mb-1 block text-stone-500">USD/CNY 结算汇率</span>
@@ -929,8 +932,14 @@ function UsagePanel() {
                         { title: "渠道", dataIndex: "provider", render: providerLabel },
                         { title: "计量", render: (_, item) => `${item.totalTokens || 0} T · ${item.videoDurationSeconds || 0}s · ${item.generatedImages || 0} 图` },
                         {
-                            title: "实际金额",
+                            title: "原始费用",
                             render: (_, item) => <b className="font-mono">{formatUsageAmount(item.currency, item.totalAmount)}</b>,
+                        },
+                        {
+                            title: "优惠实付",
+                            render: (_, item) => item.providerPaidAmount && item.providerPaidAmount !== item.totalAmount
+                                ? <span className="font-mono text-stone-500">{formatUsageAmount(item.currency, item.providerPaidAmount)}</span>
+                                : "—",
                         },
                         { title: "扣除积分", render: (_, item) => (item.creditPoints ? <b className="font-mono">{formatPoints(item.creditPoints)}</b> : creditStatusLabel(item.creditStatus)) },
                         { title: "账单 ID", dataIndex: "billingRequestId", render: copyable },
@@ -1186,22 +1195,26 @@ function ModelsPanel({ provider }: { provider: AdminProvider["id"] }) {
 function PaymentsPanel() {
     const [items, setItems] = useState<PaymentOrder[]>([]);
     const [plans, setPlans] = useState<BillingPlan[]>([]);
+    const [settings, setSettings] = useState<AdminPaymentSettings>();
     const [loading, setLoading] = useState(true);
     const [syncingId, setSyncingId] = useState<string>();
     const [updatingPlanId, setUpdatingPlanId] = useState<string>();
     const [editingPlan, setEditingPlan] = useState<BillingPlan>();
     const [planEditorOpen, setPlanEditorOpen] = useState(false);
     const [savingPlan, setSavingPlan] = useState(false);
+    const [savingAccess, setSavingAccess] = useState(false);
     const [planDraft, setPlanDraft] = useState({ name: "", priceYuan: "", credits: 1000 });
     const load = useCallback(async (signal?: AbortSignal) => {
         setLoading(true);
         try {
-            const [nextItems, nextPlans] = await Promise.all([
+            const [nextItems, nextPlans, nextSettings] = await Promise.all([
                 getAdminPaymentOrders(signal),
                 getAdminPaymentPlans(signal),
+                getAdminPaymentSettings(signal),
             ]);
             setItems(nextItems);
             setPlans(nextPlans);
+            setSettings(nextSettings);
         } catch (error) {
             if (!(error instanceof DOMException && error.name === "AbortError")) message.error(error instanceof Error ? error.message : "充值数据加载失败");
         } finally {
@@ -1288,12 +1301,45 @@ function PaymentsPanel() {
     };
     const paid = items.filter((item) => item.status === "paid");
     const paidCents = paid.reduce((total, item) => total + item.amountCents, 0);
+    const changePublicRecharge = async (enabled: boolean) => {
+        setSavingAccess(true);
+        try {
+            const next = await setAdminPaymentSettings(enabled);
+            setSettings(next);
+            message.success(enabled ? "普通用户充值已开放" : "普通用户充值已关闭");
+        } catch (error) {
+            message.error(error instanceof Error ? error.message : "充值权限更新失败");
+        } finally {
+            setSavingAccess(false);
+        }
+    };
     return (
         <div className="space-y-5">
-            <div className="grid gap-4 md:grid-cols-3">
+            <Panel
+                title="普通用户充值"
+                note="关闭后普通用户不能创建新订单；已有订单、到账回调和管理员验收不受影响"
+                actions={
+                    <div className="flex items-center gap-3">
+                        <Tag bordered={false} color={settings?.publicRechargeEnabled ? "green" : "default"}>
+                            {settings?.publicRechargeEnabled ? "已开放" : "已关闭"}
+                        </Tag>
+                        <Switch
+                            checked={Boolean(settings?.publicRechargeEnabled)}
+                            loading={savingAccess}
+                            disabled={!settings}
+                            onChange={(enabled) => void changePublicRecharge(enabled)}
+                        />
+                    </div>
+                }
+            >
+                <p className="text-xs text-stone-500">权限变更立即生效并写入管理员审计日志，无需重启服务。</p>
+            </Panel>
+            <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-5">
                 <Metric label="充值订单" value={formatCount(items.length)} note="最近 200 笔" />
                 <Metric label="成功到账" value={formatCount(paid.length)} note={`人民币 ${formatPaymentAmount(paidCents)}`} />
                 <Metric label="待确认" value={formatCount(items.filter((item) => item.status === "pending").length)} note="可手动向支付宝查单" />
+                <Metric label="用户持有积分" value={formatPoints(settings?.totalUserCredits || "0")} note="仅累计正余额" />
+                <Metric label="建议供应商准备金" value={`¥${formatDecimal(settings?.providerReserveCny || "0", 2)}`} note="原价口径：用户正积分总额 ÷ 120" />
             </div>
             <Panel
                 title="充值套餐"
@@ -1481,6 +1527,10 @@ function formatCount(value: number) {
 function formatPaymentAmount(cents: number) {
     return (Number(cents || 0) / 100).toFixed(2);
 }
+function formatDecimal(value: string, places: number) {
+    const number = Number(value);
+    return Number.isFinite(number) ? number.toFixed(places) : "0.00";
+}
 function parseYuanToCents(value: string) {
     const normalized = value.trim();
     if (!/^\d{1,7}(?:\.\d{1,2})?$/.test(normalized)) return 0;
@@ -1558,9 +1608,9 @@ function formatUsageAmount(currency?: string, amount?: string) {
 }
 function usageAmountLabel(currency?: string, amount?: string, compact = false) {
     if (isAmountMissing(amount)) return compact ? "待计费" : "待计费金额";
-    if (!currency || currency === "UNKNOWN") return compact ? "币种未确认" : "币种未确认的实际金额";
+    if (!currency || currency === "UNKNOWN") return compact ? "币种未确认" : "币种未确认的原始费用";
     const label = currency === "CNY" ? "人民币" : currency;
-    return compact ? label : `${label}实际金额`;
+    return compact ? label : `${label}原始费用`;
 }
 function copyable(value?: string) {
     if (!value) return "—";
