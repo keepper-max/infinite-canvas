@@ -3,7 +3,16 @@ set -eu
 
 manifest="${1:?usage: rollback-production.sh RELEASE_MANIFEST}"
 compose_file="${COMPOSE_FILE:-docker-compose.yml}"
+compose_override_file="${COMPOSE_OVERRIDE_FILE:-}"
 env_file="${ENV_FILE:-.env}"
+
+compose() {
+  if test -n "$compose_override_file"; then
+    docker compose --env-file "$env_file" -f "$compose_file" -f "$compose_override_file" "$@"
+  else
+    docker compose --env-file "$env_file" -f "$compose_file" "$@"
+  fi
+}
 
 test -f "$manifest"
 
@@ -24,19 +33,19 @@ test "${CONFIRM_PRODUCTION_ROLLBACK:-}" = "rollback-${release_sha}" || {
   exit 1
 }
 
-COMPOSE_FILE="$compose_file" ENV_FILE="$env_file" sh ops/verify-backup.sh "$backup_dir"
+COMPOSE_FILE="$compose_file" COMPOSE_OVERRIDE_FILE="$compose_override_file" ENV_FILE="$env_file" sh ops/verify-backup.sh "$backup_dir"
 
 if test -n "$previous_api"; then
-  env API_IMAGE="$previous_api" docker compose --env-file "$env_file" -f "$compose_file" up -d --no-deps api worker
+  API_IMAGE="$previous_api" compose up -d --no-deps api worker
 else
-  docker compose --env-file "$env_file" -f "$compose_file" stop api worker
+  compose stop api worker
 fi
 
 if test -n "$previous_web"; then
-  env WEB_IMAGE="$previous_web" docker compose --env-file "$env_file" -f "$compose_file" up -d --no-deps web
+  WEB_IMAGE="$previous_web" compose up -d --no-deps web
 else
-  docker compose --env-file "$env_file" -f "$compose_file" stop web
+  compose stop web
 fi
 
-docker compose --env-file "$env_file" -f "$compose_file" ps
+compose ps
 printf 'image rollback completed for release: %s\n' "$release_sha"

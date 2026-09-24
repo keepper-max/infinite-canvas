@@ -21,6 +21,12 @@ chmod 600 .env
 sh ops/preflight-production.sh
 ```
 
+生产环境如使用额外的 Compose 覆盖文件（例如仅在回环地址开放 API 端口），预检、备份、发布、健康检查和回滚都必须设置同一个 `COMPOSE_OVERRIDE_FILE`：
+
+```sh
+export COMPOSE_OVERRIDE_FILE=/opt/infinite-canvas-releases/docker-compose.production.yml
+```
+
 ## 2. 发布前备份
 
 在当前生产目录执行：

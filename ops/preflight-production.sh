@@ -2,7 +2,16 @@
 set -eu
 
 compose_file="${COMPOSE_FILE:-docker-compose.yml}"
+compose_override_file="${COMPOSE_OVERRIDE_FILE:-}"
 env_file="${ENV_FILE:-.env}"
+
+compose() {
+  if test -n "$compose_override_file"; then
+    docker compose --env-file "$env_file" -f "$compose_file" -f "$compose_override_file" "$@"
+  else
+    docker compose --env-file "$env_file" -f "$compose_file" "$@"
+  fi
+}
 
 fail() {
   printf 'preflight failed: %s\n' "$1" >&2
@@ -14,6 +23,9 @@ for command_name in docker git curl sha256sum tar; do
 done
 
 test -f "$compose_file" || fail "compose file not found"
+if test -n "$compose_override_file"; then
+  test -f "$compose_override_file" || fail "compose override file not found"
+fi
 test -f "$env_file" || fail "environment file not found"
 test -z "$(git status --porcelain)" || fail "Git worktree is not clean"
 
@@ -45,8 +57,8 @@ case "$(read_env_value OBJECT_STORAGE_PUBLIC_ENDPOINT)" in
   *) fail "OBJECT_STORAGE_PUBLIC_ENDPOINT must start with https://" ;;
 esac
 
-docker compose --env-file "$env_file" -f "$compose_file" config --quiet
+compose config --quiet
 docker info >/dev/null 2>&1 || fail "Docker engine is unavailable"
 
-printf 'preflight passed: commit=%s compose=%s env=%s\n' \
-  "$(git rev-parse --short HEAD)" "$compose_file" "$env_file"
+printf 'preflight passed: commit=%s compose=%s override=%s env=%s\n' \
+  "$(git rev-parse --short HEAD)" "$compose_file" "${compose_override_file:-none}" "$env_file"
