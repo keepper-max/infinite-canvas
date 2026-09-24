@@ -26,25 +26,26 @@ test("Alipay order creation and settlement credit exactly once", { skip: !databa
         provider: "alipay",
         enabled: true,
         complianceApproved: true,
+        adminOnly: false,
         publicBaseUrl: "https://example.com",
         appId: "test-app",
         privateKey: "test-private-key",
         alipayPublicKey: "test-public-key",
         sellerId: "test-seller",
-        orderTimeoutMinutes: 30,
+        orderTimeoutMinutes: 10,
       },
       client,
     );
 
     const idempotencyKey = crypto.randomUUID();
-    const first = await payments.createOrder(userId, { planId: "alipay-starter", idempotencyKey });
-    const repeated = await payments.createOrder(userId, { planId: "alipay-starter", idempotencyKey });
+    const first = await payments.createOrder(userId, false, { planId: "alipay-100", idempotencyKey });
+    const repeated = await payments.createOrder(userId, false, { planId: "alipay-100", idempotencyKey });
     assert.equal(first.order.id, repeated.order.id);
     assert.match(first.paymentUrl!, /^https:\/\/openapi\.alipay\.com\//);
 
     const paid = await payments.syncOrder(first.order.id, userId);
     assert.equal(paid.status, "paid");
-    assert.equal((await new CreditService(pool).account(userId)).account.balance, "1000");
+    assert.equal((await new CreditService(pool).account(userId)).account.balance, "100");
 
     const fields = {
       notify_id: `notify-${suffix}`,
@@ -53,7 +54,7 @@ test("Alipay order creation and settlement credit exactly once", { skip: !databa
       trade_status: "TRADE_SUCCESS",
       out_trade_no: first.order.id,
       trade_no: "2026092400000001",
-      total_amount: "10.00",
+      total_amount: "9.90",
       sign: "accepted-by-fake",
       sign_type: "RSA2",
     };
@@ -65,7 +66,43 @@ test("Alipay order creation and settlement credit exactly once", { skip: !databa
        from credit_accounts where user_id=$1`,
       [userId, `payment:${first.order.id}`],
     );
-    assert.deepEqual(state.rows[0], { balance: "1000", entries: "1" });
+    assert.deepEqual(state.rows[0], { balance: "100", entries: "1" });
+
+    await assert.rejects(
+      payments.createOrder(userId, false, { planId: "alipay-acceptance", idempotencyKey: crypto.randomUUID() }),
+      (error: unknown) => error instanceof Error && error.message === "充值套餐不可用",
+    );
+    const acceptance = await payments.createOrder(userId, true, {
+      planId: "alipay-acceptance",
+      idempotencyKey: crypto.randomUUID(),
+    });
+    assert.equal(acceptance.order.amountCents, 1);
+    assert.equal(acceptance.order.credits, "1");
+
+    const adminOnlyPayments = new PaymentService(
+      pool,
+      new CreditService(pool),
+      {
+        provider: "alipay",
+        enabled: true,
+        complianceApproved: true,
+        adminOnly: true,
+        publicBaseUrl: "https://example.com",
+        appId: "test-app",
+        privateKey: "test-private-key",
+        alipayPublicKey: "test-public-key",
+        sellerId: "test-seller",
+        orderTimeoutMinutes: 10,
+      },
+      client,
+    );
+    await assert.rejects(
+      adminOnlyPayments.createOrder(userId, false, {
+        planId: "alipay-100",
+        idempotencyKey: crypto.randomUUID(),
+      }),
+      (error: unknown) => error instanceof Error && error.message === "支付宝充值正在验收中",
+    );
 
     assert.equal(await payments.receiveNotify({ ...fields, notify_id: `wrong-${suffix}`, app_id: "other" }), false);
   } finally {
@@ -81,7 +118,7 @@ function fakeAlipay(): AlipayClientPort {
     }) as AlipayClientPort["pageExecute"],
     exec: (async (_method: string, params?: Record<string, unknown>) => {
       const orderId = String((params?.bizContent as Record<string, unknown>)?.out_trade_no || "");
-      return { code: "10000", msg: "Success", out_trade_no: orderId, trade_no: "2026092400000001", trade_status: "TRADE_SUCCESS", total_amount: "10.00" };
+      return { code: "10000", msg: "Success", out_trade_no: orderId, trade_no: "2026092400000001", trade_status: "TRADE_SUCCESS", total_amount: "9.90" };
     }) as AlipayClientPort["exec"],
     checkNotifySignV2: (() => true) as AlipayClientPort["checkNotifySignV2"],
   };

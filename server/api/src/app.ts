@@ -180,11 +180,11 @@ export function createApp(
   });
 
   app.get("/api/operations/capabilities", async (context) => {
-    await requireUser(context.req.raw, repository, config);
+    const user = await requireUser(context.req.raw, repository, config);
     return context.json(
       success(
         context,
-        requireOperationsService(operationsService).capabilities(),
+        requireOperationsService(operationsService).capabilities(publicUser(user, config).isAdmin),
       ),
     );
   });
@@ -212,10 +212,10 @@ export function createApp(
   });
 
   app.get("/api/billing/plans", async (context) => {
-    await requireUser(context.req.raw, repository, config);
+    const user = await requireUser(context.req.raw, repository, config);
     return context.json(
       success(context, {
-        plans: await requireOperationsService(operationsService).plans(),
+        plans: await requireOperationsService(operationsService).plans(publicUser(user, config).isAdmin),
       }),
     );
   });
@@ -231,6 +231,7 @@ export function createApp(
     const user = await requireUser(context.req.raw, repository, config);
     const payment = await requireOperationsService(operationsService).createPaymentOrder(
       user.id,
+      publicUser(user, config).isAdmin,
       paymentOrderSchema.parse(await readJson(context.req.raw)),
     );
     return context.json(success(context, payment), 201);

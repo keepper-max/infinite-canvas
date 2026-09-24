@@ -14,7 +14,7 @@ import type {
 } from "./operations-contract.js";
 
 export interface OperationsServicePort {
-  capabilities(): Record<string, boolean>;
+  capabilities(isAdmin?: boolean): Record<string, boolean>;
   account(userId: string): Promise<unknown>;
   creditPricing(userId: string): Promise<unknown>;
   setCreditPricing(
@@ -31,10 +31,10 @@ export interface OperationsServicePort {
   listActivationCodes(userId: string): Promise<unknown>;
   issueActivationCode(userId: string, credits: number, expiresAt: string, requestId: string): Promise<unknown>;
   redeemActivationCode(userId: string, code: string): Promise<unknown>;
-  plans(): Promise<unknown[]>;
+  plans(isAdmin?: boolean): Promise<unknown[]>;
   requestSms(input: SmsRequestInput): Promise<never>;
   verifySms(input: SmsVerifyInput): Promise<never>;
-  createPaymentOrder(userId: string, input: PaymentOrderInput): Promise<unknown>;
+  createPaymentOrder(userId: string, isAdmin: boolean, input: PaymentOrderInput): Promise<unknown>;
   listPaymentOrders(userId: string): Promise<unknown>;
   syncPaymentOrder(userId: string, orderId: string): Promise<unknown>;
   receivePaymentCallback(fields: Record<string, string>): Promise<boolean>;
@@ -139,11 +139,11 @@ export class OperationsService implements OperationsServicePort {
     private readonly payments?: PaymentService,
   ) {}
 
-  capabilities() {
+  capabilities(isAdmin = false) {
     return {
       sms: false,
       credits: Boolean(this.credits),
-      payments: Boolean(this.payments?.enabled()),
+      payments: Boolean(this.payments?.enabled() && (!this.payments.adminOnly() || isAdmin)),
       teams: true,
       admin: true,
     };
@@ -206,9 +206,12 @@ export class OperationsService implements OperationsServicePort {
     return this.requireCredits().redeemActivationCode(userId, code);
   }
 
-  async plans() {
+  async plans(isAdmin = false) {
     const result = await this.pool.query(
-      "select id,name,credits,price_cents,currency,enabled,metadata from billing_plans order by price_cents,id",
+      `select id,name,credits,price_cents,currency,enabled,metadata from billing_plans
+       where enabled=true and (coalesce(metadata->>'adminOnly','false')<>'true' or $1)
+       order by price_cents,id`,
+      [isAdmin],
     );
     return result.rows.map((row) => ({
       id: row.id,
@@ -231,9 +234,10 @@ export class OperationsService implements OperationsServicePort {
 
   async createPaymentOrder(
     userId: string,
+    isAdmin: boolean,
     input: PaymentOrderInput,
   ) {
-    return this.requirePayments().createOrder(userId, input);
+    return this.requirePayments().createOrder(userId, isAdmin, input);
   }
 
   async listPaymentOrders(userId: string) {

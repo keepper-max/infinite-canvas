@@ -21,6 +21,7 @@ export type PaymentConfig = {
   provider: "alipay" | "disabled";
   enabled: boolean;
   complianceApproved: boolean;
+  adminOnly: boolean;
   publicBaseUrl: string;
   appId: string;
   privateKey: string;
@@ -196,6 +197,7 @@ function readPaymentConfig(env: NodeJS.ProcessEnv): PaymentConfig {
   const provider = env.PAYMENT_PROVIDER === "alipay" ? "alipay" : "disabled";
   const enabled = env.PAYMENT_ENABLED === "true";
   const complianceApproved = env.PAYMENT_COMPLIANCE_APPROVED === "true";
+  const adminOnly = env.PAYMENT_ADMIN_ONLY !== "false";
   const publicBaseUrl = (env.PUBLIC_BASE_URL || "").trim().replace(/\/+$/, "");
   const appId = (env.ALIPAY_APP_ID || "").trim();
   const privateKey = (env.ALIPAY_APP_PRIVATE_KEY_PEM || "").replace(/\\n/g, "\n").trim();
@@ -217,6 +219,7 @@ function readPaymentConfig(env: NodeJS.ProcessEnv): PaymentConfig {
     provider,
     enabled,
     complianceApproved,
+    adminOnly,
     publicBaseUrl,
     appId,
     privateKey,

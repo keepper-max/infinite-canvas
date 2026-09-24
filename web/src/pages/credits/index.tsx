@@ -2,6 +2,7 @@ import { App, Button, Checkbox, Empty, Input, Modal, Spin, Table, Tag } from "an
 import { CalendarClock, Coins, CreditCard, RefreshCw, ReceiptText } from "lucide-react";
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 
+import { useAuth } from "@/components/auth/auth-context";
 import { randomUuid } from "@/lib/utils";
 import {
     createPaymentOrder,
@@ -28,6 +29,8 @@ const orderStatus: Record<PaymentOrder["status"], { label: string; color: string
 
 export default function CreditsPage() {
     const { message } = App.useApp();
+    const { user } = useAuth();
+    const acceptanceMode = user.isAdmin && new URLSearchParams(window.location.search).get("paymentTest") === "1";
     const [data, setData] = useState<CreditAccount>();
     const [capabilities, setCapabilities] = useState<OperationsCapabilities>();
     const [plans, setPlans] = useState<BillingPlan[]>([]);
@@ -48,14 +51,17 @@ export default function CreditsPage() {
             ]);
             setData(account);
             setCapabilities(nextCapabilities);
-            setPlans(nextPlans.filter((plan) => plan.enabled && plan.currency === "CNY" && plan.metadata.paymentProvider === "alipay"));
+            setPlans(nextPlans.filter((plan) => {
+                if (!plan.enabled || plan.currency !== "CNY" || plan.metadata.paymentProvider !== "alipay") return false;
+                return acceptanceMode ? plan.metadata.experimental === true : plan.metadata.experimental !== true;
+            }));
             setOrders(nextOrders);
         } catch (error) {
             message.error(error instanceof Error ? error.message : "积分信息加载失败");
         } finally {
             setLoading(false);
         }
-    }, [message]);
+    }, [acceptanceMode, message]);
 
     useEffect(() => void load(), [load]);
     useEffect(() => {
@@ -128,8 +134,8 @@ export default function CreditsPage() {
                         <div className="absolute -right-14 -top-16 size-44 rounded-full border border-amber-300/20" />
                         <Coins className="size-5 text-amber-300" />
                         <p className="mt-8 text-sm text-stone-400">当前可用积分</p>
-                        <p className={`mt-1 font-mono text-5xl font-semibold tracking-tight ${balance < 0n ? "text-red-400" : "text-white"}`}>{formatPoints(data.account.balance)}</p>
-                        {balance < 0n ? <p className="mt-3 text-sm text-red-300">余额不足，补足积分后可继续提交托管生成任务。</p> : null}
+                        <p className={`mt-1 font-mono text-5xl font-semibold tracking-tight ${balance < BigInt(0) ? "text-red-400" : "text-white"}`}>{formatPoints(data.account.balance)}</p>
+                        {balance < BigInt(0) ? <p className="mt-3 text-sm text-red-300">余额不足，补足积分后可继续提交托管生成任务。</p> : null}
                     </div>
                     <Metric icon={<ReceiptText className="size-4" />} label="待计费任务" value={String(data.pendingCharges)} note="完成结算后，积分流水会自动更新" />
                 </section>
@@ -138,16 +144,16 @@ export default function CreditsPage() {
                     <div className="flex flex-wrap items-center justify-between gap-4 border-b border-stone-200/80 p-5 dark:border-white/10">
                         <div className="flex items-center gap-3">
                             <img src="/alipay-logo-official.png" alt="支付宝" className="size-10 rounded-xl" />
-                            <div><h2 className="font-semibold">支付宝充值</h2><p className="mt-0.5 text-xs text-stone-500">1 元可充值 100 积分，购买积分到账后有效 12 个月。</p></div>
+                            <div><h2 className="font-semibold">{acceptanceMode ? "支付宝验收订单" : "支付宝充值"}</h2><p className="mt-0.5 text-xs text-stone-500">{acceptanceMode ? "仅超级管理员可使用的 0.01 元真实支付验收。" : "按所选订单套餐充值，订单 10 分钟内有效，积分到账后有效 12 个月。"}</p></div>
                         </div>
                         {paymentsEnabled ? <Tag color="blue">安全支付</Tag> : <Tag>暂未开放</Tag>}
                     </div>
                     {paymentsEnabled ? (
                         <div className="p-5">
-                            <div className="grid gap-3 sm:grid-cols-3">
+                            <div className="grid gap-3 sm:grid-cols-2">
                                 {plans.map((plan, index) => (
                                     <button key={plan.id} type="button" disabled={Boolean(payingPlan)} onClick={() => void purchase(plan)} className="group relative rounded-2xl border border-stone-200 bg-stone-50 p-5 text-left transition hover:-translate-y-0.5 hover:border-[#1677ff] hover:shadow-lg hover:shadow-blue-500/10 disabled:cursor-wait disabled:opacity-60 dark:border-white/10 dark:bg-white/[0.025]">
-                                        {index === 1 ? <img src="/alipay-recommended-official.png" alt="推荐" className="absolute right-3 top-3 h-6 w-auto" /> : null}
+                                        {!acceptanceMode && index === 1 ? <img src="/alipay-recommended-official.png" alt="推荐" className="absolute right-3 top-3 h-6 w-auto" /> : null}
                                         <p className="text-xs text-stone-500">{plan.name}</p>
                                         <p className="mt-4 font-mono text-3xl font-semibold">¥{formatCny(plan.priceCents)}</p>
                                         <p className="mt-2 text-sm text-stone-500">{formatPoints(String(plan.credits))} 积分</p>
@@ -179,11 +185,11 @@ export default function CreditsPage() {
 
             <Modal open={agreementOpen} onCancel={() => setAgreementOpen(false)} footer={<Button type="primary" onClick={() => { setAcceptedAgreement(true); setAgreementOpen(false); }}>同意并关闭</Button>} title="积分充值与使用协议（简明版）" width={680}>
                 <div className="max-h-[60vh] space-y-4 overflow-y-auto pr-2 text-sm leading-7 text-stone-600 dark:text-stone-300">
-                    <AgreementSection title="一、适用与生效">本协议适用于守守画布个人用户的积分充值与使用。请在充值前阅读；您勾选同意并完成充值后，本协议生效。</AgreementSection>
-                    <AgreementSection title="二、充值与使用">1 元人民币兑换 100 积分。积分仅用于本平台服务，不是现金，不可转让或提现；依法应退款的情形不受此限制。服务消耗以相关页面提示和账户流水为准。</AgreementSection>
+                    <AgreementSection title="一、适用与生效">本协议由守密人（大连）科技有限公司向守守画布用户提供，适用于积分充值与使用。请在充值前阅读；您勾选同意并完成充值后，本协议生效。</AgreementSection>
+                    <AgreementSection title="二、充值与使用">积分数量及订单金额以您下单时所选套餐为准。积分仅用于本平台服务，不是现金，不可转让或提现；依法应退款的情形不受此限制。服务消耗以相关页面提示和账户流水为准。</AgreementSection>
                     <AgreementSection title="三、有效期与余额">购买积分自到账起有效 12 个月，赠送积分以活动说明为准，并优先使用较早到期的积分。余额不足时不能提交新的生成任务。</AgreementSection>
                     <AgreementSection title="四、退款与异常">未使用的付费积分可通过客服渠道申请退款；已实际使用部分按消费记录核算。重复扣分、计费错误或未按约提供服务的，经核实后依法退还相应积分或款项。退款原则上退回原支付渠道，赠送积分不折算现金。</AgreementSection>
-                    <AgreementSection title="五、争议与联系">如对充值、扣分或退款有疑问，请通过网站公布的客服渠道提交订单或任务编号。协议或价格规则调整将提前显著告知，原则上不影响调整前已提交的任务。</AgreementSection>
+                    <AgreementSection title="五、争议与联系">如对充值、扣分或退款有疑问，请联系微信 JPdai8888，并提交订单或任务编号。协议或价格规则调整将提前显著告知，原则上不影响调整前已提交的任务。</AgreementSection>
                 </div>
             </Modal>
         </main>
@@ -226,7 +232,7 @@ function CreditLedger({ data }: { data: CreditAccount }) {
             <Table<CreditLedgerItem> rowKey="id" size="middle" dataSource={data.ledger} pagination={{ pageSize: 20, hideOnSinglePage: true }} locale={{ emptyText: <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="暂无积分流水" /> }} columns={[
                 { title: "时间", dataIndex: "createdAt", render: formatDateTime },
                 { title: "类型", dataIndex: "type", render: (value) => ledgerNames[value] || value },
-                { title: "积分", dataIndex: "delta", align: "right", render: (value) => <span className={`font-mono ${BigInt(value) < 0n ? "text-red-600" : "text-emerald-600"}`}>{BigInt(value) > 0n ? "+" : ""}{formatPoints(value)}</span> },
+                { title: "积分", dataIndex: "delta", align: "right", render: (value) => <span className={`font-mono ${BigInt(value) < BigInt(0) ? "text-red-600" : "text-emerald-600"}`}>{BigInt(value) > BigInt(0) ? "+" : ""}{formatPoints(value)}</span> },
                 { title: "余额", dataIndex: "balanceAfter", align: "right", render: (value) => <span className="font-mono">{formatPoints(value)}</span> },
                 { title: "关联任务", dataIndex: "referenceId", ellipsis: true, render: (value) => value ? <span className="font-mono text-xs" title={value}>{shortId(value)}</span> : "—" },
             ]} />

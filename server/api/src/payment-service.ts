@@ -42,6 +42,10 @@ export class PaymentService {
     );
   }
 
+  adminOnly() {
+    return this.config.adminOnly;
+  }
+
   configured() {
     return Boolean(
       this.config.appId &&
@@ -52,14 +56,16 @@ export class PaymentService {
     );
   }
 
-  async createOrder(userId: string, input: PaymentOrderInput) {
+  async createOrder(userId: string, isAdmin: boolean, input: PaymentOrderInput) {
     this.assertEnabled();
+    if (this.config.adminOnly && !isAdmin)
+      throw new DomainError("PAYMENTS_ADMIN_ONLY", "支付宝充值正在验收中", 403);
     const timeoutMinutes = this.config.orderTimeoutMinutes!;
     const expiresAt = new Date(Date.now() + timeoutMinutes * 60_000);
     const order = await transaction(this.pool, async (client) => {
       const plan = (
         await client.query(
-          `select id,name,credits,price_cents,currency from billing_plans
+          `select id,name,credits,price_cents,currency,metadata from billing_plans
            where id=$1 and enabled=true and metadata->>'paymentProvider'='alipay' for share`,
           [input.planId],
         )
@@ -68,7 +74,8 @@ export class PaymentService {
         !plan ||
         plan.currency !== "CNY" ||
         Number(plan.price_cents) <= 0 ||
-        BigInt(String(plan.credits)) <= 0n
+        BigInt(String(plan.credits)) <= 0n ||
+        (plan.metadata?.adminOnly === true && !isAdmin)
       )
         throw new DomainError("PAYMENT_PLAN_INVALID", "充值套餐不可用", 400);
       const inserted = await client.query(
