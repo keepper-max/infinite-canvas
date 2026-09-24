@@ -3,7 +3,7 @@ FROM node:22-bookworm-slim AS api-build
 
 WORKDIR /app
 COPY server/api/package.json server/api/package-lock.json ./
-RUN npm ci
+RUN npm ci --no-audit --no-fund --registry=https://registry.npmmirror.com
 COPY server/api/tsconfig.json ./
 COPY server/api/src ./src
 COPY server/api/db ./db
@@ -18,7 +18,7 @@ FROM node:22-bookworm-slim AS api-prod-deps
 
 WORKDIR /app
 COPY server/api/package.json server/api/package-lock.json ./
-RUN npm ci --omit=dev
+RUN npm ci --omit=dev --no-audit --no-fund --registry=https://registry.npmmirror.com
 
 FROM node:22-bookworm-slim AS api
 
