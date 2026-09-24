@@ -63,6 +63,14 @@ export default function AuthPage({ mode }: { mode: "login" | "register" }) {
                     </Link>
                 </p>
             </section>
+            <a
+                className="absolute bottom-4 text-xs text-stone-500 transition-colors hover:text-stone-300"
+                href="https://beian.miit.gov.cn/"
+                target="_blank"
+                rel="noreferrer"
+            >
+                辽ICP备2026022425号-1
+            </a>
         </main>
     );
 }
