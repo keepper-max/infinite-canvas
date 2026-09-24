@@ -5,6 +5,8 @@ description: Implemented changes that still need manual verification
 
 # Pending Tests
 
+- Alipay PC website payment: deploy with production payment disabled, then have an administrator confirm the order timeout, operator/support wording, and small-value acceptance amount. Once enabled, verify that the browser cannot alter provider, amount, or credits; agreement consent is required; and redirects only target Alipay's official HTTPS cashier. A successful async notification, user return-page query, and admin query must create exactly one purchased lot and one credit-ledger entry. Duplicate notifications, invalid signatures, wrong AppID/seller, amount mismatch, another user's order, timeout closure, and failed payments must never credit the account. Keys and raw notification bodies must not appear in browser responses, logs, or audit records.
+
 - Admin overview readability and task details: dark mode must keep the selected date preset label, metric notes, chart legend/date ticks, cost notes, and runtime notes readable. The task table below must follow the selected inclusive date range, paginate by 10, and show submission time, user/project, model/capability, generation and billing status, duration, and task ID.
 
 - Admin overview date filters: 今日、昨日、本周、本月和自定义日期应刷新同一组用户、活跃度、任务、积分、供应商成本、失败数、平均生成耗时和趋势数据；自定义范围首尾日期均包含在内，超过 366 天时应阻止提交。

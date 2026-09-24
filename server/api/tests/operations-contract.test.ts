@@ -22,7 +22,6 @@ test("operations contracts accept normalized interface payloads", () => {
   assert.equal(
     paymentOrderSchema.parse({
       planId: "creator",
-      provider: "future-provider",
       idempotencyKey: "order-key-001",
     }).planId,
     "creator",
@@ -39,9 +38,15 @@ test("operations contracts reject ambiguous or unsafe payloads", () => {
   assert.throws(() =>
     paymentOrderSchema.parse({
       planId: "creator",
-      provider: "x",
       idempotencyKey: "short",
       amount: 1,
+    }),
+  );
+  assert.throws(() =>
+    paymentOrderSchema.parse({
+      planId: "creator",
+      provider: "alipay",
+      idempotencyKey: "order-key-001",
     }),
   );
 });

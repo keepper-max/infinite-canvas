@@ -85,8 +85,11 @@ export function createApp(
 
   app.use("/api/*", async (context, next) => {
     context.header("cache-control", "no-store");
+    const isAlipayNotify =
+      context.req.method === "POST" && context.req.path === "/api/payments/notify";
     if (
       isUnsafeMethod(context.req.method) &&
+      !isAlipayNotify &&
       !isTrustedRequest(context.req.raw, config.trustedOrigins)
     ) {
       return apiError(
@@ -226,19 +229,51 @@ export function createApp(
 
   app.post("/api/payments/orders", async (context) => {
     const user = await requireUser(context.req.raw, repository, config);
-    await requireOperationsService(operationsService).createPaymentOrder(
+    const payment = await requireOperationsService(operationsService).createPaymentOrder(
       user.id,
       paymentOrderSchema.parse(await readJson(context.req.raw)),
     );
+    return context.json(success(context, payment), 201);
   });
 
-  app.post("/api/payments/callbacks/:provider", async (context) => {
-    await requireOperationsService(operationsService).receivePaymentCallback(
-      z
-        .string()
-        .regex(/^[a-z0-9_-]{1,50}$/i)
-        .parse(context.req.param("provider")),
-    );
+  app.get("/api/payments/orders", async (context) => {
+    const user = await requireUser(context.req.raw, repository, config);
+    return context.json(success(context, {
+      orders: await requireOperationsService(operationsService).listPaymentOrders(user.id),
+    }));
+  });
+
+  app.post("/api/payments/orders/:orderId/sync", async (context) => {
+    const user = await requireUser(context.req.raw, repository, config);
+    return context.json(success(context, {
+      order: await requireOperationsService(operationsService).syncPaymentOrder(
+        user.id,
+        uuidParam.parse(context.req.param("orderId")),
+      ),
+    }));
+  });
+
+  app.post("/api/payments/notify", async (context) => {
+    const contentLength = Number(context.req.header("content-length") || "0");
+    if (!Number.isFinite(contentLength) || contentLength > 65_536)
+      return context.text("failure", 200);
+    try {
+      const form = await context.req.raw.formData();
+      const fields: Record<string, string> = {};
+      for (const [key, value] of form.entries()) {
+        if (typeof value === "string") fields[key] = value;
+      }
+      const accepted = await requireOperationsService(
+        operationsService,
+      ).receivePaymentCallback(fields);
+      return context.text(accepted ? "success" : "failure", 200);
+    } catch (error) {
+      console.error("[payment-notify] processing failed", {
+        requestId: context.get("requestId"),
+        code: error instanceof DomainError ? error.code : "INTERNAL_ERROR",
+      });
+      return context.text("failure", 200);
+    }
   });
 
   app.get("/api/teams", async (context) => {
@@ -313,6 +348,30 @@ export function createApp(
         ).adminFailures(user.id),
       }),
     );
+  });
+
+  app.get("/api/admin/payments/orders", async (context) => {
+    const user = await requireUser(context.req.raw, repository, config);
+    return context.json(success(context, {
+      orders: await requireOperationsService(operationsService).adminPaymentOrders(user.id),
+    }));
+  });
+
+  app.post("/api/admin/payments/orders/:orderId/sync", async (context) => {
+    const user = await requireUser(context.req.raw, repository, config);
+    const orderId = uuidParam.parse(context.req.param("orderId"));
+    const service = requireOperationsService(operationsService);
+    const order = await service.adminSyncPaymentOrder(user.id, orderId);
+    await service.auditAdminAccess(
+      user.id,
+      "payment.order.sync",
+      "payment_order",
+      orderId,
+      context.get("requestId"),
+    );
+    return context.json(success(context, {
+      order,
+    }));
   });
 
   app.get("/api/admin/models", async (context) => {

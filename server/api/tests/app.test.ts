@@ -18,6 +18,7 @@ import {
   type Workspace,
 } from "../src/domain.js";
 import type { ApiConfig } from "../src/config.js";
+import type { OperationsServicePort } from "../src/operations-service.js";
 
 const config: ApiConfig = {
   port: 3002,
@@ -180,6 +181,37 @@ test("cross-site state changes are rejected", async () => {
   assert.equal(response.headers.get("x-content-type-options"), "nosniff");
   assert.equal(response.headers.get("x-frame-options"), "DENY");
   assert.match(response.headers.get("permissions-policy") || "", /camera=\(\)/);
+});
+
+test("Alipay notify bypasses browser Origin checks only at the exact signed callback route", async () => {
+  let received: Record<string, string> | undefined;
+  const operations = {
+    receivePaymentCallback: async (fields: Record<string, string>) => {
+      received = fields;
+      return true;
+    },
+  } as OperationsServicePort;
+  const app = createApp(
+    new MemoryRepository(),
+    config,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    operations,
+  );
+  const response = await app.request("http://local.test/api/payments/notify", {
+    method: "POST",
+    headers: {
+      "content-type": "application/x-www-form-urlencoded",
+      origin: "https://evil.example",
+      "sec-fetch-site": "cross-site",
+    },
+    body: "out_trade_no=order-1&sign=signed",
+  });
+  assert.equal(response.status, 200);
+  assert.equal(await response.text(), "success");
+  assert.deepEqual(received, { out_trade_no: "order-1", sign: "signed" });
 });
 
 test("canvas endpoints persist structure and expose revision conflicts", async () => {

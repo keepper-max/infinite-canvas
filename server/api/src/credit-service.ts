@@ -25,6 +25,15 @@ export type CreditGrantInput = {
   idempotencyKey: string;
 };
 
+export type PaymentCreditInput = {
+  userId: string;
+  orderId: string;
+  credits: bigint;
+  amountCents: number;
+  currency: "CNY";
+  providerOrderId: string;
+};
+
 export class CreditService {
   constructor(private readonly pool: Pool, private readonly adminEmails: string[] = []) {}
 
@@ -296,6 +305,69 @@ export class CreditService {
         lot: serializeLot(lot.rows[0]),
       };
     });
+  }
+
+  async creditPurchase(client: PoolClient, input: PaymentCreditInput) {
+    const account = await ensureAccount(client, input.userId, true);
+    await expireLots(client, account);
+    const current = await accountRow(client, input.userId, true);
+    const idempotencyKey = `payment:${input.orderId}`;
+    const existing = await client.query(
+      "select id,balance_after from credit_ledger where idempotency_key=$1",
+      [idempotencyKey],
+    );
+    if (existing.rows[0])
+      return {
+        ledgerId: String(existing.rows[0].id),
+        balance: String(existing.rows[0].balance_after),
+      };
+    const balance = BigInt(String(current.balance));
+    const debtCovered = balance < 0n ? min(input.credits, -balance) : 0n;
+    const lot = await client.query(
+      `insert into credit_lots(account_id,source,credits,remaining,reference_type,reference_id,expires_at,metadata)
+       values($1,'purchase',$2,$3,'payment_order',$4,now()+interval '12 months',$5) returning id`,
+      [
+        current.id,
+        input.credits.toString(),
+        (input.credits - debtCovered).toString(),
+        input.orderId,
+        JSON.stringify({
+          amountCents: input.amountCents,
+          currency: input.currency,
+          provider: "alipay",
+          providerOrderId: input.providerOrderId,
+          debtCovered: debtCovered.toString(),
+        }),
+      ],
+    );
+    const updated = await client.query(
+      "update credit_accounts set balance=balance+$2::bigint,updated_at=now() where id=$1 returning balance",
+      [current.id, input.credits.toString()],
+    );
+    const ledger = await client.query(
+      `insert into credit_ledger(account_id,entry_type,delta,balance_after,reference_type,reference_id,idempotency_key,metadata)
+       values($1,'grant',$2,$3,'credit_lot',$4,$5,$6) returning id`,
+      [
+        current.id,
+        input.credits.toString(),
+        String(updated.rows[0].balance),
+        lot.rows[0].id,
+        idempotencyKey,
+        JSON.stringify({
+          source: "purchase",
+          paymentOrderId: input.orderId,
+          amountCents: input.amountCents,
+          currency: input.currency,
+          provider: "alipay",
+          providerOrderId: input.providerOrderId,
+          debtCovered: debtCovered.toString(),
+        }),
+      ],
+    );
+    return {
+      ledgerId: String(ledger.rows[0].id),
+      balance: String(updated.rows[0].balance),
+    };
   }
 
   async settleUsage(jobId: string) {

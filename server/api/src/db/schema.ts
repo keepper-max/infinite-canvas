@@ -616,6 +616,7 @@ export const paymentOrders = pgTable("payment_orders", {
     onDelete: "restrict",
   }),
   amountCents: integer("amount_cents").default(0).notNull(),
+  credits: bigint("credits", { mode: "bigint" }).default(0n).notNull(),
   currency: text("currency").default("CNY").notNull(),
   provider: text("provider").notNull(),
   providerOrderId: text("provider_order_id"),
@@ -623,6 +624,11 @@ export const paymentOrders = pgTable("payment_orders", {
   idempotencyKey: text("idempotency_key").notNull(),
   metadata: jsonb("metadata").default({}).notNull(),
   paidAt: timestamp("paid_at", { withTimezone: true }),
+  expiresAt: timestamp("expires_at", { withTimezone: true }),
+  closedAt: timestamp("closed_at", { withTimezone: true }),
+  lastSyncedAt: timestamp("last_synced_at", { withTimezone: true }),
+  failureCode: text("failure_code"),
+  failureMessage: text("failure_message"),
   createdAt: timestamp("created_at", { withTimezone: true })
     .defaultNow()
     .notNull(),

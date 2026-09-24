@@ -11,10 +11,23 @@ export type ApiConfig = {
   runningHub: RunningHubConfig;
   runningHubGlobal: RunningHubConfig;
   operations: OperationsConfig;
+  payments: PaymentConfig;
   assetTrashRetentionDays: number;
 };
 
 export type OperationsConfig = { adminEmails: string[] };
+
+export type PaymentConfig = {
+  provider: "alipay" | "disabled";
+  enabled: boolean;
+  complianceApproved: boolean;
+  publicBaseUrl: string;
+  appId: string;
+  privateKey: string;
+  alipayPublicKey: string;
+  sellerId: string;
+  orderTimeoutMinutes?: number;
+};
 
 export type JobConfig = {
   redisUrl: string;
@@ -150,6 +163,7 @@ export function readConfig(env: NodeJS.ProcessEnv = process.env): ApiConfig {
       .map((value) => value.trim().toLowerCase())
       .filter(Boolean),
   };
+  const payments = readPaymentConfig(env);
   const assetTrashRetentionDays = readInteger(
     env.ASSET_TRASH_RETENTION_DAYS,
     14,
@@ -173,7 +187,42 @@ export function readConfig(env: NodeJS.ProcessEnv = process.env): ApiConfig {
     runningHub,
     runningHubGlobal,
     operations,
+    payments,
     assetTrashRetentionDays,
+  };
+}
+
+function readPaymentConfig(env: NodeJS.ProcessEnv): PaymentConfig {
+  const provider = env.PAYMENT_PROVIDER === "alipay" ? "alipay" : "disabled";
+  const enabled = env.PAYMENT_ENABLED === "true";
+  const complianceApproved = env.PAYMENT_COMPLIANCE_APPROVED === "true";
+  const publicBaseUrl = (env.PUBLIC_BASE_URL || "").trim().replace(/\/+$/, "");
+  const appId = (env.ALIPAY_APP_ID || "").trim();
+  const privateKey = (env.ALIPAY_APP_PRIVATE_KEY_PEM || "").replace(/\\n/g, "\n").trim();
+  const alipayPublicKey = (env.ALIPAY_PUBLIC_KEY_PEM || "").replace(/\\n/g, "\n").trim();
+  const sellerId = (env.ALIPAY_SELLER_ID || "").trim();
+  const timeoutText = (env.ALIPAY_ORDER_TIMEOUT_MINUTES || "").trim();
+  const orderTimeoutMinutes = timeoutText
+    ? readInteger(timeoutText, 0, 5, 1_440, "ALIPAY_ORDER_TIMEOUT_MINUTES")
+    : undefined;
+  if (enabled) {
+    if (provider !== "alipay" || !complianceApproved)
+      throw new Error("Enabled payments require the approved alipay provider");
+    if (!publicBaseUrl.startsWith("https://"))
+      throw new Error("PUBLIC_BASE_URL must use HTTPS when payments are enabled");
+    if (!appId || !privateKey || !alipayPublicKey || !sellerId || !orderTimeoutMinutes)
+      throw new Error("Enabled payments require complete Alipay configuration");
+  }
+  return {
+    provider,
+    enabled,
+    complianceApproved,
+    publicBaseUrl,
+    appId,
+    privateKey,
+    alipayPublicKey,
+    sellerId,
+    orderTimeoutMinutes,
   };
 }
 

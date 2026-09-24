@@ -15,7 +15,6 @@ export const smsVerifySchema = smsRequestSchema
 export const paymentOrderSchema = z
   .object({
     planId: z.string().min(1).max(100),
-    provider: z.string().min(1).max(50),
     idempotencyKey: z.string().min(8).max(200),
   })
   .strict();

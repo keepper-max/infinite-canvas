@@ -1,4 +1,4 @@
-import { ArrowLeft, Boxes, CircleDollarSign, ClipboardList, LayoutDashboard, ShieldCheck, Users } from "lucide-react";
+import { ArrowLeft, Boxes, CircleDollarSign, ClipboardList, CreditCard, LayoutDashboard, ShieldCheck, Users } from "lucide-react";
 import { Button, DatePicker, Drawer, Empty, Input, Modal, Select, Space, Spin, Switch, Table, Tag, Tooltip, message } from "antd";
 import dayjs, { type Dayjs } from "dayjs";
 import { useCallback, useEffect, useState } from "react";
@@ -12,6 +12,7 @@ import {
     getAdminJobs,
     getAdminModels,
     getAdminProviders,
+    getAdminPaymentOrders,
     getAdminOverview,
     getAdminProjectContent,
     getAdminCreditPricing,
@@ -28,10 +29,12 @@ import {
     setAdminModelEnabled,
     setAdminCreditPricing,
     setActiveAdminProvider,
+    syncAdminPaymentOrder,
     type AdminAuditLog,
     type AdminJob,
     type AdminModel,
     type AdminOverview,
+    type PaymentOrder,
     type AdminProvider,
     type AdminProviders,
     type AdminUsage,
@@ -47,6 +50,7 @@ const sections = [
     { key: "users", label: "账号", icon: Users },
     { key: "usage", label: "消耗", icon: CircleDollarSign },
     { key: "jobs", label: "任务", icon: ClipboardList },
+    { key: "payments", label: "充值", icon: CreditCard },
     { key: "models", label: "模型", icon: Boxes },
     { key: "audit", label: "审计", icon: ShieldCheck },
 ] as const;
@@ -152,6 +156,7 @@ function AdminSection({ section, modelProvider }: { section: Section; modelProvi
     if (section === "users") return <UsersPanel />;
     if (section === "usage") return <UsagePanel />;
     if (section === "jobs") return <JobsPanel />;
+    if (section === "payments") return <PaymentsPanel />;
     if (section === "models") return <ModelsPanel provider={modelProvider} />;
     return <AuditPanel />;
 }
@@ -1173,6 +1178,74 @@ function ModelsPanel({ provider }: { provider: AdminProvider["id"] }) {
     );
 }
 
+function PaymentsPanel() {
+    const [items, setItems] = useState<PaymentOrder[]>([]);
+    const [loading, setLoading] = useState(true);
+    const [syncingId, setSyncingId] = useState<string>();
+    const load = useCallback(async (signal?: AbortSignal) => {
+        setLoading(true);
+        try {
+            setItems(await getAdminPaymentOrders(signal));
+        } catch (error) {
+            if (!(error instanceof DOMException && error.name === "AbortError")) message.error(error instanceof Error ? error.message : "充值订单加载失败");
+        } finally {
+            setLoading(false);
+        }
+    }, []);
+    useEffect(() => {
+        const controller = new AbortController();
+        void load(controller.signal);
+        return () => controller.abort();
+    }, [load]);
+    const sync = async (orderId: string) => {
+        setSyncingId(orderId);
+        try {
+            const order = await syncAdminPaymentOrder(orderId);
+            setItems((current) => current.map((item) => item.id === order.id ? { ...item, ...order } : item));
+            message.success(order.status === "paid" ? "订单已到账" : "订单状态已同步");
+        } catch (error) {
+            message.error(error instanceof Error ? error.message : "订单同步失败");
+        } finally {
+            setSyncingId(undefined);
+        }
+    };
+    const paid = items.filter((item) => item.status === "paid");
+    const paidCents = paid.reduce((total, item) => total + item.amountCents, 0);
+    return (
+        <div className="space-y-5">
+            <div className="grid gap-4 md:grid-cols-3">
+                <Metric label="充值订单" value={formatCount(items.length)} note="最近 200 笔" />
+                <Metric label="成功到账" value={formatCount(paid.length)} note={`人民币 ${formatPaymentAmount(paidCents)}`} />
+                <Metric label="待确认" value={formatCount(items.filter((item) => item.status === "pending").length)} note="可手动向支付宝查单" />
+            </div>
+            <Panel title="支付宝充值订单" note="异步通知和主动查单共用同一幂等入账链路">
+                <Table<PaymentOrder>
+                    rowKey="id"
+                    loading={loading}
+                    dataSource={items}
+                    pagination={{ pageSize: 20, hideOnSinglePage: true }}
+                    columns={[
+                        { title: "创建时间", dataIndex: "createdAt", render: formatDate },
+                        { title: "用户", dataIndex: "userEmail", ellipsis: true },
+                        { title: "订单号", dataIndex: "id", render: copyable },
+                        { title: "金额", dataIndex: "amountCents", render: (value) => <b className="font-mono">¥{formatPaymentAmount(value)}</b> },
+                        { title: "积分", dataIndex: "credits", render: formatPoints },
+                        { title: "状态", dataIndex: "status", render: (value: PaymentOrder["status"]) => <PaymentStatusTag value={value} /> },
+                        { title: "到账时间", dataIndex: "paidAt", render: formatDate },
+                        { title: "异常", dataIndex: "failureMessage", ellipsis: true, render: (value) => value || "—" },
+                        { title: "操作", render: (_, item) => item.status === "pending" ? <Button size="small" loading={syncingId === item.id} onClick={() => void sync(item.id)}>同步</Button> : "—" },
+                    ]}
+                />
+            </Panel>
+        </div>
+    );
+}
+
+function PaymentStatusTag({ value }: { value: PaymentOrder["status"] }) {
+    const labels = { pending: "待支付", paid: "已到账", closed: "已关闭" } as const;
+    return <Tag bordered={false} color={value === "paid" ? "green" : value === "pending" ? "gold" : "default"}>{labels[value]}</Tag>;
+}
+
 function AuditPanel() {
     const [items, setItems] = useState<AdminAuditLog[]>([]);
     const [total, setTotal] = useState(0);
@@ -1261,6 +1334,9 @@ function OperationalSignal({ label, value, note, tone = "normal" }: { label: str
 }
 function formatCount(value: number) {
     return new Intl.NumberFormat("zh-CN").format(value || 0);
+}
+function formatPaymentAmount(cents: number) {
+    return (Number(cents || 0) / 100).toFixed(2);
 }
 function formatPercent(value: number) {
     return `${Math.max(0, value * 100).toFixed(1)}%`;

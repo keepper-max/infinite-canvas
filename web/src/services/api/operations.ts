@@ -29,6 +29,26 @@ export type CreditAccount = {
     pricing: CreditPricing;
     enabled: boolean;
 };
+export type BillingPlan = { id: string; name: string; credits: number; priceCents: number; currency: "CNY"; enabled: boolean; metadata: Record<string, unknown> };
+export type PaymentOrder = {
+    id: string;
+    userId: string;
+    userEmail?: string;
+    planId?: string;
+    amountCents: number;
+    credits: string;
+    currency: "CNY";
+    provider: "alipay";
+    status: "pending" | "paid" | "closed";
+    failureCode?: string;
+    failureMessage?: string;
+    paidAt?: string;
+    expiresAt?: string;
+    closedAt?: string;
+    lastSyncedAt?: string;
+    createdAt: string;
+    updatedAt: string;
+};
 export type ActivationCodeRecord = { id: string; codeHint: string; credits: string; expiresAt: string; createdAt: string; redeemedAt?: string; revokedAt?: string };
 export type Team = { id: string; name: string; ownerId: string; role: string; createdAt: string; updatedAt: string };
 export type TeamMember = { userId: string; email: string; role: "owner" | "admin" | "editor" | "viewer"; createdAt: string };
@@ -142,6 +162,27 @@ export function getCreditAccount(signal?: AbortSignal) {
 }
 export function redeemActivationCode(code: string) {
     return platformRequest<{ credits: string; balance: string }>("/api/billing/activation-codes/redeem", { method: "POST", body: JSON.stringify({ code }) });
+}
+export async function getBillingPlans(signal?: AbortSignal) {
+    return (await platformRequest<{ plans: BillingPlan[] }>("/api/billing/plans", { signal })).plans;
+}
+export async function getPaymentOrders(signal?: AbortSignal) {
+    return (await platformRequest<{ orders: PaymentOrder[] }>("/api/payments/orders", { signal })).orders;
+}
+export function createPaymentOrder(planId: string, idempotencyKey: string) {
+    return platformRequest<{ order: PaymentOrder; paymentUrl?: string }>("/api/payments/orders", {
+        method: "POST",
+        body: JSON.stringify({ planId, idempotencyKey }),
+    });
+}
+export async function syncPaymentOrder(orderId: string) {
+    return (await platformRequest<{ order: PaymentOrder }>(`/api/payments/orders/${encodeURIComponent(orderId)}/sync`, { method: "POST" })).order;
+}
+export async function getAdminPaymentOrders(signal?: AbortSignal) {
+    return (await platformRequest<{ orders: PaymentOrder[] }>("/api/admin/payments/orders", { signal })).orders;
+}
+export async function syncAdminPaymentOrder(orderId: string) {
+    return (await platformRequest<{ order: PaymentOrder }>(`/api/admin/payments/orders/${encodeURIComponent(orderId)}/sync`, { method: "POST" })).order;
 }
 export async function getAdminActivationCodes(signal?: AbortSignal) {
     return (await platformRequest<{ codes: ActivationCodeRecord[] }>("/api/admin/credits/activation-codes", { signal })).codes;

@@ -4,6 +4,7 @@ import type { OperationsConfig } from "./config.js";
 import type { BillingService } from "./billing-service.js";
 import type { CreditGrantInput, CreditService } from "./credit-service.js";
 import { DomainError } from "./domain.js";
+import type { PaymentService } from "./payment-service.js";
 import type {
   PaymentOrderInput,
   SmsRequestInput,
@@ -33,8 +34,12 @@ export interface OperationsServicePort {
   plans(): Promise<unknown[]>;
   requestSms(input: SmsRequestInput): Promise<never>;
   verifySms(input: SmsVerifyInput): Promise<never>;
-  createPaymentOrder(userId: string, input: PaymentOrderInput): Promise<never>;
-  receivePaymentCallback(provider: string): Promise<never>;
+  createPaymentOrder(userId: string, input: PaymentOrderInput): Promise<unknown>;
+  listPaymentOrders(userId: string): Promise<unknown>;
+  syncPaymentOrder(userId: string, orderId: string): Promise<unknown>;
+  receivePaymentCallback(fields: Record<string, string>): Promise<boolean>;
+  adminPaymentOrders(userId: string): Promise<unknown>;
+  adminSyncPaymentOrder(userId: string, orderId: string): Promise<unknown>;
   listTeams(userId: string): Promise<unknown[]>;
   createTeam(userId: string, input: TeamCreateInput): Promise<unknown>;
   listTeamMembers(teamId: string, userId: string): Promise<unknown[]>;
@@ -131,13 +136,14 @@ export class OperationsService implements OperationsServicePort {
     private readonly billing?: BillingService,
     private readonly credits?: CreditService,
     private readonly providerAvailability: Record<string, boolean> = {},
+    private readonly payments?: PaymentService,
   ) {}
 
   capabilities() {
     return {
       sms: false,
       credits: Boolean(this.credits),
-      payments: false,
+      payments: Boolean(this.payments?.enabled()),
       teams: true,
       admin: true,
     };
@@ -224,14 +230,32 @@ export class OperationsService implements OperationsServicePort {
   }
 
   async createPaymentOrder(
-    _userId: string,
-    _input: PaymentOrderInput,
-  ): Promise<never> {
-    throw disabled("PAYMENTS_DISABLED", "支付服务尚未启用");
+    userId: string,
+    input: PaymentOrderInput,
+  ) {
+    return this.requirePayments().createOrder(userId, input);
   }
 
-  async receivePaymentCallback(_provider: string): Promise<never> {
-    throw disabled("PAYMENTS_DISABLED", "支付服务尚未启用");
+  async listPaymentOrders(userId: string) {
+    return this.requirePayments().listOrders(userId);
+  }
+
+  async syncPaymentOrder(userId: string, orderId: string) {
+    return this.requirePayments().syncOrder(orderId, userId);
+  }
+
+  async receivePaymentCallback(fields: Record<string, string>) {
+    return this.requirePayments().receiveNotify(fields);
+  }
+
+  async adminPaymentOrders(userId: string) {
+    await this.requireAdmin(userId);
+    return this.requirePayments().listAdminOrders();
+  }
+
+  async adminSyncPaymentOrder(userId: string, orderId: string) {
+    await this.requireAdmin(userId);
+    return this.requirePayments().syncOrder(orderId);
   }
 
   async listTeams(userId: string) {
@@ -1110,6 +1134,12 @@ export class OperationsService implements OperationsServicePort {
     if (!this.credits)
       throw new DomainError("CREDITS_DISABLED", "积分服务尚未启用", 503);
     return this.credits;
+  }
+
+  private requirePayments() {
+    if (!this.payments)
+      throw new DomainError("PAYMENTS_DISABLED", "支付宝充值尚未开放", 503);
+    return this.payments;
   }
 }
 
