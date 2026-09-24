@@ -43,15 +43,6 @@ COPY --from=api-build /app/db ./db
 EXPOSE 3002
 CMD ["node", "dist/index.js"]
 
-# Existing global model proxy remains isolated from account and project APIs.
-FROM oven/bun:1.3.13 AS model-proxy
-
-WORKDIR /app
-COPY token360-proxy.mjs /app/server.mjs
-
-EXPOSE 3001
-CMD ["bun", "run", "/app/server.mjs"]
-
 # Build the existing Vite frontend. Keeping this after API targets avoids making
 # legacy Docker builders compile the frontend when only API tests are requested.
 FROM node:22-bookworm-slim AS web-build
@@ -72,3 +63,13 @@ COPY --from=web-build /app/web/dist /usr/share/nginx/html
 RUN chmod -R a+rX /usr/share/nginx/html
 
 EXPOSE 3000
+
+# Existing global model proxy remains isolated from account and project APIs.
+# Keep this final so legacy Docker builders do not pull Bun for API/Web targets.
+FROM oven/bun:1.3.13 AS model-proxy
+
+WORKDIR /app
+COPY token360-proxy.mjs /app/server.mjs
+
+EXPOSE 3001
+CMD ["bun", "run", "/app/server.mjs"]
