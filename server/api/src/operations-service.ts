@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import type { Pool, PoolClient } from "pg";
 
 import type { OperationsConfig } from "./config.js";
@@ -7,6 +8,7 @@ import { DomainError } from "./domain.js";
 import type { PaymentService } from "./payment-service.js";
 import type {
   PaymentOrderInput,
+  PaymentPlanInput,
   SmsRequestInput,
   SmsVerifyInput,
   TeamCreateInput,
@@ -40,6 +42,9 @@ export interface OperationsServicePort {
   receivePaymentCallback(fields: Record<string, string>): Promise<boolean>;
   adminPaymentOrders(userId: string): Promise<unknown>;
   adminSyncPaymentOrder(userId: string, orderId: string): Promise<unknown>;
+  adminPaymentPlans(userId: string): Promise<unknown[]>;
+  createAdminPaymentPlan(userId: string, input: PaymentPlanInput, requestId: string): Promise<unknown>;
+  updateAdminPaymentPlan(userId: string, planId: string, input: PaymentPlanInput, requestId: string): Promise<unknown>;
   listTeams(userId: string): Promise<unknown[]>;
   createTeam(userId: string, input: TeamCreateInput): Promise<unknown>;
   listTeamMembers(teamId: string, userId: string): Promise<unknown[]>;
@@ -213,15 +218,7 @@ export class OperationsService implements OperationsServicePort {
        order by price_cents,id`,
       [isAdmin],
     );
-    return result.rows.map((row) => ({
-      id: row.id,
-      name: row.name,
-      credits: Number(row.credits),
-      priceCents: row.price_cents,
-      currency: row.currency,
-      enabled: row.enabled,
-      metadata: row.metadata,
-    }));
+    return result.rows.map(serializeBillingPlan);
   }
 
   async requestSms(_input: SmsRequestInput): Promise<never> {
@@ -260,6 +257,76 @@ export class OperationsService implements OperationsServicePort {
   async adminSyncPaymentOrder(userId: string, orderId: string) {
     await this.requireAdmin(userId);
     return this.requirePayments().syncOrder(orderId);
+  }
+
+  async adminPaymentPlans(userId: string) {
+    await this.requireAdmin(userId);
+    const result = await this.pool.query(
+      `select id,name,credits,price_cents,currency,enabled,metadata,created_at,updated_at
+       from billing_plans
+       where metadata->>'paymentProvider'='alipay'
+         and coalesce(metadata->>'experimental','false')<>'true'
+       order by enabled desc,price_cents,id`,
+    );
+    return result.rows.map(serializeBillingPlan);
+  }
+
+  async createAdminPaymentPlan(
+    userId: string,
+    input: PaymentPlanInput,
+    requestId: string,
+  ) {
+    await this.requireAdmin(userId);
+    return inTransaction(this.pool, async (client) => {
+      const created = await client.query(
+        `insert into billing_plans(id,name,credits,price_cents,currency,enabled,metadata)
+         values($1,$2,$3,$4,'CNY',$5,$6)
+         returning id,name,credits,price_cents,currency,enabled,metadata,created_at,updated_at`,
+        [
+          `alipay-plan-${randomUUID()}`,
+          input.name,
+          input.credits,
+          input.priceCents,
+          input.enabled,
+          { paymentProvider: "alipay", managedBy: "admin" },
+        ],
+      );
+      const plan = serializeBillingPlan(created.rows[0]);
+      await audit(client, userId, "payment.plan.create", "billing_plan", String(plan.id), { next: plan }, requestId);
+      return plan;
+    });
+  }
+
+  async updateAdminPaymentPlan(
+    userId: string,
+    planId: string,
+    input: PaymentPlanInput,
+    requestId: string,
+  ) {
+    await this.requireAdmin(userId);
+    return inTransaction(this.pool, async (client) => {
+      const existing = await client.query(
+        `select id,name,credits,price_cents,currency,enabled,metadata,created_at,updated_at
+         from billing_plans where id=$1 for update`,
+        [planId],
+      );
+      const row = existing.rows[0];
+      if (!row || row.metadata?.paymentProvider !== "alipay")
+        throw new DomainError("PAYMENT_PLAN_NOT_FOUND", "充值套餐不存在", 404);
+      if (row.metadata?.experimental === true)
+        throw new DomainError("PAYMENT_PLAN_LOCKED", "验收套餐已锁定，不能修改", 409);
+      const previous = serializeBillingPlan(row);
+      const updated = await client.query(
+        `update billing_plans
+         set name=$2,credits=$3,price_cents=$4,enabled=$5,updated_at=now()
+         where id=$1
+         returning id,name,credits,price_cents,currency,enabled,metadata,created_at,updated_at`,
+        [planId, input.name, input.credits, input.priceCents, input.enabled],
+      );
+      const plan = serializeBillingPlan(updated.rows[0]);
+      await audit(client, userId, "payment.plan.update", "billing_plan", planId, { previous, next: plan }, requestId);
+      return plan;
+    });
   }
 
   async listTeams(userId: string) {
@@ -1158,6 +1225,19 @@ function serializeAccount(row: Record<string, unknown>) {
     userId: row.user_id,
     balance: Number(row.balance),
     reserved: Number(row.reserved),
+    createdAt: iso(row.created_at),
+    updatedAt: iso(row.updated_at),
+  };
+}
+function serializeBillingPlan(row: Record<string, unknown>) {
+  return {
+    id: row.id,
+    name: row.name,
+    credits: Number(row.credits),
+    priceCents: Number(row.price_cents),
+    currency: row.currency,
+    enabled: Boolean(row.enabled),
+    metadata: row.metadata || {},
     createdAt: iso(row.created_at),
     updatedAt: iso(row.updated_at),
   };

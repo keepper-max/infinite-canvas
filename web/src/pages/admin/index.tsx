@@ -1,5 +1,5 @@
 import { ArrowLeft, Boxes, CircleDollarSign, ClipboardList, CreditCard, LayoutDashboard, ShieldCheck, Users } from "lucide-react";
-import { Button, DatePicker, Drawer, Empty, Input, Modal, Select, Space, Spin, Switch, Table, Tag, Tooltip, message } from "antd";
+import { Button, DatePicker, Drawer, Empty, Input, InputNumber, Modal, Select, Space, Spin, Switch, Table, Tag, Tooltip, message } from "antd";
 import dayjs, { type Dayjs } from "dayjs";
 import { useCallback, useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
@@ -13,6 +13,7 @@ import {
     getAdminModels,
     getAdminProviders,
     getAdminPaymentOrders,
+    getAdminPaymentPlans,
     getAdminOverview,
     getAdminProjectContent,
     getAdminCreditPricing,
@@ -30,11 +31,15 @@ import {
     setAdminCreditPricing,
     setActiveAdminProvider,
     syncAdminPaymentOrder,
+    createAdminPaymentPlan,
+    updateAdminPaymentPlan,
     type AdminAuditLog,
     type AdminJob,
     type AdminModel,
     type AdminOverview,
     type PaymentOrder,
+    type BillingPlan,
+    type PaymentPlanInput,
     type AdminProvider,
     type AdminProviders,
     type AdminUsage,
@@ -1180,14 +1185,25 @@ function ModelsPanel({ provider }: { provider: AdminProvider["id"] }) {
 
 function PaymentsPanel() {
     const [items, setItems] = useState<PaymentOrder[]>([]);
+    const [plans, setPlans] = useState<BillingPlan[]>([]);
     const [loading, setLoading] = useState(true);
     const [syncingId, setSyncingId] = useState<string>();
+    const [updatingPlanId, setUpdatingPlanId] = useState<string>();
+    const [editingPlan, setEditingPlan] = useState<BillingPlan>();
+    const [planEditorOpen, setPlanEditorOpen] = useState(false);
+    const [savingPlan, setSavingPlan] = useState(false);
+    const [planDraft, setPlanDraft] = useState({ name: "", priceYuan: "", credits: 1000 });
     const load = useCallback(async (signal?: AbortSignal) => {
         setLoading(true);
         try {
-            setItems(await getAdminPaymentOrders(signal));
+            const [nextItems, nextPlans] = await Promise.all([
+                getAdminPaymentOrders(signal),
+                getAdminPaymentPlans(signal),
+            ]);
+            setItems(nextItems);
+            setPlans(nextPlans);
         } catch (error) {
-            if (!(error instanceof DOMException && error.name === "AbortError")) message.error(error instanceof Error ? error.message : "充值订单加载失败");
+            if (!(error instanceof DOMException && error.name === "AbortError")) message.error(error instanceof Error ? error.message : "充值数据加载失败");
         } finally {
             setLoading(false);
         }
@@ -1209,6 +1225,67 @@ function PaymentsPanel() {
             setSyncingId(undefined);
         }
     };
+    const openPlanEditor = (plan?: BillingPlan) => {
+        setEditingPlan(plan);
+        setPlanDraft({
+            name: plan?.name || "",
+            priceYuan: plan ? formatPaymentAmount(plan.priceCents) : "",
+            credits: plan?.credits || 1000,
+        });
+        setPlanEditorOpen(true);
+    };
+    const savePlan = async () => {
+        const priceCents = parseYuanToCents(planDraft.priceYuan);
+        if (!planDraft.name.trim()) return void message.warning("请填写套餐名称");
+        if (!priceCents) return void message.warning("请输入大于 0、最多两位小数的价格");
+        if (!Number.isInteger(planDraft.credits) || planDraft.credits <= 0) return void message.warning("请输入有效积分数量");
+        const input: PaymentPlanInput = {
+            name: planDraft.name.trim(),
+            priceCents,
+            credits: planDraft.credits,
+            enabled: editingPlan?.enabled || false,
+        };
+        setSavingPlan(true);
+        try {
+            const saved = editingPlan
+                ? await updateAdminPaymentPlan(editingPlan.id, input)
+                : await createAdminPaymentPlan(input);
+            setPlans((current) => editingPlan
+                ? current.map((item) => item.id === saved.id ? saved : item)
+                : [...current, saved]);
+            setPlanEditorOpen(false);
+            message.success(editingPlan ? "套餐调整已保存" : "草稿套餐已创建");
+        } catch (error) {
+            message.error(error instanceof Error ? error.message : "套餐保存失败");
+        } finally {
+            setSavingPlan(false);
+        }
+    };
+    const setPlanPublished = (plan: BillingPlan, enabled: boolean) => {
+        Modal.confirm({
+            title: enabled ? "发布这个充值套餐？" : "下架这个充值套餐？",
+            content: enabled ? "发布后普通用户可立即看到并购买，历史订单不会改变。" : "下架后不能创建新订单，已创建订单和历史到账记录不受影响。",
+            okText: enabled ? "确认发布" : "确认下架",
+            cancelText: "取消",
+            onOk: async () => {
+                setUpdatingPlanId(plan.id);
+                try {
+                    const saved = await updateAdminPaymentPlan(plan.id, {
+                        name: plan.name,
+                        credits: plan.credits,
+                        priceCents: plan.priceCents,
+                        enabled,
+                    });
+                    setPlans((current) => current.map((item) => item.id === saved.id ? saved : item));
+                    message.success(enabled ? "套餐已发布" : "套餐已下架");
+                } catch (error) {
+                    message.error(error instanceof Error ? error.message : "套餐状态更新失败");
+                } finally {
+                    setUpdatingPlanId(undefined);
+                }
+            },
+        });
+    };
     const paid = items.filter((item) => item.status === "paid");
     const paidCents = paid.reduce((total, item) => total + item.amountCents, 0);
     return (
@@ -1218,6 +1295,42 @@ function PaymentsPanel() {
                 <Metric label="成功到账" value={formatCount(paid.length)} note={`人民币 ${formatPaymentAmount(paidCents)}`} />
                 <Metric label="待确认" value={formatCount(items.filter((item) => item.status === "pending").length)} note="可手动向支付宝查单" />
             </div>
+            <Panel
+                title="充值套餐"
+                note="调价仅影响新订单；历史订单保留创建时的金额与积分快照"
+                actions={<Button type="primary" onClick={() => openPlanEditor()}>新建套餐</Button>}
+            >
+                <Table<BillingPlan>
+                    rowKey="id"
+                    loading={loading}
+                    dataSource={plans}
+                    pagination={false}
+                    columns={[
+                        { title: "套餐", dataIndex: "name", render: (value, plan) => <div><b>{value}</b><p className="mt-1 font-mono text-[11px] text-stone-500">{plan.id}</p></div> },
+                        { title: "售价", dataIndex: "priceCents", render: (value) => <b className="font-mono">¥{formatPaymentAmount(value)}</b> },
+                        { title: "到账积分", dataIndex: "credits", render: formatPoints },
+                        { title: "状态", dataIndex: "enabled", render: (value) => <Tag bordered={false} color={value ? "green" : "default"}>{value ? "已发布" : "草稿 / 已下架"}</Tag> },
+                        { title: "更新时间", dataIndex: "updatedAt", render: formatDate },
+                        {
+                            title: "操作",
+                            render: (_, plan) => (
+                                <Space>
+                                    <Button size="small" onClick={() => openPlanEditor(plan)}>调价</Button>
+                                    <Button
+                                        size="small"
+                                        loading={updatingPlanId === plan.id}
+                                        danger={plan.enabled}
+                                        type={plan.enabled ? "default" : "primary"}
+                                        onClick={() => setPlanPublished(plan, !plan.enabled)}
+                                    >
+                                        {plan.enabled ? "下架" : "发布"}
+                                    </Button>
+                                </Space>
+                            ),
+                        },
+                    ]}
+                />
+            </Panel>
             <Panel title="支付宝充值订单" note="异步通知和主动查单共用同一幂等入账链路">
                 <Table<PaymentOrder>
                     rowKey="id"
@@ -1237,6 +1350,36 @@ function PaymentsPanel() {
                     ]}
                 />
             </Panel>
+            <Modal
+                open={planEditorOpen}
+                title={editingPlan ? "调整充值套餐" : "新建充值套餐"}
+                okText={editingPlan ? "保存调整" : "保存草稿"}
+                cancelText="取消"
+                confirmLoading={savingPlan}
+                onOk={() => void savePlan()}
+                onCancel={() => !savingPlan && setPlanEditorOpen(false)}
+                destroyOnHidden
+            >
+                <div className="space-y-4 py-3">
+                    <label className="block">
+                        <span className="mb-1.5 block text-sm text-stone-500">套餐名称</span>
+                        <Input maxLength={60} value={planDraft.name} placeholder="例如：1000 积分套餐" onChange={(event) => setPlanDraft((current) => ({ ...current, name: event.target.value }))} />
+                    </label>
+                    <div className="grid grid-cols-2 gap-3">
+                        <label className="block">
+                            <span className="mb-1.5 block text-sm text-stone-500">售价</span>
+                            <Input value={planDraft.priceYuan} prefix="¥" suffix="人民币" placeholder="9.90" onChange={(event) => setPlanDraft((current) => ({ ...current, priceYuan: event.target.value.trim() }))} />
+                        </label>
+                        <label className="block">
+                            <span className="mb-1.5 block text-sm text-stone-500">到账积分</span>
+                            <InputNumber className="w-full" min={1} max={1_000_000_000} precision={0} value={planDraft.credits} onChange={(value) => setPlanDraft((current) => ({ ...current, credits: value || 0 }))} />
+                        </label>
+                    </div>
+                    <p className="rounded-lg border border-amber-500/20 bg-amber-500/[0.06] px-3 py-2 text-xs text-amber-600 dark:text-amber-400">
+                        {editingPlan?.enabled ? "该套餐已发布，保存后新订单立即使用新价格。" : "保存后仍是草稿，需要在列表中点击“发布”才会对用户显示。"}
+                    </p>
+                </div>
+            </Modal>
         </div>
     );
 }
@@ -1337,6 +1480,13 @@ function formatCount(value: number) {
 }
 function formatPaymentAmount(cents: number) {
     return (Number(cents || 0) / 100).toFixed(2);
+}
+function parseYuanToCents(value: string) {
+    const normalized = value.trim();
+    if (!/^\d{1,7}(?:\.\d{1,2})?$/.test(normalized)) return 0;
+    const [yuan, fraction = ""] = normalized.split(".");
+    const cents = Number(yuan) * 100 + Number(fraction.padEnd(2, "0"));
+    return cents <= 100_000_000 ? cents : 0;
 }
 function formatPercent(value: number) {
     return `${Math.max(0, value * 100).toFixed(1)}%`;

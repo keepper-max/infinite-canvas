@@ -5,6 +5,8 @@ description: Implemented changes that still need manual verification
 
 # Pending Tests
 
+- 支付宝正式套餐与后台发布：普通用户充值页只应显示 9.9 元/1000 积分和 99 元/10000 积分，0.01 元验收套餐不再出现且不能下单。超级管理员可在充值后台新建草稿、调整名称/价格/积分、发布和下架；发布后新订单立即使用新配置，下架后禁止创建新订单。历史订单的金额、到账积分和已入账流水不得随调价改变，每次后台操作均应产生审计记录。
+
 - Alipay PC website payment: deploy with production payment disabled, then have an administrator confirm the order timeout, operator/support wording, and small-value acceptance amount. Once enabled, verify that the browser cannot alter provider, amount, or credits; agreement consent is required; and redirects only target Alipay's official HTTPS cashier. A successful async notification, user return-page query, and admin query must create exactly one purchased lot and one credit-ledger entry. Duplicate notifications, invalid signatures, wrong AppID/seller, amount mismatch, another user's order, timeout closure, and failed payments must never credit the account. Keys and raw notification bodies must not appear in browser responses, logs, or audit records.
 
 - Admin overview readability and task details: dark mode must keep the selected date preset label, metric notes, chart legend/date ticks, cost notes, and runtime notes readable. The task table below must follow the selected inclusive date range, paginate by 10, and show submission time, user/project, model/capability, generation and billing status, duration, and task ID.

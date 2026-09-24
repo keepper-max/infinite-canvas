@@ -33,6 +33,7 @@ import type { JobService } from "./job-service.js";
 import type { ModelGateway } from "./model-gateway.js";
 import {
   paymentOrderSchema,
+  paymentPlanInputSchema,
   smsRequestSchema,
   smsVerifySchema,
   teamCreateSchema,
@@ -356,6 +357,35 @@ export function createApp(
     return context.json(success(context, {
       orders: await requireOperationsService(operationsService).adminPaymentOrders(user.id),
     }));
+  });
+
+  app.get("/api/admin/payments/plans", async (context) => {
+    const user = await requireUser(context.req.raw, repository, config);
+    return context.json(success(context, {
+      plans: await requireOperationsService(operationsService).adminPaymentPlans(user.id),
+    }));
+  });
+
+  app.post("/api/admin/payments/plans", async (context) => {
+    const user = await requireUser(context.req.raw, repository, config);
+    const plan = await requireOperationsService(operationsService).createAdminPaymentPlan(
+      user.id,
+      paymentPlanInputSchema.parse(await readJson(context.req.raw)),
+      context.get("requestId"),
+    );
+    return context.json(success(context, { plan }), 201);
+  });
+
+  app.put("/api/admin/payments/plans/:planId", async (context) => {
+    const user = await requireUser(context.req.raw, repository, config);
+    const planId = z.string().trim().min(1).max(100).parse(context.req.param("planId"));
+    const plan = await requireOperationsService(operationsService).updateAdminPaymentPlan(
+      user.id,
+      planId,
+      paymentPlanInputSchema.parse(await readJson(context.req.raw)),
+      context.get("requestId"),
+    );
+    return context.json(success(context, { plan }));
   });
 
   app.post("/api/admin/payments/orders/:orderId/sync", async (context) => {

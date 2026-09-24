@@ -29,7 +29,8 @@ export type CreditAccount = {
     pricing: CreditPricing;
     enabled: boolean;
 };
-export type BillingPlan = { id: string; name: string; credits: number; priceCents: number; currency: "CNY"; enabled: boolean; metadata: Record<string, unknown> };
+export type BillingPlan = { id: string; name: string; credits: number; priceCents: number; currency: "CNY"; enabled: boolean; metadata: Record<string, unknown>; createdAt?: string; updatedAt?: string };
+export type PaymentPlanInput = Pick<BillingPlan, "name" | "credits" | "priceCents" | "enabled">;
 export type PaymentOrder = {
     id: string;
     userId: string;
@@ -183,6 +184,15 @@ export async function getAdminPaymentOrders(signal?: AbortSignal) {
 }
 export async function syncAdminPaymentOrder(orderId: string) {
     return (await platformRequest<{ order: PaymentOrder }>(`/api/admin/payments/orders/${encodeURIComponent(orderId)}/sync`, { method: "POST" })).order;
+}
+export async function getAdminPaymentPlans(signal?: AbortSignal) {
+    return (await platformRequest<{ plans: BillingPlan[] }>("/api/admin/payments/plans", { signal })).plans;
+}
+export async function createAdminPaymentPlan(input: PaymentPlanInput) {
+    return (await platformRequest<{ plan: BillingPlan }>("/api/admin/payments/plans", { method: "POST", body: JSON.stringify(input) })).plan;
+}
+export async function updateAdminPaymentPlan(planId: string, input: PaymentPlanInput) {
+    return (await platformRequest<{ plan: BillingPlan }>(`/api/admin/payments/plans/${encodeURIComponent(planId)}`, { method: "PUT", body: JSON.stringify(input) })).plan;
 }
 export async function getAdminActivationCodes(signal?: AbortSignal) {
     return (await platformRequest<{ codes: ActivationCodeRecord[] }>("/api/admin/credits/activation-codes", { signal })).codes;

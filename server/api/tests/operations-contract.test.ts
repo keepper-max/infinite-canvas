@@ -3,6 +3,7 @@ import test from "node:test";
 
 import {
   paymentOrderSchema,
+  paymentPlanInputSchema,
   smsRequestSchema,
   teamCreateSchema,
   teamMemberSchema,
@@ -26,11 +27,18 @@ test("operations contracts accept normalized interface payloads", () => {
     }).planId,
     "creator",
   );
+  assert.deepEqual(
+    paymentPlanInputSchema.parse({ name: "  1000 积分套餐  ", credits: 1000, priceCents: 990, enabled: false }),
+    { name: "1000 积分套餐", credits: 1000, priceCents: 990, enabled: false },
+  );
 });
 
 test("operations contracts reject ambiguous or unsafe payloads", () => {
   assert.throws(() =>
     smsRequestSchema.parse({ phone: "133", purpose: "login" }),
+  );
+  assert.throws(() =>
+    paymentPlanInputSchema.parse({ name: "无效套餐", credits: 0, priceCents: 1, enabled: true }),
   );
   assert.throws(() =>
     teamMemberSchema.parse({ email: "bad-email", role: "owner" }),

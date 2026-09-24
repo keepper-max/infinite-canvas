@@ -18,6 +18,14 @@ export const paymentOrderSchema = z
     idempotencyKey: z.string().min(8).max(200),
   })
   .strict();
+export const paymentPlanInputSchema = z
+  .object({
+    name: z.string().trim().min(1).max(60),
+    credits: z.number().int().positive().max(1_000_000_000),
+    priceCents: z.number().int().positive().max(100_000_000),
+    enabled: z.boolean(),
+  })
+  .strict();
 export const teamCreateSchema = z
   .object({ name: z.string().trim().min(1).max(100) })
   .strict();
@@ -34,5 +42,6 @@ export const teamProjectSchema = z
 export type SmsRequestInput = z.infer<typeof smsRequestSchema>;
 export type SmsVerifyInput = z.infer<typeof smsVerifySchema>;
 export type PaymentOrderInput = z.infer<typeof paymentOrderSchema>;
+export type PaymentPlanInput = z.infer<typeof paymentPlanInputSchema>;
 export type TeamCreateInput = z.infer<typeof teamCreateSchema>;
 export type TeamMemberInput = z.infer<typeof teamMemberSchema>;
