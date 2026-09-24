@@ -121,7 +121,7 @@ export class PaymentService {
       destination.protocol !== "https:" ||
       destination.hostname !== "openapi.alipay.com"
     )
-      throw new DomainError("PAYMENT_URL_INVALID", "支付宝支付地址异常", 502);
+      throw new DomainError("PAYMENT_URL_INVALID", "支付宝支付地址异常", 503, true);
     return { order: serializeOrder(order), paymentUrl };
   }
 
@@ -169,7 +169,7 @@ export class PaymentService {
       return serializeOrder(await this.order(orderId));
     }
     if (String(result.out_trade_no || "") !== orderId)
-      throw new DomainError("PAYMENT_QUERY_MISMATCH", "支付宝订单号校验失败", 502);
+      throw new DomainError("PAYMENT_QUERY_MISMATCH", "支付宝订单号校验失败", 503, true);
     const status = String(result.trade_status || "");
     if (["TRADE_SUCCESS", "TRADE_FINISHED"].includes(status)) {
       const applied = await this.applyPaid(
