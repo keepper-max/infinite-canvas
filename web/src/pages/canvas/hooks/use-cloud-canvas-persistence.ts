@@ -8,7 +8,7 @@ export type CanvasSyncStatus = "loading" | "synced" | "dirty" | "saving" | "unsy
 
 const AUTO_SAVE_INTERVAL_MS = 10 * 60 * 1000;
 
-export function useCloudCanvasPersistence(projectId: string, applyCanvas: (canvas: CanvasDraft) => Promise<void> | void) {
+export function useCloudCanvasPersistence(projectId: string, applyCanvas: (canvas: CanvasDraft) => Promise<void> | void, onCachedCanvasApplied?: () => void) {
     const [status, setStatus] = useState<CanvasSyncStatus>("loading");
     const [migrationDraft, setMigrationDraft] = useState<CanvasDraft | null>(null);
     const [migrationReport, setMigrationReport] = useState<CanvasMigrationReport | null>(null);
@@ -67,8 +67,19 @@ export function useCloudCanvasPersistence(projectId: string, applyCanvas: (canva
         async (legacyDraft: CanvasDraft, legacyView: CanvasDraft = legacyDraft) => {
             readyRef.current = false;
             setStatus("loading");
+            let appliedCachedFingerprint = "";
             try {
                 const cached = await getCanvasCloudCache(projectId);
+                if (!cached.pendingDraft && cached.lastSuccessful) {
+                    const cachedFingerprint = fingerprint(cached.lastSuccessful);
+                    if (cachedFingerprint === fingerprint(legacyDraft)) {
+                        revisionRef.current = cached.lastSuccessful.revision;
+                        lastFingerprintRef.current = cachedFingerprint;
+                        await applyCanvas(legacyView);
+                        appliedCachedFingerprint = cachedFingerprint;
+                        onCachedCanvasApplied?.();
+                    }
+                }
                 const remote = await getCanvas(projectId);
                 revisionRef.current = remote.revision;
                 if (cached.pendingDraft) {
@@ -90,6 +101,14 @@ export function useCloudCanvasPersistence(projectId: string, applyCanvas: (canva
                     setStatus("unsynced");
                     return;
                 }
+                const remoteFingerprint = fingerprint(remote);
+                if (appliedCachedFingerprint && appliedCachedFingerprint === remoteFingerprint) {
+                    lastFingerprintRef.current = remoteFingerprint;
+                    await recordSuccessfulCanvas(projectId, remote);
+                    readyRef.current = true;
+                    if (mountedRef.current) setStatus("synced");
+                    return;
+                }
                 await applyRemote(remote);
             } catch (error) {
                 if (error instanceof DOMException && error.name === "AbortError") throw error;
@@ -98,12 +117,12 @@ export function useCloudCanvasPersistence(projectId: string, applyCanvas: (canva
                 const fallback = cached.pendingDraft || cached.lastSuccessful || legacyView;
                 if (cached.lastSuccessful) revisionRef.current = cached.lastSuccessful.revision;
                 lastFingerprintRef.current = fingerprint(cached.pendingDraft || cached.lastSuccessful || legacyDraft);
-                await applyCanvas(fallback);
+                if (!appliedCachedFingerprint || appliedCachedFingerprint !== fingerprint(fallback)) await applyCanvas(fallback);
                 readyRef.current = true;
                 setStatus("unsynced");
             }
         },
-        [applyCanvas, applyRemote, projectId],
+        [applyCanvas, applyRemote, onCachedCanvasApplied, projectId],
     );
 
     const flush = useCallback(async () => {

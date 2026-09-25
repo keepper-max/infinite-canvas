@@ -376,7 +376,8 @@ function InfiniteCanvasPage({ projectId }: { projectId: string }) {
         },
         [projectId, updateProject],
     );
-    const canvasPersistence = useCloudCanvasPersistence(projectId, applyPersistedCanvas);
+    const revealCachedCanvas = useCallback(() => setProjectLoaded(true), []);
+    const canvasPersistence = useCloudCanvasPersistence(projectId, applyPersistedCanvas, revealCachedCanvas);
     const navigationBlocker = useBlocker(canvasPersistence.hasUnsavedChanges);
     const [savingBeforeLeave, setSavingBeforeLeave] = useState(false);
     const [logoutPending, setLogoutPending] = useState(false);

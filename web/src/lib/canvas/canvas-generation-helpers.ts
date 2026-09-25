@@ -121,11 +121,12 @@ export function prepareCanvasMediaPlaceholders(nodes: CanvasNodeData[]) {
         let imagesChanged = false;
         const images = metadata.images?.map((image) => {
             if (!image.assetVersionId) return image;
+            if (image.content || image.thumbnailUrl) return image;
             imagesChanged = true;
             return { ...image, content: "", thumbnailUrl: undefined };
         });
         const primaryImage = metadata.images?.find((image) => image.id === (metadata.primaryImageId || metadata.images?.[0]?.id));
-        const clearPrimaryContent = Boolean(metadata.assetVersionId || primaryImage?.assetVersionId);
+        const clearPrimaryContent = Boolean((metadata.assetVersionId || primaryImage?.assetVersionId) && !metadata.content && !metadata.thumbnailUrl);
         if (!clearPrimaryContent && !imagesChanged) return node;
         return {
             ...node,
@@ -139,13 +140,13 @@ export function prepareCanvasMediaPlaceholders(nodes: CanvasNodeData[]) {
 }
 
 async function hydrateGeneratedImageUrl(content = "", storageKey?: string, signedUrl?: string) {
-    const fallback = signedUrl || content;
-    return storageKey ? resolveImageUrl(storageKey, fallback) : fallback;
+    if (signedUrl) return signedUrl;
+    return storageKey ? resolveImageUrl(storageKey, content) : content;
 }
 
 async function hydrateGeneratedMediaUrl(content = "", storageKey?: string, signedUrl?: string) {
-    const fallback = signedUrl || content;
-    return storageKey ? resolveMediaUrl(storageKey, fallback) : fallback;
+    if (signedUrl) return signedUrl;
+    return storageKey ? resolveMediaUrl(storageKey, content) : content;
 }
 
 export async function hydrateAssistantImages(sessions: CanvasAssistantSession[]) {
