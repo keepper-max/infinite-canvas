@@ -1566,7 +1566,7 @@ function PaymentsPanel() {
                         { title: "订单号", dataIndex: "id", render: copyable },
                         { title: "金额", dataIndex: "amountCents", render: (value) => <b className="font-mono">¥{formatPaymentAmount(value)}</b> },
                         { title: "积分", dataIndex: "credits", render: formatPoints },
-                        { title: "状态", dataIndex: "status", render: (value: PaymentOrder["status"]) => <PaymentStatusTag value={value} /> },
+                        { title: "状态", dataIndex: "status", render: (_, order) => <PaymentStatusTag order={order} /> },
                         { title: "到账时间", dataIndex: "paidAt", render: formatDate },
                         { title: "异常", dataIndex: "failureMessage", ellipsis: true, render: (value) => value || "—" },
                         { title: "操作", render: (_, item) => item.status === "pending" ? <Button size="small" loading={syncingId === item.id} onClick={() => void sync(item.id)}>同步</Button> : "—" },
@@ -1607,9 +1607,11 @@ function PaymentsPanel() {
     );
 }
 
-function PaymentStatusTag({ value }: { value: PaymentOrder["status"] }) {
+function PaymentStatusTag({ order }: { order: PaymentOrder }) {
+    const value = order.status;
     const labels = { pending: "待支付", paid: "已到账", closed: "已关闭" } as const;
-    return <Tag bordered={false} color={value === "paid" ? "green" : value === "pending" ? "gold" : "default"}>{labels[value]}</Tag>;
+    const label = value === "closed" && order.failureCode === "PAYMENT_EXPIRED" ? "未支付已过期" : labels[value];
+    return <Tag bordered={false} color={value === "paid" ? "green" : value === "pending" ? "gold" : "default"}>{label}</Tag>;
 }
 
 function AuditPanel() {

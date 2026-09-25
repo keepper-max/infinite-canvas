@@ -139,6 +139,7 @@ export class PaymentService {
   }
 
   async listOrders(userId: string) {
+    await this.closeExpiredOrders(userId);
     const result = await this.pool.query(
       `select * from payment_orders where user_id=$1 and provider='alipay'
        order by created_at desc limit 50`,
@@ -148,6 +149,7 @@ export class PaymentService {
   }
 
   async listAdminOrders() {
+    await this.closeExpiredOrders();
     const result = await this.pool.query(
       `select po.*,u.email from payment_orders po join users u on u.id=po.user_id
        where po.provider='alipay' order by po.created_at desc limit 200`,
@@ -328,11 +330,23 @@ export class PaymentService {
     if (String(result.code || "") === "10000" || missing)
       await this.pool.query(
         `update payment_orders set status='closed',closed_at=coalesce(closed_at,now()),
-         last_synced_at=now(),failure_code=null,failure_message=null,updated_at=now() where id=$1 and status<>'paid'`,
+         last_synced_at=now(),failure_code='PAYMENT_EXPIRED',
+         failure_message=null,updated_at=now() where id=$1 and status<>'paid'`,
         [order.id],
       );
     else await this.markSyncFailure(String(order.id), result);
     return serializeOrder(await this.order(String(order.id)));
+  }
+
+  private async closeExpiredOrders(userId?: string) {
+    const userScope = userId ? " and user_id=$1" : "";
+    await this.pool.query(
+      `update payment_orders set status='closed',closed_at=coalesce(closed_at,now()),
+       failure_code='PAYMENT_EXPIRED',failure_message=null,updated_at=now()
+       where provider='alipay' and status='pending' and expires_at is not null
+       and expires_at<=now()${userScope}`,
+      userId ? [userId] : [],
+    );
   }
 
   private async markSyncFailure(orderId: string, result: Record<string, unknown>) {

@@ -204,7 +204,11 @@ function PaymentOrders({ orders }: { orders: PaymentOrder[] }) {
                 { title: "时间", dataIndex: "createdAt", render: formatDateTime },
                 { title: "金额", dataIndex: "amountCents", render: (value) => `¥${formatCny(value)}` },
                 { title: "积分", dataIndex: "credits", render: (value) => formatPoints(value) },
-                { title: "状态", dataIndex: "status", render: (value: PaymentOrder["status"]) => <Tag color={orderStatus[value].color}>{orderStatus[value].label}</Tag> },
+                { title: "状态", dataIndex: "status", render: (_, order) => {
+                    const status = orderStatus[order.status];
+                    const label = order.status === "closed" && order.failureCode === "PAYMENT_EXPIRED" ? "未支付已过期" : status.label;
+                    return <Tag color={status.color}>{label}</Tag>;
+                } },
                 { title: "订单号", dataIndex: "id", ellipsis: true, render: (value) => <span className="font-mono text-xs" title={value}>{shortId(value)}</span> },
             ]} />
         </section>

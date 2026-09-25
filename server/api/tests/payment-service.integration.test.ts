@@ -181,15 +181,25 @@ test("Alipay order creation and settlement credit exactly once", { skip: !databa
       (Number(opened.totalUserCredits) / 120).toFixed(8),
     );
     assert.equal(await adminOnlyPayments.publicRechargeEnabled(), true);
-    assert.equal(
-      (
-        await adminOnlyPayments.createOrder(userId, false, {
-          planId: "alipay-package-990",
-          idempotencyKey: crypto.randomUUID(),
-        })
-      ).order.status,
-      "pending",
+    const expiringOrder = (
+      await adminOnlyPayments.createOrder(userId, false, {
+        planId: "alipay-package-990",
+        idempotencyKey: crypto.randomUUID(),
+      })
+    ).order;
+    assert.equal(expiringOrder.status, "pending");
+    await pool.query(
+      "update payment_orders set expires_at=now()-interval '1 minute' where id=$1",
+      [expiringOrder.id],
     );
+    const listedOrders = await adminOnlyPayments.listOrders(userId) as Array<{
+      id: string;
+      status: string;
+      failureCode?: string;
+    }>;
+    const listedExpiredOrder = listedOrders.find((order) => order.id === expiringOrder.id);
+    assert.equal(listedExpiredOrder?.status, "closed");
+    assert.equal(listedExpiredOrder?.failureCode, "PAYMENT_EXPIRED");
 
     assert.equal(await payments.receiveNotify({ ...fields, notify_id: `wrong-${suffix}`, app_id: "other" }), false);
   } finally {
