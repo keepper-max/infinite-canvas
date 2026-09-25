@@ -262,6 +262,7 @@ function fingerprint(draft: CanvasDraft) {
     return JSON.stringify({ nodes: draft.nodes, edges: draft.edges, viewport: draft.viewport, settings: draft.settings }, function (key, value) {
         const normalized = key.replace(/[-_\s]/g, "").toLowerCase();
         if (normalized === "thumbnailurl") return undefined;
+        if (normalized === "images" && Array.isArray(value) && value.length === 0) return undefined;
         if (normalized === "content" && this && typeof this === "object" && "assetVersionId" in this && typeof this.assetVersionId === "string" && this.assetVersionId) return undefined;
         return value;
     });

@@ -85,17 +85,19 @@ export async function hydrateCanvasImages(nodes: CanvasNodeData[], signal?: Abor
                 };
             }
             if (node.type !== CanvasNodeType.Image || !metadata) return node;
-            const images = await Promise.all(
-                (metadata.images || []).map(async (image) =>
-                    image.content || image.storageKey || image.assetVersionId
-                        ? {
-                              ...image,
-                              content: await hydrateGeneratedImageUrl(image.content, image.storageKey, image.assetVersionId ? downloads[image.assetVersionId]?.url : undefined),
-                              ...(image.assetVersionId && downloads[image.assetVersionId]?.thumbnailUrl ? { thumbnailUrl: downloads[image.assetVersionId]!.thumbnailUrl } : {}),
-                          }
-                        : image,
-                ),
-            );
+            const images = metadata.images
+                ? await Promise.all(
+                      metadata.images.map(async (image) =>
+                          image.content || image.storageKey || image.assetVersionId
+                              ? {
+                                    ...image,
+                                    content: await hydrateGeneratedImageUrl(image.content, image.storageKey, image.assetVersionId ? downloads[image.assetVersionId]?.url : undefined),
+                                    ...(image.assetVersionId && downloads[image.assetVersionId]?.thumbnailUrl ? { thumbnailUrl: downloads[image.assetVersionId]!.thumbnailUrl } : {}),
+                                }
+                              : image,
+                      ),
+                  )
+                : undefined;
             if (metadata.storageKey || metadata.assetVersionId) {
                 const download = metadata.assetVersionId ? downloads[metadata.assetVersionId] : undefined;
                 return {
@@ -103,13 +105,13 @@ export async function hydrateCanvasImages(nodes: CanvasNodeData[], signal?: Abor
                     metadata: {
                         ...metadata,
                         content: await hydrateGeneratedImageUrl(content, metadata.storageKey, download?.url),
-                        images,
+                        ...(images ? { images } : {}),
                         ...(download?.thumbnailUrl ? { thumbnailUrl: download.thumbnailUrl } : {}),
                     },
                 };
             }
-            if (content?.startsWith("[image omitted]")) return { ...node, metadata: { ...metadata, ...imageMetadata(await uploadImage(content)), images } };
-            return images === metadata.images ? node : { ...node, metadata: { ...metadata, images } };
+            if (content?.startsWith("[image omitted]")) return { ...node, metadata: { ...metadata, ...imageMetadata(await uploadImage(content)), ...(images ? { images } : {}) } };
+            return images ? { ...node, metadata: { ...metadata, images } } : node;
         }),
     );
 }
