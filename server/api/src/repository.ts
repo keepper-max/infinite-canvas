@@ -31,6 +31,38 @@ type Transaction = NodePgTransaction<
 >;
 type Executor = Database | Transaction;
 
+type LegacyAssetVersionMatch = {
+  id: string;
+  assetId: string;
+  storageKey: string;
+  localStorageKey: string;
+  sha256: string;
+};
+
+export function resolveLegacyAssetVersionMatches<
+  T extends LegacyAssetVersionMatch,
+>(versions: T[]) {
+  const matches = new Map<string, T | null>();
+  versions.forEach((version) => {
+    if (!matches.has(version.localStorageKey)) {
+      matches.set(version.localStorageKey, version);
+      return;
+    }
+    const existing = matches.get(version.localStorageKey);
+    if (
+      !existing ||
+      existing.sha256 !== version.sha256 ||
+      !isReliableSha256(existing.sha256)
+    )
+      matches.set(version.localStorageKey, null);
+  });
+  return matches;
+}
+
+function isReliableSha256(value: string) {
+  return /^[a-f\d]{64}$/i.test(value) && !/^0{64}$/.test(value);
+}
+
 export class PostgresPlatformRepository implements PlatformRepository {
   constructor(private readonly db: Database) {}
 
@@ -596,6 +628,7 @@ async function enrichLegacyAssetBindings(
       assetId: tables.assetVersions.assetId,
       storageKey: tables.assetVersions.storageKey,
       localStorageKey: keyExpression,
+      sha256: tables.assetVersions.sha256,
     })
     .from(tables.assetVersions)
     .innerJoin(
@@ -609,16 +642,7 @@ async function enrichLegacyAssetBindings(
         inArray(keyExpression, localStorageKeys),
       ),
     );
-  const matches = new Map<
-    string,
-    { id: string; assetId: string; storageKey: string } | null
-  >();
-  versions.forEach((version) => {
-    matches.set(
-      version.localStorageKey,
-      matches.has(version.localStorageKey) ? null : version,
-    );
-  });
+  const matches = resolveLegacyAssetVersionMatches(versions);
   return nodes.map((node) => {
     if (node.metadata?.assetVersionId) return node;
     const localStorageKey =
