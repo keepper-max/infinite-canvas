@@ -10,6 +10,7 @@ import { requestAudioGeneration, storeGeneratedAudio } from "@/services/api/audi
 import { createVideoGenerationTask, storeGeneratedVideo, waitForVideoGenerationTask } from "@/services/api/video";
 import { abortForManualJobCancellation, getManagedJob, retryManagedJob, subscribeProjectJobEvents, type ManagedJobEvent } from "@/services/api/jobs";
 import { createCanvasDraft, type CanvasDraft } from "@/services/api/canvas";
+import { invalidateCloudAssetDownloadUrls } from "@/services/api/assets";
 import { defaultConfig, useConfigStore, useEffectiveConfig } from "@/stores/use-config-store";
 import { uploadImage } from "@/services/image-storage";
 import { uploadMediaFile, type UploadedFile } from "@/services/file-storage";
@@ -3611,6 +3612,24 @@ function InfiniteCanvasPage({ projectId }: { projectId: string }) {
         setPreviewNodeId(node.id);
         setPreviewImageId(imageId || null);
     }, []);
+    const reloadNodeAsset = useCallback(
+        async (node: CanvasNodeData) => {
+            const versionIds = [node.metadata?.assetVersionId, ...(node.metadata?.images || []).map((image) => image.assetVersionId)].filter((id): id is string => Boolean(id));
+            invalidateCloudAssetDownloadUrls(versionIds);
+            try {
+                const restored = (await hydrateCanvasImages([node]))[0];
+                const images = restored.metadata?.images || [];
+                const primaryImageId = restored.metadata?.primaryImageId || images[0]?.id;
+                const content = (images.find((image) => image.id === primaryImageId) || images[0])?.content || restored.metadata?.content;
+                if (!content) throw new Error(t("canvas.node.assetReloadFailed"));
+                setNodes((current) => current.map((item) => (item.id === restored.id ? restored : item)));
+                message.success(t("canvas.node.assetReloaded"));
+            } catch (error) {
+                message.error(error instanceof Error ? error.message : t("canvas.node.assetReloadFailed"));
+            }
+        },
+        [message, t],
+    );
     const handleNodeRetry = useCallback(
         (node: CanvasNodeData) => {
             if (node.type === CanvasNodeType.Text && (node.metadata?.textCount || 1) > 1) {
@@ -3842,6 +3861,7 @@ function InfiniteCanvasPage({ projectId }: { projectId: string }) {
                             onRetryBatchImage={retryBatchImage}
                             onDeleteBatchImage={deleteBatchImage}
                             onRetry={handleNodeRetry}
+                            onReloadAsset={(node) => void reloadNodeAsset(node)}
                             onViewImage={handleNodeViewImage}
                             onSelectReference={selectNodeReference}
                             onCancelReferenceSelection={exitNodeReferenceSelection}

@@ -146,6 +146,18 @@ export function clearCloudAssetDownloadUrlCache() {
     }
 }
 
+export function invalidateCloudAssetDownloadUrls(versionIds: string[]) {
+    for (const versionId of new Set(versionIds)) {
+        downloadUrlCache.delete(versionId);
+        if (typeof sessionStorage === "undefined") continue;
+        try {
+            sessionStorage.removeItem(`${DOWNLOAD_CACHE_PREFIX}${versionId}`);
+        } catch {
+            // Memory invalidation is sufficient when session storage is unavailable.
+        }
+    }
+}
+
 function readCachedDownload(versionId: string) {
     const memory = downloadUrlCache.get(versionId);
     if (memory) return memory;

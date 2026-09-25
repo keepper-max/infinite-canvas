@@ -54,6 +54,7 @@ type CanvasNodeProps = {
     onRetryBatchImage?: (node: CanvasNodeData, imageId: string) => void;
     onDeleteBatchImage?: (nodeId: string, imageId: string) => void;
     onRetry?: (node: CanvasNodeData) => void;
+    onReloadAsset?: (node: CanvasNodeData) => void;
     onViewImage?: (node: CanvasNodeData, imageId?: string) => void;
     onSelectReference?: (nodeId: string) => void;
     onCancelReferenceSelection?: () => void;
@@ -75,6 +76,7 @@ type NodeContentRendererProps = {
     onStopEditing: () => void;
     mentionReferences: CanvasResourceReference[];
     onRetry?: (node: CanvasNodeData) => void;
+    onReloadAsset?: (node: CanvasNodeData) => void;
     onToggleBatch?: () => void;
     onSetBatchPrimary?: (itemId: string) => void;
     onDuplicateBatchImage?: (imageId: string) => void;
@@ -120,6 +122,7 @@ export const CanvasNode = React.memo(function CanvasNode({
     onRetryBatchImage,
     onDeleteBatchImage,
     onRetry,
+    onReloadAsset,
     onViewImage,
     onSelectReference,
     onCancelReferenceSelection,
@@ -133,7 +136,7 @@ export const CanvasNode = React.memo(function CanvasNode({
     const [isEditingContent, setIsEditingContent] = useState(false);
     const [isEditingTitle, setIsEditingTitle] = useState(false);
     const [titleDraft, setTitleDraft] = useState(data.title || "");
-    const hasImageContent = data.type === CanvasNodeType.Image && Boolean(data.metadata?.content);
+    const hasImageContent = data.type === CanvasNodeType.Image && Boolean(primaryImageContent(data));
     const hasVideoContent = data.type === CanvasNodeType.Video && Boolean(data.metadata?.content);
     const hasAudioContent = data.type === CanvasNodeType.Audio && Boolean(data.metadata?.content);
     const isGroup = data.type === CanvasNodeType.Group;
@@ -440,6 +443,7 @@ export const CanvasNode = React.memo(function CanvasNode({
                         onContentChange={onContentChange}
                         onStopEditing={() => setIsEditingContent(false)}
                         onRetry={onRetry}
+                        onReloadAsset={onReloadAsset}
                         onToggleBatch={() => onToggleBatch?.(data.id)}
                         onSetBatchPrimary={(itemId) => onSetBatchPrimary?.(data.id, itemId)}
                         onDuplicateBatchImage={(imageId) => onDuplicateBatchImage?.(data, imageId)}
@@ -731,7 +735,7 @@ function TextSlotStatus({ text }: { text: CanvasNodeText }) {
 }
 
 function ImageNodeContent(props: NodeContentRendererProps) {
-    if (!props.node.metadata?.content && !props.isBatchRoot) return <EmptyImageContent {...props} />;
+    if (!primaryImageContent(props.node) && !props.isBatchRoot) return <EmptyImageContent {...props} />;
 
     return (
         <ImageContent
@@ -749,16 +753,37 @@ function ImageNodeContent(props: NodeContentRendererProps) {
     );
 }
 
-function EmptyImageContent({ theme }: NodeContentRendererProps) {
+function EmptyImageContent({ node, theme, onReloadAsset }: NodeContentRendererProps) {
     const { t } = useTranslation();
+    const hasStoredAsset = Boolean(node.metadata?.assetVersionId || node.metadata?.storageKey || node.metadata?.images?.some((image) => image.assetVersionId || image.storageKey));
     return (
         <div className="flex h-full w-full flex-col items-center justify-center gap-3" style={{ color: theme.node.placeholder }}>
             <div className="flex size-14 items-center justify-center rounded-2xl" style={{ background: theme.toolbar.activeBg }}>
                 <ImageIcon className="size-6 opacity-30" />
             </div>
-            <span className="text-[10px] tracking-[0.18em] opacity-50">{t("canvas.node.emptyImage")}</span>
+            <span className="text-[10px] tracking-[0.18em] opacity-50">{t(hasStoredAsset ? "canvas.node.assetNotLoaded" : "canvas.node.emptyImage")}</span>
+            {hasStoredAsset ? (
+                <button
+                    type="button"
+                    className="pointer-events-auto flex h-8 items-center gap-1.5 rounded-md px-2.5 text-xs transition hover:bg-black/5 dark:hover:bg-white/10"
+                    onClick={(event) => {
+                        event.stopPropagation();
+                        onReloadAsset?.(node);
+                    }}
+                    onMouseDown={(event) => event.stopPropagation()}
+                >
+                    <RefreshCw className="size-3.5" />
+                    {t("canvas.node.reloadAsset")}
+                </button>
+            ) : null}
         </div>
     );
+}
+
+function primaryImageContent(node: CanvasNodeData) {
+    const images = node.metadata?.images || [];
+    const primaryImageId = node.metadata?.primaryImageId || images[0]?.id;
+    return (images.find((image) => image.id === primaryImageId) || images[0])?.content || node.metadata?.content;
 }
 
 function VideoNodeContent({ node, theme }: NodeContentRendererProps) {
@@ -822,7 +847,7 @@ function ImageContent({
     const batchCount = images.length;
     const isBatchRoot = batchCount > 1;
     const primaryImageId = node.metadata?.primaryImageId || images[0]?.id;
-    const primaryImage = images.find((image) => image.id === primaryImageId);
+    const primaryImage = images.find((image) => image.id === primaryImageId) || images[0];
     const primaryContent = primaryImage?.content || node.metadata?.content;
     const primaryStorageKey = primaryImage?.storageKey || node.metadata?.storageKey;
     const previewRevision = useSyncExternalStore(subscribeImagePreviews, getImagePreviewRevision, () => 0);
