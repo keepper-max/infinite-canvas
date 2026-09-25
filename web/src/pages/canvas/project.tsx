@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { ChangeEvent as ReactChangeEvent, DragEvent as ReactDragEvent, MouseEvent as ReactMouseEvent, PointerEvent as ReactPointerEvent } from "react";
+import { flushSync } from "react-dom";
 import { useBlocker, useLocation, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { Group, Video } from "lucide-react";
 import { saveAs } from "file-saver";
@@ -355,6 +356,13 @@ function InfiniteCanvasPage({ projectId }: { projectId: string }) {
             setBackgroundMode(draft.settings.backgroundMode);
             setShowImageInfo(draft.settings.showImageInfo);
             setViewport(draft.viewport);
+            updateProject(projectId, {
+                nodes: placeholderNodes,
+                connections: draft.edges,
+                backgroundMode: draft.settings.backgroundMode,
+                showImageInfo: draft.settings.showImageInfo,
+                viewport: draft.viewport,
+            });
             historyRef.current = { past: [], future: [] };
             setHistoryState({ canUndo: false, canRedo: false });
             void hydrateCanvasImages(baseNodes, hydrationController.signal)
@@ -4046,8 +4054,9 @@ function InfiniteCanvasPage({ projectId }: { projectId: string }) {
                             <Button onClick={() => navigationBlocker.state === "blocked" && navigationBlocker.reset()}>取消</Button>
                             <Button
                                 onClick={() => {
-                                    canvasPersistence.discardPendingChanges();
-                                    if (navigationBlocker.state === "blocked") navigationBlocker.proceed();
+                                    if (navigationBlocker.state !== "blocked") return;
+                                    flushSync(() => canvasPersistence.discardPendingChanges());
+                                    navigationBlocker.proceed();
                                 }}
                             >
                                 不保存

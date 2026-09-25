@@ -30,6 +30,12 @@ export async function recordPendingCanvas(projectId: string, draft: CanvasDraft)
     await updateCanvasCloudCache(projectId, { pendingDraft: draft });
 }
 
+export async function clearPendingCanvas(projectId: string) {
+    const current = await getCanvasCloudCache(projectId);
+    if (!current.pendingDraft) return;
+    await cache.setItem(projectId, { ...current, pendingDraft: undefined });
+}
+
 export async function backupLegacyCanvas(projectId: string, draft: CanvasDraft) {
     const current = await getCanvasCloudCache(projectId);
     if (current.legacyBackup) return;

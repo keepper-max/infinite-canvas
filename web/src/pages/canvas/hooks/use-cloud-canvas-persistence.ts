@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { getCanvas, migrateIndexedDbCanvas, saveCanvas, type CanvasDocument, type CanvasDraft, type CanvasMigrationReport } from "@/services/api/canvas";
-import { backupLegacyCanvas, getCanvasCloudCache, recordPendingCanvas, recordSuccessfulCanvas } from "@/services/canvas-cloud-cache";
+import { backupLegacyCanvas, clearPendingCanvas, getCanvasCloudCache, recordPendingCanvas, recordSuccessfulCanvas } from "@/services/canvas-cloud-cache";
 import { PlatformApiError } from "@/services/api/platform";
 
 export type CanvasSyncStatus = "loading" | "synced" | "dirty" | "saving" | "unsynced" | "conflict";
@@ -19,6 +19,7 @@ export function useCloudCanvasPersistence(projectId: string, applyCanvas: (canva
     const migrationCandidateRef = useRef<CanvasDraft | null>(null);
     const migrationBlockedRef = useRef(false);
     const lastFingerprintRef = useRef("");
+    const lastSuccessfulRef = useRef<CanvasDocument | null>(null);
     const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
     const savingRef = useRef(false);
     const mountedRef = useRef(true);
@@ -35,6 +36,7 @@ export function useCloudCanvasPersistence(projectId: string, applyCanvas: (canva
         migrationCandidateRef.current = null;
         migrationBlockedRef.current = false;
         lastFingerprintRef.current = "";
+        lastSuccessfulRef.current = null;
         savingRef.current = false;
         clearAutoSaveTimer();
         setMigrationDraft(null);
@@ -55,6 +57,7 @@ export function useCloudCanvasPersistence(projectId: string, applyCanvas: (canva
         async (canvas: CanvasDocument) => {
             revisionRef.current = canvas.revision;
             lastFingerprintRef.current = fingerprint(canvas);
+            lastSuccessfulRef.current = canvas;
             await applyCanvas(canvas);
             await recordSuccessfulCanvas(projectId, canvas);
             readyRef.current = true;
@@ -76,6 +79,7 @@ export function useCloudCanvasPersistence(projectId: string, applyCanvas: (canva
                     const legacyFingerprint = fingerprint(legacyDraft);
                     revisionRef.current = cached.lastSuccessful.revision;
                     lastFingerprintRef.current = cachedFingerprint;
+                    lastSuccessfulRef.current = cached.lastSuccessful;
                     restoredLocalDraft = hasContent(legacyDraft) && cachedFingerprint !== legacyFingerprint;
                     if (restoredLocalDraft) latestDraftRef.current = legacyDraft;
                     await applyCanvas(cachedFingerprint === legacyFingerprint || restoredLocalDraft ? legacyView : cached.lastSuccessful);
@@ -113,11 +117,13 @@ export function useCloudCanvasPersistence(projectId: string, applyCanvas: (canva
                         return;
                     }
                     await recordSuccessfulCanvas(projectId, remote);
+                    lastSuccessfulRef.current = remote;
                     if (mountedRef.current) setStatus("dirty");
                     return;
                 }
                 if (appliedCachedFingerprint && appliedCachedFingerprint === remoteFingerprint) {
                     lastFingerprintRef.current = remoteFingerprint;
+                    lastSuccessfulRef.current = remote;
                     await recordSuccessfulCanvas(projectId, remote);
                     readyRef.current = true;
                     if (mountedRef.current) setStatus("synced");
@@ -150,6 +156,7 @@ export function useCloudCanvasPersistence(projectId: string, applyCanvas: (canva
             const canvas = await saveCanvas(projectId, draft, revisionRef.current);
             revisionRef.current = canvas.revision;
             lastFingerprintRef.current = fingerprint(draft);
+            lastSuccessfulRef.current = canvas;
             await recordSuccessfulCanvas(projectId, canvas);
             if (latestDraftRef.current) {
                 if (!timerRef.current) timerRef.current = setTimeout(() => void flush(), AUTO_SAVE_INTERVAL_MS);
@@ -199,7 +206,10 @@ export function useCloudCanvasPersistence(projectId: string, applyCanvas: (canva
     const discardPendingChanges = useCallback(() => {
         latestDraftRef.current = null;
         clearAutoSaveTimer();
-    }, [clearAutoSaveTimer]);
+        setStatus(lastFingerprintRef.current ? "synced" : "unsynced");
+        if (lastSuccessfulRef.current) void applyCanvas(lastSuccessfulRef.current);
+        void clearPendingCanvas(projectId);
+    }, [applyCanvas, clearAutoSaveTimer, projectId]);
 
     const confirmMigration = useCallback(async () => {
         if (!migrationDraft) return;
@@ -208,6 +218,7 @@ export function useCloudCanvasPersistence(projectId: string, applyCanvas: (canva
             const result = await migrateIndexedDbCanvas(projectId, `indexeddb-v7-${projectId}`, migrationDraft, revisionRef.current);
             revisionRef.current = result.canvas.revision;
             lastFingerprintRef.current = fingerprint(result.canvas);
+            lastSuccessfulRef.current = result.canvas;
             await recordSuccessfulCanvas(projectId, result.canvas);
             migrationCandidateRef.current = null;
             migrationBlockedRef.current = false;
