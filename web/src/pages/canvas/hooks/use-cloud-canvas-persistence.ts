@@ -259,13 +259,24 @@ export function useCloudCanvasPersistence(projectId: string, applyCanvas: (canva
 }
 
 function fingerprint(draft: CanvasDraft) {
-    return JSON.stringify({ nodes: draft.nodes, edges: draft.edges, viewport: draft.viewport, settings: draft.settings }, function (key, value) {
+    return JSON.stringify(canonicalizeFingerprintValue({ nodes: draft.nodes, edges: draft.edges, viewport: draft.viewport, settings: draft.settings }));
+}
+
+function canonicalizeFingerprintValue(value: unknown): unknown {
+    if (Array.isArray(value)) return value.map((item) => canonicalizeFingerprintValue(item));
+    if (!value || typeof value !== "object") return value;
+    const source = value as Record<string, unknown>;
+    const output: Record<string, unknown> = {};
+    const cloudBacked = typeof source.assetVersionId === "string" && Boolean(source.assetVersionId);
+    for (const key of Object.keys(source).sort()) {
         const normalized = key.replace(/[-_\s]/g, "").toLowerCase();
-        if (normalized === "thumbnailurl") return undefined;
-        if (normalized === "images" && Array.isArray(value) && value.length === 0) return undefined;
-        if (normalized === "content" && this && typeof this === "object" && "assetVersionId" in this && typeof this.assetVersionId === "string" && this.assetVersionId) return undefined;
-        return value;
-    });
+        if (normalized === "thumbnailurl") continue;
+        if (normalized === "images" && Array.isArray(source[key]) && source[key].length === 0) continue;
+        if (normalized === "content" && cloudBacked) continue;
+        const item = canonicalizeFingerprintValue(source[key]);
+        if (item !== undefined) output[key] = item;
+    }
+    return output;
 }
 
 function hasContent(draft: CanvasDraft) {
