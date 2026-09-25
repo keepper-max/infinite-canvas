@@ -788,6 +788,7 @@ function primaryImageContent(node: CanvasNodeData) {
 
 function VideoNodeContent({ node, theme }: NodeContentRendererProps) {
     const { t } = useTranslation();
+    useSyncExternalStore(subscribeImagePreviews, getImagePreviewRevision, () => 0);
     if (!node.metadata?.content)
         return (
             <div className="flex h-full w-full flex-col items-center justify-center gap-3" style={{ color: theme.node.placeholder }}>
@@ -795,7 +796,7 @@ function VideoNodeContent({ node, theme }: NodeContentRendererProps) {
                 <span className="text-sm">{t("canvas.node.emptyVideo")}</span>
             </div>
         );
-    return <video src={node.metadata.content} poster={node.metadata.thumbnailUrl} preload="none" controls className="h-full w-full rounded-[18px] bg-black object-contain" data-canvas-video={node.id} data-canvas-no-zoom />;
+    return <video src={node.metadata.content} poster={previewUrlFor(node.metadata.assetVersionId) || node.metadata.thumbnailUrl} preload="none" controls className="h-full w-full rounded-[18px] bg-black object-contain" data-canvas-video={node.id} data-canvas-no-zoom />;
 }
 
 function AudioNodeContent({ node, theme }: NodeContentRendererProps) {
@@ -854,7 +855,7 @@ function ImageContent({
     useEffect(() => {
         void ensureImagePreview(primaryStorageKey);
     }, [primaryStorageKey, previewRevision]);
-    const primaryPreview = previewUrlFor(primaryStorageKey) || primaryImage?.thumbnailUrl || node.metadata?.thumbnailUrl;
+    const primaryPreview = previewUrlFor(primaryImage?.assetVersionId || node.metadata?.assetVersionId) || previewUrlFor(primaryStorageKey) || primaryImage?.thumbnailUrl || node.metadata?.thumbnailUrl;
     const primarySource = primaryContent
         ? pickImageSource({
               previewUrl: primaryPreview,
@@ -975,7 +976,7 @@ function ExpandedImageCard({
     }, [image.storageKey, previewRevision]);
     const imageSource = image.content
         ? pickImageSource({
-              previewUrl: previewUrlFor(image.storageKey) || image.thumbnailUrl,
+              previewUrl: previewUrlFor(image.assetVersionId) || previewUrlFor(image.storageKey) || image.thumbnailUrl,
               originalUrl: image.content,
               naturalWidth: image.naturalWidth,
               naturalHeight: image.naturalHeight,

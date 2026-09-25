@@ -23,6 +23,7 @@ const imageLogStore = localforage.createInstance({ name: "infinite-canvas", stor
 const videoLogStore = localforage.createInstance({ name: "infinite-canvas", storeName: "video_generation_logs" });
 const objectUrls = new Map<string, string>();
 const previewUrls = new Map<string, string>();
+const remotePreviewLoads = new Map<string, Promise<string | undefined>>();
 const previewListeners = new Set<() => void>();
 let previewRevision = 0;
 let previewQueue: Promise<unknown> = Promise.resolve();
@@ -178,12 +179,41 @@ export function getImagePreviewRevision() {
 
 export async function ensureImagePreview(storageKey?: string) {
     if (!storageKey) return undefined;
-    const cached = previewUrls.get(storageKey);
+    const cached = await readStoredImagePreview(storageKey);
     if (cached) return cached;
-    const stored = await previewStore.getItem<StoredImagePreview>(storageKey).catch(() => null);
-    if (stored?.version === IMAGE_PREVIEW_VERSION) return stored.blob ? cacheImagePreview(storageKey, stored.blob) : undefined;
     queueImagePreview(storageKey);
     return undefined;
+}
+
+export async function getCachedImagePreviewUrls(keys: string[]) {
+    const entries = await Promise.all(
+        [...new Set(keys)].map(async (key) => [key, await readStoredImagePreview(key)] as const),
+    );
+    return Object.fromEntries(entries.filter((entry): entry is readonly [string, string] => Boolean(entry[1])));
+}
+
+export function cacheRemoteImagePreview(key: string, url?: string, signal?: AbortSignal) {
+    if (!key || !url || previewUrls.has(key)) return;
+    const existing = remotePreviewLoads.get(key);
+    if (existing) return;
+    const request = fetch(url, { signal })
+        .then(async (response) => {
+            if (!response.ok) return undefined;
+            const blob = await response.blob();
+            if (!blob.type.startsWith("image/")) return undefined;
+            await previewStore.setItem<StoredImagePreview>(key, { version: IMAGE_PREVIEW_VERSION, blob });
+            return cacheImagePreview(key, blob);
+        })
+        .catch(() => undefined)
+        .finally(() => remotePreviewLoads.delete(key));
+    remotePreviewLoads.set(key, request);
+}
+
+async function readStoredImagePreview(key: string) {
+    const cached = previewUrls.get(key);
+    if (cached) return cached;
+    const stored = await previewStore.getItem<StoredImagePreview>(key).catch(() => null);
+    return stored?.version === IMAGE_PREVIEW_VERSION && stored.blob ? cacheImagePreview(key, stored.blob) : undefined;
 }
 
 function queueImagePreview(storageKey: string) {

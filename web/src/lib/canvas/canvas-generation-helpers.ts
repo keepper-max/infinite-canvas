@@ -1,6 +1,6 @@
 import { defaultConfig, resolveModelForCapability, type AiConfig } from "@/stores/use-config-store";
 import i18n from "@/i18n";
-import { resolveImageUrl, uploadImage } from "@/services/image-storage";
+import { cacheRemoteImagePreview, getCachedImagePreviewUrls, resolveImageUrl, uploadImage } from "@/services/image-storage";
 import { resolveMediaUrl } from "@/services/file-storage";
 import { imageMetadata, referenceUrl } from "@/lib/canvas/canvas-node-factory";
 import type { NodeGenerationInput } from "@/components/canvas/canvas-node-generation";
@@ -65,10 +65,14 @@ export async function resolveMetadataReferences(metadata: CanvasNodeMetadata, no
 
 export async function hydrateCanvasImages(nodes: CanvasNodeData[], signal?: AbortSignal) {
     const versionIds = nodes.flatMap((node) => [node.metadata?.assetVersionId, ...(node.metadata?.images || []).map((image) => image.assetVersionId)]).filter((id): id is string => Boolean(id));
-    const downloads: Record<string, { url: string; thumbnailUrl?: string }> = await getCloudAssetDownloadUrls(versionIds, signal).catch((error) => {
-        if (error instanceof DOMException && error.name === "AbortError") throw error;
-        return {};
-    });
+    const [downloads, cachedPreviews]: [Record<string, { url: string; thumbnailUrl?: string }>, Record<string, string>] = await Promise.all([
+        getCloudAssetDownloadUrls(versionIds, signal).catch((error) => {
+            if (error instanceof DOMException && error.name === "AbortError") throw error;
+            return {} as Record<string, { url: string; thumbnailUrl?: string }>;
+        }),
+        getCachedImagePreviewUrls(versionIds),
+    ]);
+    for (const versionId of versionIds) cacheRemoteImagePreview(versionId, downloads[versionId]?.thumbnailUrl, signal);
     return Promise.all(
         nodes.map(async (node) => {
             const metadata = node.metadata;
@@ -80,7 +84,7 @@ export async function hydrateCanvasImages(nodes: CanvasNodeData[], signal?: Abor
                     metadata: {
                         ...metadata,
                         content: await hydrateGeneratedMediaUrl(content, metadata.storageKey, download?.url),
-                        ...(download?.thumbnailUrl ? { thumbnailUrl: download.thumbnailUrl } : {}),
+                        ...(cachedPreviews[metadata.assetVersionId || ""] || download?.thumbnailUrl ? { thumbnailUrl: cachedPreviews[metadata.assetVersionId || ""] || download?.thumbnailUrl } : {}),
                     },
                 };
             }
@@ -92,7 +96,7 @@ export async function hydrateCanvasImages(nodes: CanvasNodeData[], signal?: Abor
                               ? {
                                     ...image,
                                     content: await hydrateGeneratedImageUrl(image.content, image.storageKey, image.assetVersionId ? downloads[image.assetVersionId]?.url : undefined),
-                                    ...(image.assetVersionId && downloads[image.assetVersionId]?.thumbnailUrl ? { thumbnailUrl: downloads[image.assetVersionId]!.thumbnailUrl } : {}),
+                                    ...(image.assetVersionId && (cachedPreviews[image.assetVersionId] || downloads[image.assetVersionId]?.thumbnailUrl) ? { thumbnailUrl: cachedPreviews[image.assetVersionId] || downloads[image.assetVersionId]!.thumbnailUrl } : {}),
                                 }
                               : image,
                       ),
@@ -106,7 +110,7 @@ export async function hydrateCanvasImages(nodes: CanvasNodeData[], signal?: Abor
                         ...metadata,
                         content: await hydrateGeneratedImageUrl(content, metadata.storageKey, download?.url),
                         ...(images ? { images } : {}),
-                        ...(download?.thumbnailUrl ? { thumbnailUrl: download.thumbnailUrl } : {}),
+                        ...(cachedPreviews[metadata.assetVersionId || ""] || download?.thumbnailUrl ? { thumbnailUrl: cachedPreviews[metadata.assetVersionId || ""] || download?.thumbnailUrl } : {}),
                     },
                 };
             }

@@ -68,17 +68,21 @@ export function useCloudCanvasPersistence(projectId: string, applyCanvas: (canva
             readyRef.current = false;
             setStatus("loading");
             let appliedCachedFingerprint = "";
+            let restoredLocalDraft = false;
             try {
                 const cached = await getCanvasCloudCache(projectId);
                 if (!cached.pendingDraft && cached.lastSuccessful) {
                     const cachedFingerprint = fingerprint(cached.lastSuccessful);
-                    if (cachedFingerprint === fingerprint(legacyDraft)) {
-                        revisionRef.current = cached.lastSuccessful.revision;
-                        lastFingerprintRef.current = cachedFingerprint;
-                        await applyCanvas(legacyView);
-                        appliedCachedFingerprint = cachedFingerprint;
-                        onCachedCanvasApplied?.();
-                    }
+                    const legacyFingerprint = fingerprint(legacyDraft);
+                    revisionRef.current = cached.lastSuccessful.revision;
+                    lastFingerprintRef.current = cachedFingerprint;
+                    restoredLocalDraft = hasContent(legacyDraft) && cachedFingerprint !== legacyFingerprint;
+                    if (restoredLocalDraft) latestDraftRef.current = legacyDraft;
+                    await applyCanvas(cachedFingerprint === legacyFingerprint || restoredLocalDraft ? legacyView : cached.lastSuccessful);
+                    appliedCachedFingerprint = cachedFingerprint;
+                    readyRef.current = true;
+                    onCachedCanvasApplied?.();
+                    if (mountedRef.current) setStatus(restoredLocalDraft ? "dirty" : "synced");
                 }
                 const remote = await getCanvas(projectId);
                 revisionRef.current = remote.revision;
@@ -102,6 +106,16 @@ export function useCloudCanvasPersistence(projectId: string, applyCanvas: (canva
                     return;
                 }
                 const remoteFingerprint = fingerprint(remote);
+                if (appliedCachedFingerprint && latestDraftRef.current) {
+                    if (appliedCachedFingerprint !== remoteFingerprint) {
+                        setConflictDraft(latestDraftRef.current);
+                        setStatus("conflict");
+                        return;
+                    }
+                    await recordSuccessfulCanvas(projectId, remote);
+                    if (mountedRef.current) setStatus("dirty");
+                    return;
+                }
                 if (appliedCachedFingerprint && appliedCachedFingerprint === remoteFingerprint) {
                     lastFingerprintRef.current = remoteFingerprint;
                     await recordSuccessfulCanvas(projectId, remote);
