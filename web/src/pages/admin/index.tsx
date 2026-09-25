@@ -1185,6 +1185,22 @@ function BillingRulesPanel() {
                 note="任务创建时固化命中的规则版本；后续调整不会改变历史任务"
                 actions={<Button type="primary" onClick={() => openEditor()}>新建规则</Button>}
             >
+                <div className="mb-5 grid gap-3 border-y border-stone-200 py-4 text-sm dark:border-white/10 lg:grid-cols-2">
+                    <div>
+                        <p className="text-xs font-medium text-stone-500">计费公式</p>
+                        <p className="mt-1.5 font-mono font-semibold text-stone-900 dark:text-stone-100">
+                            用户扣除积分 = ⌈供应商实际扣费 ÷ 折扣率 × 1.2 × 100⌉
+                        </p>
+                        <p className="mt-1 text-xs text-stone-500">1.2 为平台计费系数，100 为每元兑换的积分数，计算结果向上取整。</p>
+                        <p className="mt-1 text-xs text-stone-500">不同模型分别匹配各自折扣率；调整时请在对应规则上新建版本，只影响后续新任务。</p>
+                    </div>
+                    <div>
+                        <p className="text-xs font-medium text-stone-500">示例</p>
+                        <p className="mt-1.5 text-stone-700 dark:text-stone-300">
+                            实际扣费 8 元、折扣率 80%：原价为 8 ÷ 80% = 10 元，用户扣除 ⌈10 × 1.2 × 100⌉ = <b className="font-mono text-stone-950 dark:text-white">1,200 积分</b>。
+                        </p>
+                    </div>
+                </div>
                 <Table<ProviderBillingRule>
                     rowKey="ruleKey"
                     pagination={false}

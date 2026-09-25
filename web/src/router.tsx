@@ -1,8 +1,9 @@
-import { createBrowserRouter, Outlet } from "react-router-dom";
+import { createBrowserRouter, Navigate, Outlet } from "react-router-dom";
 import { lazy, Suspense, type ReactNode } from "react";
 
 import { AnalyticsTracker } from "@/components/layout/analytics-tracker";
 import { AuthGate } from "@/components/auth/auth-gate";
+import { useAuth } from "@/components/auth/auth-context";
 import UserLayout from "@/layouts/user-layout";
 const AssetsPage = lazy(() => import("@/pages/assets"));
 const AuthPage = lazy(() => import("@/pages/auth"));
@@ -22,6 +23,12 @@ const CreditsPage = lazy(() => import("@/pages/credits"));
 
 function deferred(element: ReactNode) {
     return <Suspense fallback={<div className="grid min-h-dvh place-items-center text-sm text-muted-foreground">正在加载</div>}>{element}</Suspense>;
+}
+
+function AdminRoute() {
+    const { user } = useAuth();
+    if (!user.isAdmin) return <Navigate to="/canvas" replace />;
+    return deferred(<AdminPage />);
 }
 
 export const router = createBrowserRouter([
@@ -55,7 +62,7 @@ export const router = createBrowserRouter([
         path: "/admin/:section?/:subsection?",
         element: (
             <AuthGate>
-                {deferred(<AdminPage />)}
+                <AdminRoute />
             </AuthGate>
         ),
     },
