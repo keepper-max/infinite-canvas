@@ -2,6 +2,7 @@ import { useEffect, useState, type ReactNode } from "react";
 import { Navigate, useLocation } from "react-router-dom";
 
 import { AuthProvider } from "@/components/auth/auth-context";
+import { clearCloudAssetDownloadUrlCache } from "@/services/api/assets";
 import { getCurrentSession, listProjects, logout as logoutRequest, PlatformApiError, type AuthSession } from "@/services/api/platform";
 
 export function AuthGate({ children }: { children: ReactNode }) {
@@ -100,6 +101,7 @@ export function AuthGate({ children }: { children: ReactNode }) {
 
     const logout = async () => {
         await logoutRequest();
+        clearCloudAssetDownloadUrlCache();
         setSession(null);
         setShellReady(false);
         setState("signed-out");

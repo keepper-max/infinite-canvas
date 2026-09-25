@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { Bot, Cloud, CloudOff, Download, Home, Images, LoaderCircle, Menu, PanelLeftClose, PanelLeftOpen, Plus, Redo2, Trash2, Undo2, Upload } from "lucide-react";
+import { Bot, Cloud, CloudOff, Download, Home, Images, LoaderCircle, Menu, PanelLeftClose, PanelLeftOpen, Plus, Redo2, Save, Trash2, Undo2, Upload } from "lucide-react";
 import { Button, Dropdown, Modal, Tooltip } from "antd";
 import { useTranslation } from "react-i18next";
 
@@ -36,6 +36,9 @@ export function CanvasTopBar({
     onToggleAgent,
     syncStatus,
     onSyncClick,
+    onSave,
+    canSave,
+    onLogoutRequest,
 }: {
     title: string;
     titleDraft: string;
@@ -62,6 +65,9 @@ export function CanvasTopBar({
     onToggleAgent: () => void;
     syncStatus: CanvasSyncStatus;
     onSyncClick: () => void;
+    onSave: () => void;
+    canSave: boolean;
+    onLogoutRequest: () => void;
 }) {
     const colorTheme = useThemeStore((state) => state.theme);
     const { t } = useTranslation();
@@ -144,11 +150,23 @@ export function CanvasTopBar({
                         )}
                     </div>
                     <CanvasSyncIndicator status={syncStatus} onClick={onSyncClick} />
+                    <Tooltip title="保存画布">
+                        <button
+                            type="button"
+                            className="flex h-8 items-center gap-1.5 px-1.5 text-xs transition hover:opacity-75 disabled:cursor-not-allowed disabled:opacity-35"
+                            style={{ color: theme.node.text }}
+                            disabled={!canSave || syncStatus === "loading" || syncStatus === "saving" || syncStatus === "conflict"}
+                            onClick={onSave}
+                        >
+                            <Save className="size-3.5" />
+                            <span>保存</span>
+                        </button>
+                    </Tooltip>
                     {CODEX_AGENT_ENABLED ? <CompactAgentStatus status={compactAgentStatus} onClick={onToggleAgent} /> : null}
                 </div>
 
                 <div className="pointer-events-auto flex items-center gap-1.5">
-                    <UserStatusActions variant="canvas" onOpenShortcuts={() => setShortcutsOpen(true)} onOpenPlugins={onOpenPlugins} />
+                    <UserStatusActions variant="canvas" onOpenShortcuts={() => setShortcutsOpen(true)} onOpenPlugins={onOpenPlugins} onLogoutRequest={onLogoutRequest} />
                     {CODEX_AGENT_ENABLED ? (
                         <>
                             <span className="h-6 w-px" style={{ background: theme.toolbar.border }} />
@@ -189,7 +207,7 @@ export function CanvasTopBar({
 }
 
 function CanvasSyncIndicator({ status, onClick }: { status: CanvasSyncStatus; onClick: () => void }) {
-    const labels: Record<CanvasSyncStatus, string> = { loading: "正在读取", saving: "正在保存", synced: "已同步", unsynced: "未同步", conflict: "版本冲突" };
+    const labels: Record<CanvasSyncStatus, string> = { loading: "正在读取", saving: "正在保存", synced: "已同步", dirty: "未保存", unsynced: "未同步", conflict: "版本冲突" };
     const color = status === "synced" ? "#16a34a" : status === "unsynced" || status === "conflict" ? "#dc2626" : "#d97706";
     const Icon = status === "synced" ? Cloud : status === "unsynced" || status === "conflict" ? CloudOff : LoaderCircle;
     return (

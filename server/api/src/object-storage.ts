@@ -14,6 +14,9 @@ import { DomainError } from "./domain.js";
 
 export type StoredObject = { bytes: number; mimeType: string; sha256?: string };
 
+const DOWNLOAD_URL_TTL_SECONDS = 15 * 60;
+const DOWNLOAD_CACHE_MAX_AGE_SECONDS = DOWNLOAD_URL_TTL_SECONDS - 60;
+
 export interface ObjectStorage {
   ensureReady(): Promise<void>;
   createUploadUrl(
@@ -102,7 +105,9 @@ export class S3ObjectStorage implements ObjectStorage {
         Bucket: this.config.bucket,
         Key: storageKey,
         ResponseContentDisposition: disposition,
+        ResponseCacheControl: `private, max-age=${DOWNLOAD_CACHE_MAX_AGE_SECONDS}`,
       }),
+      { expiresIn: DOWNLOAD_URL_TTL_SECONDS },
     );
   }
 

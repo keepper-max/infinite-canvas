@@ -1,5 +1,10 @@
 import { platformRequest } from "./platform";
 
+type CloudAssetDownload = { url: string; thumbnailUrl?: string };
+
+const downloadUrlCache = new Map<string, { download: CloudAssetDownload; expiresAt: number }>();
+const DOWNLOAD_CACHE_PREFIX = "canvas-asset-download:";
+
 export type CloudAssetKind = "character" | "scene" | "prop" | "image" | "video" | "audio" | "subtitle" | "project_export";
 export type CloudAssetSource = "upload" | "generation" | "edit" | "compose" | "migration";
 
@@ -105,14 +110,87 @@ export async function getCloudAssetDownloadUrl(versionId: string) {
     return (await platformRequest<{ url: string }>(`/api/asset-versions/${encodeURIComponent(versionId)}/download`)).url;
 }
 
-export async function getCloudAssetDownloadUrls(versionIds: string[]) {
+export async function getCloudAssetDownloadUrls(versionIds: string[], signal?: AbortSignal) {
     if (!versionIds.length) return {};
-    return (
-        await platformRequest<{ versions: Record<string, { url: string; thumbnailUrl?: string }> }>("/api/asset-versions/downloads", {
+    const now = Date.now();
+    const uniqueIds = [...new Set(versionIds)];
+    const versions: Record<string, CloudAssetDownload> = {};
+    const missing: string[] = [];
+    for (const versionId of uniqueIds) {
+        const cached = readCachedDownload(versionId);
+        if (cached && cached.expiresAt > now) versions[versionId] = cached.download;
+        else missing.push(versionId);
+    }
+    if (!missing.length) return versions;
+    const fetched = (
+        await platformRequest<{ versions: Record<string, CloudAssetDownload> }>("/api/asset-versions/downloads", {
             method: "POST",
-            body: JSON.stringify({ versionIds: [...new Set(versionIds)] }),
+            body: JSON.stringify({ versionIds: missing }),
+            signal,
         })
     ).versions;
+    for (const [versionId, download] of Object.entries(fetched)) {
+        versions[versionId] = download;
+        const expiresAt = downloadExpiry(download);
+        if (expiresAt > now) cacheDownload(versionId, { download, expiresAt });
+    }
+    return versions;
+}
+
+export function clearCloudAssetDownloadUrlCache() {
+    downloadUrlCache.clear();
+    if (typeof sessionStorage === "undefined") return;
+    for (let index = sessionStorage.length - 1; index >= 0; index -= 1) {
+        const key = sessionStorage.key(index);
+        if (key?.startsWith(DOWNLOAD_CACHE_PREFIX)) sessionStorage.removeItem(key);
+    }
+}
+
+function readCachedDownload(versionId: string) {
+    const memory = downloadUrlCache.get(versionId);
+    if (memory) return memory;
+    if (typeof sessionStorage === "undefined") return undefined;
+    try {
+        const cached = JSON.parse(sessionStorage.getItem(`${DOWNLOAD_CACHE_PREFIX}${versionId}`) || "null") as { download?: CloudAssetDownload; expiresAt?: number } | null;
+        if (!cached?.download?.url || typeof cached.expiresAt !== "number") return undefined;
+        const entry = { download: cached.download, expiresAt: cached.expiresAt };
+        downloadUrlCache.set(versionId, entry);
+        return entry;
+    } catch {
+        return undefined;
+    }
+}
+
+function cacheDownload(versionId: string, entry: { download: CloudAssetDownload; expiresAt: number }) {
+    downloadUrlCache.set(versionId, entry);
+    if (typeof sessionStorage === "undefined") return;
+    try {
+        sessionStorage.setItem(`${DOWNLOAD_CACHE_PREFIX}${versionId}`, JSON.stringify(entry));
+    } catch {
+        // Memory caching still works when session storage is unavailable or full.
+    }
+}
+
+function downloadExpiry(download: CloudAssetDownload) {
+    const expiries = [download.url, download.thumbnailUrl].filter((url): url is string => Boolean(url)).map(signedUrlExpiry).filter((value): value is number => value !== null);
+    return expiries.length ? Math.min(...expiries) - 30_000 : 0;
+}
+
+function signedUrlExpiry(value: string) {
+    try {
+        const url = new URL(value);
+        const expires = url.searchParams.get("X-Amz-Expires") || url.searchParams.get("x-amz-expires");
+        const signedAt = url.searchParams.get("X-Amz-Date") || url.searchParams.get("x-amz-date");
+        if (expires && signedAt) {
+            const match = signedAt.match(/^(\d{4})(\d{2})(\d{2})T(\d{2})(\d{2})(\d{2})Z$/);
+            if (match) return Date.UTC(Number(match[1]), Number(match[2]) - 1, Number(match[3]), Number(match[4]), Number(match[5]), Number(match[6])) + Number(expires) * 1000;
+        }
+        const absolute = url.searchParams.get("Expires") || url.searchParams.get("expires");
+        if (absolute && /^\d+$/.test(absolute)) return Number(absolute) * 1000;
+    } catch {
+        return null;
+    }
+    return null;
 }
 
 export function currentVersion(asset: CloudAsset) {

@@ -5,6 +5,8 @@ description: Implemented changes that still need manual verification
 
 # Pending Tests
 
+- 画布保存与切换性能：修改节点后应显示“未保存”，手动保存可立即同步，连续编辑只在首次修改 10 分钟后自动保存一次；带未保存修改切换页面时可选择保存并离开、不保存或取消，直接关闭浏览器应出现系统确认。切换大型画布和载入云端冲突版本时应先显示节点与连线，素材随后出现且旧画布请求不得覆盖新画布；签名有效期内刷新页面应复用素材地址，视频播放前只加载头帧。
+
 - Legacy canvas media loading: open a saved canvas with many images, videos, and edges. Nodes and edges should appear first, media URLs should be fetched in one batch, images should prefer thumbnails, and videos should show a poster without downloading the original until playback. The historical video thumbnail backfill must be repeatable, and failures must not modify or delete source videos.
 
 - 版本化供应商计费规则：超级管理员应能在“计费规则”中新建规则或为现有规则生成新版本，配置中国区/国际区、模型 ID 完全或包含匹配、折扣率、优先级和启用状态。新任务应固化创建时命中的规则版本；规则调价或停用后，历史任务和由历史任务发起的重试仍按原快照结算，新任务才使用最新版本。规则变更必须写入管理员审计日志。

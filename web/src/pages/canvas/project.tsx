@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { ChangeEvent as ReactChangeEvent, DragEvent as ReactDragEvent, MouseEvent as ReactMouseEvent, PointerEvent as ReactPointerEvent } from "react";
-import { useLocation, useNavigate, useParams, useSearchParams } from "react-router-dom";
+import { useBlocker, useLocation, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { Group, Video } from "lucide-react";
 import { saveAs } from "file-saver";
 import { useTranslation } from "react-i18next";
@@ -107,6 +107,7 @@ import {
 import { CanvasPluginManagerModal } from "@/components/canvas/canvas-plugin-manager-modal";
 import { CanvasRefreshShell } from "@/components/canvas/canvas-refresh-shell";
 import { CanvasTopBar } from "@/components/canvas/canvas-top-bar";
+import { useAuth } from "@/components/auth/auth-context";
 import { CODEX_AGENT_ENABLED } from "@/constant/env";
 import { ConnectionCreateMenu, NodeCreateMenu, type PendingConnectionCreate } from "@/components/canvas/canvas-create-menus";
 import {
@@ -197,6 +198,7 @@ async function storeGeneratedImage(image: Pick<ReferenceImage, "dataUrl" | "asse
 
 export default function CanvasPage() {
     const [mounted, setMounted] = useState(false);
+    const { id = "" } = useParams<{ id: string }>();
 
     useEffect(() => {
         setMounted(true);
@@ -204,19 +206,18 @@ export default function CanvasPage() {
 
     if (!mounted) return <CanvasRefreshShell />;
 
-    return <InfiniteCanvasPage />;
+    return <InfiniteCanvasPage key={id} projectId={id} />;
 }
 
-function InfiniteCanvasPage() {
+function InfiniteCanvasPage({ projectId }: { projectId: string }) {
     const { message, modal } = App.useApp();
+    const { logout } = useAuth();
     const { t } = useTranslation();
     // Subscribe to the registry version so plugin registration changes rerender the canvas.
     const nodeRegistryVersion = useNodeRegistryVersion((state) => state.version);
-    const params = useParams<{ id: string }>();
     const navigate = useNavigate();
     const location = useLocation();
     const [searchParams] = useSearchParams();
-    const projectId = params.id || "";
     const localAgentConnected = useAgentStore((state) => state.connected);
     const localAgentActivity = useAgentStore((state) => state.activity);
     const localAgentEnabled = useAgentStore((state) => state.enabled);
@@ -334,9 +335,15 @@ function InfiniteCanvasPage() {
     const videoPollIdsRef = useRef(new Set<string>());
     const insertAssetAtRef = useRef<((payload: InsertAssetPayload, position?: Position) => void) | null>(null);
     const handoffInsertedRef = useRef(false);
+    const canvasApplyVersionRef = useRef(0);
+    const canvasHydrationAbortRef = useRef<AbortController | null>(null);
 
     const applyPersistedCanvas = useCallback(
-        async (draft: CanvasDraft) => {
+        (draft: CanvasDraft) => {
+            const applyVersion = ++canvasApplyVersionRef.current;
+            canvasHydrationAbortRef.current?.abort();
+            const hydrationController = new AbortController();
+            canvasHydrationAbortRef.current = hydrationController;
             const baseNodes = resetInterruptedGeneration(draft.nodes);
             const placeholderNodes = prepareCanvasMediaPlaceholders(baseNodes);
             nodesRef.current = placeholderNodes;
@@ -347,22 +354,66 @@ function InfiniteCanvasPage() {
             setBackgroundMode(draft.settings.backgroundMode);
             setShowImageInfo(draft.settings.showImageInfo);
             setViewport(draft.viewport);
-            const restoredNodes = await hydrateCanvasImages(baseNodes);
-            nodesRef.current = restoredNodes;
-            setNodes(restoredNodes);
-            updateProject(projectId, {
-                nodes: restoredNodes,
-                connections: draft.edges,
-                backgroundMode: draft.settings.backgroundMode,
-                showImageInfo: draft.settings.showImageInfo,
-                viewport: draft.viewport,
-            });
             historyRef.current = { past: [], future: [] };
             setHistoryState({ canUndo: false, canRedo: false });
+            void hydrateCanvasImages(baseNodes, hydrationController.signal)
+                .then((restoredNodes) => {
+                    if (canvasApplyVersionRef.current !== applyVersion) return;
+                    nodesRef.current = restoredNodes;
+                    if (lastHistoryRef.current) lastHistoryRef.current = { ...lastHistoryRef.current, nodes: restoredNodes };
+                    setNodes(restoredNodes);
+                    updateProject(projectId, {
+                        nodes: restoredNodes,
+                        connections: draft.edges,
+                        backgroundMode: draft.settings.backgroundMode,
+                        showImageInfo: draft.settings.showImageInfo,
+                        viewport: draft.viewport,
+                    });
+                })
+                .catch(() => {
+                    // Placeholders remain usable when a media URL cannot be refreshed.
+                });
         },
         [projectId, updateProject],
     );
     const canvasPersistence = useCloudCanvasPersistence(projectId, applyPersistedCanvas);
+    const navigationBlocker = useBlocker(canvasPersistence.hasUnsavedChanges);
+    const [savingBeforeLeave, setSavingBeforeLeave] = useState(false);
+    const [logoutPending, setLogoutPending] = useState(false);
+
+    useEffect(() => {
+        return () => {
+            canvasApplyVersionRef.current += 1;
+            canvasHydrationAbortRef.current?.abort();
+        };
+    }, []);
+
+    useEffect(() => {
+        if (!canvasPersistence.hasUnsavedChanges && canvasPersistence.status !== "saving") return;
+        const confirmBrowserExit = (event: BeforeUnloadEvent) => {
+            event.preventDefault();
+            event.returnValue = "";
+        };
+        window.addEventListener("beforeunload", confirmBrowserExit);
+        return () => window.removeEventListener("beforeunload", confirmBrowserExit);
+    }, [canvasPersistence.hasUnsavedChanges, canvasPersistence.status]);
+
+    const saveCanvasNow = useCallback(async () => {
+        const saved = await canvasPersistence.saveNow();
+        if (saved) message.success("画布已保存");
+        else message.error("画布保存失败，请稍后重试");
+        return saved;
+    }, [canvasPersistence.saveNow, message]);
+
+    const finishLogout = useCallback(async () => {
+        await logout();
+        navigate("/login", { replace: true });
+    }, [logout, navigate]);
+
+    const requestLogout = useCallback(() => {
+        if (canvasPersistence.hasUnsavedChanges || canvasPersistence.status === "saving") setLogoutPending(true);
+        else void finishLogout();
+    }, [canvasPersistence.hasUnsavedChanges, canvasPersistence.status, finishLogout]);
 
     const createHistoryEntry = useCallback(
         (): CanvasHistoryEntry => ({
@@ -592,8 +643,8 @@ function InfiniteCanvasPage() {
         }
 
         const restore = async () => {
-            const restoredSessions = await hydrateAssistantImages(project.chatSessions || []);
-            setChatSessions(restoredSessions);
+            const storedSessions = project.chatSessions || [];
+            setChatSessions(storedSessions);
             setActiveChatId(project.activeChatId || null);
             const sanitizedDraft = createCanvasDraft(project.nodes, project.connections, project.viewport, { backgroundMode: project.backgroundMode, showImageInfo: project.showImageInfo || false });
             const localView: CanvasDraft = { ...sanitizedDraft, nodes: project.nodes, edges: project.connections };
@@ -606,13 +657,21 @@ function InfiniteCanvasPage() {
             lastHistoryRef.current = {
                 nodes: nodesRef.current,
                 connections: connectionsRef.current,
-                chatSessions: restoredSessions,
+                chatSessions: storedSessions,
                 activeChatId: project.activeChatId || null,
                 backgroundMode: sanitizedDraft.settings.backgroundMode,
                 showImageInfo: sanitizedDraft.settings.showImageInfo,
             };
             setHistoryState({ canUndo: false, canRedo: false });
             setProjectLoaded(true);
+            const applyVersion = canvasApplyVersionRef.current;
+            void hydrateAssistantImages(storedSessions)
+                .then((restoredSessions) => {
+                    if (canvasApplyVersionRef.current !== applyVersion) return;
+                    setChatSessions(restoredSessions);
+                    if (lastHistoryRef.current) lastHistoryRef.current = { ...lastHistoryRef.current, chatSessions: restoredSessions };
+                })
+                .catch(() => undefined);
         };
         void restore().catch((error) => {
             message.error(error instanceof Error ? error.message : "画布加载失败");
@@ -680,7 +739,7 @@ function InfiniteCanvasPage() {
     useEffect(() => {
         if (!projectLoaded || historyPausedRef.current) return;
         canvasPersistence.queueSave(createCanvasDraft(nodes, connections, viewport, { backgroundMode, showImageInfo }));
-    }, [backgroundMode, canvasPersistence.queueSave, connections, nodes, projectLoaded, showImageInfo, viewport]);
+    }, [backgroundMode, canvasPersistence.queueSave, connections, nodes, projectLoaded, showImageInfo]);
 
     useEffect(() => {
         if (!dialogNodeId) setNodeImageSettingsOpen(false);
@@ -691,12 +750,13 @@ function InfiniteCanvasPage() {
         if (viewportSaveTimerRef.current) clearTimeout(viewportSaveTimerRef.current);
         viewportSaveTimerRef.current = setTimeout(() => {
             updateProject(projectId, { viewport: viewportRef.current });
+            canvasPersistence.queueSave(createCanvasDraft(nodesRef.current, connectionsRef.current, viewportRef.current, { backgroundMode, showImageInfo }));
             viewportSaveTimerRef.current = null;
         }, 500);
         return () => {
             if (viewportSaveTimerRef.current) clearTimeout(viewportSaveTimerRef.current);
         };
-    }, [projectId, projectLoaded, updateProject, viewport]);
+    }, [backgroundMode, canvasPersistence.queueSave, projectId, projectLoaded, showImageInfo, updateProject, viewport]);
 
     useLayoutEffect(() => {
         nodesRef.current = nodes;
@@ -3674,6 +3734,9 @@ function InfiniteCanvasPage() {
                         onToggleAgent={toggleAgentPanel}
                         syncStatus={canvasPersistence.status}
                         onSyncClick={canvasPersistence.reopenMigration}
+                        onSave={() => void saveCanvasNow()}
+                        canSave={canvasPersistence.hasUnsavedChanges}
+                        onLogoutRequest={requestLogout}
                     />
                 ) : null}
 
@@ -3950,6 +4013,85 @@ function InfiniteCanvasPage() {
 
                 <CanvasNodeInfoModal node={infoNode} open={Boolean(infoNode)} onClose={() => setInfoNodeId(null)} />
                 <CanvasPluginManagerModal open={pluginManagerOpen} onClose={() => setPluginManagerOpen(false)} />
+
+                <Modal
+                    title="画布尚未保存"
+                    open={navigationBlocker.state === "blocked"}
+                    centered
+                    closable={false}
+                    maskClosable={false}
+                    footer={
+                        <>
+                            <Button onClick={() => navigationBlocker.state === "blocked" && navigationBlocker.reset()}>取消</Button>
+                            <Button
+                                onClick={() => {
+                                    canvasPersistence.discardPendingChanges();
+                                    if (navigationBlocker.state === "blocked") navigationBlocker.proceed();
+                                }}
+                            >
+                                不保存
+                            </Button>
+                            <Button
+                                type="primary"
+                                loading={savingBeforeLeave}
+                                onClick={() => {
+                                    setSavingBeforeLeave(true);
+                                    void canvasPersistence.saveNow().then((saved) => {
+                                        setSavingBeforeLeave(false);
+                                        if (saved && navigationBlocker.state === "blocked") navigationBlocker.proceed();
+                                        else if (!saved) message.error("画布保存失败，已留在当前页面");
+                                    });
+                                }}
+                            >
+                                保存并离开
+                            </Button>
+                        </>
+                    }
+                >
+                    <p className="text-sm opacity-70">当前画布有尚未保存的修改。保存后再离开，还是放弃这些修改？</p>
+                </Modal>
+
+                <Modal
+                    title="保存后退出登录？"
+                    open={logoutPending}
+                    centered
+                    closable={false}
+                    maskClosable={false}
+                    footer={
+                        <>
+                            <Button onClick={() => setLogoutPending(false)}>取消</Button>
+                            <Button
+                                onClick={() => {
+                                    canvasPersistence.discardPendingChanges();
+                                    setLogoutPending(false);
+                                    void finishLogout();
+                                }}
+                            >
+                                不保存
+                            </Button>
+                            <Button
+                                type="primary"
+                                loading={savingBeforeLeave || canvasPersistence.status === "saving"}
+                                onClick={() => {
+                                    if (canvasPersistence.status === "synced") {
+                                        void finishLogout();
+                                        return;
+                                    }
+                                    setSavingBeforeLeave(true);
+                                    void canvasPersistence.saveNow().then((saved) => {
+                                        setSavingBeforeLeave(false);
+                                        if (saved) void finishLogout();
+                                        else message.error("画布保存失败，尚未退出登录");
+                                    });
+                                }}
+                            >
+                                保存并退出
+                            </Button>
+                        </>
+                    }
+                >
+                    <p className="text-sm opacity-70">当前画布有尚未保存的修改。保存完成后再退出账号，还是放弃这些修改？</p>
+                </Modal>
 
                 <Modal
                     title="发现本机旧画布"

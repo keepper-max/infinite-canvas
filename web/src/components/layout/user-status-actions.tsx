@@ -18,9 +18,10 @@ type UserStatusActionsProps = {
     variant?: "default" | "canvas";
     onOpenShortcuts?: () => void;
     onOpenPlugins?: () => void;
+    onLogoutRequest?: () => void;
 };
 
-export function UserStatusActions({ showConfig = true, variant = "default", onOpenShortcuts, onOpenPlugins }: UserStatusActionsProps) {
+export function UserStatusActions({ showConfig = true, variant = "default", onOpenShortcuts, onOpenPlugins, onLogoutRequest }: UserStatusActionsProps) {
     const { i18n, t } = useTranslation();
     const navigate = useNavigate();
     const { logout } = useAuth();
@@ -57,7 +58,7 @@ export function UserStatusActions({ showConfig = true, variant = "default", onOp
                 type="button"
                 className={naturalIconClass}
                 style={iconStyle}
-                onClick={() => void logout().then(() => navigate("/login", { replace: true }))}
+                onClick={onLogoutRequest || (() => void logout().then(() => navigate("/login", { replace: true })))}
                 aria-label={t("auth.logout")}
                 title={t("auth.logout")}
             >

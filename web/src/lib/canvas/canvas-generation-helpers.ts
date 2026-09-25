@@ -63,9 +63,12 @@ export async function resolveMetadataReferences(metadata: CanvasNodeMetadata, no
     return references.every(Boolean) ? (references as ReferenceImage[]) : null;
 }
 
-export async function hydrateCanvasImages(nodes: CanvasNodeData[]) {
+export async function hydrateCanvasImages(nodes: CanvasNodeData[], signal?: AbortSignal) {
     const versionIds = nodes.flatMap((node) => [node.metadata?.assetVersionId, ...(node.metadata?.images || []).map((image) => image.assetVersionId)]).filter((id): id is string => Boolean(id));
-    const downloads: Record<string, { url: string; thumbnailUrl?: string }> = await getCloudAssetDownloadUrls(versionIds).catch(() => ({}));
+    const downloads: Record<string, { url: string; thumbnailUrl?: string }> = await getCloudAssetDownloadUrls(versionIds, signal).catch((error) => {
+        if (error instanceof DOMException && error.name === "AbortError") throw error;
+        return {};
+    });
     return Promise.all(
         nodes.map(async (node) => {
             const metadata = node.metadata;

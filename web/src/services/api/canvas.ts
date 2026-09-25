@@ -71,9 +71,10 @@ function sanitizeMetadata(value: unknown): unknown {
     if (Array.isArray(value)) return value.map((item) => sanitizeMetadata(item));
     if (!value || typeof value !== "object") return value;
     const output: Record<string, unknown> = {};
+    const cloudBacked = "assetVersionId" in value && typeof value.assetVersionId === "string" && Boolean(value.assetVersionId);
     for (const [key, item] of Object.entries(value)) {
         const normalized = key.replace(/[-_\s]/g, "").toLowerCase();
-        if (normalized === "thumbnailurl") continue;
+        if (normalized === "thumbnailurl" || (cloudBacked && normalized === "content")) continue;
         if (/apikey|secret|password|authorization|credential|accesstoken|refreshtoken/.test(normalized) || ["token", "authtoken", "bearer"].includes(normalized)) continue;
         if (["baseurl", "proxy", "proxyurl", "webdav", "webdavurl", "channel", "channels"].includes(normalized)) continue;
         output[key] = sanitizeMetadata(item);
