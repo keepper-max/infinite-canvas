@@ -14,6 +14,7 @@ import {
 } from "./auth.js";
 import {
   beginAssetUploadSchema,
+  assetVersionDownloadsSchema,
   completeAssetUploadSchema,
   setCurrentVersionSchema,
   trashAssetSchema,
@@ -1188,6 +1189,13 @@ export function createApp(
     if (!download)
       throw new DomainError("ASSET_VERSION_NOT_FOUND", "找不到该素材版本", 404);
     return context.json(success(context, download));
+  });
+
+  app.post("/api/asset-versions/downloads", async (context) => {
+    const user = await requireUser(context.req.raw, repository, config);
+    const { versionIds } = assetVersionDownloadsSchema.parse(await readJson(context.req.raw));
+    const versions = await requireAssetService(assetService).createDownloadUrls(versionIds, user.id);
+    return context.json(success(context, { versions }));
   });
 
   app.patch("/api/assets/:assetId/current-version", async (context) => {

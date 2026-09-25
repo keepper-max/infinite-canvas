@@ -9,7 +9,7 @@ import { imageToDataUrl } from "@/services/image-storage";
 import { boolConfig, buildApiUrl, isServerManagedConfig, modelOptionName, resolveModelRequestConfig, resolveModelScript, withLocalProxy, type AiConfig } from "@/stores/use-config-store";
 import { isSeedanceVideoModel, normalizeVideoGenerationMode, selectedVideoModel, supportedVideoModes, videoParameterPayload } from "@/lib/video-model-capabilities";
 import { runModelPlugin } from "./model-plugin";
-import { currentVersion, uploadCloudAsset } from "./assets";
+import { currentVersion, getCloudAssetDownloadUrls, uploadCloudAsset } from "./assets";
 import { artifactUrl, cancelManagedJobOnAbort, createManagedJob, getManagedJob } from "./jobs";
 import { getCurrentSession } from "./platform";
 import type { ReferenceImage } from "@/types/image";
@@ -149,7 +149,8 @@ function videoPluginResult(result: unknown): VideoGenerationResult {
 
 export async function storeGeneratedVideo(result: VideoGenerationResult): Promise<UploadedFile> {
     if (result.url && result.assetVersionId) {
-        return { url: result.url, storageKey: "", bytes: 0, mimeType: result.mimeType || "video/mp4", assetId: result.assetId, assetVersionId: result.assetVersionId };
+        const downloads: Record<string, { url: string; thumbnailUrl?: string }> = await getCloudAssetDownloadUrls([result.assetVersionId]).catch(() => ({}));
+        return { url: result.url, thumbnailUrl: downloads[result.assetVersionId]?.thumbnailUrl, storageKey: "", bytes: 0, mimeType: result.mimeType || "video/mp4", assetId: result.assetId, assetVersionId: result.assetVersionId };
     }
     if (result.blob) return { ...(await uploadMediaFile(result.blob, "video")), assetId: result.assetId, assetVersionId: result.assetVersionId };
     if (result.url) {

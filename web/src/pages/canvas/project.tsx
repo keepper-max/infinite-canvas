@@ -78,6 +78,7 @@ import {
     hasResumableVideoTask,
     hydrateAssistantImages,
     hydrateCanvasImages,
+    prepareCanvasMediaPlaceholders,
     imageExtension,
     isAudioFile,
     isGenerationCanceled,
@@ -336,15 +337,19 @@ function InfiniteCanvasPage() {
 
     const applyPersistedCanvas = useCallback(
         async (draft: CanvasDraft) => {
-            const restoredNodes = await hydrateCanvasImages(resetInterruptedGeneration(draft.nodes));
-            nodesRef.current = restoredNodes;
+            const baseNodes = resetInterruptedGeneration(draft.nodes);
+            const placeholderNodes = prepareCanvasMediaPlaceholders(baseNodes);
+            nodesRef.current = placeholderNodes;
             connectionsRef.current = draft.edges;
             viewportRef.current = draft.viewport;
-            setNodes(restoredNodes);
+            setNodes(placeholderNodes);
             setConnections(draft.edges);
             setBackgroundMode(draft.settings.backgroundMode);
             setShowImageInfo(draft.settings.showImageInfo);
             setViewport(draft.viewport);
+            const restoredNodes = await hydrateCanvasImages(baseNodes);
+            nodesRef.current = restoredNodes;
+            setNodes(restoredNodes);
             updateProject(projectId, {
                 nodes: restoredNodes,
                 connections: draft.edges,
@@ -3214,7 +3219,13 @@ function InfiniteCanvasPage() {
             const generationType = savedImageMetadata?.generationType;
             const useReferenceImages = generationType ? generationType === "edit" : Boolean(context?.referenceImages.length);
             const retryReferenceImages =
-                hasSavedImageMetadata && savedImageMetadata ? await resolveMetadataReferences(savedImageMetadata, nodesRef.current) : useReferenceImages ? (context?.referenceImages.length ? context.referenceImages : sourceNodeReferenceImages(sourceNode)) : [];
+                hasSavedImageMetadata && savedImageMetadata
+                    ? await resolveMetadataReferences(savedImageMetadata, nodesRef.current)
+                    : useReferenceImages
+                      ? context?.referenceImages.length
+                          ? context.referenceImages
+                          : sourceNodeReferenceImages(sourceNode)
+                      : [];
             if (useReferenceImages && !retryReferenceImages) {
                 message.error(t("canvas.projectPage.referenceMissing"));
                 setNodes((prev) =>

@@ -362,6 +362,10 @@ test("asset routes keep immutable versions, regenerate downloads, and isolate pr
     ((await download.json()) as any).data.url,
     /signed\/asset-version/,
   );
+  const downloads = await postJson(app, "/api/asset-versions/downloads", firstCookie, { versionIds: [versionId] });
+  assert.match(downloads.body.data.versions[versionId].url, /signed\/asset-version/);
+  const isolatedDownloads = await postJson(app, "/api/asset-versions/downloads", cookieFrom(second.response), { versionIds: [versionId] });
+  assert.deepEqual(isolatedDownloads.body.data.versions, {});
   const trashed = await postJson(
     app,
     `/api/assets/${completed.body.data.asset.id}/trash`,
@@ -811,6 +815,11 @@ class MemoryAssetService implements AssetServicePort {
     return asset && this.repository.owns(asset.projectId, userId)
       ? { url: `https://signed/asset-version/${versionId}` }
       : null;
+  }
+
+  async createDownloadUrls(versionIds: string[], userId: string) {
+    const entries = await Promise.all([...new Set(versionIds)].map(async (versionId) => [versionId, await this.createDownloadUrl(versionId, userId)] as const));
+    return Object.fromEntries(entries.filter((entry): entry is readonly [string, { url: string }] => Boolean(entry[1])).map(([versionId, download]) => [versionId, download]));
   }
 
   async setCurrentVersion(assetId: string, versionId: string, userId: string) {

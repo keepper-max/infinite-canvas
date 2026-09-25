@@ -73,6 +73,7 @@ function sanitizeMetadata(value: unknown): unknown {
     const output: Record<string, unknown> = {};
     for (const [key, item] of Object.entries(value)) {
         const normalized = key.replace(/[-_\s]/g, "").toLowerCase();
+        if (normalized === "thumbnailurl") continue;
         if (/apikey|secret|password|authorization|credential|accesstoken|refreshtoken/.test(normalized) || ["token", "authtoken", "bearer"].includes(normalized)) continue;
         if (["baseurl", "proxy", "proxyurl", "webdav", "webdavurl", "channel", "channels"].includes(normalized)) continue;
         output[key] = sanitizeMetadata(item);

@@ -542,7 +542,11 @@ function LoadingContent({ node, theme }: Pick<NodeContentRendererProps, "node" |
             <div className="flex w-[min(70%,220px)] flex-col gap-2">
                 <div className="flex items-center justify-between gap-3 text-[10px] tracking-[0.12em]">
                     <span className="min-w-0 flex-1 truncate">{node.metadata?.jobStatusMessage || t("canvas.node.generating")}</span>
-                    {progress !== undefined ? <span className="shrink-0 tabular-nums" style={{ color: theme.node.muted }}>{progress}%</span> : null}
+                    {progress !== undefined ? (
+                        <span className="shrink-0 tabular-nums" style={{ color: theme.node.muted }}>
+                            {progress}%
+                        </span>
+                    ) : null}
                 </div>
                 <div className="h-1 overflow-hidden rounded-full" style={{ background: theme.node.stroke }}>
                     <div
@@ -766,7 +770,7 @@ function VideoNodeContent({ node, theme }: NodeContentRendererProps) {
                 <span className="text-sm">{t("canvas.node.emptyVideo")}</span>
             </div>
         );
-    return <video src={node.metadata.content} controls className="h-full w-full rounded-[18px] bg-black object-contain" data-canvas-video={node.id} data-canvas-no-zoom />;
+    return <video src={node.metadata.content} poster={node.metadata.thumbnailUrl} preload="none" controls className="h-full w-full rounded-[18px] bg-black object-contain" data-canvas-video={node.id} data-canvas-no-zoom />;
 }
 
 function AudioNodeContent({ node, theme }: NodeContentRendererProps) {
@@ -784,7 +788,7 @@ function AudioNodeContent({ node, theme }: NodeContentRendererProps) {
                 <Music2 className="size-4 shrink-0" />
                 <span className="truncate">{t("canvas.node.audio")}</span>
             </div>
-            <audio src={node.metadata.content} controls className="w-full" data-canvas-no-zoom />
+            <audio src={node.metadata.content} preload="none" controls className="w-full" data-canvas-no-zoom />
         </div>
     );
 }
@@ -825,7 +829,7 @@ function ImageContent({
     useEffect(() => {
         void ensureImagePreview(primaryStorageKey);
     }, [primaryStorageKey, previewRevision]);
-    const primaryPreview = previewUrlFor(primaryStorageKey);
+    const primaryPreview = previewUrlFor(primaryStorageKey) || primaryImage?.thumbnailUrl || node.metadata?.thumbnailUrl;
     const primarySource = primaryContent
         ? pickImageSource({
               previewUrl: primaryPreview,
@@ -945,7 +949,15 @@ function ExpandedImageCard({
         void ensureImagePreview(image.storageKey);
     }, [image.storageKey, previewRevision]);
     const imageSource = image.content
-        ? pickImageSource({ previewUrl: previewUrlFor(image.storageKey), originalUrl: image.content, naturalWidth: image.naturalWidth, naturalHeight: image.naturalHeight, renderedWidth: node.width, renderedHeight: node.height, scale })
+        ? pickImageSource({
+              previewUrl: previewUrlFor(image.storageKey) || image.thumbnailUrl,
+              originalUrl: image.content,
+              naturalWidth: image.naturalWidth,
+              naturalHeight: image.naturalHeight,
+              renderedWidth: node.width,
+              renderedHeight: node.height,
+              scale,
+          })
         : undefined;
 
     return (

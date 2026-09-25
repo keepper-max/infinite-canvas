@@ -16,6 +16,7 @@ import {
   type ProviderArtifact,
 } from "./provider.js";
 import { ProviderRouter } from "./provider-router.js";
+import { createVideoThumbnail } from "./video-thumbnail.js";
 
 export type JobQueuePort = {
   add(jobId: string, maxAttempts: number): Promise<void>;
@@ -828,10 +829,21 @@ export class JobExecutor {
       const storageKey = `projects/${row.project_id}/generated/${row.id}/${index}.${extension}`;
       await markPersisting();
       await this.storage.put(storageKey, bytes, artifact.mimeType, sha256);
+      const assetKind = generatedAssetKind(artifact.kind, trace.assetKind);
+      let thumbnail: { storageKey: string; mimeType: string; bytes: number } | undefined;
+      if (assetKind === "video") {
+        try {
+          const thumbnailBytes = await createVideoThumbnail(bytes, this.config.ffmpegPath, `video.${extension}`);
+          const thumbnailStorageKey = `projects/${row.project_id}/generated/${row.id}/${index}.thumbnail.jpg`;
+          await this.storage.put(thumbnailStorageKey, thumbnailBytes, "image/jpeg", createHash("sha256").update(thumbnailBytes).digest("hex"));
+          thumbnail = { storageKey: thumbnailStorageKey, mimeType: "image/jpeg", bytes: thumbnailBytes.byteLength };
+        } catch (error) {
+          console.warn(`[generation-worker] video thumbnail skipped for job ${row.id}:`, error instanceof Error ? error.message : "unknown error");
+        }
+      }
       const client = await this.pool.connect();
       try {
         await client.query("begin");
-        const assetKind = generatedAssetKind(artifact.kind, trace.assetKind);
         const asset = await client.query(
           "insert into assets(project_id,kind,name,status,created_by) values($1,$2,$3,'active',$4) returning id",
           [
@@ -843,7 +855,7 @@ export class JobExecutor {
           ],
         );
         const version = await client.query(
-          "insert into asset_versions(asset_id,version,storage_key,mime_type,bytes,sha256,source,source_job_id,provenance,created_by) values($1,1,$2,$3,$4,$5,'generation',$6,$7,$8) returning id",
+          "insert into asset_versions(asset_id,version,storage_key,mime_type,bytes,sha256,source,source_job_id,provenance,created_by,thumbnail_storage_key,thumbnail_mime_type,thumbnail_bytes) values($1,1,$2,$3,$4,$5,'generation',$6,$7,$8,$9,$10,$11) returning id",
           [
             asset.rows[0].id,
             storageKey,
@@ -853,6 +865,9 @@ export class JobExecutor {
             row.id,
             buildArtifactProvenance(row),
             row.created_by,
+            thumbnail?.storageKey || null,
+            thumbnail?.mimeType || null,
+            thumbnail?.bytes || null,
           ],
         );
         await client.query(

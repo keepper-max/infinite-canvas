@@ -11,6 +11,7 @@
     "worker": "node dist/worker.js",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "db:migrate": "tsx src/db/migrate-cli.ts",
+    "assets:backfill-video-thumbnails": "node dist/db/backfill-video-thumbnails-cli.js",
     "test": "tsx --test --test-concurrency=1 tests/*.test.ts"
   },
   "dependencies": {

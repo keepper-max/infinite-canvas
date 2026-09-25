@@ -30,6 +30,7 @@ export const beginAssetUploadSchema = z
 export const completeAssetUploadSchema = z.object({}).strict();
 export const setCurrentVersionSchema = z.object({ versionId: z.string().uuid() }).strict();
 export const trashAssetSchema = z.object({ reason: z.string().trim().max(500).default("") }).strict();
+export const assetVersionDownloadsSchema = z.object({ versionIds: z.array(z.string().uuid()).max(200) }).strict();
 
 export type BeginAssetUpload = z.infer<typeof beginAssetUploadSchema>;
 

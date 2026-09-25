@@ -263,6 +263,9 @@ test(
         firstVersion.body.data.asset.versions[0].thumbnailUrl,
         /\/download\/projects\//,
       );
+      const batchDownloads = await postJson(restartedApp, "/api/asset-versions/downloads", first.cookie, { versionIds: [firstVersion.body.data.asset.currentVersionId] });
+      assert.match(batchDownloads.body.data.versions[firstVersion.body.data.asset.currentVersionId].url, /\/download\/projects\//);
+      assert.match(batchDownloads.body.data.versions[firstVersion.body.data.asset.currentVersionId].thumbnailUrl, /\/download\/projects\//);
       const assetId = firstVersion.body.data.asset.id;
       const firstVersionId = firstVersion.body.data.asset.currentVersionId;
 

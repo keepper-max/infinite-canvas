@@ -50,6 +50,7 @@ export interface AssetServicePort {
     versionId: string,
     userId: string,
   ): Promise<{ url: string } | null>;
+  createDownloadUrls(versionIds: string[], userId: string): Promise<Record<string, { url: string; thumbnailUrl?: string }>>;
   createAdminDownloadUrl?(versionId: string): Promise<{ url: string } | null>;
   setCurrentVersion(
     assetId: string,
@@ -379,6 +380,33 @@ export class PostgresAssetService implements AssetServicePort {
     return row
       ? { url: await this.storage.createDownloadUrl(row.storageKey, row.name) }
       : null;
+  }
+
+  async createDownloadUrls(versionIds: string[], userId: string) {
+    if (!versionIds.length) return {};
+    const rows = await this.db
+      .selectDistinct({
+        id: tables.assetVersions.id,
+        storageKey: tables.assetVersions.storageKey,
+        thumbnailStorageKey: tables.assetVersions.thumbnailStorageKey,
+        name: tables.assets.name,
+      })
+      .from(tables.assetVersions)
+      .innerJoin(tables.assets, eq(tables.assets.id, tables.assetVersions.assetId))
+      .innerJoin(tables.projectMembers, eq(tables.projectMembers.projectId, tables.assets.projectId))
+      .innerJoin(tables.projects, eq(tables.projects.id, tables.assets.projectId))
+      .where(and(inArray(tables.assetVersions.id, [...new Set(versionIds)]), eq(tables.projectMembers.userId, userId), isNull(tables.projects.deletedAt)));
+    return Object.fromEntries(
+      await Promise.all(
+        rows.map(async (row) => [
+          row.id,
+          {
+            url: await this.storage.createDownloadUrl(row.storageKey, row.name),
+            ...(row.thumbnailStorageKey ? { thumbnailUrl: await this.storage.createDownloadUrl(row.thumbnailStorageKey) } : {}),
+          },
+        ]),
+      ),
+    );
   }
 
   async createAdminDownloadUrl(versionId: string) {

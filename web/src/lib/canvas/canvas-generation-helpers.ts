@@ -8,6 +8,7 @@ import type { CanvasNodeGenerationMode } from "@/components/canvas/canvas-node-p
 import type { CanvasImageAngleParams } from "@/components/canvas/canvas-node-angle-dialog";
 import type { ReferenceImage } from "@/types/image";
 import { artifactUrl } from "@/services/api/jobs";
+import { getCloudAssetDownloadUrls } from "@/services/api/assets";
 import { CanvasNodeType, type CanvasAssistantSession, type CanvasConnection, type CanvasNodeData, type CanvasNodeMetadata } from "@/types/canvas";
 
 export function imageExtension(dataUrl: string) {
@@ -63,52 +64,84 @@ export async function resolveMetadataReferences(metadata: CanvasNodeMetadata, no
 }
 
 export async function hydrateCanvasImages(nodes: CanvasNodeData[]) {
+    const versionIds = nodes.flatMap((node) => [node.metadata?.assetVersionId, ...(node.metadata?.images || []).map((image) => image.assetVersionId)]).filter((id): id is string => Boolean(id));
+    const downloads: Record<string, { url: string; thumbnailUrl?: string }> = await getCloudAssetDownloadUrls(versionIds).catch(() => ({}));
     return Promise.all(
         nodes.map(async (node) => {
             const metadata = node.metadata;
             const content = metadata?.content;
-            if (
-                (node.type === CanvasNodeType.Video || node.type === CanvasNodeType.Audio) &&
-                metadata &&
-                (content || metadata.storageKey || metadata.assetVersionId)
-            ) {
-                return { ...node, metadata: { ...metadata, content: await hydrateGeneratedMediaUrl(content, metadata.storageKey, metadata.assetVersionId) } };
+            if ((node.type === CanvasNodeType.Video || node.type === CanvasNodeType.Audio) && metadata && (content || metadata.storageKey || metadata.assetVersionId)) {
+                const download = metadata.assetVersionId ? downloads[metadata.assetVersionId] : undefined;
+                return {
+                    ...node,
+                    metadata: {
+                        ...metadata,
+                        content: await hydrateGeneratedMediaUrl(content, metadata.storageKey, download?.url),
+                        ...(download?.thumbnailUrl ? { thumbnailUrl: download.thumbnailUrl } : {}),
+                    },
+                };
             }
             if (node.type !== CanvasNodeType.Image || !metadata) return node;
             const images = await Promise.all(
                 (metadata.images || []).map(async (image) =>
-                    image.content || image.storageKey || image.assetVersionId ? { ...image, content: await hydrateGeneratedImageUrl(image.content, image.storageKey, image.assetVersionId) } : image,
+                    image.content || image.storageKey || image.assetVersionId
+                        ? {
+                              ...image,
+                              content: await hydrateGeneratedImageUrl(image.content, image.storageKey, image.assetVersionId ? downloads[image.assetVersionId]?.url : undefined),
+                              ...(image.assetVersionId && downloads[image.assetVersionId]?.thumbnailUrl ? { thumbnailUrl: downloads[image.assetVersionId]!.thumbnailUrl } : {}),
+                          }
+                        : image,
                 ),
             );
-            if (metadata.storageKey || metadata.assetVersionId) return { ...node, metadata: { ...metadata, content: await hydrateGeneratedImageUrl(content, metadata.storageKey, metadata.assetVersionId), images } };
-            if (!content) return node;
-            if (!content.startsWith("data:image/")) return node;
-            return { ...node, metadata: { ...metadata, ...imageMetadata(await uploadImage(content)) } };
+            if (metadata.storageKey || metadata.assetVersionId) {
+                const download = metadata.assetVersionId ? downloads[metadata.assetVersionId] : undefined;
+                return {
+                    ...node,
+                    metadata: {
+                        ...metadata,
+                        content: await hydrateGeneratedImageUrl(content, metadata.storageKey, download?.url),
+                        images,
+                        ...(download?.thumbnailUrl ? { thumbnailUrl: download.thumbnailUrl } : {}),
+                    },
+                };
+            }
+            if (content?.startsWith("[image omitted]")) return { ...node, metadata: { ...metadata, ...imageMetadata(await uploadImage(content)), images } };
+            return images === metadata.images ? node : { ...node, metadata: { ...metadata, images } };
         }),
     );
 }
 
-async function hydrateGeneratedImageUrl(content = "", storageKey?: string, assetVersionId?: string) {
-    let fallback = content;
-    if (assetVersionId) {
-        try {
-            fallback = await artifactUrl({ id: assetVersionId, assetVersionId });
-        } catch {
-            // Keep the last usable URL when an asset was removed or is temporarily unavailable.
-        }
-    }
+export function prepareCanvasMediaPlaceholders(nodes: CanvasNodeData[]) {
+    return nodes.map((node) => {
+        const metadata = node.metadata;
+        if (!metadata) return node;
+        let imagesChanged = false;
+        const images = metadata.images?.map((image) => {
+            if (!image.assetVersionId) return image;
+            imagesChanged = true;
+            return { ...image, content: "", thumbnailUrl: undefined };
+        });
+        const primaryImage = metadata.images?.find((image) => image.id === (metadata.primaryImageId || metadata.images?.[0]?.id));
+        const clearPrimaryContent = Boolean(metadata.assetVersionId || primaryImage?.assetVersionId);
+        if (!clearPrimaryContent && !imagesChanged) return node;
+        return {
+            ...node,
+            metadata: {
+                ...metadata,
+                ...(clearPrimaryContent ? { content: "", thumbnailUrl: undefined } : {}),
+                ...(images ? { images } : {}),
+            },
+        };
+    });
+}
+
+async function hydrateGeneratedImageUrl(content = "", storageKey?: string, signedUrl?: string) {
+    const fallback = signedUrl || content;
     return storageKey ? resolveImageUrl(storageKey, fallback) : fallback;
 }
 
-async function hydrateGeneratedMediaUrl(content = "", storageKey?: string, assetVersionId?: string) {
-    let fallback = content;
-    if (assetVersionId) {
-        try {
-            fallback = await artifactUrl({ id: assetVersionId, assetVersionId });
-        } catch {
-            // Keep the last usable URL when an asset was removed or is temporarily unavailable.
-        }
-    }
+async function hydrateGeneratedMediaUrl(content = "", storageKey?: string, signedUrl?: string) {
+    const fallback = signedUrl || content;
     return storageKey ? resolveMediaUrl(storageKey, fallback) : fallback;
 }
 
