@@ -14,7 +14,9 @@ export function AuthGate({ children }: { children: ReactNode }) {
     useEffect(() => {
         const controller = new AbortController();
         void getCurrentSession(controller.signal)
-            .then((next) => {
+            .then(async (next) => {
+                const { useConfigStore } = await import("@/stores/use-config-store");
+                useConfigStore.getState().activateWebdavProfile(next.user.id);
                 setSession(next);
                 setState("ready");
             })

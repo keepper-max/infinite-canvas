@@ -32,6 +32,7 @@ export async function importAppConfig(file: File) {
         throw new Error(i18n.t("config.invalidFile"));
     }
     if (data.app !== "infinite-canvas" || data.version !== 1 || !data.config || !data.webdav || !data.promptSources) throw new Error(i18n.t("config.invalidFile"));
-    useConfigStore.setState({ config: data.config, webdav: data.webdav });
+    useConfigStore.setState({ config: data.config });
+    useConfigStore.getState().replaceWebdavConfig(data.webdav);
     usePromptSourceStore.setState(data.promptSources);
 }

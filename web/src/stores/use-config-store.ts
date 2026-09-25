@@ -163,18 +163,22 @@ export const defaultWebdavSyncConfig: WebdavSyncConfig = {
     url: "",
     username: "",
     password: "",
-    directory: "infinite-canvas",
+    directory: "shoushouhuabu",
     lastSyncedAt: "",
 };
 
 type ConfigStore = {
     config: AiConfig;
     webdav: WebdavSyncConfig;
+    webdavProfiles: Record<string, WebdavSyncConfig>;
+    webdavOwnerUserId: string;
     isConfigOpen: boolean;
     configTab: ConfigTabKey;
     shouldPromptContinue: boolean;
     updateConfig: <K extends keyof AiConfig>(key: K, value: AiConfig[K]) => void;
     importChannelCredentials: (input: { baseUrl?: string | null; apiKey?: string | null }) => ChannelCredentialsImportResult;
+    activateWebdavProfile: (userId: string) => void;
+    replaceWebdavConfig: (config: WebdavSyncConfig) => void;
     updateWebdavConfig: <K extends keyof WebdavSyncConfig>(key: K, value: WebdavSyncConfig[K]) => void;
     isAiConfigReady: (config: AiConfig, model: string) => boolean;
     openConfigDialog: (shouldPromptContinue?: boolean, tab?: ConfigTabKey) => void;
@@ -183,6 +187,16 @@ type ConfigStore = {
 };
 
 const VIDEO_KEYWORDS = ["video", "sora", "veo", "kling", "wan", "hailuo"];
+
+function normalizeWebdavConfig(config?: Partial<WebdavSyncConfig>): WebdavSyncConfig {
+    const next = { ...defaultWebdavSyncConfig, ...(config || {}) };
+    if (next.directory === "infinite-canvas" && !next.url.trim() && !next.lastSyncedAt) next.directory = defaultWebdavSyncConfig.directory;
+    return next;
+}
+
+function normalizeWebdavProfiles(profiles?: Record<string, WebdavSyncConfig>) {
+    return Object.fromEntries(Object.entries(profiles || {}).map(([userId, config]) => [userId, normalizeWebdavConfig(config)]));
+}
 
 export function boolConfig(value: string, fallback: boolean) {
     return value ? value === "true" : fallback;
@@ -248,6 +262,8 @@ export const useConfigStore = create<ConfigStore>()(
         (set, get) => ({
             config: defaultConfig,
             webdav: defaultWebdavSyncConfig,
+            webdavProfiles: {},
+            webdavOwnerUserId: "",
             isConfigOpen: false,
             configTab: "channels",
             shouldPromptContinue: false,
@@ -265,13 +281,35 @@ export const useConfigStore = create<ConfigStore>()(
                 if (result.config !== currentConfig) set({ config: result.config });
                 return { status: result.status, channelName: result.channelName };
             },
+            activateWebdavProfile: (userId) =>
+                set((state) => {
+                    const normalizedUserId = userId.trim();
+                    if (!normalizedUserId) return state;
+                    const existing = state.webdavProfiles[normalizedUserId];
+                    const shouldClaimLegacyConfig = !existing && !state.webdavOwnerUserId;
+                    const webdav = normalizeWebdavConfig(existing || (shouldClaimLegacyConfig ? state.webdav : undefined));
+                    return {
+                        webdav,
+                        webdavOwnerUserId: normalizedUserId,
+                        webdavProfiles: { ...state.webdavProfiles, [normalizedUserId]: webdav },
+                    };
+                }),
+            replaceWebdavConfig: (config) =>
+                set((state) => {
+                    const webdav = normalizeWebdavConfig(config);
+                    return {
+                        webdav,
+                        webdavProfiles: state.webdavOwnerUserId ? { ...state.webdavProfiles, [state.webdavOwnerUserId]: webdav } : state.webdavProfiles,
+                    };
+                }),
             updateWebdavConfig: (key, value) =>
-                set((state) => ({
-                    webdav: {
-                        ...state.webdav,
-                        [key]: value,
-                    },
-                })),
+                set((state) => {
+                    const webdav = { ...state.webdav, [key]: value };
+                    return {
+                        webdav,
+                        webdavProfiles: state.webdavOwnerUserId ? { ...state.webdavProfiles, [state.webdavOwnerUserId]: webdav } : state.webdavProfiles,
+                    };
+                }),
             isAiConfigReady: (config, model) => isAiConfigReady(config, model),
             openConfigDialog: (shouldPromptContinue = false, configTab = "channels") => set({ isConfigOpen: true, shouldPromptContinue, configTab }),
             setConfigDialogOpen: (isConfigOpen) => set({ isConfigOpen }),
@@ -279,27 +317,30 @@ export const useConfigStore = create<ConfigStore>()(
         }),
         {
             name: CONFIG_STORE_KEY,
-            version: 4,
+            version: 5,
             migrate: (persisted) => {
                 const state = (persisted || {}) as Partial<ConfigStore>;
                 const config = { ...defaultConfig, ...((state.config || {}) as Partial<AiConfig>) };
                 return {
                     config: sanitizeBrowserProviderConfig(config),
-                    webdav: { ...defaultWebdavSyncConfig, ...(state.webdav || {}) },
+                    webdav: normalizeWebdavConfig(state.webdav),
+                    webdavProfiles: normalizeWebdavProfiles(state.webdavProfiles),
+                    webdavOwnerUserId: state.webdavOwnerUserId || "",
                 };
             },
-            partialize: (state) => ({ config: sanitizeBrowserProviderConfig(state.config), webdav: state.webdav }),
+            partialize: (state) => ({ config: sanitizeBrowserProviderConfig(state.config), webdav: state.webdav, webdavProfiles: state.webdavProfiles, webdavOwnerUserId: state.webdavOwnerUserId }),
             merge: (persisted, current) => {
                 const persistedState = (persisted || {}) as Partial<ConfigStore>;
                 const persistedConfig = (persistedState.config || {}) as Partial<AiConfig>;
-                const persistedWebdav = (persistedState.webdav || {}) as Partial<WebdavSyncConfig>;
                 const config = { ...defaultConfig, ...persistedConfig };
                 if (!Array.isArray(persistedConfig.channels)) config.channels = [];
                 const channels = normalizeChannels(config);
                 const models = modelOptionsFromChannels(channels);
                 return {
                     ...current,
-                    webdav: { ...defaultWebdavSyncConfig, ...persistedWebdav },
+                    webdav: normalizeWebdavConfig(persistedState.webdav),
+                    webdavProfiles: normalizeWebdavProfiles(persistedState.webdavProfiles),
+                    webdavOwnerUserId: persistedState.webdavOwnerUserId || "",
                     config: {
                         ...config,
                         channelMode: "local",
