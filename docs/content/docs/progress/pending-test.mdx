@@ -7,7 +7,7 @@ description: Implemented changes that still need manual verification
 
 - 图片节点素材恢复：已有资产版本但未显示图片时应提示“素材未载入”，点击“重新载入”只刷新素材、不触发模型生成或扣费；单图结果仅保存在图片列表时也应正常显示。真正没有资产引用的节点仍显示“空图片节点”。
 
-- 画布保存与切换性能：首次进入已保存画布且未操作时应保持“已同步”；修改节点后才显示“未保存”，手动保存可立即同步，连续编辑只在首次修改 10 分钟后自动保存一次；带未保存修改切换页面时可选择保存并离开、不保存或取消，直接关闭浏览器应出现系统确认。切回近期画布应立即显示本地缓存内容并在后台校验云端版本；大型画布和载入云端冲突版本应先显示节点与连线，素材随后出现且旧画布请求不得覆盖新画布；签名有效期内刷新页面应复用素材地址，视频播放前只加载头帧。
+- 画布保存与切换性能：首次进入包含已入库视频的已保存画布且未操作时应保持“已同步”，不得重新轮询已经完成的视频任务；修改节点后才显示“未保存”，手动保存可立即同步，连续编辑只在首次修改 10 分钟后自动保存一次；带未保存修改切换页面时可选择保存并离开、不保存或取消，直接关闭浏览器应出现系统确认。切回近期画布应立即显示本地缓存内容并在后台校验云端版本；大型画布和载入云端冲突版本应先显示节点与连线，素材随后出现且旧画布请求不得覆盖新画布；签名有效期内刷新页面应复用素材地址，视频播放前只加载头帧。真正只有任务 ID、尚无内容或云端素材引用的中断视频仍应自动续跑。
 
 - Legacy canvas media loading: open a saved canvas with many images, videos, and edges. Nodes and edges should appear first, media URLs should be fetched in one batch, images should prefer thumbnails, and videos should show a poster without downloading the original until playback. The historical video thumbnail backfill must be repeatable, and failures must not modify or delete source videos.
 
