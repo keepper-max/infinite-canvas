@@ -1,11 +1,19 @@
 import { App, Button, Card, Empty, Input, Modal, Select, Spin, Tag } from "antd";
 import { Coins, CreditCard, MessageSquareText, Plus, RefreshCw, Users } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
+import { Navigate } from "react-router-dom";
 
+import { useAuth } from "@/components/auth/auth-context";
 import { addTeamMember, attachTeamProject, createTeam, getCreditAccount, getOperationsCapabilities, listTeamMembers, listTeams, type CreditAccount, type OperationsCapabilities, type Team, type TeamMember } from "@/services/api/operations";
 import { listProjects, type ProjectSummary } from "@/services/api/platform";
 
 export default function OperationsPage() {
+    const { user } = useAuth();
+    if (!user.isAdmin) return <Navigate to="/canvas" replace />;
+    return <OperationsContent />;
+}
+
+function OperationsContent() {
     const { message } = App.useApp();
     const [loading, setLoading] = useState(true);
     const [capabilities, setCapabilities] = useState<OperationsCapabilities>();

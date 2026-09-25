@@ -33,8 +33,9 @@ export function AppTopNav({ canvasProject, canvasVisible, onCanvasPointerEnter, 
     const connectAgent = useAgentStore((state) => state.connectAgent);
     const togglePanel = useAgentStore((state) => state.togglePanel);
     const panelOpen = useAgentStore((state) => state.panelOpen);
+    const visibleNavigationTools = navigationTools.filter((tool) => tool.slug !== "operations" || user.isAdmin);
     const slug = pathname.split("/").filter(Boolean)[0];
-    const activeToolSlug = navigationTools.some((tool) => tool.slug === slug) ? (slug as NavigationToolSlug) : undefined;
+    const activeToolSlug = visibleNavigationTools.some((tool) => tool.slug === slug) ? (slug as NavigationToolSlug) : undefined;
 
     useEffect(() => {
         if (!CODEX_AGENT_ENABLED || autoConnectRef.current || agentEnabled || agentConnected || !agentToken.trim()) return;
@@ -72,7 +73,7 @@ export function AppTopNav({ canvasProject, canvasVisible, onCanvasPointerEnter, 
                         </button>
 
                         <nav className="hide-scrollbar ml-8 hidden h-14 min-w-0 items-center gap-7 overflow-x-auto md:flex">
-                            {navigationTools.map((tool) => {
+                            {visibleNavigationTools.map((tool) => {
                                 const Icon = tool.icon;
                                 const active = tool.slug === activeToolSlug;
                                 return (
@@ -110,7 +111,7 @@ export function AppTopNav({ canvasProject, canvasVisible, onCanvasPointerEnter, 
                 </div>
             </header>
 
-            <MobileNavDrawer open={mobileNavOpen} activeToolSlug={activeToolSlug} onClose={() => setMobileNavOpen(false)} />
+            <MobileNavDrawer open={mobileNavOpen} activeToolSlug={activeToolSlug} showOperations={user.isAdmin} onClose={() => setMobileNavOpen(false)} />
             <AppConfigModal />
         </>
     );
