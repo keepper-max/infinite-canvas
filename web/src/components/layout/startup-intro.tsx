@@ -85,7 +85,7 @@ export function StartupIntro() {
             </div>
 
             <div className="startup-intro__corner startup-intro__corner--top" aria-hidden="true">
-                SS / INFINITE CANVAS <span>01—04</span>
+                SS / SHOUSHOUHUABU <span>01—04</span>
             </div>
             <div className="startup-intro__corner startup-intro__corner--bottom" aria-hidden="true">
                 <span>CREATIVE SYSTEM ONLINE</span>

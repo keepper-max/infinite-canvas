@@ -271,14 +271,14 @@ test("可选 MCP 失败进入 warning，画布 MCP 失败进入 failed", () => {
     requiredFailure.completeConversationMcpInventory([{ name: "infinite-canvas", authStatus: "notLoggedIn" }]);
     const failed = requiredFailure.completeConversationPreparation("thread-2");
     assert.equal(failed.status, "failed");
-    assert.match(failed.error || "", /Infinite Canvas MCP/);
+    assert.match(failed.error || "", /守守画布 MCP/);
 
     const requiredMissing = new CanvasSession();
     requiredMissing.beginConversation();
     requiredMissing.completeConversationMcpInventory([{ name: "notion", authStatus: "unsupported" }]);
     const missing = requiredMissing.completeConversationPreparation("thread-3");
     assert.equal(missing.status, "failed");
-    assert.match(missing.error || "", /Infinite Canvas MCP/);
+    assert.match(missing.error || "", /守守画布 MCP/);
 });
 
 test("Codex 写操作在多窗口之间互斥且不能与运行 turn 并发", () => {
