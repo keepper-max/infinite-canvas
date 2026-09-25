@@ -37,6 +37,20 @@ export type AdminPaymentSettings = {
     providerReserveCny: string;
     pointsPerProviderCny: 120;
 };
+export type ProviderBillingRule = {
+    id: string;
+    ruleKey: string;
+    version: number;
+    provider: "runninghub" | "runninghub_global";
+    modelPattern: string;
+    matchType: "exact" | "contains";
+    discountRate: string;
+    priority: number;
+    enabled: boolean;
+    note: string;
+    createdAt: string;
+};
+export type ProviderBillingRuleInput = Pick<ProviderBillingRule, "provider" | "modelPattern" | "matchType" | "discountRate" | "priority" | "enabled" | "note">;
 export type PaymentOrder = {
     id: string;
     userId: string;
@@ -209,6 +223,15 @@ export async function createAdminPaymentPlan(input: PaymentPlanInput) {
 }
 export async function updateAdminPaymentPlan(planId: string, input: PaymentPlanInput) {
     return (await platformRequest<{ plan: BillingPlan }>(`/api/admin/payments/plans/${encodeURIComponent(planId)}`, { method: "PUT", body: JSON.stringify(input) })).plan;
+}
+export async function getAdminBillingRules(signal?: AbortSignal) {
+    return (await platformRequest<{ rules: ProviderBillingRule[] }>("/api/admin/billing-rules", { signal })).rules;
+}
+export async function createAdminBillingRule(input: ProviderBillingRuleInput) {
+    return (await platformRequest<{ rule: ProviderBillingRule }>("/api/admin/billing-rules", { method: "POST", body: JSON.stringify(input) })).rule;
+}
+export async function updateAdminBillingRule(ruleKey: string, input: ProviderBillingRuleInput) {
+    return (await platformRequest<{ rule: ProviderBillingRule }>(`/api/admin/billing-rules/${encodeURIComponent(ruleKey)}`, { method: "PUT", body: JSON.stringify(input) })).rule;
 }
 export async function getAdminActivationCodes(signal?: AbortSignal) {
     return (await platformRequest<{ codes: ActivationCodeRecord[] }>("/api/admin/credits/activation-codes", { signal })).codes;

@@ -8,6 +8,17 @@ const config = {
   apiKey: "test-only",
   catalogUrl: "https://example.invalid/models",
 };
+const billingRuleSnapshot = {
+  ruleId: "00000000-0000-4000-8000-000000000271",
+  ruleKey: "runninghub-seedance-2-5",
+  version: 1,
+  provider: "runninghub",
+  modelPattern: "seedance-2.5",
+  matchType: "contains",
+  discountRate: "0.8",
+  priority: 100,
+  capturedAt: "2026-09-25T00:00:00.000Z",
+};
 
 test("billing reconciliation stores official usage fields and decimal amounts as strings", async () => {
   const calls: Array<{ sql: string; values?: unknown[] }> = [];
@@ -241,6 +252,7 @@ test("RunningHub terminal usage is settled directly without Token360 reconciliat
     model_id: "runninghub.video.seedance-2-5",
     capability: "video",
     billing_status: "pending",
+    billing_rule_snapshot: billingRuleSnapshot,
     parameters: { duration: "5" },
     billing_meter_usage: {
       provider_request_id: "rh-task-1",
@@ -286,7 +298,8 @@ test("RunningHub terminal usage is settled directly without Token360 reconciliat
     provider_paid_amount: "3.398",
     original_amount: "4.2475",
     billing_discount_rate: "0.8",
-    billing_amount_source: "seedance_2_5_discount_restore",
+    billing_amount_source: "versioned_rule_snapshot",
+    billing_rule_snapshot: billingRuleSnapshot,
   });
   assert.match(calls.at(-1)?.sql || "", /billing_status='settled'/);
 });
@@ -294,16 +307,43 @@ test("RunningHub terminal usage is settled directly without Token360 reconciliat
 test("RunningHub Seedance 2.5 restores the original 80%-discount price exactly", () => {
   assert.equal(
     runningHubOriginalAmount(
-      "runninghub.video.bytedance-seedance-2.5-token-multimodal-video",
+      billingRuleSnapshot,
       "11.419",
     ),
     "14.27375",
   );
   assert.equal(
-    runningHubOriginalAmount("runninghub.video.seedance-2-0", "11.419"),
+    runningHubOriginalAmount({}, "11.419"),
     "11.419",
   );
-  assert.equal(runningHubOriginalAmount("runninghub.video.seedance-2.5", null), null);
+  assert.equal(runningHubOriginalAmount(billingRuleSnapshot, null), null);
+  assert.equal(runningHubOriginalAmount({ ...billingRuleSnapshot, discountRate: "0.75" }, "10"), "13.33333333");
+});
+
+test("billing rule resolution normalizes model separators and snapshots the selected version", async () => {
+  const pool = {
+    async query() {
+      return {
+        rows: [{
+          id: billingRuleSnapshot.ruleId,
+          rule_key: billingRuleSnapshot.ruleKey,
+          version: 2,
+          provider: "runninghub",
+          model_pattern: "seedance-2.5",
+          match_type: "contains",
+          discount_rate: "0.75",
+          priority: 100,
+        }],
+      };
+    },
+  };
+  const snapshot = await new BillingService(pool as never, config).resolveRuleSnapshot(
+    "runninghub",
+    "runninghub.video.bytedance_seedance-2-5",
+  );
+  assert.equal(snapshot?.version, 2);
+  assert.equal(snapshot?.discountRate, "0.75");
+  assert.equal(snapshot?.ruleKey, billingRuleSnapshot.ruleKey);
 });
 
 test("RunningHub global usage keeps a region-specific billing identity", async () => {

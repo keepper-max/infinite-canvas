@@ -10,7 +10,40 @@ permissions:
   packages: write
 
 jobs:
+  test-api:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: studio
+          POSTGRES_PASSWORD: test-only
+          POSTGRES_DB: infinite_canvas_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U studio -d infinite_canvas_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: server/api/package-lock.json
+      - run: npm ci --no-audit --no-fund
+        working-directory: server/api
+      - run: npm run typecheck
+        working-directory: server/api
+      - run: npm test
+        working-directory: server/api
+        env:
+          TEST_DATABASE_URL: postgresql://studio:test-only@127.0.0.1:5432/infinite_canvas_test
+
   build:
+    needs: test-api
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false

@@ -1,4 +1,4 @@
-import { ArrowLeft, Boxes, CircleDollarSign, ClipboardList, CreditCard, LayoutDashboard, ShieldCheck, Users } from "lucide-react";
+import { ArrowLeft, Boxes, CircleDollarSign, ClipboardList, CreditCard, LayoutDashboard, ReceiptText, ShieldCheck, Users } from "lucide-react";
 import { Button, DatePicker, Drawer, Empty, Input, InputNumber, Modal, Select, Space, Spin, Switch, Table, Tag, Tooltip, message } from "antd";
 import dayjs, { type Dayjs } from "dayjs";
 import { useCallback, useEffect, useState } from "react";
@@ -15,6 +15,7 @@ import {
     getAdminPaymentOrders,
     getAdminPaymentPlans,
     getAdminPaymentSettings,
+    getAdminBillingRules,
     getAdminOverview,
     getAdminProjectContent,
     getAdminCreditPricing,
@@ -35,6 +36,8 @@ import {
     createAdminPaymentPlan,
     updateAdminPaymentPlan,
     setAdminPaymentSettings,
+    createAdminBillingRule,
+    updateAdminBillingRule,
     type AdminAuditLog,
     type AdminJob,
     type AdminModel,
@@ -43,6 +46,8 @@ import {
     type BillingPlan,
     type PaymentPlanInput,
     type AdminPaymentSettings,
+    type ProviderBillingRule,
+    type ProviderBillingRuleInput,
     type AdminProvider,
     type AdminProviders,
     type AdminUsage,
@@ -58,6 +63,7 @@ const sections = [
     { key: "users", label: "账号", icon: Users },
     { key: "usage", label: "消耗", icon: CircleDollarSign },
     { key: "jobs", label: "任务", icon: ClipboardList },
+    { key: "billing", label: "计费规则", icon: ReceiptText },
     { key: "payments", label: "充值", icon: CreditCard },
     { key: "models", label: "模型", icon: Boxes },
     { key: "audit", label: "审计", icon: ShieldCheck },
@@ -164,6 +170,7 @@ function AdminSection({ section, modelProvider }: { section: Section; modelProvi
     if (section === "users") return <UsersPanel />;
     if (section === "usage") return <UsagePanel />;
     if (section === "jobs") return <JobsPanel />;
+    if (section === "billing") return <BillingRulesPanel />;
     if (section === "payments") return <PaymentsPanel />;
     if (section === "models") return <ModelsPanel provider={modelProvider} />;
     return <AuditPanel />;
@@ -1089,6 +1096,160 @@ function JobsPanel() {
                 ]}
             />
         </Panel>
+    );
+}
+
+type BillingRuleDraft = {
+    provider: ProviderBillingRule["provider"];
+    modelPattern: string;
+    matchType: ProviderBillingRule["matchType"];
+    discountPercent: number;
+    priority: number;
+    enabled: boolean;
+    note: string;
+};
+const emptyBillingRuleDraft: BillingRuleDraft = {
+    provider: "runninghub",
+    modelPattern: "",
+    matchType: "contains",
+    discountPercent: 100,
+    priority: 0,
+    enabled: true,
+    note: "",
+};
+
+function BillingRulesPanel() {
+    const [items, setItems] = useState<ProviderBillingRule[]>();
+    const [editing, setEditing] = useState<ProviderBillingRule>();
+    const [draft, setDraft] = useState<BillingRuleDraft>(emptyBillingRuleDraft);
+    const [editorOpen, setEditorOpen] = useState(false);
+    const [saving, setSaving] = useState(false);
+    const load = useCallback((signal?: AbortSignal) => {
+        getAdminBillingRules(signal)
+            .then(setItems)
+            .catch((error) => {
+                if (!(error instanceof DOMException && error.name === "AbortError")) message.error(error instanceof Error ? error.message : "计费规则加载失败");
+            });
+    }, []);
+    useEffect(() => {
+        const controller = new AbortController();
+        load(controller.signal);
+        return () => controller.abort();
+    }, [load]);
+    const openEditor = (rule?: ProviderBillingRule) => {
+        setEditing(rule);
+        setDraft(rule ? {
+            provider: rule.provider,
+            modelPattern: rule.modelPattern,
+            matchType: rule.matchType,
+            discountPercent: Number(rule.discountRate) * 100,
+            priority: rule.priority,
+            enabled: rule.enabled,
+            note: rule.note,
+        } : emptyBillingRuleDraft);
+        setEditorOpen(true);
+    };
+    const save = async () => {
+        if (!draft.modelPattern.trim()) return void message.warning("请填写模型匹配内容");
+        if (!(draft.discountPercent > 0 && draft.discountPercent <= 100)) return void message.warning("折扣率必须大于 0% 且不超过 100%");
+        const input: ProviderBillingRuleInput = {
+            provider: draft.provider,
+            modelPattern: draft.modelPattern.trim(),
+            matchType: draft.matchType,
+            discountRate: (draft.discountPercent / 100).toFixed(8).replace(/0+$/, "").replace(/\.$/, ""),
+            priority: draft.priority,
+            enabled: draft.enabled,
+            note: draft.note.trim(),
+        };
+        setSaving(true);
+        try {
+            const saved = editing
+                ? await updateAdminBillingRule(editing.ruleKey, input)
+                : await createAdminBillingRule(input);
+            setItems((current) => editing
+                ? current?.map((item) => item.ruleKey === saved.ruleKey ? saved : item)
+                : [...(current || []), saved]);
+            setEditorOpen(false);
+            message.success(editing ? `计费规则 v${saved.version} 已生效` : "计费规则已创建");
+        } catch (error) {
+            message.error(error instanceof Error ? error.message : "计费规则保存失败");
+        } finally {
+            setSaving(false);
+        }
+    };
+    if (!items) return <Loading />;
+    return (
+        <>
+            <Panel
+                title="供应商计费规则"
+                note="任务创建时固化命中的规则版本；后续调整不会改变历史任务"
+                actions={<Button type="primary" onClick={() => openEditor()}>新建规则</Button>}
+            >
+                <Table<ProviderBillingRule>
+                    rowKey="ruleKey"
+                    pagination={false}
+                    dataSource={items}
+                    columns={[
+                        { title: "渠道", dataIndex: "provider", render: (value) => value === "runninghub_global" ? "海马云 · 国际区" : "海马云 · 中国区" },
+                        { title: "模型匹配", render: (_, item) => <div><b className="font-mono text-xs">{item.modelPattern}</b><p className="mt-1 text-xs text-stone-500">{item.matchType === "exact" ? "完全匹配" : "包含匹配"}</p></div> },
+                        { title: "折扣率", dataIndex: "discountRate", render: (value) => <b className="font-mono">{formatDecimal(String(Number(value) * 100), 4)}%</b> },
+                        { title: "优先级", dataIndex: "priority" },
+                        { title: "版本", dataIndex: "version", render: (value) => <Tag bordered={false}>v{value}</Tag> },
+                        { title: "状态", dataIndex: "enabled", render: (value) => <Tag bordered={false} color={value ? "green" : "default"}>{value ? "已启用" : "已停用"}</Tag> },
+                        { title: "生效时间", dataIndex: "createdAt", render: formatDate },
+                        { title: "操作", render: (_, item) => <Button size="small" onClick={() => openEditor(item)}>新建版本</Button> },
+                    ]}
+                />
+            </Panel>
+            <Modal
+                open={editorOpen}
+                title={editing ? `新建规则版本 · 当前 v${editing.version}` : "新建计费规则"}
+                okText={editing ? "保存并生效" : "创建规则"}
+                cancelText="取消"
+                confirmLoading={saving}
+                onOk={() => void save()}
+                onCancel={() => !saving && setEditorOpen(false)}
+                destroyOnHidden
+            >
+                <div className="space-y-4 py-3">
+                    <div className="grid grid-cols-2 gap-3">
+                        <label className="block">
+                            <span className="mb-1.5 block text-sm text-stone-500">供应商渠道</span>
+                            <Select className="w-full" value={draft.provider} options={[{ value: "runninghub", label: "海马云 · 中国区" }, { value: "runninghub_global", label: "海马云 · 国际区" }]} onChange={(provider) => setDraft((current) => ({ ...current, provider }))} />
+                        </label>
+                        <label className="block">
+                            <span className="mb-1.5 block text-sm text-stone-500">匹配方式</span>
+                            <Select className="w-full" value={draft.matchType} options={[{ value: "contains", label: "模型 ID 包含" }, { value: "exact", label: "模型 ID 完全等于" }]} onChange={(matchType) => setDraft((current) => ({ ...current, matchType }))} />
+                        </label>
+                    </div>
+                    <label className="block">
+                        <span className="mb-1.5 block text-sm text-stone-500">模型匹配内容</span>
+                        <Input maxLength={200} value={draft.modelPattern} placeholder="例如：seedance-2.5" onChange={(event) => setDraft((current) => ({ ...current, modelPattern: event.target.value }))} />
+                    </label>
+                    <div className="grid grid-cols-2 gap-3">
+                        <label className="block">
+                            <span className="mb-1.5 block text-sm text-stone-500">供应商折扣率</span>
+                            <InputNumber className="w-full" min={0.000001} max={100} precision={6} addonAfter="%" value={draft.discountPercent} onChange={(value) => setDraft((current) => ({ ...current, discountPercent: value || 0 }))} />
+                        </label>
+                        <label className="block">
+                            <span className="mb-1.5 block text-sm text-stone-500">匹配优先级</span>
+                            <InputNumber className="w-full" min={-10_000} max={10_000} precision={0} value={draft.priority} onChange={(value) => setDraft((current) => ({ ...current, priority: value || 0 }))} />
+                        </label>
+                    </div>
+                    <label className="flex items-center justify-between rounded-lg border border-stone-200 px-3 py-2 dark:border-white/10">
+                        <span><b className="block text-sm">启用此版本</b><small className="text-stone-500">停用后新任务不再匹配，历史任务不受影响</small></span>
+                        <Switch checked={draft.enabled} onChange={(enabled) => setDraft((current) => ({ ...current, enabled }))} />
+                    </label>
+                    <label className="block">
+                        <span className="mb-1.5 block text-sm text-stone-500">变更说明</span>
+                        <Input maxLength={200} value={draft.note} placeholder="记录本次调整原因" onChange={(event) => setDraft((current) => ({ ...current, note: event.target.value }))} />
+                    </label>
+                    <p className="rounded-lg border border-amber-500/20 bg-amber-500/[0.06] px-3 py-2 text-xs text-amber-600 dark:text-amber-400">
+                        保存后只影响新创建的任务；已创建任务继续使用原规则版本和折扣率。
+                    </p>
+                </div>
+            </Modal>
+        </>
     );
 }
 

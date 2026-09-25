@@ -9,6 +9,7 @@ import type { PaymentService } from "./payment-service.js";
 import type {
   PaymentOrderInput,
   PaymentPlanInput,
+  ProviderBillingRuleInput,
   SmsRequestInput,
   SmsVerifyInput,
   TeamCreateInput,
@@ -47,6 +48,9 @@ export interface OperationsServicePort {
   updateAdminPaymentPlan(userId: string, planId: string, input: PaymentPlanInput, requestId: string): Promise<unknown>;
   adminPaymentSettings(userId: string): Promise<unknown>;
   setAdminPaymentSettings(userId: string, publicRechargeEnabled: boolean, requestId: string): Promise<unknown>;
+  adminBillingRules(userId: string): Promise<unknown[]>;
+  createAdminBillingRule(userId: string, input: ProviderBillingRuleInput, requestId: string): Promise<unknown>;
+  updateAdminBillingRule(userId: string, ruleKey: string, input: ProviderBillingRuleInput, requestId: string): Promise<unknown>;
   listTeams(userId: string): Promise<unknown[]>;
   createTeam(userId: string, input: TeamCreateInput): Promise<unknown>;
   listTeamMembers(teamId: string, userId: string): Promise<unknown[]>;
@@ -386,6 +390,65 @@ export class OperationsService implements OperationsServicePort {
         providerReserveCny: String(balances.rows[0].provider_reserve_cny),
         pointsPerProviderCny: 120,
       };
+    });
+  }
+
+  async adminBillingRules(userId: string) {
+    await this.requireAdmin(userId);
+    const result = await this.pool.query(
+      `select distinct on(rule_key) id,rule_key,version,provider,model_pattern,match_type,
+        discount_rate::text,priority,enabled,note,created_at
+       from provider_billing_rules order by rule_key,version desc`,
+    );
+    return result.rows.map(serializeProviderBillingRule);
+  }
+
+  async createAdminBillingRule(
+    userId: string,
+    input: ProviderBillingRuleInput,
+    requestId: string,
+  ) {
+    await this.requireAdmin(userId);
+    return inTransaction(this.pool, async (client) => {
+      const ruleKey = `provider-billing-${randomUUID()}`;
+      const created = await client.query(
+        `insert into provider_billing_rules(rule_key,version,provider,model_pattern,match_type,discount_rate,priority,enabled,note,created_by)
+         values($1,1,$2,$3,$4,$5,$6,$7,$8,$9)
+         returning id,rule_key,version,provider,model_pattern,match_type,discount_rate::text,priority,enabled,note,created_at`,
+        [ruleKey, input.provider, input.modelPattern, input.matchType, input.discountRate, input.priority, input.enabled, input.note, userId],
+      );
+      const rule = serializeProviderBillingRule(created.rows[0]);
+      await audit(client, userId, "billing.rule.create", "provider_billing_rule", ruleKey, { next: rule }, requestId);
+      return rule;
+    });
+  }
+
+  async updateAdminBillingRule(
+    userId: string,
+    ruleKey: string,
+    input: ProviderBillingRuleInput,
+    requestId: string,
+  ) {
+    await this.requireAdmin(userId);
+    return inTransaction(this.pool, async (client) => {
+      await client.query("select pg_advisory_xact_lock(hashtext($1))", [ruleKey]);
+      const existing = await client.query(
+        `select id,rule_key,version,provider,model_pattern,match_type,discount_rate::text,priority,enabled,note,created_at
+         from provider_billing_rules where rule_key=$1 order by version desc limit 1`,
+        [ruleKey],
+      );
+      if (!existing.rows[0])
+        throw new DomainError("BILLING_RULE_NOT_FOUND", "计费规则不存在", 404);
+      const previous = serializeProviderBillingRule(existing.rows[0]);
+      const created = await client.query(
+        `insert into provider_billing_rules(rule_key,version,provider,model_pattern,match_type,discount_rate,priority,enabled,note,created_by)
+         values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
+         returning id,rule_key,version,provider,model_pattern,match_type,discount_rate::text,priority,enabled,note,created_at`,
+        [ruleKey, Number(existing.rows[0].version) + 1, input.provider, input.modelPattern, input.matchType, input.discountRate, input.priority, input.enabled, input.note, userId],
+      );
+      const rule = serializeProviderBillingRule(created.rows[0]);
+      await audit(client, userId, "billing.rule.update", "provider_billing_rule", ruleKey, { previous, next: rule }, requestId);
+      return rule;
     });
   }
 
@@ -1300,6 +1363,21 @@ function serializeBillingPlan(row: Record<string, unknown>) {
     metadata: row.metadata || {},
     createdAt: iso(row.created_at),
     updatedAt: iso(row.updated_at),
+  };
+}
+function serializeProviderBillingRule(row: Record<string, unknown>) {
+  return {
+    id: row.id,
+    ruleKey: row.rule_key,
+    version: Number(row.version),
+    provider: row.provider,
+    modelPattern: row.model_pattern,
+    matchType: row.match_type,
+    discountRate: String(row.discount_rate),
+    priority: Number(row.priority),
+    enabled: Boolean(row.enabled),
+    note: row.note,
+    createdAt: iso(row.created_at),
   };
 }
 function serializeLedger(row: Record<string, unknown>) {

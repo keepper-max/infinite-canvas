@@ -212,9 +212,10 @@ test("job ID and billing trace use distinct SQL parameters", async () => {
     idempotencyKey: "billing-trace-parameter-test",
   });
 
-  assert.match(insertSql, /now\(\),\$17,\$18,'pending'/);
-  assert.equal(insertValues.length, 18);
-  assert.equal(insertValues[17], insertValues[0]);
+  assert.match(insertSql, /now\(\),\$17,\$18,\$19,'pending'/);
+  assert.equal(insertValues.length, 19);
+  assert.deepEqual(insertValues[17], {});
+  assert.equal(insertValues[18], insertValues[0]);
 });
 
 test("virtual portrait references are resolved from the current project only", async () => {

@@ -48,6 +48,7 @@ await modelGateway
 await modelGateway.refreshRunningHubGlobalCatalog();
 const jobQueue = createQueue(config.jobs);
 const creditService = new CreditService(pool, config.operations.adminEmails);
+const billingService = new BillingService(pool, config.provider, creditService);
 const jobService = new JobService(
   pool,
   jobQueue.port,
@@ -55,6 +56,7 @@ const jobService = new JobService(
   config.jobs,
   jobQueue.publish,
   creditService,
+  billingService,
 );
 const compositionQueue = createCompositionQueue(config.jobs);
 const compositionService = new CompositionService(
@@ -63,7 +65,6 @@ const compositionService = new CompositionService(
   config.jobs,
   compositionQueue.publish,
 );
-const billingService = new BillingService(pool, config.provider, creditService);
 const paymentService = new PaymentService(pool, creditService, config.payments);
 const operationsService = new OperationsService(
   pool,

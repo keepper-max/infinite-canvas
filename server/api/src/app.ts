@@ -34,6 +34,7 @@ import type { ModelGateway } from "./model-gateway.js";
 import {
   paymentOrderSchema,
   paymentPlanInputSchema,
+  providerBillingRuleInputSchema,
   smsRequestSchema,
   smsVerifySchema,
   teamCreateSchema,
@@ -350,6 +351,35 @@ export function createApp(
         ).adminFailures(user.id),
       }),
     );
+  });
+
+  app.get("/api/admin/billing-rules", async (context) => {
+    const user = await requireUser(context.req.raw, repository, config);
+    return context.json(success(context, {
+      rules: await requireOperationsService(operationsService).adminBillingRules(user.id),
+    }));
+  });
+
+  app.post("/api/admin/billing-rules", async (context) => {
+    const user = await requireUser(context.req.raw, repository, config);
+    const rule = await requireOperationsService(operationsService).createAdminBillingRule(
+      user.id,
+      providerBillingRuleInputSchema.parse(await readJson(context.req.raw)),
+      context.get("requestId"),
+    );
+    return context.json(success(context, { rule }), 201);
+  });
+
+  app.put("/api/admin/billing-rules/:ruleKey", async (context) => {
+    const user = await requireUser(context.req.raw, repository, config);
+    const ruleKey = z.string().trim().min(1).max(100).parse(context.req.param("ruleKey"));
+    const rule = await requireOperationsService(operationsService).updateAdminBillingRule(
+      user.id,
+      ruleKey,
+      providerBillingRuleInputSchema.parse(await readJson(context.req.raw)),
+      context.get("requestId"),
+    );
+    return context.json(success(context, { rule }));
   });
 
   app.get("/api/admin/payments/orders", async (context) => {

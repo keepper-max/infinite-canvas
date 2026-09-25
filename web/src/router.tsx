@@ -1,27 +1,32 @@
 import { createBrowserRouter, Outlet } from "react-router-dom";
+import { lazy, Suspense, type ReactNode } from "react";
 
 import { AnalyticsTracker } from "@/components/layout/analytics-tracker";
 import { AuthGate } from "@/components/auth/auth-gate";
 import UserLayout from "@/layouts/user-layout";
-import AssetsPage from "@/pages/assets";
-import AuthPage from "@/pages/auth";
-import CanvasPage from "@/pages/canvas";
-import CanvasProjectPage from "@/pages/canvas/project";
-import ConfigPage from "@/pages/config";
-import HomePage from "@/pages/home";
-import ImagePage from "@/pages/image";
-import NotFound from "@/pages/not-found";
-import PromptsPage from "@/pages/prompts";
-import VideoPage from "@/pages/video";
-import TextWorkbenchPage from "@/pages/text";
-import WorkspaceEntryPage from "@/pages/workspace-entry";
-import OperationsPage from "@/pages/operations";
-import AdminPage from "@/pages/admin";
-import CreditsPage from "@/pages/credits";
+const AssetsPage = lazy(() => import("@/pages/assets"));
+const AuthPage = lazy(() => import("@/pages/auth"));
+const CanvasPage = lazy(() => import("@/pages/canvas"));
+const CanvasProjectPage = lazy(() => import("@/pages/canvas/project"));
+const ConfigPage = lazy(() => import("@/pages/config"));
+const HomePage = lazy(() => import("@/pages/home"));
+const ImagePage = lazy(() => import("@/pages/image"));
+const NotFound = lazy(() => import("@/pages/not-found"));
+const PromptsPage = lazy(() => import("@/pages/prompts"));
+const VideoPage = lazy(() => import("@/pages/video"));
+const TextWorkbenchPage = lazy(() => import("@/pages/text"));
+const WorkspaceEntryPage = lazy(() => import("@/pages/workspace-entry"));
+const OperationsPage = lazy(() => import("@/pages/operations"));
+const AdminPage = lazy(() => import("@/pages/admin"));
+const CreditsPage = lazy(() => import("@/pages/credits"));
+
+function deferred(element: ReactNode) {
+    return <Suspense fallback={<div className="grid min-h-dvh place-items-center text-sm text-muted-foreground">正在加载</div>}>{element}</Suspense>;
+}
 
 export const router = createBrowserRouter([
-    { path: "/login", element: <AuthPage mode="login" /> },
-    { path: "/register", element: <AuthPage mode="register" /> },
+    { path: "/login", element: deferred(<AuthPage mode="login" />) },
+    { path: "/register", element: deferred(<AuthPage mode="register" />) },
     {
         element: (
             <AuthGate>
@@ -32,27 +37,27 @@ export const router = createBrowserRouter([
             </AuthGate>
         ),
         children: [
-            { path: "/", element: <WorkspaceEntryPage /> },
-            { path: "/home", element: <HomePage /> },
-            { path: "/image", element: <ImagePage /> },
-            { path: "/video", element: <VideoPage /> },
-            { path: "/text", element: <TextWorkbenchPage /> },
-            { path: "/assets", element: <AssetsPage /> },
-            { path: "/prompts", element: <PromptsPage /> },
-            { path: "/canvas", element: <CanvasPage /> },
-            { path: "/canvas/:id", element: <CanvasProjectPage /> },
-            { path: "/config", element: <ConfigPage /> },
-            { path: "/operations", element: <OperationsPage /> },
-            { path: "/credits", element: <CreditsPage /> },
+            { path: "/", element: deferred(<WorkspaceEntryPage />) },
+            { path: "/home", element: deferred(<HomePage />) },
+            { path: "/image", element: deferred(<ImagePage />) },
+            { path: "/video", element: deferred(<VideoPage />) },
+            { path: "/text", element: deferred(<TextWorkbenchPage />) },
+            { path: "/assets", element: deferred(<AssetsPage />) },
+            { path: "/prompts", element: deferred(<PromptsPage />) },
+            { path: "/canvas", element: deferred(<CanvasPage />) },
+            { path: "/canvas/:id", element: deferred(<CanvasProjectPage />) },
+            { path: "/config", element: deferred(<ConfigPage />) },
+            { path: "/operations", element: deferred(<OperationsPage />) },
+            { path: "/credits", element: deferred(<CreditsPage />) },
         ],
     },
     {
         path: "/admin/:section?/:subsection?",
         element: (
             <AuthGate>
-                <AdminPage />
+                {deferred(<AdminPage />)}
             </AuthGate>
         ),
     },
-    { path: "*", element: <NotFound /> },
+    { path: "*", element: deferred(<NotFound />) },
 ]);

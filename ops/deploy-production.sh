@@ -38,17 +38,25 @@ COMPOSE_FILE="$compose_file" COMPOSE_OVERRIDE_FILE="$compose_override_file" ENV_
 
 mkdir -p "$release_root"
 backup_dir="$(COMPOSE_FILE="$compose_file" COMPOSE_OVERRIDE_FILE="$compose_override_file" ENV_FILE="$env_file" BACKUP_ROOT="${BACKUP_ROOT:-/opt/infinite-canvas-backups}" sh ops/backup-production.sh)"
-COMPOSE_FILE="$compose_file" ENV_FILE="$env_file" sh ops/verify-backup.sh "$backup_dir"
+COMPOSE_FILE="$compose_file" COMPOSE_OVERRIDE_FILE="$compose_override_file" ENV_FILE="$env_file" sh ops/verify-backup.sh "$backup_dir"
+COMPOSE_FILE="$compose_file" COMPOSE_OVERRIDE_FILE="$compose_override_file" ENV_FILE="$env_file" sh ops/check-migration-compatibility.sh "$backup_dir" pending
 
 previous_web="$(compose images -q web 2>/dev/null | head -n 1)"
 previous_api="$(compose images -q api 2>/dev/null | head -n 1)"
 new_web="infinite-canvas-web:${short_sha}"
 new_api="infinite-canvas-api:${short_sha}"
 manifest="$release_root/release-${short_sha}.manifest"
+if grep -Fxq '0027_versioned_provider_billing_rules.sql' "$backup_dir/schema-migrations.txt"; then
+  previous_supports_versioned_billing=true
+else
+  previous_supports_versioned_billing=false
+fi
 
 cat > "$manifest" <<EOF
 release_sha=$release_sha
 backup_dir=$backup_dir
+schema_migrations_file=$backup_dir/schema-migrations.txt
+previous_supports_versioned_billing=$previous_supports_versioned_billing
 previous_web=$previous_web
 previous_api=$previous_api
 new_web=$new_web

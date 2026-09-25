@@ -55,7 +55,7 @@ export CONFIRM_PRODUCTION_DEPLOY=deploy-完整Git提交号
 sh ops/deploy-production.sh
 ```
 
-脚本会先完成预检和备份校验，再构建带提交号的 Web/API 镜像、单独执行迁移并分阶段切换服务。发布记录只包含提交号、备份路径和镜像引用，不包含环境变量值。
+脚本会先完成预检和备份校验，再核对待执行迁移是否已在 `ops/backward-compatible-migrations.txt` 明确声明可供上一版程序继续读取，然后构建带提交号的 Web/API 镜像、单独执行迁移并分阶段切换服务。发布记录只包含提交号、备份路径、迁移清单和镜像引用，不包含环境变量值。
 
 ## 4. 发布后验收
 
@@ -80,7 +80,7 @@ export CONFIRM_PRODUCTION_ROLLBACK=rollback-清单中的完整Git提交号
 sh ops/rollback-production.sh /opt/infinite-canvas-releases/release-提交短号.manifest
 ```
 
-该操作不会删除新增数据库结构，也不会用备份覆盖当前数据库。需要恢复数据时仍必须先恢复到新数据库并人工确认切换。
+回滚脚本会先比较备份时与当前的迁移清单；存在未声明向后兼容的新增迁移时会拒绝切换旧镜像。首次上线版本化计费规则时，如果已经有任务使用旧 Worker 无法理解的规则快照，也会拒绝回切旧 Worker，必须先前滚修复。该操作不会删除新增数据库结构，也不会用备份覆盖当前数据库。需要恢复数据时仍必须先恢复到新数据库并人工确认切换。
 
 ## 6. 监控清单
 

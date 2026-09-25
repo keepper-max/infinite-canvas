@@ -1,4 +1,4 @@
-import type { Pool } from "pg";
+import type { Pool, PoolClient } from "pg";
 
 import type { ProviderConfig } from "./config.js";
 import type { CreditService } from "./credit-service.js";
@@ -8,12 +8,61 @@ const TERMINAL_JOB_STATUSES = ["completed", "failed", "cancelled"];
 const RECONCILE_DELAYS_SECONDS = [30, 120, 300, 900];
 const MAX_RECONCILE_AGE_MS = 24 * 60 * 60 * 1_000;
 
+export type BillingRuleSnapshot = {
+  ruleId: string;
+  ruleKey: string;
+  version: number;
+  provider: string;
+  modelPattern: string;
+  matchType: "exact" | "contains";
+  discountRate: string;
+  priority: number;
+  capturedAt: string;
+};
+
 export class BillingService {
   constructor(
     private readonly pool: Pool,
     private readonly config: ProviderConfig,
     private readonly credits?: CreditService,
   ) {}
+
+  async resolveRuleSnapshot(
+    provider: string,
+    modelId: string,
+    client: Pool | PoolClient = this.pool,
+  ): Promise<BillingRuleSnapshot | null> {
+    const result = await client.query(
+      `select * from (
+         select distinct on(rule_key) id,rule_key,version,provider,model_pattern,match_type,discount_rate::text,priority,enabled,created_at
+         from provider_billing_rules order by rule_key,version desc
+       ) current_rules
+       where provider=$1 and enabled=true
+       order by priority desc,version desc,created_at desc`,
+      [provider],
+    );
+    const lowerModelId = modelId.toLowerCase();
+    const normalizedModelId = normalizeModelMatch(modelId);
+    const row = result.rows.find((candidate) => {
+      const rawPattern = String(candidate.model_pattern).toLowerCase();
+      return candidate.match_type === "exact"
+        ? lowerModelId === rawPattern
+        : normalizedModelId.includes(normalizeModelMatch(rawPattern));
+    });
+    return row
+      ? {
+          ruleId: String(row.id),
+          ruleKey: String(row.rule_key),
+          version: Number(row.version),
+          provider: String(row.provider),
+          modelPattern: String(row.model_pattern),
+          matchType: row.match_type as "exact" | "contains",
+          discountRate: String(row.discount_rate),
+          priority: Number(row.priority),
+          capturedAt: new Date().toISOString(),
+        }
+      : null;
+  }
 
   async recordTrace(
     jobId: string,
@@ -233,15 +282,17 @@ export class BillingService {
     const providerPaidAmount =
       decimalValue(usage.third_party_consume_money) ||
       decimalValue(usage.consume_money);
-    const originalAmount = runningHubOriginalAmount(job.model_id, providerPaidAmount);
+    const ruleSnapshot = billingRuleSnapshot(job.billing_rule_snapshot);
+    const originalAmount = runningHubOriginalAmount(ruleSnapshot, providerPaidAmount);
     const normalizedUsage =
       providerPaidAmount !== null && originalAmount !== providerPaidAmount
         ? {
             ...usage,
             provider_paid_amount: providerPaidAmount,
             original_amount: originalAmount,
-            billing_discount_rate: "0.8",
-            billing_amount_source: "seedance_2_5_discount_restore",
+            billing_rule_snapshot: ruleSnapshot,
+            billing_discount_rate: ruleSnapshot?.discountRate,
+            billing_amount_source: "versioned_rule_snapshot",
           }
         : usage;
     const promptTokens = integerValue(usage.prompt_tokens);
@@ -330,36 +381,46 @@ function asRecord(value: unknown): Record<string, unknown> {
 function isRunningHubProvider(value: unknown) {
   return value === "runninghub" || value === "runninghub_global";
 }
-export function runningHubOriginalAmount(modelId: unknown, providerPaidAmount: string | null) {
-  if (providerPaidAmount === null || !isSeedance25Model(modelId)) return providerPaidAmount;
-  return multiplyDecimalRatio(providerPaidAmount, 5n, 4n);
+export function runningHubOriginalAmount(snapshot: unknown, providerPaidAmount: string | null) {
+  const rule = billingRuleSnapshot(snapshot);
+  if (providerPaidAmount === null || !rule) return providerPaidAmount;
+  return divideDecimal(providerPaidAmount, rule.discountRate);
 }
-function isSeedance25Model(value: unknown) {
-  const modelId = String(value || "").toLowerCase();
-  return (
-    modelId.includes("seedance-2.5") ||
-    modelId.includes("seedance-2-5") ||
-    modelId.includes("seedance_2_5")
-  );
+function billingRuleSnapshot(value: unknown): BillingRuleSnapshot | null {
+  const row = asRecord(value);
+  if (
+    !stringValue(row.ruleId) ||
+    !stringValue(row.ruleKey) ||
+    !Number.isInteger(Number(row.version)) ||
+    !stringValue(row.discountRate)
+  ) return null;
+  return row as BillingRuleSnapshot;
 }
-function multiplyDecimalRatio(value: string, numerator: bigint, denominator: bigint) {
+function normalizeModelMatch(value: string) {
+  return value.toLowerCase().replace(/[._]+/g, "-").replace(/-+/g, "-");
+}
+function divideDecimal(value: string, divisor: string) {
+  const numerator = decimalParts(value);
+  const denominator = decimalParts(divisor);
+  if (!numerator || !denominator || denominator.integer === 0n) return value;
+  const scaledNumerator = numerator.integer * 10n ** BigInt(denominator.places + 8);
+  const scaledDenominator = denominator.integer * 10n ** BigInt(numerator.places);
+  const quotient = scaledNumerator / scaledDenominator;
+  const remainder = scaledNumerator % scaledDenominator;
+  const rounded = remainder * 2n >= scaledDenominator ? quotient + 1n : quotient;
+  const digits = rounded.toString().padStart(9, "0");
+  const whole = digits.slice(0, -8) || "0";
+  const fraction = digits.slice(-8).replace(/0+$/, "");
+  return fraction ? `${whole}.${fraction}` : whole;
+}
+function decimalParts(value: string) {
   const match = /^(\d+)(?:\.(\d+))?$/.exec(value);
-  if (!match) return value;
+  if (!match) return null;
   const fraction = match[2] || "";
-  const scale = 10n ** BigInt(fraction.length);
-  const scaled = BigInt(match[1]!) * scale + BigInt(fraction || "0");
-  let product = scaled * numerator;
-  let places = fraction.length;
-  while (product % denominator !== 0n && places < 8) {
-    product *= 10n;
-    places += 1;
-  }
-  const result = product / denominator;
-  const digits = result.toString().padStart(places + 1, "0");
-  if (!places) return digits;
-  const whole = digits.slice(0, -places) || "0";
-  const decimal = digits.slice(-places).replace(/0+$/, "");
-  return decimal ? `${whole}.${decimal}` : whole;
+  return {
+    integer: BigInt(match[1]!) * 10n ** BigInt(fraction.length) + BigInt(fraction || "0"),
+    places: fraction.length,
+  };
 }
 function stringValue(value: unknown) {
   return typeof value === "string" && value.trim() ? value.trim() : undefined;

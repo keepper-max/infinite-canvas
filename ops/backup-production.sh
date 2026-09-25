@@ -31,6 +31,9 @@ git rev-parse HEAD > "$backup_dir/git-head.txt"
 git status --short > "$backup_dir/git-status.txt"
 compose ps --all > "$backup_dir/containers.txt"
 compose images > "$backup_dir/images.txt"
+compose exec -T db sh -ec \
+  'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -Atc "select name from platform_schema_migrations order by name"' \
+  > "$backup_dir/schema-migrations.txt"
 cp "$env_file" "$backup_dir/environment.env"
 chmod 600 "$backup_dir/environment.env"
 
@@ -48,7 +51,7 @@ compose exec -T db sh -ec \
 
 (
   cd "$backup_dir"
-  sha256sum git-head.txt git-status.txt containers.txt images.txt environment.env source.tgz database.dump > SHA256SUMS
+  sha256sum git-head.txt git-status.txt containers.txt images.txt schema-migrations.txt environment.env source.tgz database.dump > SHA256SUMS
 )
 
 printf '%s\n' "$backup_dir"
