@@ -415,6 +415,12 @@ function InfiniteCanvasPage({ projectId }: { projectId: string }) {
         return saved;
     }, [canvasPersistence.saveNow, message]);
 
+    const saveCanvasBeforeGeneration = useCallback(async () => {
+        const saved = await canvasPersistence.saveDraftNow(createCanvasDraft(nodesRef.current, connectionsRef.current, viewportRef.current, { backgroundMode, showImageInfo }));
+        if (!saved) message.error("画布保存失败，暂时无法开始生成");
+        return saved;
+    }, [backgroundMode, canvasPersistence.saveDraftNow, message, showImageInfo]);
+
     const discardLocalCanvasChanges = useCallback(() => {
         const lastSuccessful = canvasPersistence.discardPendingChanges();
         if (!lastSuccessful) return;
@@ -2786,6 +2792,7 @@ function InfiniteCanvasPage({ projectId }: { projectId: string }) {
                 openConfigDialog(true);
                 return;
             }
+            if (!(await saveCanvasBeforeGeneration())) return;
 
             // useBuiltinPanel.writeBackToSelf reuses built-in generation while writing the result back to the plugin node.
             // Image mode currently supports display-only nodes such as panoramas, with a useBuiltinPanel.promptPrefix.
@@ -3247,7 +3254,7 @@ function InfiniteCanvasPage({ projectId }: { projectId: string }) {
                 setRunningNodeId(null);
             }
         },
-        [completeVideoNodeTask, effectiveConfig, finishGenerationRequest, isAiConfigReady, message, openConfigDialog, projectId, startGenerationRequest, t],
+        [completeVideoNodeTask, effectiveConfig, finishGenerationRequest, isAiConfigReady, message, openConfigDialog, projectId, saveCanvasBeforeGeneration, startGenerationRequest, t],
     );
     useEffect(() => {
         generateNodeRef.current = handleGenerateNode;
@@ -3255,6 +3262,7 @@ function InfiniteCanvasPage({ projectId }: { projectId: string }) {
 
     const handleRetryNode = useCallback(
         async (node: CanvasNodeData, imageId?: string) => {
+            if (!(await saveCanvasBeforeGeneration())) return;
             if (hasResumableVideoTask(node)) {
                 let resumableNode = node;
                 if (node.metadata?.videoTaskProvider === "managed" && node.metadata.videoTaskId) {
@@ -3471,7 +3479,7 @@ function InfiniteCanvasPage({ projectId }: { projectId: string }) {
                 setRunningNodeId(null);
             }
         },
-        [completeVideoNodeTask, effectiveConfig, finishGenerationRequest, isAiConfigReady, message, openConfigDialog, pollVideoNodeTask, projectId, startGenerationRequest, t],
+        [completeVideoNodeTask, effectiveConfig, finishGenerationRequest, isAiConfigReady, message, openConfigDialog, pollVideoNodeTask, projectId, saveCanvasBeforeGeneration, startGenerationRequest, t],
     );
 
     const deleteBatchImage = useCallback((nodeId: string, imageId: string) => {

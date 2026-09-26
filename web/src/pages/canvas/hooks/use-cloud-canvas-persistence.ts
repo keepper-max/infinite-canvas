@@ -18,10 +18,12 @@ export function useCloudCanvasPersistence(projectId: string, applyCanvas: (canva
     const latestDraftRef = useRef<CanvasDraft | null>(null);
     const migrationCandidateRef = useRef<CanvasDraft | null>(null);
     const migrationBlockedRef = useRef(false);
+    const conflictBlockedRef = useRef(false);
     const lastFingerprintRef = useRef("");
     const lastSuccessfulRef = useRef<CanvasDocument | null>(null);
     const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
     const savingRef = useRef(false);
+    const saveWaitersRef = useRef<Array<() => void>>([]);
     const mountedRef = useRef(true);
 
     const clearAutoSaveTimer = useCallback(() => {
@@ -35,9 +37,11 @@ export function useCloudCanvasPersistence(projectId: string, applyCanvas: (canva
         latestDraftRef.current = null;
         migrationCandidateRef.current = null;
         migrationBlockedRef.current = false;
+        conflictBlockedRef.current = false;
         lastFingerprintRef.current = "";
         lastSuccessfulRef.current = null;
         savingRef.current = false;
+        saveWaitersRef.current.splice(0).forEach((resolve) => resolve());
         clearAutoSaveTimer();
         setMigrationDraft(null);
         setMigrationReport(null);
@@ -94,6 +98,7 @@ export function useCloudCanvasPersistence(projectId: string, applyCanvas: (canva
                     lastFingerprintRef.current = fingerprint(cached.pendingDraft);
                     await applyCanvas(cached.pendingDraft);
                     readyRef.current = true;
+                    conflictBlockedRef.current = true;
                     setConflictDraft(cached.pendingDraft);
                     setStatus("conflict");
                     return;
@@ -112,6 +117,7 @@ export function useCloudCanvasPersistence(projectId: string, applyCanvas: (canva
                 const remoteFingerprint = fingerprint(remote);
                 if (appliedCachedFingerprint && latestDraftRef.current) {
                     if (appliedCachedFingerprint !== remoteFingerprint) {
+                        conflictBlockedRef.current = true;
                         setConflictDraft(latestDraftRef.current);
                         setStatus("conflict");
                         return;
@@ -170,6 +176,7 @@ export function useCloudCanvasPersistence(projectId: string, applyCanvas: (canva
             latestDraftRef.current = pendingDraft;
             await recordPendingCanvas(projectId, pendingDraft);
             if (error instanceof PlatformApiError && error.code === "CANVAS_REVISION_CONFLICT") {
+                conflictBlockedRef.current = true;
                 setConflictDraft(pendingDraft);
                 setStatus("conflict");
             } else {
@@ -178,6 +185,7 @@ export function useCloudCanvasPersistence(projectId: string, applyCanvas: (canva
             return false;
         } finally {
             savingRef.current = false;
+            saveWaitersRef.current.splice(0).forEach((resolve) => resolve());
         }
     }, [clearAutoSaveTimer, projectId]);
 
@@ -202,6 +210,18 @@ export function useCloudCanvasPersistence(projectId: string, applyCanvas: (canva
         if (savingRef.current) return false;
         return flush();
     }, [flush]);
+
+    const saveDraftNow = useCallback(
+        async (draft: CanvasDraft) => {
+            if (!readyRef.current || migrationBlockedRef.current || conflictBlockedRef.current || migrationDraft || conflictDraft) return false;
+            while (savingRef.current) await new Promise<void>((resolve) => saveWaitersRef.current.push(resolve));
+            if (!readyRef.current || migrationBlockedRef.current || conflictBlockedRef.current || migrationDraft || conflictDraft) return false;
+            if (fingerprint(draft) === lastFingerprintRef.current) return true;
+            latestDraftRef.current = draft;
+            return flush();
+        },
+        [conflictDraft, flush, migrationDraft],
+    );
 
     const discardPendingChanges = useCallback(() => {
         const lastSuccessful = lastSuccessfulRef.current;
@@ -250,11 +270,13 @@ export function useCloudCanvasPersistence(projectId: string, applyCanvas: (canva
                 revisionRef.current = remote.revision;
                 if (choice === "cloud") {
                     latestDraftRef.current = null;
+                    conflictBlockedRef.current = false;
                     setConflictDraft(null);
                     await applyRemote(remote);
                     return;
                 }
                 const canvas = await saveCanvas(projectId, conflictDraft, remote.revision);
+                conflictBlockedRef.current = false;
                 setConflictDraft(null);
                 latestDraftRef.current = null;
                 await applyRemote(canvas);
@@ -273,6 +295,7 @@ export function useCloudCanvasPersistence(projectId: string, applyCanvas: (canva
         load,
         queueSave,
         saveNow,
+        saveDraftNow,
         discardPendingChanges,
         migrationDraft,
         migrationReport,
