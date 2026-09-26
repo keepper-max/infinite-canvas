@@ -6,9 +6,11 @@ import {
   runningHubCatalogItems,
   runningHubDisplayName,
   runningHubGlobalCatalogItems,
+  runningHubGlobalTextCatalogItems,
   runningHubModelProfile,
 } from "../src/model-gateway.js";
 import {
+  runningHubLlmUsage,
   RunningHubProvider,
   runningHubUsage,
 } from "../src/runninghub-provider.js";
@@ -36,6 +38,27 @@ test("RunningHub supplements Seedance 2.5 standard endpoints until the public re
   assert.equal(multimodalProfile?.limits.maxAudios, 10);
 });
 
+test("RunningHub China catalog excludes GPT models that require the global channel", () => {
+  const models = runningHubCatalogItems([
+    {
+      endpoint: "rhart-image-g-2-official/text-to-image",
+      display_name: "GPT Image 2",
+    },
+    {
+      endpoint: "bytedance/seedream-4.5/text-to-image",
+      display_name: "Seedream 4.5",
+    },
+  ]);
+  assert.equal(
+    models.some((item) => String(item.endpoint).includes("rhart-image-g")),
+    false,
+  );
+  assert.equal(
+    models.some((item) => String(item.endpoint).includes("seedream-4.5")),
+    true,
+  );
+});
+
 test("RunningHub global catalog exposes GPT Image 2.5 text and reference modes", () => {
   const models = runningHubGlobalCatalogItems();
   assert.equal(models.length, 2);
@@ -56,6 +79,107 @@ test("RunningHub global catalog exposes GPT Image 2.5 text and reference modes",
     image?.catalog_identity_endpoint,
     "rhart-image-g-2.5-official-token/sunburst/image-to-image",
   );
+});
+
+test("RunningHub global LLM catalog imports all OpenAI GPT chat models", () => {
+  const models = runningHubGlobalTextCatalogItems({
+    data: [
+      {
+        id: "openai/gpt-5.6-sol",
+        capabilities: { chat: true, reasoning: true, vision: true },
+        context_length: 1_050_000,
+        pricing: {
+          input: { amount: 0.004 },
+          output: { amount: 0.02 },
+          priceVersion: "gpt56-test",
+        },
+      },
+      { id: "openai/gpt-image-2.5", capabilities: { chat: false } },
+      { id: "anthropic/claude-test", capabilities: { chat: true } },
+    ],
+  });
+  assert.equal(models.length, 1);
+  assert.equal(models[0]?.endpoint, "openai/gpt-5.6-sol");
+  assert.equal(models[0]?.display_name, "GPT 5.6 Sol");
+  const profile = runningHubModelProfile(models[0]!);
+  assert.deepEqual(profile?.modes, ["chat"]);
+  assert.ok(profile?.acceptedParameters.includes("reasoningEffort"));
+  assert.equal(profile?.parameterMap.reasoningEffort, "reasoning_effort");
+});
+
+test("RunningHub global LLM submits chat completions and prices actual token usage in USD", async () => {
+  const originalFetch = globalThis.fetch;
+  let submitted: Record<string, unknown> | undefined;
+  globalThis.fetch = async (input, init) => {
+    assert.equal(String(input), "https://llm.runninghub.ai/v1/chat/completions");
+    submitted = JSON.parse(String(init?.body));
+    return Response.json({
+      id: "chatcmpl-rh-1",
+      choices: [{ message: { content: "完成" }, finish_reason: "stop" }],
+      usage: { prompt_tokens: 1000, completion_tokens: 500, total_tokens: 1500 },
+    });
+  };
+  try {
+    const metadata = {
+      llm_pricing: {
+        input: { amount: 0.002, discountAmount: 0.001 },
+        output: { amount: 0.006, discountAmount: 0.003 },
+        priceVersion: "gpt56-test",
+      },
+    };
+    const provider = new RunningHubProvider(
+      {
+        baseUrl: "https://www.runninghub.ai/openapi/v2",
+        llmBaseUrl: "https://llm.runninghub.ai/v1",
+        apiKey: "test-only-global",
+        catalogUrl: "https://llm.runninghub.ai/v1/models",
+      },
+      0,
+    );
+    const result = await provider.create({
+      modelId: "runninghub_global.text.openai-gpt-5-6-sol",
+      upstreamModel: "openai/gpt-5.6-sol",
+      providerId: "runninghub_global",
+      capability: "text",
+      mode: "chat",
+      prompt: "整理这一段文字",
+      parameters: {},
+      upstreamParameters: {
+        max_tokens: 4096,
+        reasoning_effort: "xhigh",
+      },
+      references: [],
+      providerMetadata: metadata,
+    });
+    assert.equal(result.status, "completed");
+    assert.equal(result.billingTraceId, "chatcmpl-rh-1");
+    assert.equal(result.artifacts?.[0]?.text, "完成");
+    assert.deepEqual(submitted, {
+      model: "openai/gpt-5.6-sol",
+      messages: [{ role: "user", content: "整理这一段文字" }],
+      max_tokens: 4096,
+      reasoning_effort: "high",
+    });
+    assert.deepEqual(result.usage, {
+      provider_request_id: "chatcmpl-rh-1",
+      prompt_tokens: 1000,
+      completion_tokens: 500,
+      total_tokens: 1500,
+      consume_money: "0.0025",
+      currency: "USD",
+      price_version: "gpt56-test",
+      billing_amount_source: "catalog_token_pricing",
+    });
+    assert.deepEqual(
+      runningHubLlmUsage(
+        { usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2 } },
+        {},
+      ),
+      { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2 },
+    );
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
 });
 
 test("RunningHub terminal usage normalizes actual cost, tokens and billing seconds", () => {

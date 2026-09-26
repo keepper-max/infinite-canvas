@@ -37,6 +37,8 @@ export class RunningHubProvider implements GenerationProvider {
         false,
       );
     const metadata = asRecord(request.providerMetadata);
+    if (request.capability === "text")
+      return this.createText(request, metadata, requestSignal);
     const parameters = registryParameters(metadata.params);
     const body: Record<string, unknown> = { ...request.upstreamParameters };
     delete body.references;
@@ -79,6 +81,47 @@ export class RunningHubProvider implements GenerationProvider {
         false,
       );
     return { providerJobId: taskId, status: "pending", progress: 1 };
+  }
+
+  private async createText(
+    request: CompiledGenerationRequest,
+    metadata: Record<string, unknown>,
+    signal?: AbortSignal,
+  ): Promise<ProviderResult> {
+    const parameters = { ...request.upstreamParameters };
+    if (parameters.reasoning_effort === "auto")
+      delete parameters.reasoning_effort;
+    if (parameters.reasoning_effort === "xhigh")
+      parameters.reasoning_effort = "high";
+    const payload = await this.request(
+      "/chat/completions",
+      {
+        method: "POST",
+        body: JSON.stringify({
+          model: request.upstreamModel,
+          messages: [{ role: "user", content: request.prompt }],
+          ...parameters,
+        }),
+        headers: { "content-type": "application/json" },
+        signal,
+      },
+      this.config.llmBaseUrl || "https://llm.runninghub.ai/v1",
+    );
+    const text = readLlmText(payload);
+    if (!text)
+      throw new ProviderError(
+        "PROVIDER_REJECTED",
+        "模型没有返回文本结果",
+        false,
+      );
+    return {
+      billingTraceId: stringValue(asRecord(payload).id),
+      status: "completed",
+      usage: runningHubLlmUsage(payload, metadata),
+      artifacts: [
+        { kind: "text", mimeType: "text/plain; charset=utf-8", text },
+      ],
+    };
   }
 
   async get(
@@ -241,7 +284,11 @@ export class RunningHubProvider implements GenerationProvider {
     });
   }
 
-  private async request(path: string, init: RequestInit) {
+  private async request(
+    path: string,
+    init: RequestInit,
+    baseUrl = this.config.baseUrl,
+  ) {
     const timeout =
       this.submitTimeoutMs > 0
         ? AbortSignal.timeout(this.submitTimeoutMs)
@@ -252,7 +299,7 @@ export class RunningHubProvider implements GenerationProvider {
         : init.signal || timeout;
     let response: Response;
     try {
-      response = await fetch(`${this.config.baseUrl}${path}`, {
+      response = await fetch(`${baseUrl}${path}`, {
         ...init,
         signal,
         headers: {
@@ -483,6 +530,101 @@ export function runningHubUsage(
       ([, item]) => item !== undefined && item !== null && item !== "",
     ),
   );
+}
+
+export function runningHubLlmUsage(
+  value: unknown,
+  metadata: Record<string, unknown>,
+): Record<string, unknown> {
+  const root = asRecord(value);
+  const usage = asRecord(root.usage);
+  const promptTokens = nonNegativeInteger(usage.prompt_tokens);
+  const completionTokens = nonNegativeInteger(usage.completion_tokens);
+  const totalTokens = nonNegativeInteger(usage.total_tokens);
+  const pricing = asRecord(metadata.llm_pricing);
+  const amount = llmTokenCostUsd(pricing, usage);
+  return Object.fromEntries(
+    Object.entries({
+      provider_request_id: stringValue(root.id),
+      prompt_tokens: promptTokens,
+      completion_tokens: completionTokens,
+      total_tokens: totalTokens,
+      consume_money: amount,
+      currency: amount ? "USD" : undefined,
+      price_version: stringValue(pricing.priceVersion),
+      billing_amount_source: amount ? "catalog_token_pricing" : undefined,
+    }).filter(([, item]) => item !== undefined && item !== null && item !== ""),
+  );
+}
+
+function readLlmText(value: unknown) {
+  const choices = Array.isArray(asRecord(value).choices)
+    ? (asRecord(value).choices as unknown[])
+    : [];
+  const first = asRecord(choices[0]);
+  const message = asRecord(first.message);
+  const content = message.content ?? first.text;
+  if (typeof content === "string") return content.trim();
+  if (!Array.isArray(content)) return "";
+  return content
+    .flatMap((item) => {
+      const text = asRecord(item).text;
+      return typeof text === "string" && text.trim() ? [text.trim()] : [];
+    })
+    .join("\n");
+}
+
+function llmTokenCostUsd(
+  pricing: Record<string, unknown>,
+  usage: Record<string, unknown>,
+) {
+  const promptTokens = nonNegativeInteger(usage.prompt_tokens);
+  const completionTokens = nonNegativeInteger(usage.completion_tokens);
+  if (promptTokens === undefined || completionTokens === undefined) return;
+  const inputPricing = asRecord(pricing.input);
+  const outputPricing = asRecord(pricing.output);
+  const inputRate = llmPriceRate(inputPricing, promptTokens);
+  const outputRate = llmPriceRate(outputPricing, promptTokens);
+  if (inputRate === undefined || outputRate === undefined) return;
+  const promptDetails = asRecord(usage.prompt_tokens_details);
+  const cachedTokens = Math.min(
+    promptTokens,
+    nonNegativeInteger(promptDetails.cached_tokens) || 0,
+  );
+  const cacheReadRate = llmPriceRate(
+    asRecord(asRecord(pricing.cache).read),
+    promptTokens,
+  );
+  const inputCost =
+    ((promptTokens - cachedTokens) * inputRate +
+      cachedTokens * (cacheReadRate ?? inputRate)) /
+    1_000;
+  const outputCost = (completionTokens * outputRate) / 1_000;
+  const amount = inputCost + outputCost;
+  if (!Number.isFinite(amount) || amount < 0) return;
+  return amount.toFixed(12).replace(/0+$/, "").replace(/\.$/, "") || "0";
+}
+
+function llmPriceRate(value: Record<string, unknown>, selector: number) {
+  const tiers = Array.isArray(value.tiers)
+    ? value.tiers.map(asRecord).filter((item) => Object.keys(item).length)
+    : [];
+  const tier = tiers.find((item) => {
+    const start = Number(item.rangeStart ?? 0);
+    const rawEnd = item.rangeEnd;
+    const end = rawEnd === null || rawEnd === undefined ? Infinity : Number(rawEnd);
+    return Number.isFinite(start) && selector >= start && selector <= end;
+  });
+  const raw = tier
+    ? tier.discountUnitPrice ?? tier.unitPrice
+    : value.discountAmount ?? value.amount;
+  const rate = Number(raw);
+  return Number.isFinite(rate) && rate >= 0 ? rate : undefined;
+}
+
+function nonNegativeInteger(value: unknown) {
+  const number = Number(value);
+  return Number.isSafeInteger(number) && number >= 0 ? number : undefined;
 }
 
 function stringValue(value: unknown) {

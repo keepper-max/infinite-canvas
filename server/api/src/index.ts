@@ -30,7 +30,9 @@ const { db, pool } = createDatabase(config.databaseUrl);
 await applyMigrations(pool);
 const objectStorage = new S3ObjectStorage(config.objectStorage);
 await objectStorage.ensureReady();
-const modelGateway = new ModelGateway(pool);
+const modelGateway = new ModelGateway(pool, {
+  runningHubGlobalAvailable: Boolean(config.runningHubGlobal.apiKey),
+});
 await modelGateway
   .refreshCatalog(config.provider.catalogUrl)
   .catch((error) =>
@@ -48,6 +50,14 @@ await modelGateway
     ),
   );
 await modelGateway.refreshRunningHubGlobalCatalog();
+await modelGateway
+  .refreshRunningHubGlobalTextCatalog(config.runningHubGlobal.catalogUrl)
+  .catch((error) =>
+    console.warn(
+      "[platform-api] RunningHub global LLM catalog refresh skipped:",
+      error instanceof Error ? error.message : "unknown error",
+    ),
+  );
 const jobQueue = createQueue(config.jobs);
 const creditService = new CreditService(pool, config.operations.adminEmails);
 const storageQuota = new StorageQuotaService(

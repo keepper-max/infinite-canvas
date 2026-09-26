@@ -1290,7 +1290,8 @@ function ModelsPanel({ provider }: { provider: AdminProvider["id"] }) {
     }, [load]);
     if (!items || !providers) return <Loading />;
     const current = providers.providers.find((item) => item.id === provider);
-    const active = providers.activeProviderId === provider;
+    const linkedToChina = provider === "runninghub_global" && current?.configured === true && providers.activeProviderId === "runninghub";
+    const active = providers.activeProviderId === provider || linkedToChina;
     return (
         <Panel
             title={`${current?.displayName || provider} 模型`}
@@ -1305,7 +1306,7 @@ function ModelsPanel({ provider }: { provider: AdminProvider["id"] }) {
                         message.success(`已切换到 ${current?.displayName || provider}，新任务立即生效`);
                     }}
                 >
-                    {active ? "当前画布渠道" : current?.configured ? "设为画布渠道" : "请先配置 API Key"}
+                    {linkedToChina ? "随中国区启用" : active ? "当前画布渠道" : current?.configured ? "设为画布渠道" : "请先配置 API Key"}
                 </Button>
             }
         >

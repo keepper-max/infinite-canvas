@@ -68,7 +68,7 @@ export type ProviderConfig = {
   catalogUrl: string;
 };
 
-export type RunningHubConfig = ProviderConfig;
+export type RunningHubConfig = ProviderConfig & { llmBaseUrl?: string };
 
 export type ObjectStorageConfig = {
   endpoint: string;
@@ -167,13 +167,22 @@ export function readConfig(env: NodeJS.ProcessEnv = process.env): ApiConfig {
     catalogUrl:
       env.RH_MODEL_REGISTRY_URL?.trim() ||
       "https://raw.githubusercontent.com/HM-RunningHub/ComfyUI_RH_OpenAPI/main/developer-kit/model-registry.public.json",
+    llmBaseUrl: (env.RH_LLM_BASE_URL || "https://llm.runninghub.cn/v1").replace(
+      /\/+$/,
+      "",
+    ),
   };
   const runningHubGlobal = {
     baseUrl: (
       env.RH_GLOBAL_API_BASE_URL || "https://www.runninghub.ai/openapi/v2"
     ).replace(/\/+$/, ""),
     apiKey: env.RH_GLOBAL_API_KEY?.trim() || "",
-    catalogUrl: "",
+    catalogUrl:
+      env.RH_GLOBAL_LLM_CATALOG_URL?.trim() ||
+      "https://llm.runninghub.ai/v1/models",
+    llmBaseUrl: (
+      env.RH_GLOBAL_LLM_BASE_URL || "https://llm.runninghub.ai/v1"
+    ).replace(/\/+$/, ""),
   };
   const operations = {
     adminEmails: (env.ADMIN_EMAILS || "")

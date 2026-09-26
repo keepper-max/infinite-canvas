@@ -49,6 +49,30 @@ function gateway(row = definition) {
   } as unknown as Pool);
 }
 
+test("public models link the configured global image channel to RunningHub China", async () => {
+  let queryValues: unknown[] | undefined;
+  const linkedGateway = new ModelGateway(
+    {
+      query: async (_query: string, values?: unknown[]) => {
+        queryValues = values;
+        return { rows: [], rowCount: 0 };
+      },
+    } as unknown as Pool,
+    { runningHubGlobalAvailable: true },
+  );
+  await linkedGateway.listPublicModels();
+  assert.deepEqual(queryValues, [true]);
+
+  const unavailableGateway = new ModelGateway({
+    query: async (_query: string, values?: unknown[]) => {
+      queryValues = values;
+      return { rows: [], rowCount: 0 };
+    },
+  } as unknown as Pool);
+  await unavailableGateway.listPublicModels();
+  assert.deepEqual(queryValues, [false]);
+});
+
 test("catalog profiles expose each supported generation family without mixing speech recognition into TTS", () => {
   assert.deepEqual(
     catalogModelProfile({

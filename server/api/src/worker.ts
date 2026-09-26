@@ -39,7 +39,9 @@ const storageQuota = new StorageQuotaService(
   config.operations.adminEmails,
 );
 const assetService = new PostgresAssetService(db, storage, pool, storageQuota);
-const gateway = new ModelGateway(pool);
+const gateway = new ModelGateway(pool, {
+  runningHubGlobalAvailable: Boolean(config.runningHubGlobal.apiKey),
+});
 await gateway
   .refreshCatalog(config.provider.catalogUrl)
   .catch((error) =>
@@ -57,6 +59,14 @@ await gateway
     ),
   );
 await gateway.refreshRunningHubGlobalCatalog();
+await gateway
+  .refreshRunningHubGlobalTextCatalog(config.runningHubGlobal.catalogUrl)
+  .catch((error) =>
+    console.warn(
+      "[generation-worker] RunningHub global LLM catalog refresh skipped:",
+      error instanceof Error ? error.message : "unknown error",
+    ),
+  );
 const provider = new ProviderRouter(
   new Map<string, GenerationProvider>([
     [

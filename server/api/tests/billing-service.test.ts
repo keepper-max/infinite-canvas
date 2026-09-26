@@ -388,3 +388,48 @@ test("RunningHub global usage keeps a region-specific billing identity", async (
   );
   assert.equal(insert?.values?.[3], "runninghub_global:rh-task-1");
 });
+
+test("RunningHub global LLM usage preserves USD pricing for credit conversion", async () => {
+  const calls: Array<{ sql: string; values?: unknown[] }> = [];
+  const pool = {
+    async query(sql: string, values?: unknown[]) {
+      calls.push({ sql, values });
+      if (sql.startsWith("select * from generation_jobs"))
+        return {
+          rows: [
+            {
+              id: "job-rh-global-text-1",
+              project_id: "project-1",
+              created_by: "user-1",
+              provider: "runninghub_global",
+              model_id: "runninghub_global.text.openai-gpt-5-6-sol",
+              capability: "text",
+              billing_status: "pending",
+              parameters: {},
+              billing_meter_usage: {
+                provider_request_id: "chatcmpl-rh-1",
+                prompt_tokens: 1000,
+                completion_tokens: 500,
+                total_tokens: 1500,
+                consume_money: "0.0025",
+                currency: "USD",
+              },
+            },
+          ],
+          rowCount: 1,
+        };
+      return { rows: [], rowCount: 1 };
+    },
+  };
+  await new BillingService(pool as never, config).finalizeProviderUsage(
+    "job-rh-global-text-1",
+  );
+  const insert = calls.find(({ sql }) =>
+    sql.includes("insert into generation_usage"),
+  );
+  assert.equal(insert?.values?.[7], true);
+  assert.equal(insert?.values?.[14], "0.0025");
+  assert.equal(insert?.values?.[15], "0.0025");
+  assert.equal(insert?.values?.[16], "USD");
+  assert.equal(insert?.values?.[17], "chatcmpl-rh-1");
+});

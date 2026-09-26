@@ -320,9 +320,13 @@ export class BillingService {
       String(job.id);
     const billingRequestId = `${String(job.provider)}:${providerRequestId}`;
     const parameters = asRecord(job.parameters);
-    // RunningHub's consume-money fields are denominated in CNY. Do not let an
-    // incidental currency label route these charges through USD conversion.
-    const currency = "CNY";
+    // Standard RunningHub generation reports consume-money in CNY. The global
+    // OpenAI-compatible LLM route is priced from its official USD token catalog.
+    const currency =
+      job.provider === "runninghub_global" &&
+      stringValue(usage.currency)?.toUpperCase() === "USD"
+        ? "USD"
+        : "CNY";
     await this.pool.query(
       `insert into generation_usage(job_id,project_id,user_id,billing_request_id,provider,model_id,capability,status,billed,credit_status,
         prompt_tokens,completion_tokens,total_tokens,audio_duration_seconds,video_duration_seconds,requested_seconds,

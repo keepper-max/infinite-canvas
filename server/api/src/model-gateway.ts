@@ -92,7 +92,10 @@ export function publicModelDisplayName(value: unknown) {
 }
 
 export class ModelGateway {
-  constructor(private readonly pool: Pool) {}
+  constructor(
+    private readonly pool: Pool,
+    private readonly options: { runningHubGlobalAvailable?: boolean } = {},
+  ) {}
 
   async refreshCatalog(catalogUrl: string) {
     const response = await fetch(catalogUrl, {
@@ -163,16 +166,35 @@ export class ModelGateway {
     return this.replaceRunningHubCatalog(
       "runninghub_global",
       runningHubGlobalCatalogItems(),
+      "image",
+    );
+  }
+
+  async refreshRunningHubGlobalTextCatalog(catalogUrl: string) {
+    const response = await fetch(catalogUrl, {
+      headers: { Accept: "application/json" },
+      signal: AbortSignal.timeout(15_000),
+    });
+    if (!response.ok)
+      throw new Error(`RunningHub global LLM catalog returned ${response.status}`);
+    const candidates = runningHubGlobalTextCatalogItems(
+      (await response.json()) as unknown,
+    );
+    return this.replaceRunningHubCatalog(
+      "runninghub_global",
+      candidates,
+      "text",
     );
   }
 
   private async replaceRunningHubCatalog(
     providerId: "runninghub" | "runninghub_global",
     candidates: Array<Record<string, unknown>>,
+    capability?: Capability,
   ) {
     await this.pool.query(
-      "update model_catalog set discovered=false,healthy=false,checked_at=now(),updated_at=now() where provider_id=$1",
-      [providerId],
+      "update model_catalog set discovered=false,healthy=false,checked_at=now(),updated_at=now() where provider_id=$1 and ($2::text is null or capability=$2)",
+      [providerId, capability || null],
     );
     let imported = 0;
     for (const candidate of candidates) {
@@ -248,11 +270,20 @@ export class ModelGateway {
                     p.modes, p.accepted_parameters, p.required_parameters_by_mode, p.limits
             from model_catalog c join model_capabilities p on p.model_id = c.id
             where c.enabled = true and c.healthy = true
-              and c.provider_id=coalesce(
-                (select value->>'providerId' from platform_settings where key='managed_provider'),
-                'token360'
+              and (
+                c.provider_id=coalesce(
+                  (select value->>'providerId' from platform_settings where key='managed_provider'),
+                  'token360'
+                )
+                or (
+                  $1::boolean = true
+                  and c.provider_id='runninghub_global'
+                  and (select value->>'providerId' from platform_settings where key='managed_provider')='runninghub'
+                )
               )
-            order by c.capability, c.display_name`);
+            order by c.capability, c.display_name`,
+        [this.options.runningHubGlobalAvailable === true],
+      );
     return result.rows.map((row) => ({
       id: row.id,
       displayName: publicModelDisplayName(row.display_name),
@@ -691,6 +722,11 @@ function sanitizeRunningHubEntry(candidate: Record<string, unknown>) {
     class_name: candidate.class_name,
     name_cn: candidate.name_cn,
     name_en: candidate.name_en,
+    llm_pricing: isRecord(candidate.pricing) ? candidate.pricing : undefined,
+    llm_capabilities: isRecord(candidate.capabilities)
+      ? candidate.capabilities
+      : undefined,
+    llm_context_length: candidate.context_length,
     params: Array.isArray(candidate.params) ? candidate.params : [],
     normalizedApiParameterSchema: {
       fields: params
@@ -755,9 +791,25 @@ export function runningHubCatalogItems(
   );
   for (const item of catalogItems(payload)) {
     const endpoint = String(item.endpoint || "").trim();
-    if (endpoint) byEndpoint.set(endpoint, item);
+    if (endpoint && !isRunningHubChinaGptModel(item))
+      byEndpoint.set(endpoint, item);
   }
   return Array.from(byEndpoint.values());
+}
+
+function isRunningHubChinaGptModel(item: Record<string, unknown>) {
+  return /(?:gpt|rhart-image-g)/i.test(
+    [
+      item.endpoint,
+      item.class_name,
+      item.display_name,
+      item.name_cn,
+      item.name_en,
+      item.category,
+    ]
+      .map((value) => String(value || ""))
+      .join(" "),
+  );
 }
 
 const RUNNINGHUB_SEEDANCE_25_COMMON_PARAMS = [
@@ -963,6 +1015,95 @@ const RUNNINGHUB_GLOBAL_MODELS: Array<Record<string, unknown>> = [
 
 export function runningHubGlobalCatalogItems() {
   return RUNNINGHUB_GLOBAL_MODELS;
+}
+
+export function runningHubGlobalTextCatalogItems(payload: unknown) {
+  return catalogItems(payload).flatMap((item) => {
+    const modelId = String(item.id || "").trim();
+    const capabilities = isRecord(item.capabilities) ? item.capabilities : {};
+    if (!modelId.startsWith("openai/gpt-") || capabilities.chat !== true)
+      return [];
+    const reasoning = capabilities.reasoning === true;
+    return [
+      {
+        ...item,
+        endpoint: modelId,
+        display_name: runningHubLlmDisplayName(modelId),
+        output_type: "text",
+        category: "RunningHub Global/GPT",
+        params: [
+          {
+            fieldKey: "prompt",
+            type: "STRING",
+            required: true,
+            maxLength: 20_000,
+          },
+          {
+            fieldKey: "temperature",
+            type: "FLOAT",
+            defaultValue: 0.6,
+            min: 0,
+            max: 2,
+            step: 0.1,
+          },
+          {
+            fieldKey: "max_tokens",
+            type: "INT",
+            defaultValue: 4096,
+            min: 1,
+            max: 32_768,
+            step: 1,
+          },
+          {
+            fieldKey: "top_p",
+            type: "FLOAT",
+            defaultValue: 1,
+            min: 0,
+            max: 1,
+            step: 0.01,
+          },
+          {
+            fieldKey: "presence_penalty",
+            type: "FLOAT",
+            defaultValue: 0,
+            min: -2,
+            max: 2,
+            step: 0.1,
+          },
+          {
+            fieldKey: "frequency_penalty",
+            type: "FLOAT",
+            defaultValue: 0,
+            min: -2,
+            max: 2,
+            step: 0.1,
+          },
+          ...(reasoning
+            ? [
+                {
+                  fieldKey: "reasoning_effort",
+                  type: "LIST",
+                  defaultValue: "auto",
+                  options: ["auto", "low", "medium", "high", "xhigh"],
+                },
+              ]
+            : []),
+        ],
+      },
+    ];
+  });
+}
+
+function runningHubLlmDisplayName(modelId: string) {
+  return modelId
+    .replace(/^openai\//, "")
+    .split("-")
+    .map((part) =>
+      part.toLowerCase() === "gpt"
+        ? "GPT"
+        : part.charAt(0).toUpperCase() + part.slice(1),
+    )
+    .join(" ");
 }
 
 function normalizeCapability(value: unknown): Capability | null {
