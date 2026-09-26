@@ -4,3 +4,4 @@
 0028_user_storage_quota.sql
 0029_email_verification.sql
 0030_password_reset.sql
+0031_runninghub_global_llm.sql
