@@ -1,4 +1,4 @@
-import { Bot, Menu, ShieldCheck } from "lucide-react";
+import { Bot, LoaderCircle, Menu, ShieldCheck } from "lucide-react";
 import { Button, Tooltip } from "antd";
 import { Link, useLocation } from "react-router-dom";
 import { useTranslation } from "react-i18next";
@@ -9,6 +9,7 @@ import { MobileNavDrawer } from "@/components/layout/mobile-nav-drawer";
 import { UserStatusActions } from "@/components/layout/user-status-actions";
 import { CODEX_AGENT_ENABLED } from "@/constant/env";
 import { cn } from "@/lib/utils";
+import { preloadNavigationRoute } from "@/lib/route-modules";
 import { useEffect, useRef, useState } from "react";
 import { useAgentStore } from "@/stores/use-agent-store";
 import { useAuth } from "@/components/auth/auth-context";
@@ -26,7 +27,9 @@ export function AppTopNav({ canvasProject, canvasVisible, onCanvasPointerEnter, 
     const { user } = useAuth();
     const { pathname } = useLocation();
     const [mobileNavOpen, setMobileNavOpen] = useState(false);
+    const [loadingToolSlug, setLoadingToolSlug] = useState<NavigationToolSlug | null>(null);
     const autoConnectRef = useRef(false);
+    const navigationRequestRef = useRef(0);
     const agentToken = useAgentStore((state) => state.token);
     const agentEnabled = useAgentStore((state) => state.enabled);
     const agentConnected = useAgentStore((state) => state.connected);
@@ -42,6 +45,18 @@ export function AppTopNav({ canvasProject, canvasVisible, onCanvasPointerEnter, 
         autoConnectRef.current = true;
         connectAgent({ silent: true });
     }, [agentConnected, agentEnabled, agentToken, connectAgent]);
+
+    const startNavigation = (toolSlug: NavigationToolSlug) => {
+        const request = ++navigationRequestRef.current;
+        const loadingTimer = window.setTimeout(() => {
+            if (navigationRequestRef.current === request) setLoadingToolSlug(toolSlug);
+        }, 150);
+        const finish = () => {
+            window.clearTimeout(loadingTimer);
+            if (navigationRequestRef.current === request) setLoadingToolSlug(null);
+        };
+        void preloadNavigationRoute(toolSlug).then(finish, finish);
+    };
 
     return (
         <>
@@ -76,6 +91,7 @@ export function AppTopNav({ canvasProject, canvasVisible, onCanvasPointerEnter, 
                             {visibleNavigationTools.map((tool) => {
                                 const Icon = tool.icon;
                                 const active = tool.slug === activeToolSlug;
+                                const loading = tool.slug === loadingToolSlug;
                                 return (
                                     <Link
                                         key={tool.slug}
@@ -84,8 +100,14 @@ export function AppTopNav({ canvasProject, canvasVisible, onCanvasPointerEnter, 
                                             "relative flex h-14 shrink-0 items-center gap-2 text-sm leading-6 transition after:absolute after:inset-x-0 after:bottom-0 after:h-px",
                                             active ? "font-medium text-stone-950 after:bg-stone-950 dark:text-stone-100 dark:after:bg-stone-100" : "text-stone-500 after:bg-transparent hover:text-stone-950 dark:text-stone-400 dark:hover:text-stone-100",
                                         )}
+                                        aria-busy={loading}
+                                        onPointerEnter={() => void preloadNavigationRoute(tool.slug).catch(() => undefined)}
+                                        onFocus={() => void preloadNavigationRoute(tool.slug).catch(() => undefined)}
+                                        onClick={() => {
+                                            if (!active) startNavigation(tool.slug);
+                                        }}
                                     >
-                                        <Icon className="size-4" />
+                                        {loading ? <LoaderCircle className="size-4 animate-spin" /> : <Icon className="size-4" />}
                                         <span className="truncate">{t(`navigation.${tool.slug}`)}</span>
                                     </Link>
                                 );
