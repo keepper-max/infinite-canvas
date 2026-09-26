@@ -1191,6 +1191,21 @@ export function createApp(
     return context.json(success(context, download));
   });
 
+  app.get("/api/assets/storage-usage", async (context) => {
+    const user = await requireUser(context.req.raw, repository, config);
+    const service = requireAssetService(assetService);
+    if (!service.getStorageUsage)
+      throw new DomainError(
+        "STORAGE_QUOTA_UNAVAILABLE",
+        "存储额度暂时不可用",
+        503,
+        true,
+      );
+    return context.json(
+      success(context, { usage: await service.getStorageUsage(user.id) }),
+    );
+  });
+
   app.post("/api/asset-versions/downloads", async (context) => {
     const user = await requireUser(context.req.raw, repository, config);
     const { versionIds } = assetVersionDownloadsSchema.parse(await readJson(context.req.raw));

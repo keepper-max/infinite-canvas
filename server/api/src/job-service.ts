@@ -17,6 +17,7 @@ import {
 } from "./provider.js";
 import { ProviderRouter } from "./provider-router.js";
 import { createVideoThumbnail } from "./video-thumbnail.js";
+import type { StorageQuotaService } from "./storage-quota-service.js";
 
 export type JobQueuePort = {
   add(jobId: string, maxAttempts: number): Promise<void>;
@@ -36,6 +37,7 @@ export class JobService {
     private readonly publish: JobEventPublisher = async () => undefined,
     private readonly credits?: CreditService,
     private readonly billing?: BillingService,
+    private readonly storageQuota?: StorageQuotaService,
   ) {}
 
   async create(
@@ -61,6 +63,8 @@ export class JobService {
         );
       return serializeJob(duplicate.rows[0]);
     }
+    if (input.capability !== "text")
+      await this.storageQuota?.assertHasCapacity(userId);
     await this.credits?.assertCanCreate(userId);
     const compiled = await this.gateway.compile(input);
     const maxAttempts = generationJobAttempts();
@@ -333,6 +337,7 @@ export class JobExecutor {
     private readonly publish: JobEventPublisher = async () => undefined,
     private readonly billing?: BillingService,
     private readonly transferQueue?: TransferQueuePort,
+    private readonly storageQuota?: StorageQuotaService,
   ) {}
   async execute(jobId: string, attempt: number, signal?: AbortSignal) {
     const row = (
@@ -664,9 +669,16 @@ export class JobExecutor {
       [jobId, attempt],
     );
     await this.billing?.finalizeProviderUsage(jobId).catch(() => undefined);
-    await this.event(row, "job.completed", "completed", 100, "生成完成", {
+    await this.event(
+      row,
+      "job.completed",
+      "completed",
+      100,
+      "生成完成，请尽快下载到本地",
+      {
       artifacts,
-    });
+      },
+    );
     return { artifacts };
   }
   async markAttemptFailed(jobId: string, final: boolean) {
@@ -827,79 +839,104 @@ export class JobExecutor {
       const sha256 = createHash("sha256").update(bytes).digest("hex");
       const extension = extensionFor(artifact.mimeType);
       const storageKey = `projects/${row.project_id}/generated/${row.id}/${index}.${extension}`;
-      await markPersisting();
-      await this.storage.put(storageKey, bytes, artifact.mimeType, sha256);
       const assetKind = generatedAssetKind(artifact.kind, trace.assetKind);
-      let thumbnail: { storageKey: string; mimeType: string; bytes: number } | undefined;
+      let thumbnail:
+        | { storageKey: string; mimeType: string; bytes: Uint8Array }
+        | undefined;
       if (assetKind === "video") {
         try {
           const thumbnailBytes = await createVideoThumbnail(bytes, this.config.ffmpegPath, `video.${extension}`);
           const thumbnailStorageKey = `projects/${row.project_id}/generated/${row.id}/${index}.thumbnail.jpg`;
-          await this.storage.put(thumbnailStorageKey, thumbnailBytes, "image/jpeg", createHash("sha256").update(thumbnailBytes).digest("hex"));
-          thumbnail = { storageKey: thumbnailStorageKey, mimeType: "image/jpeg", bytes: thumbnailBytes.byteLength };
+          thumbnail = { storageKey: thumbnailStorageKey, mimeType: "image/jpeg", bytes: thumbnailBytes };
         } catch (error) {
           console.warn(`[generation-worker] video thumbnail skipped for job ${row.id}:`, error instanceof Error ? error.message : "unknown error");
         }
       }
-      const client = await this.pool.connect();
+      const reservationKey = `generation:${row.id}:${index}`;
+      await this.storageQuota?.reserve(
+        String(row.created_by),
+        bytes.byteLength + (thumbnail?.bytes.byteLength || 0),
+        reservationKey,
+      );
+      const uploadedKeys: string[] = [];
       try {
-        await client.query("begin");
-        const asset = await client.query(
-          "insert into assets(project_id,kind,name,status,created_by) values($1,$2,$3,'active',$4) returning id",
-          [
-            row.project_id,
-            assetKind,
-            trace.assetName ||
-              `${assetKind}-${String(row.id).slice(0, 8)}-${index + 1}.${extension}`,
-            row.created_by,
-          ],
-        );
-        const version = await client.query(
-          "insert into asset_versions(asset_id,version,storage_key,mime_type,bytes,sha256,source,source_job_id,provenance,created_by,thumbnail_storage_key,thumbnail_mime_type,thumbnail_bytes) values($1,1,$2,$3,$4,$5,'generation',$6,$7,$8,$9,$10,$11) returning id",
-          [
-            asset.rows[0].id,
-            storageKey,
-            artifact.mimeType,
-            bytes.byteLength,
-            sha256,
-            row.id,
-            buildArtifactProvenance(row),
-            row.created_by,
-            thumbnail?.storageKey || null,
-            thumbnail?.mimeType || null,
-            thumbnail?.bytes || null,
-          ],
-        );
-        await client.query(
-          "update assets set current_version_id=$2,updated_at=now() where id=$1",
-          [asset.rows[0].id, version.rows[0].id],
-        );
-        const artifactId = randomUUID();
-        await client.query(
-          "insert into job_artifacts(id,job_id,project_id,asset_id,asset_version_id,role,sort_order,storage_key,mime_type,metadata) values($1,$2,$3,$4,$5,'output',$6,$7,$8,'{}')",
-          [
-            artifactId,
-            row.id,
-            row.project_id,
-            asset.rows[0].id,
-            version.rows[0].id,
-            index,
-            storageKey,
-            artifact.mimeType,
-          ],
-        );
-        await client.query("commit");
-        results.push({
-          id: artifactId,
-          kind: artifact.kind,
-          assetId: asset.rows[0].id,
-          assetVersionId: version.rows[0].id,
-        });
+        await markPersisting();
+        await this.storage.put(storageKey, bytes, artifact.mimeType, sha256);
+        uploadedKeys.push(storageKey);
+        if (thumbnail) {
+          await this.storage.put(
+            thumbnail.storageKey,
+            thumbnail.bytes,
+            thumbnail.mimeType,
+            createHash("sha256").update(thumbnail.bytes).digest("hex"),
+          );
+          uploadedKeys.push(thumbnail.storageKey);
+        }
+        const client = await this.pool.connect();
+        try {
+          await client.query("begin");
+          const asset = await client.query(
+            "insert into assets(project_id,kind,name,status,created_by) values($1,$2,$3,'active',$4) returning id",
+            [
+              row.project_id,
+              assetKind,
+              trace.assetName ||
+                `${assetKind}-${String(row.id).slice(0, 8)}-${index + 1}.${extension}`,
+              row.created_by,
+            ],
+          );
+          const version = await client.query(
+            "insert into asset_versions(asset_id,version,storage_key,mime_type,bytes,sha256,source,source_job_id,provenance,created_by,thumbnail_storage_key,thumbnail_mime_type,thumbnail_bytes) values($1,1,$2,$3,$4,$5,'generation',$6,$7,$8,$9,$10,$11) returning id",
+            [
+              asset.rows[0].id,
+              storageKey,
+              artifact.mimeType,
+              bytes.byteLength,
+              sha256,
+              row.id,
+              buildArtifactProvenance(row),
+              row.created_by,
+              thumbnail?.storageKey || null,
+              thumbnail?.mimeType || null,
+              thumbnail?.bytes.byteLength || null,
+            ],
+          );
+          await client.query(
+            "update assets set current_version_id=$2,updated_at=now() where id=$1",
+            [asset.rows[0].id, version.rows[0].id],
+          );
+          const artifactId = randomUUID();
+          await client.query(
+            "insert into job_artifacts(id,job_id,project_id,asset_id,asset_version_id,role,sort_order,storage_key,mime_type,metadata) values($1,$2,$3,$4,$5,'output',$6,$7,$8,'{}')",
+            [
+              artifactId,
+              row.id,
+              row.project_id,
+              asset.rows[0].id,
+              version.rows[0].id,
+              index,
+              storageKey,
+              artifact.mimeType,
+            ],
+          );
+          await client.query("commit");
+          results.push({
+            id: artifactId,
+            kind: artifact.kind,
+            assetId: asset.rows[0].id,
+            assetVersionId: version.rows[0].id,
+          });
+        } catch (error) {
+          await client.query("rollback").catch(() => undefined);
+          throw error;
+        } finally {
+          client.release();
+        }
       } catch (error) {
-        await client.query("rollback");
+        await Promise.allSettled(uploadedKeys.map((key) => this.storage.delete(key)));
         throw error;
       } finally {
-        client.release();
+        await this.storageQuota?.release(reservationKey).catch(() => undefined);
       }
     }
     return results;
@@ -1053,6 +1090,13 @@ function serializedUserError(row: Record<string, any>) {
   );
 }
 function mapProviderError(error: unknown) {
+  if (error instanceof DomainError)
+    return {
+      code: error.code,
+      message: error.message,
+      retryable: error.retryable,
+      details: error.details || {},
+    };
   if (error instanceof ProviderError)
     return {
       code: error.code,

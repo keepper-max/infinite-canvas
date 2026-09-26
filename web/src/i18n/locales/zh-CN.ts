@@ -164,6 +164,7 @@ export default {
         generate: "开始生成",
         stop: "停止生成",
         results: "生成结果",
+        resultRetentionNotice: "请尽快下载到本地；未加入画布的生成内容会按保留期限自动清理。",
         waiting: "等待 {{time}}",
         model: "模型",
         generating: "生成中",

@@ -504,6 +504,7 @@ export default function ImagePage() {
                         <div className="mb-4 flex items-center justify-between gap-3">
                             <div>
                                 <h2 className="text-xl font-semibold">{t("workbench.results")}</h2>
+                                <p className="mt-1 text-xs text-stone-500 dark:text-stone-400">{t("workbench.resultRetentionNotice")}</p>
                             </div>
                             {running ? <Tag className="m-0 px-2 py-1">{t("workbench.waiting", { time: formatDuration(elapsedMs) })}</Tag> : null}
                         </div>

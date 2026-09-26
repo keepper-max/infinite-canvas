@@ -21,6 +21,7 @@ import {
 import { BillingService } from "./billing-service.js";
 import { CreditService } from "./credit-service.js";
 import { PaymentService } from "./payment-service.js";
+import { StorageQuotaService } from "./storage-quota-service.js";
 
 const config = readConfig();
 const { db, pool } = createDatabase(config.databaseUrl);
@@ -48,6 +49,11 @@ await modelGateway
 await modelGateway.refreshRunningHubGlobalCatalog();
 const jobQueue = createQueue(config.jobs);
 const creditService = new CreditService(pool, config.operations.adminEmails);
+const storageQuota = new StorageQuotaService(
+  pool,
+  config.assetStorageQuotaBytes,
+  config.operations.adminEmails,
+);
 const billingService = new BillingService(pool, config.provider, creditService);
 const jobService = new JobService(
   pool,
@@ -57,6 +63,7 @@ const jobService = new JobService(
   jobQueue.publish,
   creditService,
   billingService,
+  storageQuota,
 );
 const compositionQueue = createCompositionQueue(config.jobs);
 const compositionService = new CompositionService(
@@ -64,6 +71,7 @@ const compositionService = new CompositionService(
   compositionQueue.port,
   config.jobs,
   compositionQueue.publish,
+  storageQuota,
 );
 const paymentService = new PaymentService(pool, creditService, config.payments);
 const operationsService = new OperationsService(
@@ -87,7 +95,7 @@ const virtualPortraitService = new VirtualPortraitService(
 const app = createApp(
   new PostgresPlatformRepository(db),
   config,
-  new PostgresAssetService(db, objectStorage, pool),
+  new PostgresAssetService(db, objectStorage, pool, storageQuota),
   jobService,
   modelGateway,
   compositionService,

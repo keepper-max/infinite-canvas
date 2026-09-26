@@ -13,6 +13,8 @@ export type ApiConfig = {
   operations: OperationsConfig;
   payments: PaymentConfig;
   assetTrashRetentionDays: number;
+  assetUnusedRetentionDays: number;
+  assetStorageQuotaBytes: number;
 };
 
 export type OperationsConfig = { adminEmails: string[] };
@@ -172,6 +174,20 @@ export function readConfig(env: NodeJS.ProcessEnv = process.env): ApiConfig {
     365,
     "ASSET_TRASH_RETENTION_DAYS",
   );
+  const assetUnusedRetentionDays = readInteger(
+    env.ASSET_UNUSED_RETENTION_DAYS,
+    30,
+    1,
+    365,
+    "ASSET_UNUSED_RETENTION_DAYS",
+  );
+  const assetStorageQuotaBytes = readInteger(
+    env.ASSET_STORAGE_QUOTA_BYTES,
+    1_073_741_824,
+    1,
+    Number.MAX_SAFE_INTEGER,
+    "ASSET_STORAGE_QUOTA_BYTES",
+  );
   return {
     port,
     databaseUrl,
@@ -190,6 +206,8 @@ export function readConfig(env: NodeJS.ProcessEnv = process.env): ApiConfig {
     operations,
     payments,
     assetTrashRetentionDays,
+    assetUnusedRetentionDays,
+    assetStorageQuotaBytes,
   };
 }
 

@@ -5,6 +5,8 @@ description: Implemented changes that still need manual verification
 
 # Pending Tests
 
+- User storage quota and generated-content retention: a standard account should show a 1 GB cloud quota in My Assets. Uploads, generated image/video/audio files, and compositions must share the same limit, including concurrent writes; administrators remain unlimited. Generated-only assets unused by a canvas or virtual portrait should move to trash after 30 days, referenced assets must remain active, and permanent deletion should occur only after the existing 14-day trash period. Generation result areas and completion events should remind users to download promptly.
+
 - 旧画布图片重新载入：首次进入含多张历史云端图片的画布时，节点应优先显示缩略图而不是并发下载所有原图；缺图节点点击“重新载入”后按钮应立即显示加载状态且不能重复点击，成功后恢复图片，不触发生成或扣费。放大到缩略图分辨率不足时仍应自动显示原图。
 
 - 顶部页面导航：从画布列表或大型画布首次进入生图、视频、文本、提示词、资产、积分和配置页面时，悬停或键盘聚焦应提前加载目标页面；点击后若分包超过 150 ms 尚未就绪，对应导航图标应显示加载状态，完成后正确进入且不再出现地址已变化但旧页面长期无反馈停留。重复切换应直接使用已加载分包。

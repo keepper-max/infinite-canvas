@@ -164,6 +164,7 @@ export default {
         generate: "Generate",
         stop: "Stop generation",
         results: "Results",
+        resultRetentionNotice: "Download generated content promptly. Items not used on a canvas are removed after the retention period.",
         waiting: "Waiting {{time}}",
         model: "Model",
         generating: "Generating",

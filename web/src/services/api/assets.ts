@@ -46,6 +46,14 @@ export type CloudAsset = {
     versions: CloudAssetVersion[];
 };
 
+export type CloudStorageUsage = {
+    usedBytes: number;
+    reservedBytes: number;
+    quotaBytes: number | null;
+    remainingBytes: number | null;
+    unlimited: boolean;
+};
+
 type UploadOptions = {
     assetId?: string;
     kind?: CloudAssetKind;
@@ -59,6 +67,10 @@ type UploadOptions = {
 export async function listCloudAssets(projectId: string, includeTrashed = false, signal?: AbortSignal) {
     const suffix = includeTrashed ? "?status=all" : "";
     return (await platformRequest<{ assets: CloudAsset[] }>(`/api/projects/${encodeURIComponent(projectId)}/assets${suffix}`, { signal })).assets;
+}
+
+export async function getCloudStorageUsage(signal?: AbortSignal) {
+    return (await platformRequest<{ usage: CloudStorageUsage }>("/api/assets/storage-usage", { signal })).usage;
 }
 
 export async function uploadCloudAsset(projectId: string, file: Blob & { name?: string }, options: UploadOptions = {}) {

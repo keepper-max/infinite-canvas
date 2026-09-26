@@ -493,6 +493,28 @@ export const assetUploads = pgTable(
   ],
 );
 
+export const userStorageReservations = pgTable(
+  "user_storage_reservations",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    reservationKey: text("reservation_key").notNull().unique(),
+    bytes: bigint("bytes", { mode: "number" }).notNull(),
+    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => [
+    index("user_storage_reservations_user_expiry_idx").on(
+      table.userId,
+      table.expiresAt,
+    ),
+  ],
+);
+
 export const smsVerificationRequests = pgTable("sms_verification_requests", {
   id: uuid("id").defaultRandom().primaryKey(),
   phone: text("phone").notNull(),
@@ -728,6 +750,7 @@ export const schema = {
   trashItems,
   assetPurgeJobs,
   assetUploads,
+  userStorageReservations,
   smsVerificationRequests,
   creditAccounts,
   creditLedger,

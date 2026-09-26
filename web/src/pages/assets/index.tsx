@@ -1,6 +1,6 @@
 import { ArchiveRestore, Download, History, RefreshCw, Search, Trash2, Upload } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { App, Button, Card, Drawer, Empty, Input, Popconfirm, Segmented, Select, Space, Spin, Tag, Typography } from "antd";
+import { App, Button, Card, Drawer, Empty, Input, Popconfirm, Progress, Segmented, Select, Space, Spin, Tag, Typography } from "antd";
 
 import { useAuth } from "@/components/auth/auth-context";
 import { formatBytes } from "@/lib/image-utils";
@@ -8,6 +8,7 @@ import { getMediaBlob } from "@/services/file-storage";
 import { getImageBlob } from "@/services/image-storage";
 import {
     currentVersion,
+    getCloudStorageUsage,
     getCloudAssetDownloadUrl,
     listCloudAssets,
     permanentlyDeleteCloudAsset,
@@ -17,6 +18,7 @@ import {
     uploadCloudAsset,
     type CloudAsset,
     type CloudAssetKind,
+    type CloudStorageUsage,
 } from "@/services/api/assets";
 import { useAssetStore, type Asset as LocalAsset } from "@/stores/use-asset-store";
 
@@ -39,6 +41,7 @@ export default function AssetsPage() {
     const versionParentIdsRef = useRef<string[]>([]);
     const localAssets = useAssetStore((state) => state.assets);
     const [assets, setAssets] = useState<CloudAsset[]>([]);
+    const [storageUsage, setStorageUsage] = useState<CloudStorageUsage | null>(null);
     const [loading, setLoading] = useState(true);
     const [uploading, setUploading] = useState(false);
     const [migrating, setMigrating] = useState(false);
@@ -50,8 +53,12 @@ export default function AssetsPage() {
     const load = useCallback(async () => {
         setLoading(true);
         try {
-            const items = await listCloudAssets(workspace.projectId, true);
+            const [items, usage] = await Promise.all([
+                listCloudAssets(workspace.projectId, true),
+                getCloudStorageUsage().catch(() => null),
+            ]);
             setAssets(items);
+            setStorageUsage(usage);
             setSelected((current) => (current ? items.find((item) => item.id === current.id) || null : null));
         } catch (error) {
             message.error(error instanceof Error ? error.message : "素材加载失败");
@@ -167,12 +174,23 @@ export default function AssetsPage() {
                         <h1 className="text-2xl font-semibold">项目资产</h1>
                         <p className="mt-1 text-sm text-stone-500">图片、视频与音频统一保存；每次上传都会创建一个新版本。</p>
                     </div>
-                    <Space wrap>
+                    <div className="flex flex-wrap items-center justify-end gap-4">
+                        {storageUsage ? (
+                            <div className="w-48" aria-label="云端存储用量">
+                                <div className="mb-1 flex justify-between gap-2 text-xs text-stone-500 dark:text-stone-400">
+                                    <span>云端存储</span>
+                                    <span>{storageUsage.unlimited ? `${formatBytes(storageUsage.usedBytes)} / 不限` : `${formatBytes(storageUsage.usedBytes)} / ${formatBytes(storageUsage.quotaBytes || 0)}`}</span>
+                                </div>
+                                {!storageUsage.unlimited ? <Progress percent={Math.min(100, Math.round(((storageUsage.usedBytes + storageUsage.reservedBytes) / (storageUsage.quotaBytes || 1)) * 100))} showInfo={false} size="small" status={(storageUsage.remainingBytes || 0) <= 0 ? "exception" : "normal"} /> : null}
+                            </div>
+                        ) : null}
+                        <Space wrap>
                         <Button icon={<RefreshCw className="size-4" />} onClick={() => void load()}>刷新</Button>
                         <Button loading={migrating} icon={<ArchiveRestore className="size-4" />} onClick={() => void migrateLocalAssets()}>迁移本地素材</Button>
                         {failedMigrationIds.length ? <Button loading={migrating} onClick={() => void migrateLocalAssets(failedMigrationIds)}>重试失败项（{failedMigrationIds.length}）</Button> : null}
                         <Button type="primary" loading={uploading} icon={<Upload className="size-4" />} onClick={() => fileInputRef.current?.click()}>上传素材</Button>
-                    </Space>
+                        </Space>
+                    </div>
                 </div>
             </header>
 

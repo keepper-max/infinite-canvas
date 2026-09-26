@@ -522,7 +522,10 @@ export default function VideoPage() {
 
                     <div className="thin-scrollbar rounded-lg border border-stone-200 bg-card p-4 shadow-sm dark:border-stone-800 lg:min-h-0 lg:overflow-y-auto lg:p-5">
                         <div className="mb-4 flex items-center justify-between gap-3">
-                            <h2 className="text-xl font-semibold">{t("workbench.results")}</h2>
+                            <div>
+                                <h2 className="text-xl font-semibold">{t("workbench.results")}</h2>
+                                <p className="mt-1 text-xs text-stone-500 dark:text-stone-400">{t("workbench.resultRetentionNotice")}</p>
+                            </div>
                             {running ? <Tag className="m-0 px-2 py-1">{t("workbench.waiting", { time: formatDuration(elapsedMs) })}</Tag> : null}
                         </div>
                         {results.length ? (

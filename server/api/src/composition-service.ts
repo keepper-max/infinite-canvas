@@ -13,6 +13,7 @@ import type { JobConfig } from "./config.js";
 import { DomainError } from "./domain.js";
 import type { ObjectStorage } from "./object-storage.js";
 import { assertProjectAccess } from "./project-access.js";
+import type { StorageQuotaService } from "./storage-quota-service.js";
 
 export type CompositionQueuePort = {
   add(jobId: string, attempts: number): Promise<void>;
@@ -26,6 +27,7 @@ export class CompositionService {
     private readonly queue: CompositionQueuePort,
     private readonly config: JobConfig,
     private readonly publish: Publisher = async () => undefined,
+    private readonly storageQuota?: StorageQuotaService,
   ) {}
 
   async create(
@@ -43,6 +45,7 @@ export class CompositionService {
     );
     if (duplicate.rows[0])
       return this.assertDuplicate(duplicate.rows[0], fingerprint);
+    await this.storageQuota?.assertHasCapacity(userId);
     await assertAssetVersions(
       this.pool,
       projectId,
@@ -308,6 +311,7 @@ export class CompositionExecutor {
     private readonly storage: ObjectStorage,
     private readonly config: JobConfig,
     private readonly publish: Publisher = async () => undefined,
+    private readonly storageQuota?: StorageQuotaService,
   ) {}
 
   async execute(jobId: string, attempt: number) {
@@ -376,6 +380,12 @@ export class CompositionExecutor {
       const coverSha256 = createHash("sha256").update(coverBytes).digest("hex");
       const storageKey = `projects/${row.project_id}/compositions/${row.id}/episode.mp4`;
       const coverStorageKey = `projects/${row.project_id}/compositions/${row.id}/cover.jpg`;
+      const reservationKey = `composition:${row.id}`;
+      await this.storageQuota?.reserve(
+        String(row.created_by),
+        bytes.byteLength + coverBytes.byteLength,
+        reservationKey,
+      );
       const uploadedKeys: string[] = [];
       try {
         await this.storage.put(storageKey, bytes, "video/mp4", sha256);
@@ -401,6 +411,8 @@ export class CompositionExecutor {
           uploadedKeys.map((key) => this.storage.delete(key)),
         );
         throw error;
+      } finally {
+        await this.storageQuota?.release(reservationKey).catch(() => undefined);
       }
     } finally {
       await rm(tempDir, { recursive: true, force: true });
@@ -523,7 +535,7 @@ export class CompositionExecutor {
         "composition.completed",
         "completed",
         100,
-        "成片已生成",
+        "成片已生成，请尽快下载到本地",
         { assetId: asset.rows[0].id, assetVersionId: version.rows[0].id },
       );
       await client.query("commit");

@@ -26,13 +26,19 @@ import {
 import { BillingService } from "./billing-service.js";
 import { CreditService } from "./credit-service.js";
 import { PostgresAssetService } from "./asset-service.js";
+import { StorageQuotaService } from "./storage-quota-service.js";
 
 const config = readConfig();
 const { db, pool } = createDatabase(config.databaseUrl);
 await applyMigrations(pool);
 const storage = new S3ObjectStorage(config.objectStorage);
 await storage.ensureReady();
-const assetService = new PostgresAssetService(db, storage, pool);
+const storageQuota = new StorageQuotaService(
+  pool,
+  config.assetStorageQuotaBytes,
+  config.operations.adminEmails,
+);
+const assetService = new PostgresAssetService(db, storage, pool, storageQuota);
 const gateway = new ModelGateway(pool);
 await gateway
   .refreshCatalog(config.provider.catalogUrl)
@@ -84,6 +90,7 @@ const executor = new JobExecutor(
   (projectId) => connection.publish(`job-events:${projectId}`, "changed"),
   billing,
   undefined,
+  storageQuota,
 );
 const recoveryQueue = createQueue(config.jobs);
 const transferPort = recoveryQueue.transferPort;
@@ -96,6 +103,7 @@ const transferExecutor = new JobExecutor(
   (projectId) => connection.publish(`job-events:${projectId}`, "changed"),
   billing,
   transferPort,
+  storageQuota,
 );
 const recoveredJobs = await recoverInterruptedProviderJobs(
   pool,
@@ -113,6 +121,7 @@ const compositionExecutor = new CompositionExecutor(
   config.jobs,
   (projectId) =>
     connection.publish(`composition-events:${projectId}`, "changed"),
+  storageQuota,
 );
 
 const worker = new Worker<{ jobId: string }>(
@@ -228,6 +237,11 @@ async function cleanExpiredAssets() {
   if (assetCleanupRunning) return;
   assetCleanupRunning = true;
   try {
+    const trashed = await assetService.trashUnusedGenerated(
+      config.assetUnusedRetentionDays,
+    );
+    if (trashed)
+      console.log(`[asset-cleanup] moved ${trashed} unused generated asset(s) to trash`);
     const queued = await assetService.purgeExpired(
       config.assetTrashRetentionDays,
     );

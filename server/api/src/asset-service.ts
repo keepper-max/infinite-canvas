@@ -18,6 +18,10 @@ import type {
   StoredObjectDownload,
 } from "./object-storage.js";
 import * as tables from "./db/schema.js";
+import type {
+  StorageQuotaService,
+  StorageUsage,
+} from "./storage-quota-service.js";
 
 type Database = NodePgDatabase<typeof tables>;
 type Transaction = NodePgTransaction<
@@ -81,6 +85,9 @@ export interface AssetServicePort {
     assetId: string,
     userId: string,
   ): Promise<{ assetId: string; storageStatus: "completed" | "pending" } | null>;
+  getStorageUsage?(
+    userId: string,
+  ): Promise<StorageUsage>;
 }
 
 export class PostgresAssetService implements AssetServicePort {
@@ -88,7 +95,14 @@ export class PostgresAssetService implements AssetServicePort {
     private readonly db: Database,
     private readonly storage: ObjectStorage,
     private readonly pool?: Pool,
+    private readonly storageQuota?: StorageQuotaService,
   ) {}
+
+  async getStorageUsage(userId: string) {
+    if (!this.storageQuota)
+      throw new DomainError("STORAGE_QUOTA_UNAVAILABLE", "存储额度暂时不可用", 503, true);
+    return this.storageQuota.getUsage(userId);
+  }
 
   async list(projectId: string, userId: string, includeTrashed = false) {
     if (!(await hasProjectAccess(this.db, projectId, userId))) return null;
@@ -112,6 +126,16 @@ export class PostgresAssetService implements AssetServicePort {
     userId: string,
     input: BeginAssetUpload,
   ) {
+    const uploadId = randomUUID();
+    const reservationKey = `asset-upload:${uploadId}`;
+    const requestedBytes = input.bytes + (input.thumbnail?.bytes || 0);
+    if (this.storageQuota) {
+      if (!(await hasProjectAccess(this.db, projectId, userId)))
+        throw new DomainError("PROJECT_FORBIDDEN", "无权访问该项目", 403);
+      if (!(await hasProjectEditAccess(this.db, projectId, userId)))
+        throw new DomainError("PROJECT_READ_ONLY", "当前成员只有查看权限", 403);
+      await this.storageQuota.reserve(userId, requestedBytes, reservationKey);
+    }
     const storageKey = `projects/${projectId}/${input.kind}/${randomUUID()}`;
     const thumbnailStorageKey = input.thumbnail
       ? `projects/${projectId}/thumbnails/${randomUUID()}`
@@ -174,6 +198,7 @@ export class PostgresAssetService implements AssetServicePort {
       const [upload] = await tx
         .insert(tables.assetUploads)
         .values({
+          id: uploadId,
           projectId,
           assetId,
           storageKey,
@@ -197,6 +222,9 @@ export class PostgresAssetService implements AssetServicePort {
           assetId: tables.assetUploads.assetId,
         });
       return upload;
+    }).catch(async (error) => {
+      await this.storageQuota?.release(reservationKey).catch(() => undefined);
+      throw error;
     });
     try {
       const signed = await this.storage.createUploadUrl(
@@ -221,6 +249,7 @@ export class PostgresAssetService implements AssetServicePort {
         ...(thumbnailSigned ? { thumbnailUpload: thumbnailSigned } : {}),
       };
     } catch (error) {
+      await this.storageQuota?.release(reservationKey).catch(() => undefined);
       await this.db
         .transaction(async (tx) => {
           await tx
@@ -257,7 +286,16 @@ export class PostgresAssetService implements AssetServicePort {
       .limit(1);
     if (!upload)
       throw new DomainError("ASSET_UPLOAD_NOT_FOUND", "找不到该上传任务", 404);
-    if (upload.completedAt) return this.readAsset(upload.assetId, userId);
+    const reservationKey = `asset-upload:${upload.id}`;
+    if (upload.completedAt) {
+      await this.storageQuota?.release(reservationKey).catch(() => undefined);
+      return this.readAsset(upload.assetId, userId);
+    }
+    await this.storageQuota?.reserve(
+      userId,
+      upload.bytes + (upload.thumbnailBytes || 0),
+      reservationKey,
+    );
     const stored = await this.storage.stat(upload.storageKey);
     if (!stored)
       throw new DomainError(
@@ -361,6 +399,7 @@ export class PostgresAssetService implements AssetServicePort {
         .catch(() => undefined);
       throw error;
     }
+    await this.storageQuota?.release(reservationKey).catch(() => undefined);
     return this.readAsset(upload.assetId, userId);
   }
 
@@ -595,6 +634,62 @@ export class PostgresAssetService implements AssetServicePort {
     }
     await this.processPendingPurges();
     return queued;
+  }
+
+  async trashUnusedGenerated(retentionDays: number) {
+    const pool = this.requirePool();
+    const candidates = await pool.query<{
+      id: string;
+      project_id: string;
+      created_by: string;
+    }>(
+      `select a.id,a.project_id,a.created_by
+       from assets a
+       where a.status='active'
+         and a.updated_at <= now() - ($1::text || ' days')::interval
+         and exists (
+           select 1 from asset_versions v
+           where v.asset_id=a.id and v.source in ('generation','composition')
+         )
+         and not exists (
+           select 1 from asset_versions v
+           where v.asset_id=a.id and v.source not in ('generation','composition')
+         )
+         and not exists (
+           select 1 from asset_links l
+           join asset_versions v on v.id=l.asset_version_id
+           where v.asset_id=a.id
+         )
+         and not exists (
+           select 1 from virtual_portraits vp where vp.source_asset_id=a.id
+         )
+       order by a.updated_at
+       limit 500`,
+      [retentionDays],
+    );
+    let trashed = 0;
+    for (const asset of candidates.rows) {
+      const result = await pool.query(
+        `with moved as (
+           update assets set status='trashed',trashed_at=now(),updated_at=now()
+           where id=$1 and status='active'
+             and not exists (
+               select 1 from asset_links l join asset_versions v on v.id=l.asset_version_id
+               where v.asset_id=assets.id
+             )
+             and not exists (
+               select 1 from virtual_portraits vp where vp.source_asset_id=assets.id
+             )
+           returning id
+         )
+         insert into trash_items(project_id,object_type,object_id,reason,metadata,deleted_by)
+         select $2,'asset',id,'未使用的生成内容已到期',jsonb_build_object('automatic',true,'retentionDays',$4::int),$3
+         from moved on conflict do nothing returning object_id`,
+        [asset.id, asset.project_id, asset.created_by, retentionDays],
+      );
+      if (result.rowCount) trashed += 1;
+    }
+    return trashed;
   }
 
   async processPendingPurges(assetId?: string) {
