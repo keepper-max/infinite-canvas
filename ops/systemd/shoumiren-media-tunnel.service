@@ -1,0 +1,25 @@
+[Unit]
+Description=Shoumiren Media Reverse SSH Tunnel to ECS
+After=network-online.target docker.service
+Wants=network-online.target
+Requires=docker.service
+
+[Service]
+Type=simple
+User=adminsun
+Environment="AUTOSSH_GATETIME=0"
+Environment="AUTOSSH_POLL=30"
+ExecStart=/usr/bin/autossh -M 0 -N \
+  -i /home/adminsun/.ssh/jingjie_ecs_tunnel \
+  -o ServerAliveInterval=30 \
+  -o ServerAliveCountMax=3 \
+  -o ExitOnForwardFailure=yes \
+  -o StrictHostKeyChecking=accept-new \
+  -R 127.0.0.1:19101:127.0.0.1:9000 \
+  -R 127.0.0.1:19102:127.0.0.1:3002 \
+  tunnel@47.104.87.208
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

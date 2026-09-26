@@ -363,9 +363,42 @@ test("asset routes keep immutable versions, regenerate downloads, and isolate pr
     /signed\/asset-version/,
   );
   const downloads = await postJson(app, "/api/asset-versions/downloads", firstCookie, { versionIds: [versionId] });
-  assert.match(downloads.body.data.versions[versionId].url, /signed\/asset-version/);
+  assert.equal(downloads.body.data.versions[versionId].url, `/api/media/asset-versions/${versionId}`);
   const isolatedDownloads = await postJson(app, "/api/asset-versions/downloads", cookieFrom(second.response), { versionIds: [versionId] });
   assert.deepEqual(isolatedDownloads.body.data.versions, {});
+  const mediaAuthorization = await app.request(
+    `/api/media/asset-versions/${versionId}`,
+    { headers: { cookie: firstCookie, "x-media-authorize-only": "1" } },
+  );
+  assert.equal(mediaAuthorization.status, 204);
+  assert.equal(
+    (
+      await app.request(`/api/media/asset-versions/${versionId}`, {
+        headers: { range: "bytes=0-1" },
+      })
+    ).status,
+    401,
+  );
+  const media = await app.request(`/api/media/asset-versions/${versionId}`, {
+    headers: { cookie: firstCookie, range: "bytes=0-1" },
+  });
+  assert.equal(media.status, 206);
+  assert.equal(media.headers.get("cache-control"), "private, no-cache");
+  assert.equal(media.headers.get("content-range"), "bytes 0-1/4");
+  assert.deepEqual(new Uint8Array(await media.arrayBuffer()), new Uint8Array([1, 2]));
+  assert.equal(
+    (
+      await app.request(`/api/media/asset-versions/${versionId}`, {
+        headers: { cookie: firstCookie, range: "bytes=0-1,2-3" },
+      })
+    ).status,
+    416,
+  );
+  const isolatedMedia = await app.request(
+    `/api/media/asset-versions/${versionId}`,
+    { headers: { cookie: cookieFrom(second.response) } },
+  );
+  assert.equal(isolatedMedia.status, 404);
   const trashed = await postJson(
     app,
     `/api/assets/${completed.body.data.asset.id}/trash`,
@@ -819,7 +852,36 @@ class MemoryAssetService implements AssetServicePort {
 
   async createDownloadUrls(versionIds: string[], userId: string) {
     const entries = await Promise.all([...new Set(versionIds)].map(async (versionId) => [versionId, await this.createDownloadUrl(versionId, userId)] as const));
-    return Object.fromEntries(entries.filter((entry): entry is readonly [string, { url: string }] => Boolean(entry[1])).map(([versionId, download]) => [versionId, download]));
+    return Object.fromEntries(entries.filter((entry): entry is readonly [string, { url: string }] => Boolean(entry[1])).map(([versionId]) => [versionId, { url: `/api/media/asset-versions/${versionId}` }]));
+  }
+
+  async authorizeMediaDownload(versionId: string, userId: string) {
+    return Boolean(await this.createDownloadUrl(versionId, userId));
+  }
+
+  async openMediaDownload(
+    versionId: string,
+    userId: string,
+    _thumbnail: boolean,
+    range?: string,
+  ) {
+    if (!(await this.authorizeMediaDownload(versionId, userId))) return null;
+    const source = new Uint8Array([1, 2, 3, 4]);
+    const ranged = range === "bytes=0-1";
+    const body = ranged ? source.slice(0, 2) : source;
+    return {
+      body: new ReadableStream<Uint8Array>({
+        start(controller) {
+          controller.enqueue(body);
+          controller.close();
+        },
+      }),
+      status: ranged ? 206 as const : 200 as const,
+      bytes: body.byteLength,
+      mimeType: "image/png",
+      acceptRanges: "bytes",
+      ...(ranged ? { contentRange: "bytes 0-1/4" } : {}),
+    };
   }
 
   async setCurrentVersion(assetId: string, versionId: string, userId: string) {

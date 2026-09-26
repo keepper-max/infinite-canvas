@@ -184,13 +184,14 @@ function cacheDownload(versionId: string, entry: { download: CloudAssetDownload;
 }
 
 function downloadExpiry(download: CloudAssetDownload) {
+    if ([download.url, download.thumbnailUrl].filter(Boolean).every((url) => url?.startsWith("/api/media/asset-versions/"))) return Number.MAX_SAFE_INTEGER;
     const expiries = [download.url, download.thumbnailUrl].filter((url): url is string => Boolean(url)).map(signedUrlExpiry).filter((value): value is number => value !== null);
     return expiries.length ? Math.min(...expiries) - 30_000 : 0;
 }
 
 function signedUrlExpiry(value: string) {
     try {
-        const url = new URL(value);
+        const url = new URL(value, typeof window === "undefined" ? "http://localhost" : window.location.origin);
         const expires = url.searchParams.get("X-Amz-Expires") || url.searchParams.get("x-amz-expires");
         const signedAt = url.searchParams.get("X-Amz-Date") || url.searchParams.get("x-amz-date");
         if (expires && signedAt) {

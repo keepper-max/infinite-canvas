@@ -90,4 +90,16 @@ sh ops/rollback-production.sh /opt/infinite-canvas-releases/release-提交短号
 - Redis：连通性、内存、持久化错误和队列积压。
 - OSS/MinIO：容量、4xx/5xx、签名失败和临时地址转存失败。
 
+## 7. ECS 素材热缓存
+
+素材原文件仍以物理服务器 MinIO 为权威来源。ECS 只保留可随时删除、可自动回源重建的热缓存，不把缓存纳入生产数据备份。
+
+1. 在物理服务器安装并启动 `ops/systemd/shoumiren-media-tunnel.service`，确认 ECS 回环端口 `19101` 和 `19102` 可用。原 `19001`、`19002` 转发保留为回滚路径。
+2. 在 ECS 创建仅允许 `www-data` 写入的 `/var/cache/shoumiren-media`，把 `ops/edge/media-cache.conf` 安装到 Nginx `http` 配置中。
+3. 把 `ops/edge/media-cache-locations.conf` 的两个 location 放到站点 HTTPS server 的通用 `/api/` location 之前。
+4. 把现有 `/infinite-canvas-assets/` 的 MinIO 上游从 `127.0.0.1:19001` 切到独立媒体隧道 `127.0.0.1:19101`，使上传和旧签名下载不再与主站共用 SSH 连接。
+5. 先运行 `nginx -t`，再 reload。使用已登录账号连续请求同一素材，确认首次回源、后续命中；未登录和其他项目账号必须继续返回 `401/403/404`，不能从缓存读取内容。
+
+缓存上限为 15 GB，索引区为 32 MB，视频与大文件统一按 2 MB 分片，30 天未访问的条目可以淘汰。缓存命中仍会通过主 API 隧道执行轻量权限检查；缓存未命中时才通过独立媒体隧道读取文件。回滚时恢复站点 Nginx 备份并停止独立媒体隧道即可，禁止删除 MinIO 权威数据。
+
 告警阈值、日志轮转大小与保留份数属于生产容量策略，需结合实际并发和磁盘确认后写入 Compose/监控平台。

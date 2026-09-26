@@ -264,8 +264,8 @@ test(
         /\/download\/projects\//,
       );
       const batchDownloads = await postJson(restartedApp, "/api/asset-versions/downloads", first.cookie, { versionIds: [firstVersion.body.data.asset.currentVersionId] });
-      assert.match(batchDownloads.body.data.versions[firstVersion.body.data.asset.currentVersionId].url, /\/download\/projects\//);
-      assert.match(batchDownloads.body.data.versions[firstVersion.body.data.asset.currentVersionId].thumbnailUrl, /\/download\/projects\//);
+      assert.equal(batchDownloads.body.data.versions[firstVersion.body.data.asset.currentVersionId].url, `/api/media/asset-versions/${firstVersion.body.data.asset.currentVersionId}`);
+      assert.equal(batchDownloads.body.data.versions[firstVersion.body.data.asset.currentVersionId].thumbnailUrl, `/api/media/asset-versions/${firstVersion.body.data.asset.currentVersionId}?thumbnail=1`);
       const assetId = firstVersion.body.data.asset.id;
       const firstVersionId = firstVersion.body.data.asset.currentVersionId;
 
@@ -364,6 +364,21 @@ test(
         (
           await restartedApp.request(
             `/api/asset-versions/${firstVersionId}/download`,
+            { headers: { cookie: second.cookie } },
+          )
+        ).status,
+        404,
+      );
+      const mediaDownload = await restartedApp.request(
+        `/api/media/asset-versions/${firstVersionId}`,
+        { headers: { cookie: first.cookie, range: "bytes=0-1" } },
+      );
+      assert.equal(mediaDownload.status, 206);
+      assert.equal((await mediaDownload.arrayBuffer()).byteLength, 2);
+      assert.equal(
+        (
+          await restartedApp.request(
+            `/api/media/asset-versions/${firstVersionId}`,
             { headers: { cookie: second.cookie } },
           )
         ).status,
@@ -756,6 +771,7 @@ class MemoryObjectStorage implements ObjectStorage {
       return Promise.resolve(object);
     }
     this.objects.set(key, value);
+    this.bodies.set(key, new Uint8Array(value.bytes));
   }
 
   async ensureReady() {}
@@ -769,6 +785,28 @@ class MemoryObjectStorage implements ObjectStorage {
 
   async createDownloadUrl(storageKey: string) {
     return `https://storage.test/download/${storageKey}?signature=${++this.signature}`;
+  }
+
+  async openDownload(storageKey: string, range?: string) {
+    const source = this.bodies.get(storageKey);
+    if (!source) throw new Error("Object not found");
+    const match = range?.match(/^bytes=(\d+)-(\d+)$/);
+    const start = match ? Number(match[1]) : 0;
+    const end = match ? Math.min(Number(match[2]), source.byteLength - 1) : source.byteLength - 1;
+    const body = source.slice(start, end + 1);
+    return {
+      body: new ReadableStream<Uint8Array>({
+        start(controller) {
+          controller.enqueue(body);
+          controller.close();
+        },
+      }),
+      status: match ? 206 as const : 200 as const,
+      bytes: body.byteLength,
+      mimeType: this.objects.get(storageKey)?.mimeType || "application/octet-stream",
+      acceptRanges: "bytes",
+      ...(match ? { contentRange: `bytes ${start}-${end}/${source.byteLength}` } : {}),
+    };
   }
 
   async stat(storageKey: string) {

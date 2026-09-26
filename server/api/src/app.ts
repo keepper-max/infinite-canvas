@@ -1198,6 +1198,63 @@ export function createApp(
     return context.json(success(context, { versions }));
   });
 
+  app.on(["GET", "HEAD"], "/api/media/asset-versions/:versionId", async (context) => {
+    const user = await requireUser(context.req.raw, repository, config);
+    const thumbnailValue = context.req.query("thumbnail");
+    if (thumbnailValue !== undefined && thumbnailValue !== "1")
+      throw new DomainError(
+        "INVALID_MEDIA_VARIANT",
+        "请求的素材版本无效",
+        400,
+      );
+    const thumbnail = thumbnailValue === "1";
+    const service = requireAssetService(assetService);
+    if (context.req.header("x-media-authorize-only") === "1") {
+      if (
+        !(await service.authorizeMediaDownload(
+          context.req.param("versionId"),
+          user.id,
+          thumbnail,
+        ))
+      )
+        throw new DomainError(
+          "MEDIA_FORBIDDEN",
+          "无权访问该素材版本",
+          403,
+        );
+      return context.body(null, 204);
+    }
+    const range = context.req.header("range");
+    if (range && !validMediaRange(range))
+      throw new DomainError(
+        "INVALID_MEDIA_RANGE",
+        "请求的素材范围无效",
+        416,
+      );
+    const download = await service.openMediaDownload(
+      context.req.param("versionId"),
+      user.id,
+      thumbnail,
+      range,
+    );
+    if (!download)
+      throw new DomainError(
+        "ASSET_VERSION_NOT_FOUND",
+        "找不到该素材版本",
+        404,
+      );
+    context.header("cache-control", "private, no-cache");
+    context.header("accept-ranges", download.acceptRanges || "bytes");
+    context.header("content-type", download.mimeType);
+    context.header("content-length", String(download.bytes));
+    if (download.contentRange)
+      context.header("content-range", download.contentRange);
+    if (download.etag) context.header("etag", download.etag);
+    if (download.lastModified)
+      context.header("last-modified", download.lastModified);
+    return context.body(download.body, download.status);
+  });
+
   app.patch("/api/assets/:assetId/current-version", async (context) => {
     const user = await requireUser(context.req.raw, repository, config);
     const input = setCurrentVersionSchema.parse(
@@ -1562,6 +1619,11 @@ function readCookie(cookieHeader: string, name: string) {
     .map((part) => part.trim())
     .find((part) => part.startsWith(`${name}=`))
     ?.slice(name.length + 1);
+}
+
+function validMediaRange(value: string) {
+  const match = value.match(/^bytes=(\d*)-(\d*)$/);
+  return Boolean(match && (match[1] || match[2]));
 }
 
 function success<T>(context: Context<AppEnv>, data: T) {

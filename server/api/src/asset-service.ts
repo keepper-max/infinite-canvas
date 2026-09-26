@@ -13,7 +13,10 @@ import type {
   BeginAssetUpload,
 } from "./asset-contract.js";
 import { DomainError } from "./domain.js";
-import type { ObjectStorage } from "./object-storage.js";
+import type {
+  ObjectStorage,
+  StoredObjectDownload,
+} from "./object-storage.js";
 import * as tables from "./db/schema.js";
 
 type Database = NodePgDatabase<typeof tables>;
@@ -51,6 +54,17 @@ export interface AssetServicePort {
     userId: string,
   ): Promise<{ url: string } | null>;
   createDownloadUrls(versionIds: string[], userId: string): Promise<Record<string, { url: string; thumbnailUrl?: string }>>;
+  authorizeMediaDownload(
+    versionId: string,
+    userId: string,
+    thumbnail: boolean,
+  ): Promise<boolean>;
+  openMediaDownload(
+    versionId: string,
+    userId: string,
+    thumbnail: boolean,
+    range?: string,
+  ): Promise<StoredObjectDownload | null>;
   createAdminDownloadUrl?(versionId: string): Promise<{ url: string } | null>;
   setCurrentVersion(
     assetId: string,
@@ -387,9 +401,7 @@ export class PostgresAssetService implements AssetServicePort {
     const rows = await this.db
       .selectDistinct({
         id: tables.assetVersions.id,
-        storageKey: tables.assetVersions.storageKey,
         thumbnailStorageKey: tables.assetVersions.thumbnailStorageKey,
-        name: tables.assets.name,
       })
       .from(tables.assetVersions)
       .innerJoin(tables.assets, eq(tables.assets.id, tables.assetVersions.assetId))
@@ -401,12 +413,66 @@ export class PostgresAssetService implements AssetServicePort {
         rows.map(async (row) => [
           row.id,
           {
-            url: await this.storage.createDownloadUrl(row.storageKey, row.name),
-            ...(row.thumbnailStorageKey ? { thumbnailUrl: await this.storage.createDownloadUrl(row.thumbnailStorageKey) } : {}),
+            url: mediaDownloadUrl(row.id),
+            ...(row.thumbnailStorageKey ? { thumbnailUrl: mediaDownloadUrl(row.id, true) } : {}),
           },
         ]),
       ),
     );
+  }
+
+  async authorizeMediaDownload(
+    versionId: string,
+    userId: string,
+    thumbnail: boolean,
+  ) {
+    return Boolean(await this.findMediaObject(versionId, userId, thumbnail));
+  }
+
+  async openMediaDownload(
+    versionId: string,
+    userId: string,
+    thumbnail: boolean,
+    range?: string,
+  ) {
+    const object = await this.findMediaObject(versionId, userId, thumbnail);
+    return object ? this.storage.openDownload(object.storageKey, range) : null;
+  }
+
+  private async findMediaObject(
+    versionId: string,
+    userId: string,
+    thumbnail: boolean,
+  ) {
+    const [row] = await this.db
+      .selectDistinct({
+        storageKey: tables.assetVersions.storageKey,
+        thumbnailStorageKey: tables.assetVersions.thumbnailStorageKey,
+      })
+      .from(tables.assetVersions)
+      .innerJoin(
+        tables.assets,
+        eq(tables.assets.id, tables.assetVersions.assetId),
+      )
+      .innerJoin(
+        tables.projectMembers,
+        eq(tables.projectMembers.projectId, tables.assets.projectId),
+      )
+      .innerJoin(
+        tables.projects,
+        eq(tables.projects.id, tables.assets.projectId),
+      )
+      .where(
+        and(
+          eq(tables.assetVersions.id, versionId),
+          eq(tables.projectMembers.userId, userId),
+          isNull(tables.projects.deletedAt),
+        ),
+      )
+      .limit(1);
+    if (!row) return null;
+    const storageKey = thumbnail ? row.thumbnailStorageKey : row.storageKey;
+    return storageKey ? { storageKey } : null;
   }
 
   async createAdminDownloadUrl(versionId: string) {
@@ -752,6 +818,10 @@ export class PostgresAssetService implements AssetServicePort {
       versions: documents,
     };
   }
+}
+
+function mediaDownloadUrl(versionId: string, thumbnail = false) {
+  return `/api/media/asset-versions/${encodeURIComponent(versionId)}${thumbnail ? "?thumbnail=1" : ""}`;
 }
 
 async function hasProjectAccess(
