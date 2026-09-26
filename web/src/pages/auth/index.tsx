@@ -28,7 +28,17 @@ export default function AuthPage({ mode }: { mode: AuthMode }) {
     }, [countdown]);
 
     useEffect(() => {
-        if (mode !== "register") return;
+        setCountdown(0);
+        form.resetFields();
+        if (mode === "login") {
+            setVerificationRequired(false);
+            return;
+        }
+        if (mode === "forgot-password") {
+            setVerificationRequired(true);
+            return;
+        }
+        setVerificationRequired(null);
         let active = true;
         void getAuthConfig()
             .then((result) => {
@@ -40,7 +50,7 @@ export default function AuthPage({ mode }: { mode: AuthMode }) {
         return () => {
             active = false;
         };
-    }, [mode]);
+    }, [form, mode]);
 
     if (authenticatedProjectId) return <Navigate to={`/canvas/${authenticatedProjectId}`} replace />;
 
