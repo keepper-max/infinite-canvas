@@ -4,6 +4,7 @@ import { lazy, Suspense, type ReactNode } from "react";
 import { AnalyticsTracker } from "@/components/layout/analytics-tracker";
 import { AuthGate } from "@/components/auth/auth-gate";
 import { useAuth } from "@/components/auth/auth-context";
+import { RouteErrorPage } from "@/components/layout/route-error-page";
 import UserLayout from "@/layouts/user-layout";
 const AssetsPage = lazy(() => import("@/pages/assets"));
 const AuthPage = lazy(() => import("@/pages/auth"));
@@ -32,8 +33,8 @@ function AdminRoute() {
 }
 
 export const router = createBrowserRouter([
-    { path: "/login", element: deferred(<AuthPage mode="login" />) },
-    { path: "/register", element: deferred(<AuthPage mode="register" />) },
+    { path: "/login", element: deferred(<AuthPage mode="login" />), errorElement: <RouteErrorPage /> },
+    { path: "/register", element: deferred(<AuthPage mode="register" />), errorElement: <RouteErrorPage /> },
     {
         element: (
             <AuthGate>
@@ -43,6 +44,7 @@ export const router = createBrowserRouter([
                 </UserLayout>
             </AuthGate>
         ),
+        errorElement: <RouteErrorPage />,
         children: [
             { path: "/", element: deferred(<WorkspaceEntryPage />) },
             { path: "/home", element: deferred(<HomePage />) },
@@ -65,6 +67,7 @@ export const router = createBrowserRouter([
                 <AdminRoute />
             </AuthGate>
         ),
+        errorElement: <RouteErrorPage />,
     },
-    { path: "*", element: deferred(<NotFound />) },
+    { path: "*", element: deferred(<NotFound />), errorElement: <RouteErrorPage /> },
 ]);

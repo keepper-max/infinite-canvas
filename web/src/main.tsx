@@ -9,8 +9,10 @@ import { AppProviders } from "@/components/layout/app-providers";
 import { StartupIntro } from "@/components/layout/startup-intro";
 import "@/i18n";
 import { initAnalytics } from "@/lib/analytics";
+import { installChunkLoadRecovery } from "@/lib/chunk-load-recovery";
 import { router } from "@/router";
 
+installChunkLoadRecovery();
 initAnalytics();
 
 document.body.style.fontFamily = '"SF Pro Display","SF Pro Text","PingFang SC","Microsoft YaHei","Helvetica Neue",sans-serif';
