@@ -28,8 +28,19 @@ export class PlatformApiError extends Error {
     }
 }
 
-export function register(email: string, password: string) {
-    return platformRequest<AuthSession>("/api/auth/register", { method: "POST", body: JSON.stringify({ email, password }) });
+export function register(email: string, password: string, verificationCode?: string) {
+    return platformRequest<AuthSession>("/api/auth/register", { method: "POST", body: JSON.stringify({ email, password, verificationCode }) });
+}
+
+export function getAuthConfig() {
+    return platformRequest<{ emailVerificationRequired: boolean }>("/api/auth/config");
+}
+
+export function requestEmailVerification(email: string) {
+    return platformRequest<{ accepted: true; retryAfterSeconds: number }>("/api/auth/email-verification/request", {
+        method: "POST",
+        body: JSON.stringify({ email }),
+    });
 }
 
 export function login(email: string, password: string) {

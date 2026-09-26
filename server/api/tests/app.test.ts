@@ -19,6 +19,10 @@ import {
 } from "../src/domain.js";
 import type { ApiConfig } from "../src/config.js";
 import type { OperationsServicePort } from "../src/operations-service.js";
+import type {
+  EmailVerificationServicePort,
+  VerifiedEmailCode,
+} from "../src/email-verification-service.js";
 
 const config: ApiConfig = {
   port: 3002,
@@ -81,6 +85,73 @@ test("duplicate email and wrong password return stable errors", async () => {
   });
   assert.equal(wrong.response.status, 401);
   assert.equal(wrong.body.error.code, "INVALID_CREDENTIALS");
+});
+
+test("registration requires and consumes a valid email verification code when enabled", async () => {
+  const repository = new MemoryRepository();
+  const verification = new MemoryEmailVerificationService();
+  const verificationConfig: ApiConfig = {
+    ...config,
+    emailVerification: {
+      enabled: true,
+      accessKeyId: "test",
+      accessKeySecret: "test",
+      accountName: "verify@example.com",
+      fromAlias: "Test",
+      hashSecret: "test-secret-at-least-32-characters-long",
+      codeTtlSeconds: 300,
+      resendCooldownSeconds: 60,
+      maxSendsPerHour: 5,
+      maxSendsPerIpHour: 20,
+      maxAttempts: 5,
+    },
+  };
+  const app = createApp(
+    repository,
+    verificationConfig,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    verification,
+  );
+  const authConfig = await app.request("/api/auth/config");
+  assert.equal(authConfig.status, 200);
+  assert.equal(
+    ((await authConfig.json()) as any).data.emailVerificationRequired,
+    true,
+  );
+  const requested = await jsonRequest(
+    app,
+    "/api/auth/email-verification/request",
+    { email: "verified@example.com" },
+  );
+  assert.equal(requested.response.status, 200);
+  assert.equal(verification.requestedEmail, "verified@example.com");
+
+  const missing = await jsonRequest(app, "/api/auth/register", {
+    email: "verified@example.com",
+    password: "password-123",
+  });
+  assert.equal(missing.response.status, 422);
+
+  const wrong = await jsonRequest(app, "/api/auth/register", {
+    email: "verified@example.com",
+    password: "password-123",
+    verificationCode: "000000",
+  });
+  assert.equal(wrong.response.status, 422);
+
+  const registered = await jsonRequest(app, "/api/auth/register", {
+    email: "verified@example.com",
+    password: "password-123",
+    verificationCode: "123456",
+  });
+  assert.equal(registered.response.status, 201);
+  assert.equal(verification.consumed, true);
 });
 
 test("session survives a new app instance and logout revokes it", async () => {
@@ -490,6 +561,29 @@ function cookieFrom(response: Response) {
   const value = response.headers.get("set-cookie")?.split(";", 1)[0];
   assert.ok(value);
   return value;
+}
+
+class MemoryEmailVerificationService implements EmailVerificationServicePort {
+  requestedEmail = "";
+  consumed = false;
+
+  async requestCode(email: string, _requestIp: string) {
+    this.requestedEmail = email;
+  }
+
+  async verifyCode(email: string, code: string): Promise<VerifiedEmailCode> {
+    if (this.consumed || code !== "123456")
+      throw new DomainError(
+        "INVALID_VERIFICATION_CODE",
+        "验证码无效或已过期，请重新获取",
+        422,
+      );
+    return { id: "verification-id", email };
+  }
+
+  async consumeCode(_verification: VerifiedEmailCode) {
+    this.consumed = true;
+  }
 }
 
 class MemoryRepository implements PlatformRepository {

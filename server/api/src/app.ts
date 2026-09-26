@@ -49,6 +49,10 @@ import {
   createVirtualPortraitSchema,
 } from "./virtual-portrait-contract.js";
 import type { VirtualPortraitServicePort } from "./virtual-portrait-service.js";
+import type {
+  EmailVerificationServicePort,
+  VerifiedEmailCode,
+} from "./email-verification-service.js";
 
 type Variables = { requestId: string };
 type AppEnv = { Variables: Variables };
@@ -63,6 +67,7 @@ export function createApp(
   operationsService?: OperationsServicePort,
   textWorkbenchService?: TextWorkbenchService,
   virtualPortraitService?: VirtualPortraitServicePort,
+  emailVerificationService?: EmailVerificationServicePort,
 ) {
   const app = new Hono<AppEnv>();
 
@@ -117,14 +122,75 @@ export function createApp(
     });
   });
 
-  app.post("/api/auth/register", async (context) => {
-    const input = authInput.parse(await readJson(context.req.raw));
+  app.get("/api/auth/config", (context) =>
+    context.json(
+      success(context, {
+        emailVerificationRequired: Boolean(
+          config.emailVerification?.enabled,
+        ),
+      }),
+    ),
+  );
+
+  app.post("/api/auth/email-verification/request", async (context) => {
+    const input = emailVerificationRequestInput.parse(
+      await readJson(context.req.raw),
+    );
     const email = normalizeEmail(input.email);
+    if (!config.emailVerification?.enabled || !emailVerificationService)
+      throw new DomainError(
+        "EMAIL_VERIFICATION_UNAVAILABLE",
+        "邮箱验证暂时不可用",
+        503,
+        true,
+      );
+    const existing = await repository.findUserByEmail(email);
+    if (!existing)
+      await emailVerificationService.requestCode(
+        email,
+        clientIp(context.req.raw),
+      );
+    return context.json(
+      success(context, {
+        accepted: true,
+        retryAfterSeconds:
+          config.emailVerification.resendCooldownSeconds,
+      }),
+    );
+  });
+
+  app.post("/api/auth/register", async (context) => {
+    const input = registerInput.parse(await readJson(context.req.raw));
+    const email = normalizeEmail(input.email);
+    let verification: VerifiedEmailCode | undefined;
+    if (config.emailVerification?.enabled) {
+      if (!emailVerificationService)
+        throw new DomainError(
+          "EMAIL_VERIFICATION_UNAVAILABLE",
+          "邮箱验证暂时不可用",
+          503,
+          true,
+        );
+      if (!input.verificationCode) throw invalidRegistrationCode();
+      verification = await emailVerificationService.verifyCode(
+        email,
+        input.verificationCode,
+      );
+    }
     const passwordHash = await hashPassword(input.password);
     const result = await repository.createUserWithWorkspace(
       email,
       passwordHash,
     );
+    if (verification)
+      await emailVerificationService!
+        .consumeCode(verification)
+        .catch((error) =>
+          console.warn(
+            "[platform-api] verification code cleanup failed:",
+            error instanceof Error ? error.message : "unknown error",
+          ),
+        );
     const expiresAt = await issueSession(
       context,
       repository,
@@ -1445,9 +1511,14 @@ const passwordSchema = z
   .string()
   .min(passwordPolicy.minLength, `密码至少 ${passwordPolicy.minLength} 位`)
   .max(passwordPolicy.maxLength, `密码最多 ${passwordPolicy.maxLength} 位`);
-const authInput = z
-  .object({ email: emailSchema, password: passwordSchema })
+const registerInput = z
+  .object({
+    email: emailSchema,
+    password: passwordSchema,
+    verificationCode: z.string().trim().regex(/^\d{6}$/).optional(),
+  })
   .strict();
+const emailVerificationRequestInput = z.object({ email: emailSchema }).strict();
 const loginInput = z
   .object({
     email: emailSchema,
@@ -1634,6 +1705,23 @@ function readCookie(cookieHeader: string, name: string) {
     .map((part) => part.trim())
     .find((part) => part.startsWith(`${name}=`))
     ?.slice(name.length + 1);
+}
+
+function clientIp(request: Request) {
+  return (
+    request.headers.get("cf-connecting-ip") ||
+    request.headers.get("x-real-ip") ||
+    request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ||
+    "unknown"
+  );
+}
+
+function invalidRegistrationCode() {
+  return new DomainError(
+    "INVALID_VERIFICATION_CODE",
+    "请输入 6 位邮箱验证码",
+    422,
+  );
 }
 
 function validMediaRange(value: string) {

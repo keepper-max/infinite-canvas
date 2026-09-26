@@ -2,3 +2,4 @@
 # immediately previous API/Worker images during an application image rollback.
 0027_versioned_provider_billing_rules.sql
 0028_user_storage_quota.sql
+0029_email_verification.sql

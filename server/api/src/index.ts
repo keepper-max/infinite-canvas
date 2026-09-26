@@ -22,6 +22,7 @@ import { BillingService } from "./billing-service.js";
 import { CreditService } from "./credit-service.js";
 import { PaymentService } from "./payment-service.js";
 import { StorageQuotaService } from "./storage-quota-service.js";
+import { EmailVerificationService } from "./email-verification-service.js";
 
 const config = readConfig();
 const { db, pool } = createDatabase(config.databaseUrl);
@@ -92,6 +93,9 @@ const virtualPortraitService = new VirtualPortraitService(
   objectStorage,
   new Token360VirtualPortraitClient(config.provider),
 );
+const emailVerificationService = config.emailVerification?.enabled
+  ? new EmailVerificationService(pool, config.emailVerification)
+  : undefined;
 const app = createApp(
   new PostgresPlatformRepository(db),
   config,
@@ -102,6 +106,7 @@ const app = createApp(
   operationsService,
   textWorkbenchService,
   virtualPortraitService,
+  emailVerificationService,
 );
 
 const server = serve({ fetch: app.fetch, port: config.port }, (info) => {

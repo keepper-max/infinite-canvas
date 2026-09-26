@@ -15,6 +15,21 @@ export type ApiConfig = {
   assetTrashRetentionDays: number;
   assetUnusedRetentionDays: number;
   assetStorageQuotaBytes: number;
+  emailVerification?: EmailVerificationConfig;
+};
+
+export type EmailVerificationConfig = {
+  enabled: boolean;
+  accessKeyId: string;
+  accessKeySecret: string;
+  accountName: string;
+  fromAlias: string;
+  hashSecret: string;
+  codeTtlSeconds: number;
+  resendCooldownSeconds: number;
+  maxSendsPerHour: number;
+  maxSendsPerIpHour: number;
+  maxAttempts: number;
 };
 
 export type OperationsConfig = { adminEmails: string[] };
@@ -188,6 +203,7 @@ export function readConfig(env: NodeJS.ProcessEnv = process.env): ApiConfig {
     Number.MAX_SAFE_INTEGER,
     "ASSET_STORAGE_QUOTA_BYTES",
   );
+  const emailVerification = readEmailVerificationConfig(env);
   return {
     port,
     databaseUrl,
@@ -208,7 +224,70 @@ export function readConfig(env: NodeJS.ProcessEnv = process.env): ApiConfig {
     assetTrashRetentionDays,
     assetUnusedRetentionDays,
     assetStorageQuotaBytes,
+    emailVerification,
   };
+}
+
+function readEmailVerificationConfig(
+  env: NodeJS.ProcessEnv,
+): EmailVerificationConfig {
+  const enabled = env.EMAIL_VERIFICATION_ENABLED === "true";
+  const config = {
+    enabled,
+    accessKeyId: env.ALIYUN_DIRECTMAIL_ACCESS_KEY_ID?.trim() || "",
+    accessKeySecret: env.ALIYUN_DIRECTMAIL_ACCESS_KEY_SECRET?.trim() || "",
+    accountName:
+      env.ALIYUN_DIRECTMAIL_ACCOUNT_NAME?.trim() ||
+      "verify@mail.shoumiren.online",
+    fromAlias: env.ALIYUN_DIRECTMAIL_FROM_ALIAS?.trim() || "守守画布",
+    hashSecret: env.EMAIL_VERIFICATION_HASH_SECRET?.trim() || "",
+    codeTtlSeconds: readInteger(
+      env.EMAIL_VERIFICATION_TTL_SECONDS,
+      300,
+      60,
+      1_800,
+      "EMAIL_VERIFICATION_TTL_SECONDS",
+    ),
+    resendCooldownSeconds: readInteger(
+      env.EMAIL_VERIFICATION_RESEND_SECONDS,
+      60,
+      30,
+      600,
+      "EMAIL_VERIFICATION_RESEND_SECONDS",
+    ),
+    maxSendsPerHour: readInteger(
+      env.EMAIL_VERIFICATION_MAX_SENDS_PER_HOUR,
+      5,
+      1,
+      20,
+      "EMAIL_VERIFICATION_MAX_SENDS_PER_HOUR",
+    ),
+    maxSendsPerIpHour: readInteger(
+      env.EMAIL_VERIFICATION_MAX_SENDS_PER_IP_HOUR,
+      20,
+      1,
+      100,
+      "EMAIL_VERIFICATION_MAX_SENDS_PER_IP_HOUR",
+    ),
+    maxAttempts: readInteger(
+      env.EMAIL_VERIFICATION_MAX_ATTEMPTS,
+      5,
+      1,
+      10,
+      "EMAIL_VERIFICATION_MAX_ATTEMPTS",
+    ),
+  };
+  if (
+    enabled &&
+    (!config.accessKeyId ||
+      !config.accessKeySecret ||
+      !config.accountName ||
+      config.hashSecret.length < 32)
+  )
+    throw new Error(
+      "Enabled email verification requires DirectMail credentials, an account name, and a hash secret of at least 32 characters",
+    );
+  return config;
 }
 
 function readPaymentConfig(env: NodeJS.ProcessEnv): PaymentConfig {
