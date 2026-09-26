@@ -415,6 +415,18 @@ function InfiniteCanvasPage({ projectId }: { projectId: string }) {
         return saved;
     }, [canvasPersistence.saveNow, message]);
 
+    const discardLocalCanvasChanges = useCallback(() => {
+        const lastSuccessful = canvasPersistence.discardPendingChanges();
+        if (!lastSuccessful) return;
+        updateProject(projectId, {
+            nodes: lastSuccessful.nodes,
+            connections: lastSuccessful.edges,
+            backgroundMode: lastSuccessful.settings.backgroundMode,
+            showImageInfo: lastSuccessful.settings.showImageInfo,
+            viewport: lastSuccessful.viewport,
+        });
+    }, [canvasPersistence.discardPendingChanges, projectId, updateProject]);
+
     const finishLogout = useCallback(async () => {
         await logout();
         navigate("/login", { replace: true });
@@ -4055,7 +4067,7 @@ function InfiniteCanvasPage({ projectId }: { projectId: string }) {
                             <Button
                                 onClick={() => {
                                     if (navigationBlocker.state !== "blocked") return;
-                                    flushSync(() => canvasPersistence.discardPendingChanges());
+                                    flushSync(discardLocalCanvasChanges);
                                     navigationBlocker.proceed();
                                 }}
                             >
@@ -4092,7 +4104,7 @@ function InfiniteCanvasPage({ projectId }: { projectId: string }) {
                             <Button onClick={() => setLogoutPending(false)}>取消</Button>
                             <Button
                                 onClick={() => {
-                                    canvasPersistence.discardPendingChanges();
+                                    discardLocalCanvasChanges();
                                     setLogoutPending(false);
                                     void finishLogout();
                                 }}

@@ -204,12 +204,13 @@ export function useCloudCanvasPersistence(projectId: string, applyCanvas: (canva
     }, [flush]);
 
     const discardPendingChanges = useCallback(() => {
+        const lastSuccessful = lastSuccessfulRef.current;
         latestDraftRef.current = null;
         clearAutoSaveTimer();
         setStatus(lastFingerprintRef.current ? "synced" : "unsynced");
-        if (lastSuccessfulRef.current) void applyCanvas(lastSuccessfulRef.current);
         void clearPendingCanvas(projectId);
-    }, [applyCanvas, clearAutoSaveTimer, projectId]);
+        return lastSuccessful;
+    }, [clearAutoSaveTimer, projectId]);
 
     const confirmMigration = useCallback(async () => {
         if (!migrationDraft) return;
