@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import type { ReactNode } from "react";
-import { ChevronRight, Copy, Download, Group, Image as ImageIcon, Lock, Music2, Puzzle, RefreshCw, Star, Trash2, Video } from "lucide-react";
+import { ChevronRight, Copy, Download, Group, Image as ImageIcon, LoaderCircle, Lock, Music2, Puzzle, RefreshCw, Star, Trash2, Video } from "lucide-react";
 
 import { canvasThemes } from "@/lib/canvas-theme";
 import { formatBytes } from "@/lib/image-utils";
@@ -54,7 +54,7 @@ type CanvasNodeProps = {
     onRetryBatchImage?: (node: CanvasNodeData, imageId: string) => void;
     onDeleteBatchImage?: (nodeId: string, imageId: string) => void;
     onRetry?: (node: CanvasNodeData) => void;
-    onReloadAsset?: (node: CanvasNodeData) => void;
+    onReloadAsset?: (node: CanvasNodeData) => void | Promise<void>;
     onViewImage?: (node: CanvasNodeData, imageId?: string) => void;
     onSelectReference?: (nodeId: string) => void;
     onCancelReferenceSelection?: () => void;
@@ -76,7 +76,7 @@ type NodeContentRendererProps = {
     onStopEditing: () => void;
     mentionReferences: CanvasResourceReference[];
     onRetry?: (node: CanvasNodeData) => void;
-    onReloadAsset?: (node: CanvasNodeData) => void;
+    onReloadAsset?: (node: CanvasNodeData) => void | Promise<void>;
     onToggleBatch?: () => void;
     onSetBatchPrimary?: (itemId: string) => void;
     onDuplicateBatchImage?: (imageId: string) => void;
@@ -755,6 +755,7 @@ function ImageNodeContent(props: NodeContentRendererProps) {
 
 function EmptyImageContent({ node, theme, onReloadAsset }: NodeContentRendererProps) {
     const { t } = useTranslation();
+    const [isReloading, setIsReloading] = useState(false);
     const hasStoredAsset = Boolean(node.metadata?.assetVersionId || node.metadata?.storageKey || node.metadata?.images?.some((image) => image.assetVersionId || image.storageKey));
     return (
         <div className="flex h-full w-full flex-col items-center justify-center gap-3" style={{ color: theme.node.placeholder }}>
@@ -765,15 +766,22 @@ function EmptyImageContent({ node, theme, onReloadAsset }: NodeContentRendererPr
             {hasStoredAsset ? (
                 <button
                     type="button"
+                    disabled={isReloading}
                     className="pointer-events-auto flex h-8 items-center gap-1.5 rounded-md px-2.5 text-xs transition hover:bg-black/5 dark:hover:bg-white/10"
-                    onClick={(event) => {
+                    onClick={async (event) => {
                         event.stopPropagation();
-                        onReloadAsset?.(node);
+                        if (!onReloadAsset || isReloading) return;
+                        setIsReloading(true);
+                        try {
+                            await onReloadAsset(node);
+                        } finally {
+                            setIsReloading(false);
+                        }
                     }}
                     onMouseDown={(event) => event.stopPropagation()}
                 >
-                    <RefreshCw className="size-3.5" />
-                    {t("canvas.node.reloadAsset")}
+                    {isReloading ? <LoaderCircle className="size-3.5 animate-spin" /> : <RefreshCw className="size-3.5" />}
+                    {isReloading ? t("common.loading") : t("canvas.node.reloadAsset")}
                 </button>
             ) : null}
         </div>

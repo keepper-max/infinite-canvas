@@ -3881,7 +3881,7 @@ function InfiniteCanvasPage({ projectId }: { projectId: string }) {
                             onRetryBatchImage={retryBatchImage}
                             onDeleteBatchImage={deleteBatchImage}
                             onRetry={handleNodeRetry}
-                            onReloadAsset={(node) => void reloadNodeAsset(node)}
+                            onReloadAsset={reloadNodeAsset}
                             onViewImage={handleNodeViewImage}
                             onSelectReference={selectNodeReference}
                             onCancelReferenceSelection={exitNodeReferenceSelection}

@@ -3,7 +3,8 @@ import { platformRequest } from "./platform";
 type CloudAssetDownload = { url: string; thumbnailUrl?: string };
 
 const downloadUrlCache = new Map<string, { download: CloudAssetDownload; expiresAt: number }>();
-const DOWNLOAD_CACHE_PREFIX = "canvas-asset-download:";
+// Bump when the cached response shape changes so older sessions refetch thumbnail URLs.
+const DOWNLOAD_CACHE_PREFIX = "canvas-asset-download:v2:";
 
 export type CloudAssetKind = "character" | "scene" | "prop" | "image" | "video" | "audio" | "subtitle" | "project_export";
 export type CloudAssetSource = "upload" | "generation" | "edit" | "compose" | "migration";
