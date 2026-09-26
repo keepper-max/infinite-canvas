@@ -149,6 +149,7 @@ export function createApp(
       await emailVerificationService.requestCode(
         email,
         clientIp(context.req.raw),
+        "register",
       );
     return context.json(
       success(context, {
@@ -175,6 +176,7 @@ export function createApp(
       verification = await emailVerificationService.verifyCode(
         email,
         input.verificationCode,
+        "register",
       );
     }
     const passwordHash = await hashPassword(input.password);
@@ -227,6 +229,89 @@ export function createApp(
         sessionExpiresAt: expiresAt.toISOString(),
       }),
     );
+  });
+
+  app.post("/api/auth/password-reset/request", async (context) => {
+    const input = emailVerificationRequestInput.parse(
+      await readJson(context.req.raw),
+    );
+    const email = normalizeEmail(input.email);
+    if (!config.emailVerification?.enabled || !emailVerificationService)
+      throw new DomainError(
+        "EMAIL_VERIFICATION_UNAVAILABLE",
+        "邮箱验证暂时不可用",
+        503,
+        true,
+      );
+    const user = await repository.findUserByEmail(email);
+    if (user && user.accountStatus !== "disabled")
+      await emailVerificationService.requestCode(
+        email,
+        clientIp(context.req.raw),
+        "password_reset",
+      );
+    return context.json(
+      success(context, {
+        accepted: true,
+        retryAfterSeconds:
+          config.emailVerification.resendCooldownSeconds,
+      }),
+    );
+  });
+
+  app.post("/api/auth/password-reset/confirm", async (context) => {
+    const input = passwordResetInput.parse(await readJson(context.req.raw));
+    const email = normalizeEmail(input.email);
+    if (!config.emailVerification?.enabled || !emailVerificationService)
+      throw new DomainError(
+        "EMAIL_VERIFICATION_UNAVAILABLE",
+        "邮箱验证暂时不可用",
+        503,
+        true,
+      );
+    const user = await repository.findUserByEmail(email);
+    if (!user || user.accountStatus === "disabled")
+      throw invalidVerificationCode();
+    const verification = await emailVerificationService.verifyCode(
+      email,
+      input.verificationCode,
+      "password_reset",
+    );
+    if (!(await emailVerificationService.consumeCode(verification)))
+      throw invalidVerificationCode();
+    await repository.updatePasswordAndRevokeSessions(
+      user.id,
+      await hashPassword(input.newPassword),
+    );
+    return context.json(success(context, { ok: true }));
+  });
+
+  app.post("/api/auth/password/change", async (context) => {
+    const sessionUser = await requireUser(context.req.raw, repository, config);
+    const input = passwordChangeInput.parse(await readJson(context.req.raw));
+    const user = await repository.findUserByEmail(sessionUser.email);
+    if (!user || !(await verifyPassword(user.passwordHash, input.currentPassword)))
+      throw new DomainError(
+        "INVALID_CURRENT_PASSWORD",
+        "当前密码不正确",
+        422,
+      );
+    if (await verifyPassword(user.passwordHash, input.newPassword))
+      throw new DomainError(
+        "PASSWORD_UNCHANGED",
+        "新密码不能与当前密码相同",
+        422,
+      );
+    const token = readCookie(
+      context.req.header("cookie") || "",
+      config.cookieName,
+    );
+    await repository.updatePasswordAndRevokeSessions(
+      user.id,
+      await hashPassword(input.newPassword),
+      token ? hashSessionToken(token) : undefined,
+    );
+    return context.json(success(context, { ok: true }));
   });
 
   app.get("/api/auth/me", async (context) => {
@@ -1519,6 +1604,22 @@ const registerInput = z
   })
   .strict();
 const emailVerificationRequestInput = z.object({ email: emailSchema }).strict();
+const passwordResetInput = z
+  .object({
+    email: emailSchema,
+    verificationCode: z.string().trim().regex(/^\d{6}$/),
+    newPassword: passwordSchema,
+  })
+  .strict();
+const passwordChangeInput = z
+  .object({
+    currentPassword: z
+      .string()
+      .min(1, "请输入当前密码")
+      .max(passwordPolicy.maxLength, "密码过长"),
+    newPassword: passwordSchema,
+  })
+  .strict();
 const loginInput = z
   .object({
     email: emailSchema,
@@ -1720,6 +1821,14 @@ function invalidRegistrationCode() {
   return new DomainError(
     "INVALID_VERIFICATION_CODE",
     "请输入 6 位邮箱验证码",
+    422,
+  );
+}
+
+function invalidVerificationCode() {
+  return new DomainError(
+    "INVALID_VERIFICATION_CODE",
+    "验证码无效或已过期，请重新获取",
     422,
   );
 }

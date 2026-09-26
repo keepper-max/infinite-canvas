@@ -7,12 +7,25 @@ import type { Pool, PoolClient } from "pg";
 import type { EmailVerificationConfig } from "./config.js";
 import { DomainError } from "./domain.js";
 
-export type VerifiedEmailCode = { id: string; email: string };
+export type EmailVerificationPurpose = "register" | "password_reset";
+export type VerifiedEmailCode = {
+  id: string;
+  email: string;
+  purpose: EmailVerificationPurpose;
+};
 
 export interface EmailVerificationServicePort {
-  requestCode(email: string, requestIp: string): Promise<void>;
-  verifyCode(email: string, code: string): Promise<VerifiedEmailCode>;
-  consumeCode(verification: VerifiedEmailCode): Promise<void>;
+  requestCode(
+    email: string,
+    requestIp: string,
+    purpose: EmailVerificationPurpose,
+  ): Promise<void>;
+  verifyCode(
+    email: string,
+    code: string,
+    purpose: EmailVerificationPurpose,
+  ): Promise<VerifiedEmailCode>;
+  consumeCode(verification: VerifiedEmailCode): Promise<boolean>;
 }
 
 export class EmailVerificationService implements EmailVerificationServicePort {
@@ -32,7 +45,11 @@ export class EmailVerificationService implements EmailVerificationServicePort {
     );
   }
 
-  async requestCode(email: string, requestIp: string) {
+  async requestCode(
+    email: string,
+    requestIp: string,
+    purpose: EmailVerificationPurpose,
+  ) {
     const code = String(randomInt(100_000, 1_000_000));
     const requestIpHash = this.digest(`ip:${requestIp || "unknown"}`);
     const client = await this.pool.connect();
@@ -47,15 +64,15 @@ export class EmailVerificationService implements EmailVerificationServicePort {
       await client.query(
         `update email_verification_codes
          set status = 'superseded'
-         where email = $1 and purpose = 'register' and status = 'pending'`,
-        [email],
+         where email = $1 and purpose = $2 and status = 'pending'`,
+        [email, purpose],
       );
       const inserted = await client.query<{ id: string }>(
         `insert into email_verification_codes
-           (email, code_hash, request_ip_hash, expires_at)
-         values ($1, '', $2, now() + ($3 * interval '1 second'))
+           (email, purpose, code_hash, request_ip_hash, expires_at)
+         values ($1, $2, '', $3, now() + ($4 * interval '1 second'))
          returning id`,
-        [email, requestIpHash, this.config.codeTtlSeconds],
+        [email, purpose, requestIpHash, this.config.codeTtlSeconds],
       );
       verificationId = inserted.rows[0]!.id;
       await client.query(
@@ -71,7 +88,7 @@ export class EmailVerificationService implements EmailVerificationServicePort {
     }
 
     try {
-      await this.sendCode(email, code);
+      await this.sendCode(email, code, purpose);
     } catch (error) {
       await this.pool
         .query(
@@ -89,7 +106,11 @@ export class EmailVerificationService implements EmailVerificationServicePort {
     }
   }
 
-  async verifyCode(email: string, code: string): Promise<VerifiedEmailCode> {
+  async verifyCode(
+    email: string,
+    code: string,
+    purpose: EmailVerificationPurpose,
+  ): Promise<VerifiedEmailCode> {
     const result = await this.pool.query<{
       id: string;
       code_hash: string;
@@ -98,10 +119,10 @@ export class EmailVerificationService implements EmailVerificationServicePort {
     }>(
       `select id, code_hash, attempts, expires_at
        from email_verification_codes
-       where email = $1 and purpose = 'register' and status = 'pending'
+       where email = $1 and purpose = $2 and status = 'pending'
        order by created_at desc
        limit 1`,
-      [email],
+      [email, purpose],
     );
     const record = result.rows[0];
     if (!record)
@@ -119,7 +140,10 @@ export class EmailVerificationService implements EmailVerificationServicePort {
     }
 
     const actual = Buffer.from(record.code_hash, "hex");
-    const expected = Buffer.from(this.codeHash(record.id, email, code), "hex");
+    const expected = Buffer.from(
+      this.codeHash(record.id, email, code),
+      "hex",
+    );
     if (actual.length !== expected.length || !timingSafeEqual(actual, expected)) {
       const attempts = record.attempts + 1;
       await this.pool.query(
@@ -130,16 +154,17 @@ export class EmailVerificationService implements EmailVerificationServicePort {
       );
       throw invalidVerificationCode();
     }
-    return { id: record.id, email };
+    return { id: record.id, email, purpose };
   }
 
   async consumeCode(verification: VerifiedEmailCode) {
-    await this.pool.query(
+    const result = await this.pool.query(
       `update email_verification_codes
        set status = 'consumed', consumed_at = now()
-       where id = $1 and email = $2 and status = 'pending'`,
-      [verification.id, verification.email],
+       where id = $1 and email = $2 and purpose = $3 and status = 'pending'`,
+      [verification.id, verification.email, verification.purpose],
     );
+    return result.rowCount === 1;
   }
 
   private async enforceSendLimits(
@@ -149,7 +174,7 @@ export class EmailVerificationService implements EmailVerificationServicePort {
   ) {
     const latest = await client.query<{ created_at: Date }>(
       `select created_at from email_verification_codes
-       where email = $1 and purpose = 'register' and status = 'pending'
+       where email = $1 and status = 'pending'
        order by created_at desc limit 1`,
       [email],
     );
@@ -183,8 +208,13 @@ export class EmailVerificationService implements EmailVerificationServicePort {
     );
   }
 
-  private async sendCode(email: string, code: string) {
+  private async sendCode(
+    email: string,
+    code: string,
+    purpose: EmailVerificationPurpose,
+  ) {
     const minutes = Math.ceil(this.config.codeTtlSeconds / 60);
+    const action = purpose === "password_reset" ? "密码重置" : "注册";
     await this.mailClient.singleSendMail(
       new SingleSendMailRequest({
         accountName: this.config.accountName,
@@ -192,10 +222,10 @@ export class EmailVerificationService implements EmailVerificationServicePort {
         replyToAddress: false,
         toAddress: email,
         fromAlias: this.config.fromAlias,
-        subject: "守守画布注册验证码",
+        subject: `守守画布${action}验证码`,
         clickTrace: "0",
-        textBody: `你的守守画布注册验证码是：${code}。验证码 ${minutes} 分钟内有效，请勿转发给他人。`,
-        htmlBody: `<div style="font-family:Arial,'Microsoft YaHei',sans-serif;color:#222;line-height:1.7"><h2>守守画布注册验证码</h2><p>你的验证码是：</p><p style="font-size:30px;font-weight:700;letter-spacing:6px">${code}</p><p>验证码 ${minutes} 分钟内有效，请勿转发给他人。</p><p style="color:#777">如非本人操作，请忽略此邮件。</p></div>`,
+        textBody: `你的守守画布${action}验证码是：${code}。验证码 ${minutes} 分钟内有效，请勿转发给他人。`,
+        htmlBody: `<div style="font-family:Arial,'Microsoft YaHei',sans-serif;color:#222;line-height:1.7"><h2>守守画布${action}验证码</h2><p>你的验证码是：</p><p style="font-size:30px;font-weight:700;letter-spacing:6px">${code}</p><p>验证码 ${minutes} 分钟内有效，请勿转发给他人。</p><p style="color:#777">如非本人操作，请忽略此邮件。</p></div>`,
       }),
     );
   }

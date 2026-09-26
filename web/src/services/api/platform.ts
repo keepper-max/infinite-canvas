@@ -43,6 +43,27 @@ export function requestEmailVerification(email: string) {
     });
 }
 
+export function requestPasswordReset(email: string) {
+    return platformRequest<{ accepted: true; retryAfterSeconds: number }>("/api/auth/password-reset/request", {
+        method: "POST",
+        body: JSON.stringify({ email }),
+    });
+}
+
+export function confirmPasswordReset(email: string, verificationCode: string, newPassword: string) {
+    return platformRequest<{ ok: true }>("/api/auth/password-reset/confirm", {
+        method: "POST",
+        body: JSON.stringify({ email, verificationCode, newPassword }),
+    });
+}
+
+export function changePassword(currentPassword: string, newPassword: string) {
+    return platformRequest<{ ok: true }>("/api/auth/password/change", {
+        method: "POST",
+        body: JSON.stringify({ currentPassword, newPassword }),
+    });
+}
+
 export function login(email: string, password: string) {
     return platformRequest<AuthSession>("/api/auth/login", { method: "POST", body: JSON.stringify({ email, password }) });
 }

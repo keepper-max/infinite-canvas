@@ -20,6 +20,7 @@ import {
 import type { ApiConfig } from "../src/config.js";
 import type { OperationsServicePort } from "../src/operations-service.js";
 import type {
+  EmailVerificationPurpose,
   EmailVerificationServicePort,
   VerifiedEmailCode,
 } from "../src/email-verification-service.js";
@@ -42,6 +43,25 @@ const config: ApiConfig = {
     autoCreateBucket: false,
   },
 };
+
+function verificationConfig(): ApiConfig {
+  return {
+    ...config,
+    emailVerification: {
+      enabled: true,
+      accessKeyId: "test",
+      accessKeySecret: "test",
+      accountName: "verify@example.com",
+      fromAlias: "Test",
+      hashSecret: "test-secret-at-least-32-characters-long",
+      codeTtlSeconds: 300,
+      resendCooldownSeconds: 60,
+      maxSendsPerHour: 5,
+      maxSendsPerIpHour: 20,
+      maxAttempts: 5,
+    },
+  };
+}
 
 test("register creates one workspace and subsequent login reuses it", async () => {
   const repository = new MemoryRepository();
@@ -90,25 +110,10 @@ test("duplicate email and wrong password return stable errors", async () => {
 test("registration requires and consumes a valid email verification code when enabled", async () => {
   const repository = new MemoryRepository();
   const verification = new MemoryEmailVerificationService();
-  const verificationConfig: ApiConfig = {
-    ...config,
-    emailVerification: {
-      enabled: true,
-      accessKeyId: "test",
-      accessKeySecret: "test",
-      accountName: "verify@example.com",
-      fromAlias: "Test",
-      hashSecret: "test-secret-at-least-32-characters-long",
-      codeTtlSeconds: 300,
-      resendCooldownSeconds: 60,
-      maxSendsPerHour: 5,
-      maxSendsPerIpHour: 20,
-      maxAttempts: 5,
-    },
-  };
+  const enabledConfig = verificationConfig();
   const app = createApp(
     repository,
-    verificationConfig,
+    enabledConfig,
     undefined,
     undefined,
     undefined,
@@ -118,10 +123,10 @@ test("registration requires and consumes a valid email verification code when en
     undefined,
     verification,
   );
-  const authConfig = await app.request("/api/auth/config");
-  assert.equal(authConfig.status, 200);
+  const authConfigResponse = await app.request("/api/auth/config");
+  assert.equal(authConfigResponse.status, 200);
   assert.equal(
-    ((await authConfig.json()) as any).data.emailVerificationRequired,
+    ((await authConfigResponse.json()) as any).data.emailVerificationRequired,
     true,
   );
   const requested = await jsonRequest(
@@ -152,6 +157,126 @@ test("registration requires and consumes a valid email verification code when en
   });
   assert.equal(registered.response.status, 201);
   assert.equal(verification.consumed, true);
+});
+
+test("password reset changes credentials and revokes every existing session", async () => {
+  const repository = new MemoryRepository();
+  const initialApp = createApp(repository, config);
+  const registered = await jsonRequest(initialApp, "/api/auth/register", {
+    email: "reset@example.com",
+    password: "password-123",
+  });
+  const oldCookie = cookieFrom(registered.response);
+  const verification = new MemoryEmailVerificationService();
+  const app = createApp(
+    repository,
+    verificationConfig(),
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    verification,
+  );
+
+  const requested = await jsonRequest(app, "/api/auth/password-reset/request", {
+    email: "reset@example.com",
+  });
+  assert.equal(requested.response.status, 200);
+  assert.equal(verification.requestedPurpose, "password_reset");
+  const confirmed = await jsonRequest(app, "/api/auth/password-reset/confirm", {
+    email: "reset@example.com",
+    verificationCode: "123456",
+    newPassword: "new-password-456",
+  });
+  assert.equal(confirmed.response.status, 200);
+  assert.equal(verification.consumed, true);
+  assert.equal(
+    (await app.request("/api/auth/me", { headers: { cookie: oldCookie } })).status,
+    401,
+  );
+  assert.equal(
+    (
+      await jsonRequest(app, "/api/auth/login", {
+        email: "reset@example.com",
+        password: "password-123",
+      })
+    ).response.status,
+    401,
+  );
+  assert.equal(
+    (
+      await jsonRequest(app, "/api/auth/login", {
+        email: "reset@example.com",
+        password: "new-password-456",
+      })
+    ).response.status,
+    200,
+  );
+});
+
+test("password reset request does not reveal or email an unknown account", async () => {
+  const verification = new MemoryEmailVerificationService();
+  const app = createApp(
+    new MemoryRepository(),
+    verificationConfig(),
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    verification,
+  );
+  const requested = await jsonRequest(app, "/api/auth/password-reset/request", {
+    email: "missing@example.com",
+  });
+  assert.equal(requested.response.status, 200);
+  assert.equal(requested.body.data.accepted, true);
+  assert.equal(verification.requestedEmail, "");
+});
+
+test("password change keeps the current session and revokes other sessions", async () => {
+  const repository = new MemoryRepository();
+  const app = createApp(repository, config);
+  const registered = await jsonRequest(app, "/api/auth/register", {
+    email: "change@example.com",
+    password: "password-123",
+  });
+  const currentCookie = cookieFrom(registered.response);
+  const otherLogin = await jsonRequest(app, "/api/auth/login", {
+    email: "change@example.com",
+    password: "password-123",
+  });
+  const otherCookie = cookieFrom(otherLogin.response);
+
+  const changed = await postJson(
+    app,
+    "/api/auth/password/change",
+    currentCookie,
+    { currentPassword: "password-123", newPassword: "new-password-456" },
+  );
+  assert.equal(changed.response.status, 200);
+  assert.equal(
+    (await app.request("/api/auth/me", { headers: { cookie: currentCookie } })).status,
+    200,
+  );
+  assert.equal(
+    (await app.request("/api/auth/me", { headers: { cookie: otherCookie } })).status,
+    401,
+  );
+  assert.equal(
+    (
+      await jsonRequest(app, "/api/auth/login", {
+        email: "change@example.com",
+        password: "new-password-456",
+      })
+    ).response.status,
+    200,
+  );
 });
 
 test("session survives a new app instance and logout revokes it", async () => {
@@ -565,24 +690,36 @@ function cookieFrom(response: Response) {
 
 class MemoryEmailVerificationService implements EmailVerificationServicePort {
   requestedEmail = "";
+  requestedPurpose: EmailVerificationPurpose | null = null;
   consumed = false;
 
-  async requestCode(email: string, _requestIp: string) {
+  async requestCode(
+    email: string,
+    _requestIp: string,
+    purpose: EmailVerificationPurpose,
+  ) {
     this.requestedEmail = email;
+    this.requestedPurpose = purpose;
   }
 
-  async verifyCode(email: string, code: string): Promise<VerifiedEmailCode> {
+  async verifyCode(
+    email: string,
+    code: string,
+    purpose: EmailVerificationPurpose,
+  ): Promise<VerifiedEmailCode> {
     if (this.consumed || code !== "123456")
       throw new DomainError(
         "INVALID_VERIFICATION_CODE",
         "验证码无效或已过期，请重新获取",
         422,
       );
-    return { id: "verification-id", email };
+    return { id: "verification-id", email, purpose };
   }
 
   async consumeCode(_verification: VerifiedEmailCode) {
+    if (this.consumed) return false;
     this.consumed = true;
+    return true;
   }
 }
 
@@ -626,6 +763,19 @@ class MemoryRepository implements PlatformRepository {
 
   async deleteSession(tokenHash: string) {
     this.sessions.delete(tokenHash);
+  }
+
+  async updatePasswordAndRevokeSessions(
+    userId: string,
+    passwordHash: string,
+    keepTokenHash?: string,
+  ) {
+    const user = this.users.get(userId);
+    if (user) this.users.set(userId, { ...user, passwordHash });
+    for (const [tokenHash, session] of this.sessions) {
+      if (session.userId === userId && tokenHash !== keepTokenHash)
+        this.sessions.delete(tokenHash);
+    }
   }
 
   async ensureDefaultWorkspace(userId: string) {

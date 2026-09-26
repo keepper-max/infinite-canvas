@@ -36,6 +36,7 @@ function AdminRoute() {
 export const router = createBrowserRouter([
     { path: "/login", element: deferred(<AuthPage mode="login" />), errorElement: <RouteErrorPage /> },
     { path: "/register", element: deferred(<AuthPage mode="register" />), errorElement: <RouteErrorPage /> },
+    { path: "/forgot-password", element: deferred(<AuthPage mode="forgot-password" />), errorElement: <RouteErrorPage /> },
     {
         element: (
             <AuthGate>

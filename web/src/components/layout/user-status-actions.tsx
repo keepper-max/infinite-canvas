@@ -1,6 +1,7 @@
 import type { CSSProperties } from "react";
 import { Tooltip } from "antd";
-import { Keyboard, LogOut, Puzzle, Settings2 } from "lucide-react";
+import { Keyboard, KeyRound, LogOut, Puzzle, Settings2 } from "lucide-react";
+import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 
@@ -12,6 +13,7 @@ import { canvasThemes } from "@/lib/canvas-theme";
 import { useConfigStore } from "@/stores/use-config-store";
 import { useThemeStore } from "@/stores/use-theme-store";
 import { useAuth } from "@/components/auth/auth-context";
+import { ChangePasswordModal } from "@/components/auth/change-password-modal";
 
 type UserStatusActionsProps = {
     showConfig?: boolean;
@@ -25,6 +27,7 @@ export function UserStatusActions({ showConfig = true, variant = "default", onOp
     const { i18n, t } = useTranslation();
     const navigate = useNavigate();
     const { logout } = useAuth();
+    const [passwordOpen, setPasswordOpen] = useState(false);
     const theme = useThemeStore((state) => state.theme);
     const setTheme = useThemeStore((state) => state.setTheme);
     const openConfigDialog = useConfigStore((state) => state.openConfigDialog);
@@ -54,6 +57,9 @@ export function UserStatusActions({ showConfig = true, variant = "default", onOp
             </Tooltip>
             <AnimatedThemeToggler theme={theme} onThemeChange={setTheme} className={naturalIconClass} style={iconStyle} aria-label={t(theme === "dark" ? "topNav.lightTheme" : "topNav.darkTheme")} title={t(theme === "dark" ? "topNav.lightTheme" : "topNav.darkTheme")} />
             <VersionReleaseModal className={cn(naturalIconClass, "!w-auto gap-1 px-2 text-[11px] font-medium")} style={iconStyle} />
+            <button type="button" className={naturalIconClass} style={iconStyle} onClick={() => setPasswordOpen(true)} aria-label={t("auth.changePassword")} title={t("auth.changePassword")}>
+                <KeyRound className="size-4" />
+            </button>
             <button
                 type="button"
                 className={naturalIconClass}
@@ -69,6 +75,7 @@ export function UserStatusActions({ showConfig = true, variant = "default", onOp
                     <Keyboard className="size-4" />
                 </button>
             ) : null}
+            <ChangePasswordModal open={passwordOpen} onClose={() => setPasswordOpen(false)} />
         </div>
     );
 }

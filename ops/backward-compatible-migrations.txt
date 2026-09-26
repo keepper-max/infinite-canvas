@@ -3,3 +3,4 @@
 0027_versioned_provider_billing_rules.sql
 0028_user_storage_quota.sql
 0029_email_verification.sql
+0030_password_reset.sql

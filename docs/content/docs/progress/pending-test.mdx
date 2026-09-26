@@ -5,6 +5,8 @@ description: Implemented changes that still need manual verification
 
 # Pending Tests
 
+- Password management: use “Forgot password” on the sign-in page to set a new password with the registered email verification code. The old password and all existing sessions should become invalid. After changing the password from the key icon while signed in, the current device should stay signed in while other device sessions are revoked. Invalid, expired, registration-only codes must not reset a password, and requests for unknown emails must not reveal whether the account exists.
+
 - User storage quota and generated-content retention: a standard account should show a 1 GB cloud quota in My Assets. Uploads, generated image/video/audio files, and compositions must share the same limit, including concurrent writes; administrators remain unlimited. Generated-only assets unused by a canvas or virtual portrait should move to trash after 30 days, referenced assets must remain active, and permanent deletion should occur only after the existing 14-day trash period. Generation result areas and completion events should remind users to download promptly.
 
 - 旧画布图片重新载入：首次进入含多张历史云端图片的画布时，节点应优先显示缩略图而不是并发下载所有原图；缺图节点点击“重新载入”后按钮应立即显示加载状态且不能重复点击，成功后恢复图片，不触发生成或扣费。放大到缩略图分辨率不足时仍应自动显示原图。

@@ -57,6 +57,11 @@ export interface PlatformRepository {
   markLogin(userId: string): Promise<void>;
   findUserBySession(tokenHash: string, now: Date): Promise<PlatformUser | null>;
   deleteSession(tokenHash: string): Promise<void>;
+  updatePasswordAndRevokeSessions(
+    userId: string,
+    passwordHash: string,
+    keepTokenHash?: string,
+  ): Promise<void>;
   ensureDefaultWorkspace(userId: string): Promise<Workspace>;
   createProjectForUser(
     userId: string,
