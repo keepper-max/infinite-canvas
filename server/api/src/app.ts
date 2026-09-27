@@ -1351,6 +1351,16 @@ export function createApp(
     return context.json(success(context, { feedback }), 201);
   });
 
+  app.get("/api/feedback", async (context) => {
+    const user = await requireUser(context.req.raw, repository, config);
+    return context.json(
+      success(
+        context,
+        await requireOperationsService(operationsService).listFeedback(user.id),
+      ),
+    );
+  });
+
   app.get("/api/admin/feedback", async (context) => {
     const user = await requireUser(context.req.raw, repository, config);
     return context.json(
@@ -1359,6 +1369,56 @@ export function createApp(
         await requireOperationsService(operationsService).adminFeedback(
           user.id,
           parseAdminQuery(context),
+        ),
+      ),
+    );
+  });
+
+  app.post("/api/admin/feedback/:feedbackId/replies", async (context) => {
+    const user = await requireUser(context.req.raw, repository, config);
+    const feedbackId = uuidParam.parse(context.req.param("feedbackId"));
+    const input = feedbackReplyInput.parse(await readJson(context.req.raw));
+    const result = await requireOperationsService(operationsService).replyFeedback(
+      user.id,
+      feedbackId,
+      input.content,
+      context.get("requestId"),
+    );
+    let emailNotificationSent = false;
+    if (emailVerificationService?.sendFeedbackReplyNotification) {
+      try {
+        await emailVerificationService.sendFeedbackReplyNotification({
+          recipientEmail: result.userEmail,
+          ticketId: result.feedbackId,
+          category: result.category,
+          reply: result.reply.content,
+        });
+        emailNotificationSent = true;
+      } catch (error) {
+        console.error("feedback reply email notification failed", {
+          feedbackId,
+          error: error instanceof Error ? error.name : "UnknownError",
+        });
+      }
+    }
+    return context.json(
+      success(context, { reply: result.reply, emailNotificationSent }),
+      201,
+    );
+  });
+
+  app.patch("/api/admin/feedback/:feedbackId/status", async (context) => {
+    const user = await requireUser(context.req.raw, repository, config);
+    const feedbackId = uuidParam.parse(context.req.param("feedbackId"));
+    const input = feedbackStatusInput.parse(await readJson(context.req.raw));
+    return context.json(
+      success(
+        context,
+        await requireOperationsService(operationsService).setFeedbackStatus(
+          user.id,
+          feedbackId,
+          input.status,
+          context.get("requestId"),
         ),
       ),
     );
@@ -1736,6 +1796,12 @@ const feedbackInput = z.object({
   contact: z.string().trim().max(200).optional(),
   pagePath: z.string().trim().max(500).optional(),
 }).strict();
+const feedbackReplyInput = z.object({
+  content: z.string().trim().min(1).max(2000),
+}).strict();
+const feedbackStatusInput = z.object({
+  status: z.enum(["open", "replied", "closed"]),
+}).strict();
 const adminOverviewQueryInput = z
   .object({
     dateFrom: z.string().date().optional(),
@@ -1760,6 +1826,7 @@ const adminQueryInput = z.object({
   pageSize: z.coerce.number().int().min(1).max(100).default(20),
   q: z.string().trim().max(200).optional(),
   status: z.string().trim().max(50).optional(),
+  category: z.string().trim().max(50).optional(),
   userId: z.string().uuid().optional(),
   projectId: z.string().uuid().optional(),
   modelId: z.string().trim().max(200).optional(),

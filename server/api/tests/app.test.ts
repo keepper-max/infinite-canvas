@@ -379,6 +379,67 @@ test("cross-site state changes are rejected", async () => {
   assert.match(response.headers.get("permissions-policy") || "", /camera=\(\)/);
 });
 
+test("feedback tickets expose user history and send reply notifications after persistence", async () => {
+  const repository = new MemoryRepository();
+  const feedbackId = crypto.randomUUID();
+  let listedFor = "";
+  let repliedBy = "";
+  let updatedStatus = "";
+  let notification: { recipientEmail: string; ticketId: string; category: string; reply: string } | undefined;
+  const operations = {
+    listFeedback: async (userId: string) => {
+      listedFor = userId;
+      return { feedback: [] };
+    },
+    replyFeedback: async (userId: string, id: string, content: string) => {
+      repliedBy = userId;
+      assert.equal(id, feedbackId);
+      return {
+        feedbackId,
+        category: "problem" as const,
+        userEmail: "feedback@example.com",
+        reply: { id: "1", content, authorRole: "admin" as const, createdAt: new Date().toISOString() },
+      };
+    },
+    setFeedbackStatus: async (_userId: string, id: string, status: string) => {
+      assert.equal(id, feedbackId);
+      updatedStatus = status;
+      return { id, status, updatedAt: new Date().toISOString() };
+    },
+  } as OperationsServicePort;
+  const email = {
+    sendFeedbackReplyNotification: async (input: { recipientEmail: string; ticketId: string; category: string; reply: string }) => {
+      notification = input;
+    },
+  } as EmailVerificationServicePort;
+  const app = createApp(repository, config, undefined, undefined, undefined, undefined, operations, undefined, undefined, email);
+  const registered = await jsonRequest(app, "/api/auth/register", {
+    email: "feedback@example.com",
+    password: "password-123",
+  });
+  const cookie = cookieFrom(registered.response);
+  const currentUserId = registered.body.data.user.id;
+
+  const own = await app.request("/api/feedback", { headers: { cookie } });
+  assert.equal(own.status, 200);
+  assert.equal(listedFor, currentUserId);
+
+  const replied = await postJson(app, `/api/admin/feedback/${feedbackId}/replies`, cookie, { content: "已经处理完成" });
+  assert.equal(replied.response.status, 201);
+  assert.equal(repliedBy, currentUserId);
+  assert.deepEqual(notification, {
+    recipientEmail: "feedback@example.com",
+    ticketId: feedbackId,
+    category: "problem",
+    reply: "已经处理完成",
+  });
+  assert.equal(replied.body.data.emailNotificationSent, true);
+
+  const status = await patchJson(app, `/api/admin/feedback/${feedbackId}/status`, cookie, { status: "closed" });
+  assert.equal(status.response.status, 200);
+  assert.equal(updatedStatus, "closed");
+});
+
 test("Alipay notify bypasses browser Origin checks only at the exact signed callback route", async () => {
   let received: Record<string, string> | undefined;
   const operations = {

@@ -173,6 +173,15 @@ export type UserFeedback = {
     contact?: string;
     pagePath?: string;
     userEmail: string;
+    status: "open" | "replied" | "closed";
+    replies: FeedbackReply[];
+    createdAt: string;
+    updatedAt: string;
+};
+export type FeedbackReply = {
+    id: string;
+    content: string;
+    authorRole: "admin" | "user";
     createdAt: string;
 };
 export type PageResult<T> = { items: T[]; total: number; page: number; pageSize: number };
@@ -193,6 +202,9 @@ export function createFeedback(input: { category: UserFeedback["category"]; cont
         method: "POST",
         body: JSON.stringify(input),
     });
+}
+export async function getMyFeedback(signal?: AbortSignal) {
+    return (await platformRequest<{ feedback: UserFeedback[] }>("/api/feedback", { signal })).feedback;
 }
 export function getCreditAccount(signal?: AbortSignal) {
     return platformRequest<CreditAccount>("/api/billing/account", { signal });
@@ -336,6 +348,18 @@ export function getAdminAuditLogs(input: Record<string, string | number | boolea
 }
 export function getAdminFeedback(input: Record<string, string | number | boolean | undefined> = {}, signal?: AbortSignal) {
     return platformRequest<PageResult<UserFeedback>>(`/api/admin/feedback${adminQuery(input)}`, { signal });
+}
+export async function replyAdminFeedback(feedbackId: string, content: string) {
+    return platformRequest<{ reply: FeedbackReply; emailNotificationSent: boolean }>(`/api/admin/feedback/${encodeURIComponent(feedbackId)}/replies`, {
+        method: "POST",
+        body: JSON.stringify({ content }),
+    });
+}
+export function setAdminFeedbackStatus(feedbackId: string, status: UserFeedback["status"]) {
+    return platformRequest<Pick<UserFeedback, "id" | "status" | "updatedAt">>(`/api/admin/feedback/${encodeURIComponent(feedbackId)}/status`, {
+        method: "PATCH",
+        body: JSON.stringify({ status }),
+    });
 }
 export function getAdminProjectContent(projectId: string, signal?: AbortSignal) {
     return platformRequest<Record<string, unknown>>(`/api/admin/projects/${encodeURIComponent(projectId)}/content`, { signal });

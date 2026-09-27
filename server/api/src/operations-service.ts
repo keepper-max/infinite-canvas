@@ -68,7 +68,20 @@ export interface OperationsServicePort {
     userId: string,
     input: { category: "problem" | "suggestion"; content: string; contact?: string; pagePath?: string },
   ): Promise<unknown>;
+  listFeedback(userId: string): Promise<unknown>;
   adminFeedback(userId: string, query: AdminListQuery): Promise<unknown>;
+  replyFeedback(
+    userId: string,
+    feedbackId: string,
+    content: string,
+    requestId: string,
+  ): Promise<FeedbackReplyResult>;
+  setFeedbackStatus(
+    userId: string,
+    feedbackId: string,
+    status: FeedbackStatus,
+    requestId: string,
+  ): Promise<unknown>;
   adminOverview(userId: string, range?: AdminOverviewRange): Promise<unknown>;
   adminFailures(userId: string): Promise<unknown>;
   adminModels(userId: string, providerId?: string): Promise<unknown>;
@@ -131,6 +144,7 @@ export type AdminListQuery = {
   pageSize: number;
   q?: string;
   status?: string;
+  category?: string;
   userId?: string;
   projectId?: string;
   modelId?: string;
@@ -138,6 +152,14 @@ export type AdminListQuery = {
   isAdmin?: boolean;
   createdFrom?: string;
   createdTo?: string;
+};
+
+export type FeedbackStatus = "open" | "replied" | "closed";
+export type FeedbackReplyResult = {
+  feedbackId: string;
+  category: "problem" | "suggestion";
+  userEmail: string;
+  reply: { id: string; content: string; authorRole: "admin"; createdAt: string };
 };
 
 export type AdminOverviewRange = {
@@ -240,11 +262,27 @@ export class OperationsService implements OperationsServicePort {
     const result = await this.pool.query(
       `insert into user_feedback(user_id,category,content,contact,page_path)
        values($1,$2,$3,$4,$5)
-       returning id,category,created_at`,
+       returning id,category,status,created_at,updated_at`,
       [userId, input.category, input.content, input.contact || null, input.pagePath || null],
     );
     const row = result.rows[0];
-    return { id: row.id, category: row.category, createdAt: iso(row.created_at) };
+    return {
+      id: row.id,
+      category: row.category,
+      status: row.status,
+      createdAt: iso(row.created_at),
+      updatedAt: iso(row.updated_at),
+    };
+  }
+
+  async listFeedback(userId: string) {
+    const result = await this.pool.query(
+      `${feedbackSelectSql}
+       where f.user_id=$1
+       order by f.updated_at desc`,
+      [userId],
+    );
+    return { feedback: result.rows.map(serializeFeedback) };
   }
 
   async adminFeedback(userId: string, query: AdminListQuery) {
@@ -255,9 +293,13 @@ export class OperationsService implements OperationsServicePort {
       values.push(`%${query.q.toLowerCase()}%`);
       filters.push(`lower(u.email||' '||f.content||' '||coalesce(f.contact,'')) like $${values.length}`);
     }
-    if (query.status && ["problem", "suggestion"].includes(query.status)) {
-      values.push(query.status);
+    if (query.category && ["problem", "suggestion"].includes(query.category)) {
+      values.push(query.category);
       filters.push(`f.category=$${values.length}`);
+    }
+    if (query.status && ["open", "replied", "closed"].includes(query.status)) {
+      values.push(query.status);
+      filters.push(`f.status=$${values.length}`);
     }
     const where = filters.length ? `where ${filters.join(" and ")}` : "";
     const count = await this.pool.query(
@@ -266,25 +308,95 @@ export class OperationsService implements OperationsServicePort {
     );
     values.push(query.pageSize, (query.page - 1) * query.pageSize);
     const result = await this.pool.query(
-      `select f.id,f.category,f.content,f.contact,f.page_path,f.created_at,u.email user_email
-       from user_feedback f join users u on u.id=f.user_id ${where}
-       order by f.created_at desc limit $${values.length - 1} offset $${values.length}`,
+      `${feedbackSelectSql} ${where}
+       order by f.updated_at desc limit $${values.length - 1} offset $${values.length}`,
       values,
     );
     return {
-      items: result.rows.map((row) => ({
-        id: row.id,
-        category: row.category,
-        content: row.content,
-        contact: row.contact,
-        pagePath: row.page_path,
-        userEmail: row.user_email,
-        createdAt: iso(row.created_at),
-      })),
+      items: result.rows.map(serializeFeedback),
       total: count.rows[0].total,
       page: query.page,
       pageSize: query.pageSize,
     };
+  }
+
+  async replyFeedback(
+    userId: string,
+    feedbackId: string,
+    content: string,
+    requestId: string,
+  ): Promise<FeedbackReplyResult> {
+    await this.requireAdmin(userId);
+    return inTransaction(this.pool, async (client) => {
+      const feedback = await client.query<{
+        category: "problem" | "suggestion";
+        user_email: string;
+      }>(
+        `select f.category,u.email user_email
+         from user_feedback f join users u on u.id=f.user_id
+         where f.id=$1 for update`,
+        [feedbackId],
+      );
+      if (!feedback.rowCount)
+        throw new DomainError("FEEDBACK_NOT_FOUND", "找不到该反馈工单", 404);
+      const inserted = await client.query(
+        `insert into user_feedback_messages(feedback_id,author_user_id,author_role,content)
+         values($1,$2,'admin',$3)
+         returning id,content,author_role,created_at`,
+        [feedbackId, userId, content],
+      );
+      await client.query(
+        "update user_feedback set status='replied',updated_at=now() where id=$1",
+        [feedbackId],
+      );
+      await audit(client, userId, "feedback.reply", "user_feedback", feedbackId, {}, requestId);
+      const row = inserted.rows[0];
+      return {
+        feedbackId,
+        category: feedback.rows[0]!.category,
+        userEmail: feedback.rows[0]!.user_email,
+        reply: {
+          id: String(row.id),
+          content: row.content,
+          authorRole: "admin",
+          createdAt: row.created_at instanceof Date
+            ? row.created_at.toISOString()
+            : String(row.created_at),
+        },
+      };
+    });
+  }
+
+  async setFeedbackStatus(
+    userId: string,
+    feedbackId: string,
+    status: FeedbackStatus,
+    requestId: string,
+  ) {
+    await this.requireAdmin(userId);
+    return inTransaction(this.pool, async (client) => {
+      const result = await client.query(
+        `update user_feedback set status=$2,updated_at=now()
+         where id=$1 returning id,status,updated_at`,
+        [feedbackId, status],
+      );
+      if (!result.rowCount)
+        throw new DomainError("FEEDBACK_NOT_FOUND", "找不到该反馈工单", 404);
+      await audit(
+        client,
+        userId,
+        "feedback.status.update",
+        "user_feedback",
+        feedbackId,
+        { status },
+        requestId,
+      );
+      return {
+        id: result.rows[0].id,
+        status: result.rows[0].status,
+        updatedAt: iso(result.rows[0].updated_at),
+      };
+    });
   }
 
   async requestSms(_input: SmsRequestInput): Promise<never> {
@@ -1400,6 +1512,34 @@ function disabled(code: string, message: string) {
   return new DomainError(code, message, 503, false, {
     details: { configured: false },
   });
+}
+const feedbackSelectSql = `select
+  f.id,f.category,f.content,f.contact,f.page_path,f.status,f.created_at,f.updated_at,
+  u.email user_email,
+  coalesce((
+    select json_agg(json_build_object(
+      'id',m.id::text,
+      'content',m.content,
+      'authorRole',m.author_role,
+      'createdAt',m.created_at
+    ) order by m.created_at)
+    from user_feedback_messages m where m.feedback_id=f.id
+  ),'[]'::json) replies
+  from user_feedback f join users u on u.id=f.user_id`;
+
+function serializeFeedback(row: Record<string, unknown>) {
+  return {
+    id: row.id,
+    category: row.category,
+    content: row.content,
+    contact: row.contact,
+    pagePath: row.page_path,
+    status: row.status,
+    userEmail: row.user_email,
+    replies: Array.isArray(row.replies) ? row.replies : [],
+    createdAt: iso(row.created_at),
+    updatedAt: iso(row.updated_at),
+  };
 }
 function serializeAccount(row: Record<string, unknown>) {
   return {

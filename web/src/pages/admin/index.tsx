@@ -27,10 +27,12 @@ import {
     grantAdminUserCredits,
     issueAdminActivationCode,
     reconcileAdminJob,
+    replyAdminFeedback,
     revokeAdminUserSessions,
     setAdminUserRole,
     setAdminUserStatus,
     setAdminModelEnabled,
+    setAdminFeedbackStatus,
     setAdminCreditPricing,
     setActiveAdminProvider,
     syncAdminPaymentOrder,
@@ -1684,23 +1686,62 @@ function FeedbackPanel() {
     const [page, setPage] = useState(1);
     const [q, setQ] = useState("");
     const [category, setCategory] = useState("");
+    const [status, setStatus] = useState("");
     const [loading, setLoading] = useState(true);
-    useEffect(() => {
+    const [selected, setSelected] = useState<UserFeedback>();
+    const [reply, setReply] = useState("");
+    const [saving, setSaving] = useState(false);
+    const load = useCallback((signal?: AbortSignal) => {
         const controller = new AbortController();
         setLoading(true);
-        getAdminFeedback({ page, pageSize: 20, q, status: category }, controller.signal)
+        getAdminFeedback({ page, pageSize: 20, q, category, status }, signal || controller.signal)
             .then((data) => {
                 setItems(data.items);
                 setTotal(data.total);
+                setSelected((current) => current ? data.items.find((item) => item.id === current.id) : undefined);
             })
-            .catch((error) => message.error(error.message))
+            .catch((error) => {
+                if (error instanceof DOMException && error.name === "AbortError") return;
+                message.error(error.message);
+            })
             .finally(() => setLoading(false));
+        return controller;
+    }, [category, page, q, status]);
+    useEffect(() => {
+        const controller = load();
         return () => controller.abort();
-    }, [category, page, q]);
+    }, [load]);
+    const submitReply = async () => {
+        if (!selected || !reply.trim()) return;
+        setSaving(true);
+        try {
+            const result = await replyAdminFeedback(selected.id, reply.trim());
+            message.success(result.emailNotificationSent ? "回复已保存，邮件提醒已发送" : "回复已保存，邮件提醒暂未发送");
+            setReply("");
+            load();
+        } catch (error) {
+            message.error(error instanceof Error ? error.message : "回复失败");
+        } finally {
+            setSaving(false);
+        }
+    };
+    const changeStatus = async (value: UserFeedback["status"]) => {
+        if (!selected) return;
+        setSaving(true);
+        try {
+            await setAdminFeedbackStatus(selected.id, value);
+            message.success("工单状态已更新");
+            load();
+        } catch (error) {
+            message.error(error instanceof Error ? error.message : "状态更新失败");
+        } finally {
+            setSaving(false);
+        }
+    };
     return (
         <Panel
             title="用户反馈"
-            note="用户从工作台提交的问题和建议；备用联系邮箱：shoushouhuabu@126.com"
+            note="用户从工作台提交的问题和建议；回复保存在站内，并向用户注册邮箱发送提醒"
             actions={
                 <Space>
                     <Select
@@ -1714,6 +1755,20 @@ function FeedbackPanel() {
                         onChange={(value) => {
                             setPage(1);
                             setCategory(value);
+                        }}
+                    />
+                    <Select
+                        className="w-32"
+                        value={status}
+                        options={[
+                            { value: "", label: "全部状态" },
+                            { value: "open", label: "待处理" },
+                            { value: "replied", label: "已回复" },
+                            { value: "closed", label: "已关闭" },
+                        ]}
+                        onChange={(value) => {
+                            setPage(1);
+                            setStatus(value);
                         }}
                     />
                     <Input.Search
@@ -1735,6 +1790,7 @@ function FeedbackPanel() {
                 columns={[
                     { title: "时间", dataIndex: "createdAt", width: 170, render: formatDate },
                     { title: "类型", dataIndex: "category", width: 90, render: (value) => <Tag color={value === "problem" ? "red" : "blue"}>{value === "problem" ? "问题" : "建议"}</Tag> },
+                    { title: "状态", dataIndex: "status", width: 100, render: renderFeedbackStatus },
                     { title: "账号", dataIndex: "userEmail", width: 220 },
                     {
                         title: "内容",
@@ -1743,10 +1799,66 @@ function FeedbackPanel() {
                     },
                     { title: "联系方式", dataIndex: "contact", width: 180, render: (value) => value || "—" },
                     { title: "提交页面", dataIndex: "pagePath", width: 180, render: (value) => value || "—" },
+                    { title: "操作", width: 90, fixed: "right", render: (_, record) => <Button type="link" onClick={() => setSelected(record)}>查看 / 回复</Button> },
                 ]}
             />
+            <Modal
+                open={Boolean(selected)}
+                title="反馈工单"
+                width={680}
+                footer={null}
+                onCancel={() => {
+                    setSelected(undefined);
+                    setReply("");
+                }}
+            >
+                {selected ? (
+                    <div className="space-y-4">
+                        <div className="flex flex-wrap items-center gap-2">
+                            <Tag color={selected.category === "problem" ? "red" : "blue"}>{selected.category === "problem" ? "问题" : "建议"}</Tag>
+                            {renderFeedbackStatus(selected.status)}
+                            <span className="text-sm text-stone-500">{selected.userEmail}</span>
+                        </div>
+                        <div className="rounded-xl border border-stone-200 p-4 dark:border-white/10">
+                            <p className="whitespace-pre-wrap break-words text-sm">{selected.content}</p>
+                            <p className="mt-3 text-xs text-stone-500">提交于 {formatDate(selected.createdAt)}{selected.contact ? ` · 联系方式：${selected.contact}` : ""}</p>
+                        </div>
+                        {selected.replies.map((item) => (
+                            <div key={item.id} className="rounded-xl bg-stone-100 p-4 dark:bg-white/[0.06]">
+                                <p className="text-xs text-stone-500">管理员回复 · {formatDate(item.createdAt)}</p>
+                                <p className="mt-2 whitespace-pre-wrap break-words text-sm">{item.content}</p>
+                            </div>
+                        ))}
+                        <Input.TextArea rows={5} maxLength={2000} showCount value={reply} placeholder="输入给用户的回复" onChange={(event) => setReply(event.target.value)} />
+                        <div className="flex flex-wrap items-center justify-between gap-3">
+                            <Select
+                                className="w-36"
+                                value={selected.status}
+                                disabled={saving}
+                                options={[
+                                    { value: "open", label: "待处理" },
+                                    { value: "replied", label: "已回复" },
+                                    { value: "closed", label: "已关闭" },
+                                ]}
+                                onChange={(value) => void changeStatus(value)}
+                            />
+                            <Button type="primary" loading={saving} disabled={!reply.trim()} onClick={() => void submitReply()}>发送回复</Button>
+                        </div>
+                    </div>
+                ) : null}
+            </Modal>
         </Panel>
     );
+}
+
+function renderFeedbackStatus(status: UserFeedback["status"]) {
+    const values = {
+        open: { color: "gold", label: "待处理" },
+        replied: { color: "green", label: "已回复" },
+        closed: { color: "default", label: "已关闭" },
+    } as const;
+    const value = values[status];
+    return <Tag color={value.color}>{value.label}</Tag>;
 }
 
 function Panel({ title, note, actions, children }: { title: string; note?: string; actions?: React.ReactNode; children: React.ReactNode }) {

@@ -1,11 +1,9 @@
-import { Input, Modal, Segmented, message } from "antd";
-import { Mail, MessageSquareText } from "lucide-react";
-import { useEffect, useState } from "react";
+import { Empty, Input, Modal, Segmented, Spin, Tag, message } from "antd";
+import { MessageSquareText } from "lucide-react";
+import { useCallback, useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 
-import { createFeedback, type UserFeedback } from "@/services/api/operations";
-
-const SUPPORT_EMAIL = "shoushouhuabu@126.com";
+import { createFeedback, getMyFeedback, type UserFeedback } from "@/services/api/operations";
 
 type FeedbackModalProps = {
     open: boolean;
@@ -14,17 +12,36 @@ type FeedbackModalProps = {
 
 export function FeedbackModal({ open, onClose }: FeedbackModalProps) {
     const { t } = useTranslation();
+    const [tab, setTab] = useState<"submit" | "mine">("submit");
     const [category, setCategory] = useState<UserFeedback["category"]>("problem");
     const [content, setContent] = useState("");
     const [contact, setContact] = useState("");
     const [submitting, setSubmitting] = useState(false);
+    const [tickets, setTickets] = useState<UserFeedback[]>([]);
+    const [loadingTickets, setLoadingTickets] = useState(false);
+
+    const loadTickets = useCallback(async () => {
+        setLoadingTickets(true);
+        try {
+            setTickets(await getMyFeedback());
+        } catch (error) {
+            message.error(error instanceof Error ? error.message : t("feedback.loadFailed"));
+        } finally {
+            setLoadingTickets(false);
+        }
+    }, [t]);
 
     useEffect(() => {
         if (!open) return;
+        setTab("submit");
         setCategory("problem");
         setContent("");
         setContact("");
     }, [open]);
+
+    useEffect(() => {
+        if (open && tab === "mine") void loadTickets();
+    }, [loadTickets, open, tab]);
 
     const submit = async () => {
         const value = content.trim();
@@ -41,7 +58,9 @@ export function FeedbackModal({ open, onClose }: FeedbackModalProps) {
                 pagePath: window.location.pathname,
             });
             message.success(t("feedback.submitted"));
-            onClose();
+            setContent("");
+            setContact("");
+            setTab("mine");
         } catch (error) {
             message.error(error instanceof Error ? error.message : t("feedback.submitFailed"));
         } finally {
@@ -64,35 +83,76 @@ export function FeedbackModal({ open, onClose }: FeedbackModalProps) {
             onOk={() => void submit()}
             onCancel={onClose}
             okButtonProps={{ disabled: content.trim().length < 2 }}
+            footer={tab === "submit" ? undefined : null}
+            width={620}
             destroyOnHidden
         >
             <div className="space-y-4 py-2">
                 <Segmented
                     block
-                    value={category}
+                    value={tab}
                     options={[
-                        { label: t("feedback.problem"), value: "problem" },
-                        { label: t("feedback.suggestion"), value: "suggestion" },
+                        { label: t("feedback.submitTab"), value: "submit" },
+                        { label: t("feedback.myFeedback"), value: "mine" },
                     ]}
-                    onChange={(value) => setCategory(value as UserFeedback["category"])}
+                    onChange={(value) => setTab(value as "submit" | "mine")}
                 />
-                <Input.TextArea
-                    autoFocus
-                    showCount
-                    maxLength={2000}
-                    rows={7}
-                    value={content}
-                    placeholder={t(category === "problem" ? "feedback.problemPlaceholder" : "feedback.suggestionPlaceholder")}
-                    onChange={(event) => setContent(event.target.value)}
-                />
-                <Input value={contact} maxLength={200} placeholder={t("feedback.contactPlaceholder")} onChange={(event) => setContact(event.target.value)} />
-                <div className="flex items-start gap-2 rounded-lg border border-stone-200 bg-stone-50 px-3 py-2.5 text-xs text-stone-600 dark:border-white/10 dark:bg-white/5 dark:text-stone-300">
-                    <Mail className="mt-0.5 size-3.5 shrink-0" />
-                    <span>
-                        {t("feedback.emailFallback")} <a className="font-medium text-stone-950 underline underline-offset-2 dark:text-white" href={`mailto:${SUPPORT_EMAIL}`}>{SUPPORT_EMAIL}</a>
-                    </span>
-                </div>
+                {tab === "submit" ? (
+                    <>
+                        <Segmented
+                            block
+                            value={category}
+                            options={[
+                                { label: t("feedback.problem"), value: "problem" },
+                                { label: t("feedback.suggestion"), value: "suggestion" },
+                            ]}
+                            onChange={(value) => setCategory(value as UserFeedback["category"])}
+                        />
+                        <Input.TextArea
+                            autoFocus
+                            showCount
+                            maxLength={2000}
+                            rows={7}
+                            value={content}
+                            placeholder={t(category === "problem" ? "feedback.problemPlaceholder" : "feedback.suggestionPlaceholder")}
+                            onChange={(event) => setContent(event.target.value)}
+                        />
+                        <Input value={contact} maxLength={200} placeholder={t("feedback.contactPlaceholder")} onChange={(event) => setContact(event.target.value)} />
+                    </>
+                ) : (
+                    <div className="max-h-[480px] min-h-48 space-y-3 overflow-y-auto pr-1">
+                        {loadingTickets ? <div className="flex min-h-48 items-center justify-center"><Spin /></div> : null}
+                        {!loadingTickets && tickets.length === 0 ? <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description={t("feedback.empty")} /> : null}
+                        {!loadingTickets ? tickets.map((ticket) => (
+                            <article key={ticket.id} className="rounded-xl border border-stone-200 p-4 dark:border-white/10">
+                                <div className="flex flex-wrap items-center justify-between gap-2">
+                                    <div className="flex items-center gap-2">
+                                        <Tag color={ticket.category === "problem" ? "red" : "blue"}>{t(`feedback.${ticket.category}`)}</Tag>
+                                        <FeedbackStatusTag status={ticket.status} />
+                                    </div>
+                                    <time className="text-xs text-stone-500">{new Date(ticket.createdAt).toLocaleString()}</time>
+                                </div>
+                                <p className="mt-3 whitespace-pre-wrap break-words text-sm">{ticket.content}</p>
+                                {ticket.replies.map((reply) => (
+                                    <div key={reply.id} className="mt-3 rounded-lg bg-stone-100 px-3 py-2.5 dark:bg-white/[0.06]">
+                                        <div className="flex items-center justify-between gap-2 text-xs text-stone-500">
+                                            <span>{t("feedback.adminReply")}</span>
+                                            <time>{new Date(reply.createdAt).toLocaleString()}</time>
+                                        </div>
+                                        <p className="mt-1.5 whitespace-pre-wrap break-words text-sm">{reply.content}</p>
+                                    </div>
+                                ))}
+                            </article>
+                        )) : null}
+                    </div>
+                )}
             </div>
         </Modal>
     );
+}
+
+function FeedbackStatusTag({ status }: { status: UserFeedback["status"] }) {
+    const { t } = useTranslation();
+    const color = status === "closed" ? "default" : status === "replied" ? "green" : "gold";
+    return <Tag color={color}>{t(`feedback.status.${status}`)}</Tag>;
 }

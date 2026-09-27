@@ -745,13 +745,42 @@ export const userFeedback = pgTable(
     content: text("content").notNull(),
     contact: text("contact"),
     pagePath: text("page_path"),
+    status: text("status").default("open").notNull(),
     createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
       .defaultNow()
       .notNull(),
   },
   (table) => [
     index("user_feedback_created_idx").on(table.createdAt),
     index("user_feedback_user_created_idx").on(table.userId, table.createdAt),
+    index("user_feedback_status_updated_idx").on(table.status, table.updatedAt),
+  ],
+);
+
+export const userFeedbackMessages = pgTable(
+  "user_feedback_messages",
+  {
+    id: bigserial("id", { mode: "bigint" }).primaryKey(),
+    feedbackId: uuid("feedback_id")
+      .notNull()
+      .references(() => userFeedback.id, { onDelete: "cascade" }),
+    authorUserId: uuid("author_user_id").references(() => users.id, {
+      onDelete: "set null",
+    }),
+    authorRole: text("author_role").notNull(),
+    content: text("content").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => [
+    index("user_feedback_messages_feedback_created_idx").on(
+      table.feedbackId,
+      table.createdAt,
+    ),
   ],
 );
 
@@ -785,4 +814,5 @@ export const schema = {
   teamProjects,
   adminAuditLogs,
   userFeedback,
+  userFeedbackMessages,
 };
