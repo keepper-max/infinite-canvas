@@ -260,12 +260,12 @@
     display: flex;
     align-items: center;
     flex-direction: column;
-    gap: 8px;
+    gap: 7px;
     opacity: 0;
     transform: translateY(20px);
     animation: startup-title 0.45s 1.7s ease-out forwards;
 }
-.startup-intro__wordmark span {
+.startup-intro__brand-name {
     font-size: clamp(28px, 5vw, 52px);
     font-weight: 650;
     letter-spacing: 0.23em;
@@ -273,14 +273,23 @@
     text-shadow: 0 0 26px #d8cbb377;
     white-space: nowrap;
 }
-.startup-intro__wordmark small {
-    font:
-        500 9px/1 ui-monospace,
-        "SFMono-Regular",
-        monospace;
-    letter-spacing: 0.42em;
-    padding-left: 0.42em;
-    color: #b3a99a;
+.startup-intro__primary-slogan {
+    margin-top: 3px;
+    font-size: clamp(13px, 1.4vw, 17px);
+    font-weight: 500;
+    letter-spacing: 0.2em;
+    padding-left: 0.2em;
+    color: #e4dac9;
+    text-shadow: 0 0 18px #d8cbb33d;
+    white-space: nowrap;
+}
+.startup-intro__secondary-slogan {
+    font-size: clamp(9px, 0.9vw, 11px);
+    font-weight: 400;
+    line-height: 1.2;
+    letter-spacing: 0.16em;
+    padding-left: 0.16em;
+    color: #9f9587;
     white-space: nowrap;
 }
 .startup-intro__corner {
@@ -579,9 +588,15 @@
     .startup-intro__halo--inner {
         width: 68vw;
     }
-    .startup-intro__wordmark small {
-        font-size: 7px;
-        letter-spacing: 0.22em;
+    .startup-intro__primary-slogan {
+        font-size: 12px;
+        letter-spacing: 0.14em;
+        padding-left: 0.14em;
+    }
+    .startup-intro__secondary-slogan {
+        font-size: 8px;
+        letter-spacing: 0.1em;
+        padding-left: 0.1em;
     }
     .startup-intro__corner {
         font-size: 8px;

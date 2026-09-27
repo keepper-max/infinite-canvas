@@ -1,7 +1,7 @@
 export default {
     meta: {
         title: "守守画布",
-        description: "守守画布 AI 创作工具",
+        description: "让想象，真正发生。",
     },
     theme: { toggle: "切换主题" },
     auth: {

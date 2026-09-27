@@ -190,9 +190,10 @@ export function StartupIntro() {
                     <i className="startup-intro__logo-fragment startup-intro__logo-fragment--west" />
                     <i className="startup-intro__logo-flare" />
                 </div>
-                <div className="startup-intro__wordmark" aria-label="守守画布">
-                    <span>守守画布</span>
-                    <small>IMAGINATION, CONNECTED.</small>
+                <div className="startup-intro__wordmark" aria-label="守守画布，让想象，真正发生。从一个念头，到一个世界。">
+                    <span className="startup-intro__brand-name">守守画布</span>
+                    <strong className="startup-intro__primary-slogan">让想象，真正发生。</strong>
+                    <small className="startup-intro__secondary-slogan">从一个念头，到一个世界。</small>
                 </div>
             </div>
 
