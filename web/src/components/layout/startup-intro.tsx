@@ -47,12 +47,12 @@ export function StartupIntro() {
             </div>
 
             <svg className="startup-intro__network" viewBox="0 0 1200 700" preserveAspectRatio="xMidYMid slice" aria-hidden="true">
-                <path pathLength="1" d="M0 95 Q220 80 395 268 L542 302" />
-                <path pathLength="1" d="M1200 95 Q970 100 805 255 L658 303" />
-                <path pathLength="1" d="M0 600 Q250 610 420 430 L535 392" />
-                <path pathLength="1" d="M1200 610 Q940 600 785 438 L665 392" />
-                <path pathLength="1" d="M290 0 Q400 140 510 250 L570 329" />
-                <path pathLength="1" d="M910 700 Q790 540 685 450 L634 329" />
+                <path pathLength="1" d="M0 95 C220 80 390 260 542 302" />
+                <path pathLength="1" d="M1200 95 C980 90 820 250 658 303" />
+                <path pathLength="1" d="M0 600 C245 620 390 470 535 392" />
+                <path pathLength="1" d="M1200 610 C955 610 815 475 665 392" />
+                <path pathLength="1" d="M290 0 C385 120 500 270 570 329" />
+                <path pathLength="1" d="M910 700 C820 575 700 420 634 329" />
             </svg>
 
             <div className="startup-intro__node startup-intro__node--one" aria-hidden="true">
