@@ -173,6 +173,7 @@ export type UserFeedback = {
     contact?: string;
     pagePath?: string;
     userEmail: string;
+    hasUnreadReply: boolean;
     status: "open" | "replied" | "closed";
     replies: FeedbackReply[];
     createdAt: string;
@@ -205,6 +206,15 @@ export function createFeedback(input: { category: UserFeedback["category"]; cont
 }
 export async function getMyFeedback(signal?: AbortSignal) {
     return (await platformRequest<{ feedback: UserFeedback[] }>("/api/feedback", { signal })).feedback;
+}
+export function getFeedbackUnread(signal?: AbortSignal) {
+    return platformRequest<{ unreadCount: number }>("/api/feedback/unread", { signal });
+}
+export function markFeedbackRead(readThrough: string) {
+    return platformRequest<{ unreadCount: number }>("/api/feedback/read", {
+        method: "POST",
+        body: JSON.stringify({ readThrough }),
+    });
 }
 export function getCreditAccount(signal?: AbortSignal) {
     return platformRequest<CreditAccount>("/api/billing/account", { signal });
@@ -350,7 +360,7 @@ export function getAdminFeedback(input: Record<string, string | number | boolean
     return platformRequest<PageResult<UserFeedback>>(`/api/admin/feedback${adminQuery(input)}`, { signal });
 }
 export async function replyAdminFeedback(feedbackId: string, content: string) {
-    return platformRequest<{ reply: FeedbackReply; emailNotificationSent: boolean }>(`/api/admin/feedback/${encodeURIComponent(feedbackId)}/replies`, {
+    return platformRequest<{ reply: FeedbackReply }>(`/api/admin/feedback/${encodeURIComponent(feedbackId)}/replies`, {
         method: "POST",
         body: JSON.stringify({ content }),
     });

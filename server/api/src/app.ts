@@ -1361,6 +1361,30 @@ export function createApp(
     );
   });
 
+  app.get("/api/feedback/unread", async (context) => {
+    const user = await requireUser(context.req.raw, repository, config);
+    return context.json(
+      success(
+        context,
+        await requireOperationsService(operationsService).feedbackUnread(user.id),
+      ),
+    );
+  });
+
+  app.post("/api/feedback/read", async (context) => {
+    const user = await requireUser(context.req.raw, repository, config);
+    const input = feedbackReadInput.parse(await readJson(context.req.raw));
+    return context.json(
+      success(
+        context,
+        await requireOperationsService(operationsService).markFeedbackRead(
+          user.id,
+          input.readThrough,
+        ),
+      ),
+    );
+  });
+
   app.get("/api/admin/feedback", async (context) => {
     const user = await requireUser(context.req.raw, repository, config);
     return context.json(
@@ -1384,25 +1408,8 @@ export function createApp(
       input.content,
       context.get("requestId"),
     );
-    let emailNotificationSent = false;
-    if (emailVerificationService?.sendFeedbackReplyNotification) {
-      try {
-        await emailVerificationService.sendFeedbackReplyNotification({
-          recipientEmail: result.userEmail,
-          ticketId: result.feedbackId,
-          category: result.category,
-          reply: result.reply.content,
-        });
-        emailNotificationSent = true;
-      } catch (error) {
-        console.error("feedback reply email notification failed", {
-          feedbackId,
-          error: error instanceof Error ? error.name : "UnknownError",
-        });
-      }
-    }
     return context.json(
-      success(context, { reply: result.reply, emailNotificationSent }),
+      success(context, { reply: result.reply }),
       201,
     );
   });
@@ -1798,6 +1805,9 @@ const feedbackInput = z.object({
 }).strict();
 const feedbackReplyInput = z.object({
   content: z.string().trim().min(1).max(2000),
+}).strict();
+const feedbackReadInput = z.object({
+  readThrough: z.string().datetime({ offset: true }),
 }).strict();
 const feedbackStatusInput = z.object({
   status: z.enum(["open", "replied", "closed"]),

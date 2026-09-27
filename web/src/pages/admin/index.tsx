@@ -1716,7 +1716,7 @@ function FeedbackPanel() {
         setSaving(true);
         try {
             const result = await replyAdminFeedback(selected.id, reply.trim());
-            message.success(result.emailNotificationSent ? "回复已保存，邮件提醒已发送" : "回复已保存，邮件提醒暂未发送");
+            message.success("回复已保存，用户将在站内看到未读提醒");
             setReply("");
             load();
         } catch (error) {

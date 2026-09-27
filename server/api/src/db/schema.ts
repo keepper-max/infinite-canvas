@@ -746,6 +746,7 @@ export const userFeedback = pgTable(
     contact: text("contact"),
     pagePath: text("page_path"),
     status: text("status").default("open").notNull(),
+    userLastReadAt: timestamp("user_last_read_at", { withTimezone: true }),
     createdAt: timestamp("created_at", { withTimezone: true })
       .defaultNow()
       .notNull(),

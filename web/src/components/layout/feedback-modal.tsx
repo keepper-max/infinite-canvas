@@ -3,14 +3,15 @@ import { MessageSquareText } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 
-import { createFeedback, getMyFeedback, type UserFeedback } from "@/services/api/operations";
+import { createFeedback, getMyFeedback, markFeedbackRead, type UserFeedback } from "@/services/api/operations";
 
 type FeedbackModalProps = {
     open: boolean;
     onClose: () => void;
+    onUnreadChange: (hasUnread: boolean) => void;
 };
 
-export function FeedbackModal({ open, onClose }: FeedbackModalProps) {
+export function FeedbackModal({ open, onClose, onUnreadChange }: FeedbackModalProps) {
     const { t } = useTranslation();
     const [tab, setTab] = useState<"submit" | "mine">("submit");
     const [category, setCategory] = useState<UserFeedback["category"]>("problem");
@@ -23,13 +24,29 @@ export function FeedbackModal({ open, onClose }: FeedbackModalProps) {
     const loadTickets = useCallback(async () => {
         setLoadingTickets(true);
         try {
-            setTickets(await getMyFeedback());
+            const nextTickets = await getMyFeedback();
+            setTickets(nextTickets);
+            const latestUnreadReply = nextTickets
+                .filter((ticket) => ticket.hasUnreadReply)
+                .flatMap((ticket) => ticket.replies)
+                .filter((reply) => reply.authorRole === "admin")
+                .map((reply) => reply.createdAt)
+                .sort()
+                .at(-1);
+            if (latestUnreadReply) {
+                try {
+                    const result = await markFeedbackRead(latestUnreadReply);
+                    onUnreadChange(result.unreadCount > 0);
+                } catch {
+                    onUnreadChange(true);
+                }
+            } else onUnreadChange(false);
         } catch (error) {
             message.error(error instanceof Error ? error.message : t("feedback.loadFailed"));
         } finally {
             setLoadingTickets(false);
         }
-    }, [t]);
+    }, [onUnreadChange, t]);
 
     useEffect(() => {
         if (!open) return;

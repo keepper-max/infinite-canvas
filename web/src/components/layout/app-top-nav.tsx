@@ -8,6 +8,7 @@ import { AppConfigModal } from "@/components/layout/app-config-modal";
 import { MobileNavDrawer } from "@/components/layout/mobile-nav-drawer";
 import { UserStatusActions } from "@/components/layout/user-status-actions";
 import { FeedbackModal } from "@/components/layout/feedback-modal";
+import { getFeedbackUnread } from "@/services/api/operations";
 import { CODEX_AGENT_ENABLED } from "@/constant/env";
 import { cn } from "@/lib/utils";
 import { preloadNavigationRoute } from "@/lib/route-modules";
@@ -29,6 +30,7 @@ export function AppTopNav({ canvasProject, canvasVisible, onCanvasPointerEnter, 
     const { pathname } = useLocation();
     const [mobileNavOpen, setMobileNavOpen] = useState(false);
     const [feedbackOpen, setFeedbackOpen] = useState(false);
+    const [feedbackUnread, setFeedbackUnread] = useState(false);
     const [loadingToolSlug, setLoadingToolSlug] = useState<NavigationToolSlug | null>(null);
     const autoConnectRef = useRef(false);
     const navigationRequestRef = useRef(0);
@@ -44,6 +46,25 @@ export function AppTopNav({ canvasProject, canvasVisible, onCanvasPointerEnter, 
     const visibleNavigationTools = navigationTools.filter((tool) => tool.slug !== "operations" || user.isAdmin);
     const slug = pathname.split("/").filter(Boolean)[0];
     const activeToolSlug = visibleNavigationTools.some((tool) => tool.slug === slug) ? (slug as NavigationToolSlug) : undefined;
+
+    const refreshFeedbackUnread = useCallback(() => {
+        void getFeedbackUnread()
+            .then(({ unreadCount }) => setFeedbackUnread(unreadCount > 0))
+            .catch(() => undefined);
+    }, []);
+
+    useEffect(() => {
+        refreshFeedbackUnread();
+        const handleVisibility = () => {
+            if (document.visibilityState === "visible") refreshFeedbackUnread();
+        };
+        window.addEventListener("focus", refreshFeedbackUnread);
+        document.addEventListener("visibilitychange", handleVisibility);
+        return () => {
+            window.removeEventListener("focus", refreshFeedbackUnread);
+            document.removeEventListener("visibilitychange", handleVisibility);
+        };
+    }, [pathname, refreshFeedbackUnread, user.id]);
 
     const updateNavigationScrollState = useCallback(() => {
         const navigation = navigationRef.current;
@@ -163,7 +184,12 @@ export function AppTopNav({ canvasProject, canvasVisible, onCanvasPointerEnter, 
                             <Button
                                 type="text"
                                 className="!h-8 !min-w-8 !shrink-0 !px-2"
-                                icon={<MessageSquareText className="size-4" />}
+                                icon={
+                                    <span className="relative inline-flex">
+                                        <MessageSquareText className="size-4" />
+                                        {feedbackUnread ? <span className="absolute -right-1 -top-1 size-2 rounded-full bg-red-500 ring-2 ring-background" /> : null}
+                                    </span>
+                                }
                                 onClick={() => setFeedbackOpen(true)}
                                 aria-label={t("feedback.title")}
                             >
@@ -189,7 +215,7 @@ export function AppTopNav({ canvasProject, canvasVisible, onCanvasPointerEnter, 
 
             <MobileNavDrawer open={mobileNavOpen} activeToolSlug={activeToolSlug} showOperations={user.isAdmin} onClose={() => setMobileNavOpen(false)} />
             <AppConfigModal />
-            <FeedbackModal open={feedbackOpen} onClose={() => setFeedbackOpen(false)} />
+            <FeedbackModal open={feedbackOpen} onClose={() => setFeedbackOpen(false)} onUnreadChange={setFeedbackUnread} />
         </>
     );
 }

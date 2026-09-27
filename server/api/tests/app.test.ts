@@ -379,25 +379,32 @@ test("cross-site state changes are rejected", async () => {
   assert.match(response.headers.get("permissions-policy") || "", /camera=\(\)/);
 });
 
-test("feedback tickets expose user history and send reply notifications after persistence", async () => {
+test("feedback tickets expose user history and persist in-app unread state", async () => {
   const repository = new MemoryRepository();
   const feedbackId = crypto.randomUUID();
   let listedFor = "";
+  let unreadFor = "";
+  let readThrough = "";
   let repliedBy = "";
   let updatedStatus = "";
-  let notification: { recipientEmail: string; ticketId: string; category: string; reply: string } | undefined;
   const operations = {
     listFeedback: async (userId: string) => {
       listedFor = userId;
       return { feedback: [] };
     },
+    feedbackUnread: async (userId: string) => {
+      unreadFor = userId;
+      return { unreadCount: 1 };
+    },
+    markFeedbackRead: async (userId: string, value: string) => {
+      assert.equal(userId, currentUserId);
+      readThrough = value;
+      return { unreadCount: 0 };
+    },
     replyFeedback: async (userId: string, id: string, content: string) => {
       repliedBy = userId;
       assert.equal(id, feedbackId);
       return {
-        feedbackId,
-        category: "problem" as const,
-        userEmail: "feedback@example.com",
         reply: { id: "1", content, authorRole: "admin" as const, createdAt: new Date().toISOString() },
       };
     },
@@ -407,12 +414,7 @@ test("feedback tickets expose user history and send reply notifications after pe
       return { id, status, updatedAt: new Date().toISOString() };
     },
   } as OperationsServicePort;
-  const email = {
-    sendFeedbackReplyNotification: async (input: { recipientEmail: string; ticketId: string; category: string; reply: string }) => {
-      notification = input;
-    },
-  } as EmailVerificationServicePort;
-  const app = createApp(repository, config, undefined, undefined, undefined, undefined, operations, undefined, undefined, email);
+  const app = createApp(repository, config, undefined, undefined, undefined, undefined, operations);
   const registered = await jsonRequest(app, "/api/auth/register", {
     email: "feedback@example.com",
     password: "password-123",
@@ -424,16 +426,20 @@ test("feedback tickets expose user history and send reply notifications after pe
   assert.equal(own.status, 200);
   assert.equal(listedFor, currentUserId);
 
+  const unread = await app.request("/api/feedback/unread", { headers: { cookie } });
+  assert.equal(unread.status, 200);
+  assert.equal(unreadFor, currentUserId);
+
+  const readAt = new Date().toISOString();
+  const marked = await postJson(app, "/api/feedback/read", cookie, { readThrough: readAt });
+  assert.equal(marked.response.status, 200);
+  assert.equal(readThrough, readAt);
+
   const replied = await postJson(app, `/api/admin/feedback/${feedbackId}/replies`, cookie, { content: "已经处理完成" });
   assert.equal(replied.response.status, 201);
   assert.equal(repliedBy, currentUserId);
-  assert.deepEqual(notification, {
-    recipientEmail: "feedback@example.com",
-    ticketId: feedbackId,
-    category: "problem",
-    reply: "已经处理完成",
-  });
-  assert.equal(replied.body.data.emailNotificationSent, true);
+  assert.equal(replied.body.data.reply.content, "已经处理完成");
+  assert.equal("emailNotificationSent" in replied.body.data, false);
 
   const status = await patchJson(app, `/api/admin/feedback/${feedbackId}/status`, cookie, { status: "closed" });
   assert.equal(status.response.status, 200);

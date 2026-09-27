@@ -69,6 +69,8 @@ export interface OperationsServicePort {
     input: { category: "problem" | "suggestion"; content: string; contact?: string; pagePath?: string },
   ): Promise<unknown>;
   listFeedback(userId: string): Promise<unknown>;
+  feedbackUnread(userId: string): Promise<{ unreadCount: number }>;
+  markFeedbackRead(userId: string, readThrough: string): Promise<{ unreadCount: number }>;
   adminFeedback(userId: string, query: AdminListQuery): Promise<unknown>;
   replyFeedback(
     userId: string,
@@ -156,9 +158,6 @@ export type AdminListQuery = {
 
 export type FeedbackStatus = "open" | "replied" | "closed";
 export type FeedbackReplyResult = {
-  feedbackId: string;
-  category: "problem" | "suggestion";
-  userEmail: string;
   reply: { id: string; content: string; authorRole: "admin"; createdAt: string };
 };
 
@@ -285,6 +284,34 @@ export class OperationsService implements OperationsServicePort {
     return { feedback: result.rows.map(serializeFeedback) };
   }
 
+  async feedbackUnread(userId: string) {
+    const result = await this.pool.query(
+      `select count(*)::int unread_count
+       from user_feedback f
+       where f.user_id=$1 and exists (
+         select 1 from user_feedback_messages m
+         where m.feedback_id=f.id and m.author_role='admin'
+           and m.created_at>coalesce(f.user_last_read_at,f.created_at)
+       )`,
+      [userId],
+    );
+    return { unreadCount: Number(result.rows[0]?.unread_count || 0) };
+  }
+
+  async markFeedbackRead(userId: string, readThrough: string) {
+    await this.pool.query(
+      `update user_feedback
+       set user_last_read_at=greatest(coalesce(user_last_read_at,created_at),least($2::timestamptz,now()))
+       where user_id=$1 and exists (
+         select 1 from user_feedback_messages m
+         where m.feedback_id=user_feedback.id and m.author_role='admin'
+           and m.created_at<=$2::timestamptz
+       )`,
+      [userId, readThrough],
+    );
+    return this.feedbackUnread(userId);
+  }
+
   async adminFeedback(userId: string, query: AdminListQuery) {
     await this.requireAdmin(userId);
     const values: unknown[] = [];
@@ -328,13 +355,8 @@ export class OperationsService implements OperationsServicePort {
   ): Promise<FeedbackReplyResult> {
     await this.requireAdmin(userId);
     return inTransaction(this.pool, async (client) => {
-      const feedback = await client.query<{
-        category: "problem" | "suggestion";
-        user_email: string;
-      }>(
-        `select f.category,u.email user_email
-         from user_feedback f join users u on u.id=f.user_id
-         where f.id=$1 for update`,
+      const feedback = await client.query(
+        `select id from user_feedback where id=$1 for update`,
         [feedbackId],
       );
       if (!feedback.rowCount)
@@ -352,9 +374,6 @@ export class OperationsService implements OperationsServicePort {
       await audit(client, userId, "feedback.reply", "user_feedback", feedbackId, {}, requestId);
       const row = inserted.rows[0];
       return {
-        feedbackId,
-        category: feedback.rows[0]!.category,
-        userEmail: feedback.rows[0]!.user_email,
         reply: {
           id: String(row.id),
           content: row.content,
@@ -1516,6 +1535,11 @@ function disabled(code: string, message: string) {
 const feedbackSelectSql = `select
   f.id,f.category,f.content,f.contact,f.page_path,f.status,f.created_at,f.updated_at,
   u.email user_email,
+  exists (
+    select 1 from user_feedback_messages unread
+    where unread.feedback_id=f.id and unread.author_role='admin'
+      and unread.created_at>coalesce(f.user_last_read_at,f.created_at)
+  ) has_unread_reply,
   coalesce((
     select json_agg(json_build_object(
       'id',m.id::text,
@@ -1536,6 +1560,7 @@ function serializeFeedback(row: Record<string, unknown>) {
     pagePath: row.page_path,
     status: row.status,
     userEmail: row.user_email,
+    hasUnreadReply: Boolean(row.has_unread_reply),
     replies: Array.isArray(row.replies) ? row.replies : [],
     createdAt: iso(row.created_at),
     updatedAt: iso(row.updated_at),

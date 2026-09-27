@@ -26,12 +26,6 @@ export interface EmailVerificationServicePort {
     purpose: EmailVerificationPurpose,
   ): Promise<VerifiedEmailCode>;
   consumeCode(verification: VerifiedEmailCode): Promise<boolean>;
-  sendFeedbackReplyNotification?(input: {
-    recipientEmail: string;
-    ticketId: string;
-    category: "problem" | "suggestion";
-    reply: string;
-  }): Promise<void>;
 }
 
 export class EmailVerificationService implements EmailVerificationServicePort {
@@ -171,27 +165,6 @@ export class EmailVerificationService implements EmailVerificationServicePort {
       [verification.id, verification.email, verification.purpose],
     );
     return result.rowCount === 1;
-  }
-
-  async sendFeedbackReplyNotification(input: {
-    recipientEmail: string;
-    ticketId: string;
-    category: "problem" | "suggestion";
-    reply: string;
-  }) {
-    const category = input.category === "problem" ? "问题反馈" : "使用建议";
-    await this.mailClient.singleSendMail(
-      new SingleSendMailRequest({
-        accountName: this.config.accountName,
-        addressType: 1,
-        replyToAddress: false,
-        toAddress: input.recipientEmail,
-        fromAlias: this.config.fromAlias,
-        subject: "守守画布反馈工单有新回复",
-        clickTrace: "0",
-        textBody: `你提交的${category}已有新回复：\n\n${input.reply}\n\n工单编号：${input.ticketId}\n请登录守守画布，在“反馈 > 我的反馈”中查看完整记录。此邮件仅作提醒，请勿直接回复。`,
-      }),
-    );
   }
 
   private async enforceSendLimits(
