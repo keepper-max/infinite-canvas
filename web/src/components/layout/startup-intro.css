@@ -75,34 +75,32 @@
     width: 100%;
     height: 100%;
     overflow: visible;
+    shape-rendering: geometricPrecision;
 }
-.startup-intro__network path {
+.startup-intro__stream-guide {
     fill: none;
-    stroke: #d9d2c5;
-    stroke-width: 1.35;
-    stroke-linecap: round;
+    stroke: transparent;
+}
+.startup-intro__stream-head,
+.startup-intro__stream-particle {
     opacity: 0;
-    stroke-dasharray: 0.14 0.86;
-    stroke-dashoffset: 0;
-    animation: startup-connection 0.82s 0.12s linear both;
+    transform-box: fill-box;
+    transform-origin: center;
+    mix-blend-mode: screen;
 }
-.startup-intro__network path:nth-child(2) {
-    stroke: #aa9981;
-    animation-delay: 0.17s;
+.startup-intro__stream-head {
+    fill: #f7f1e7;
 }
-.startup-intro__network path:nth-child(3) {
-    animation-delay: 0.21s;
+.startup-intro__stream-particle {
+    fill: #cbb996;
 }
-.startup-intro__network path:nth-child(4) {
-    stroke: #aa9981;
-    animation-delay: 0.27s;
+.startup-intro__stream--2 .startup-intro__stream-head,
+.startup-intro__stream--4 .startup-intro__stream-head {
+    fill: #e7d8c1;
 }
-.startup-intro__network path:nth-child(5) {
-    animation-delay: 0.19s;
-}
-.startup-intro__network path:nth-child(6) {
-    stroke: #aa9981;
-    animation-delay: 0.25s;
+.startup-intro__stream--2 .startup-intro__stream-particle,
+.startup-intro__stream--4 .startup-intro__stream-particle {
+    fill: #aa9981;
 }
 .startup-intro__node {
     position: absolute;
@@ -192,7 +190,7 @@
     transform: scale(1);
     filter: drop-shadow(0 0 14px #d8cbb366);
     will-change: transform, filter;
-    animation: startup-logo-impact 0.48s 1.34s cubic-bezier(0.16, 0.86, 0.22, 1) both;
+    animation: startup-logo-impact 0.48s 1.46s cubic-bezier(0.16, 0.86, 0.22, 1) both;
 }
 .startup-intro__logo-frame::after {
     content: "";
@@ -204,7 +202,7 @@
     transform: rotate(-30deg);
     filter: drop-shadow(0 0 12px #cbb996);
     opacity: 0;
-    animation: startup-ring 0.5s 1.33s cubic-bezier(0.2, 0.8, 0.2, 1) both;
+    animation: startup-ring 0.5s 1.45s cubic-bezier(0.2, 0.8, 0.2, 1) both;
 }
 .startup-intro__logo-fragment {
     position: absolute;
@@ -229,22 +227,22 @@
 .startup-intro__logo-fragment--north {
     clip-path: polygon(0 0, 100% 0, 100% 30%, 52% 52%, 0 36%);
     animation-name: startup-logo-north;
-    animation-delay: 1.14s;
+    animation-delay: 1.3s;
 }
 .startup-intro__logo-fragment--east {
     clip-path: polygon(100% 20%, 100% 100%, 54% 100%, 48% 50%);
     animation-name: startup-logo-east;
-    animation-delay: 1.17s;
+    animation-delay: 1.33s;
 }
 .startup-intro__logo-fragment--south {
     clip-path: polygon(0 66%, 50% 48%, 58% 100%, 0 100%);
     animation-name: startup-logo-south;
-    animation-delay: 1.2s;
+    animation-delay: 1.36s;
 }
 .startup-intro__logo-fragment--west {
     clip-path: polygon(0 22%, 52% 48%, 48% 100%, 0 100%);
     animation-name: startup-logo-west;
-    animation-delay: 1.16s;
+    animation-delay: 1.32s;
 }
 .startup-intro__logo-flare {
     position: absolute;
@@ -256,7 +254,7 @@
         0 0 70px 20px #cbb99655;
     opacity: 0;
     transform: scale(0.5);
-    animation: startup-logo-flare 0.38s 1.32s ease-out both;
+    animation: startup-logo-flare 0.38s 1.44s ease-out both;
 }
 .startup-intro__wordmark {
     position: relative;
@@ -267,7 +265,7 @@
     gap: 8px;
     opacity: 0;
     transform: translateY(20px);
-    animation: startup-title 0.45s 1.68s ease-out forwards;
+    animation: startup-title 0.45s 1.7s ease-out forwards;
 }
 .startup-intro__wordmark span {
     font-size: clamp(28px, 5vw, 52px);
@@ -408,25 +406,6 @@
     100% {
         opacity: 0.2;
         transform: translateY(-14px) scale(1.2);
-    }
-}
-@keyframes startup-connection {
-    0% {
-        stroke-dashoffset: 0;
-        opacity: 0;
-    }
-    9% {
-        opacity: 0.88;
-    }
-    62% {
-        opacity: 0.9;
-    }
-    90% {
-        opacity: 0.18;
-    }
-    100% {
-        stroke-dashoffset: -0.86;
-        opacity: 0;
     }
 }
 @keyframes startup-node {
