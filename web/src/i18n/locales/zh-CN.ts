@@ -383,6 +383,8 @@ export default {
         openMenu: "打开导航菜单",
         menu: "导航菜单",
         navigation: "导航",
+        scrollLeft: "向左查看更多功能",
+        scrollRight: "向右查看更多功能",
         openAgent: "打开 Agent",
         closeAgent: "收起 Agent",
         plugins: "节点插件",

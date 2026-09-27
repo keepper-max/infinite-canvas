@@ -383,6 +383,8 @@ export default {
         openMenu: "Open navigation menu",
         menu: "Navigation menu",
         navigation: "Navigation",
+        scrollLeft: "Scroll to earlier tools",
+        scrollRight: "Scroll to more tools",
         openAgent: "Open Agent",
         closeAgent: "Close Agent",
         plugins: "Node plugins",
