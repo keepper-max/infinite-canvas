@@ -18,8 +18,8 @@ export function StartupIntro() {
         prelude?.remove();
         if (!visible) return;
 
-        const exitTimer = window.setTimeout(() => setExiting(true), 2150);
-        const endTimer = window.setTimeout(() => setVisible(false), 2500);
+        const exitTimer = window.setTimeout(() => setExiting(true), 2250);
+        const endTimer = window.setTimeout(() => setVisible(false), 2580);
         const skipOnEscape = (event: KeyboardEvent) => {
             if (event.key === "Escape") setVisible(false);
         };
@@ -47,12 +47,12 @@ export function StartupIntro() {
             </div>
 
             <svg className="startup-intro__network" viewBox="0 0 1200 700" preserveAspectRatio="xMidYMid slice" aria-hidden="true">
-                <path d="M0 95 Q220 80 395 268 L600 350" />
-                <path d="M1200 95 Q970 100 805 255 L600 350" />
-                <path d="M0 600 Q250 610 420 430 L600 350" />
-                <path d="M1200 610 Q940 600 785 438 L600 350" />
-                <path d="M290 0 Q400 140 510 250 L600 350" />
-                <path d="M910 700 Q790 540 685 450 L600 350" />
+                <path pathLength="1" d="M0 95 Q220 80 395 268 L542 302" />
+                <path pathLength="1" d="M1200 95 Q970 100 805 255 L658 303" />
+                <path pathLength="1" d="M0 600 Q250 610 420 430 L535 392" />
+                <path pathLength="1" d="M1200 610 Q940 600 785 438 L665 392" />
+                <path pathLength="1" d="M290 0 Q400 140 510 250 L570 329" />
+                <path pathLength="1" d="M910 700 Q790 540 685 450 L634 329" />
             </svg>
 
             <div className="startup-intro__node startup-intro__node--one" aria-hidden="true">
@@ -75,8 +75,12 @@ export function StartupIntro() {
             <div className="startup-intro__center">
                 <div className="startup-intro__halo startup-intro__halo--outer" />
                 <div className="startup-intro__halo startup-intro__halo--inner" />
-                <div className="startup-intro__logo-frame">
-                    <div className="startup-intro__logo" aria-hidden="true" />
+                <div className="startup-intro__logo-frame" aria-hidden="true">
+                    <i className="startup-intro__logo-fragment startup-intro__logo-fragment--north" />
+                    <i className="startup-intro__logo-fragment startup-intro__logo-fragment--east" />
+                    <i className="startup-intro__logo-fragment startup-intro__logo-fragment--south" />
+                    <i className="startup-intro__logo-fragment startup-intro__logo-fragment--west" />
+                    <i className="startup-intro__logo-flare" />
                 </div>
                 <div className="startup-intro__wordmark" aria-label="守守画布">
                     <span>守守画布</span>
