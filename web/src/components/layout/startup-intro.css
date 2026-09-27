@@ -84,8 +84,7 @@
     opacity: 0;
     stroke-dasharray: 0.14 0.86;
     stroke-dashoffset: 0;
-    filter: drop-shadow(0 0 5px #d8cbb388);
-    animation: startup-connection 0.82s 0.12s cubic-bezier(0.45, 0, 0.1, 1) both;
+    animation: startup-connection 0.82s 0.12s linear both;
 }
 .startup-intro__network path:nth-child(2) {
     stroke: #aa9981;
@@ -416,11 +415,14 @@
         stroke-dashoffset: 0;
         opacity: 0;
     }
-    12% {
+    9% {
         opacity: 0.88;
     }
-    78% {
+    62% {
         opacity: 0.9;
+    }
+    90% {
+        opacity: 0.18;
     }
     100% {
         stroke-dashoffset: -0.86;
