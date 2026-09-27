@@ -9,28 +9,112 @@ const particles = Array.from({ length: 20 }, (_, index) => ({
     delay: `${(index % 7) * 0.13}s`,
 }));
 
-const convergenceStreams = [
+type PathPoint = readonly [number, number];
+
+function createSmoothPath(points: readonly PathPoint[]) {
+    if (points.length < 2) return "";
+
+    const round = (value: number) => Math.round(value * 100) / 100;
+    const commands = [`M${points[0][0]} ${points[0][1]}`];
+
+    for (let index = 0; index < points.length - 1; index += 1) {
+        const previous = points[index - 1] ?? points[index];
+        const current = points[index];
+        const next = points[index + 1];
+        const following = points[index + 2] ?? next;
+        const controlOneX = current[0] + (next[0] - previous[0]) / 6;
+        const controlOneY = current[1] + (next[1] - previous[1]) / 6;
+        const controlTwoX = next[0] - (following[0] - current[0]) / 6;
+        const controlTwoY = next[1] - (following[1] - current[1]) / 6;
+
+        commands.push(`C${round(controlOneX)} ${round(controlOneY)} ${round(controlTwoX)} ${round(controlTwoY)} ${next[0]} ${next[1]}`);
+    }
+
+    return commands.join(" ");
+}
+
+const convergenceStreamSpecs = [
     {
         id: "north-west",
         delay: 0.08,
-        path: "M210 118 C468 105 650 116 760 250 C868 382 770 530 595 522 C432 515 350 402 410 286 C468 176 634 176 700 280 C756 368 686 446 570 420 C490 402 472 334 542 302",
+        points: [
+            [210, 118],
+            [570, 120],
+            [760, 250],
+            [780, 430],
+            [595, 522],
+            [410, 470],
+            [350, 320],
+            [470, 190],
+            [650, 200],
+            [720, 330],
+            [650, 430],
+            [520, 400],
+            [542, 302],
+        ],
     },
     {
         id: "north-east",
         delay: 0.14,
-        path: "M990 142 C868 302 816 500 630 548 C450 594 304 474 340 302 C374 146 554 78 700 156 C840 234 866 404 750 488 C650 562 502 510 470 396 C446 312 520 246 658 303",
+        points: [
+            [990, 142],
+            [850, 360],
+            [630, 548],
+            [410, 520],
+            [340, 302],
+            [450, 140],
+            [700, 156],
+            [850, 300],
+            [750, 488],
+            [520, 470],
+            [470, 330],
+            [560, 250],
+            [658, 303],
+        ],
     },
     {
         id: "south-west",
         delay: 0.2,
-        path: "M220 610 C350 438 360 236 545 180 C720 128 876 246 860 420 C845 584 680 664 520 596 C366 530 310 342 420 226 C520 122 700 164 770 300 C824 406 754 530 625 524 C520 520 456 426 535 392",
+        points: [
+            [220, 610],
+            [360, 300],
+            [545, 180],
+            [800, 250],
+            [860, 420],
+            [680, 600],
+            [450, 560],
+            [320, 360],
+            [420, 226],
+            [650, 170],
+            [770, 300],
+            [730, 480],
+            [535, 392],
+        ],
     },
     {
         id: "south-east",
         delay: 0.26,
-        path: "M980 620 C732 636 546 600 445 456 C350 316 420 156 585 126 C744 96 884 206 900 366 C914 520 776 620 625 590 C480 562 390 430 435 300 C476 186 620 146 715 226 C800 296 804 420 720 484 C650 538 562 496 665 392",
+        points: [
+            [980, 620],
+            [650, 620],
+            [445, 456],
+            [380, 260],
+            [585, 126],
+            [820, 180],
+            [900, 366],
+            [800, 550],
+            [625, 590],
+            [430, 450],
+            [435, 300],
+            [600, 160],
+            [760, 280],
+            [720, 484],
+            [665, 392],
+        ],
     },
 ] as const;
+
+const convergenceStreams = convergenceStreamSpecs.map((stream) => ({ ...stream, path: createSmoothPath(stream.points) }));
 
 const streamTrail = [
     { lag: 0.022, rx: 18, ry: 1.35, opacity: 0.66 },
@@ -89,7 +173,7 @@ export function StartupIntro() {
 
                                 return (
                                     <ellipse className="startup-intro__stream-particle" cx="0" cy="0" rx={particle.rx} ry={particle.ry} key={particleIndex}>
-                                        <animateMotion dur={`${duration}s`} begin={`${begin}s`} fill="freeze" rotate="auto">
+                                        <animateMotion dur={`${duration}s`} begin={`${begin}s`} fill="freeze" rotate="auto" calcMode="paced">
                                             <mpath href={`#${pathId}`} />
                                         </animateMotion>
                                         <animate attributeName="opacity" values={`0;${particle.opacity};${particle.opacity * 0.8};0`} keyTimes="0;0.08;0.72;1" dur={`${duration}s`} begin={`${begin}s`} fill="freeze" />
@@ -97,7 +181,7 @@ export function StartupIntro() {
                                 );
                             })}
                             <ellipse className="startup-intro__stream-head" cx="0" cy="0" rx="22" ry="1.6">
-                                <animateMotion dur={`${duration}s`} begin={`${stream.delay}s`} fill="freeze" rotate="auto">
+                                <animateMotion dur={`${duration}s`} begin={`${stream.delay}s`} fill="freeze" rotate="auto" calcMode="paced">
                                     <mpath href={`#${pathId}`} />
                                 </animateMotion>
                                 <animate attributeName="opacity" values="0;0.96;0.92;0" keyTimes="0;0.06;0.78;1" dur={`${duration}s`} begin={`${stream.delay}s`} fill="freeze" />
