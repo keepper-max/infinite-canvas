@@ -33,88 +33,60 @@ function createSmoothPath(points: readonly PathPoint[]) {
     return commands.join(" ");
 }
 
+function createSpiralPath(start: PathPoint, end: PathPoint) {
+    const center: PathPoint = [600, 350];
+    const startX = start[0] - center[0];
+    const startY = start[1] - center[1];
+    const endX = end[0] - center[0];
+    const endY = end[1] - center[1];
+    const startRadius = Math.hypot(startX, startY);
+    const endRadius = Math.hypot(endX, endY);
+    const startAngle = Math.atan2(startY, startX);
+    const endAngle = Math.atan2(endY, endX);
+    const shortestAngularDelta = Math.atan2(Math.sin(endAngle - startAngle), Math.cos(endAngle - startAngle));
+    const angularTravel = Math.PI * 2 + shortestAngularDelta;
+    const sampleCount = 36;
+    const points = Array.from({ length: sampleCount + 1 }, (_, index) => {
+        const progress = index / sampleCount;
+        const angle = startAngle + angularTravel * progress;
+        const radius = startRadius + (endRadius - startRadius) * progress;
+
+        return [center[0] + Math.cos(angle) * radius, center[1] + Math.sin(angle) * radius] as const;
+    });
+
+    points[0] = start;
+    points[points.length - 1] = end;
+    return createSmoothPath(points);
+}
+
 const convergenceStreamSpecs = [
     {
         id: "north-west",
         delay: 0.08,
-        points: [
-            [210, 118],
-            [570, 120],
-            [760, 250],
-            [780, 430],
-            [595, 522],
-            [410, 470],
-            [350, 320],
-            [470, 190],
-            [650, 200],
-            [720, 330],
-            [650, 430],
-            [520, 400],
-            [542, 302],
-        ],
+        start: [210, 118],
+        end: [542, 302],
     },
     {
         id: "north-east",
         delay: 0.14,
-        points: [
-            [990, 142],
-            [850, 360],
-            [630, 548],
-            [410, 520],
-            [340, 302],
-            [450, 140],
-            [700, 156],
-            [850, 300],
-            [750, 488],
-            [520, 470],
-            [470, 330],
-            [560, 250],
-            [658, 303],
-        ],
+        start: [990, 142],
+        end: [658, 303],
     },
     {
         id: "south-west",
         delay: 0.2,
-        points: [
-            [220, 610],
-            [360, 300],
-            [545, 180],
-            [800, 250],
-            [860, 420],
-            [680, 600],
-            [450, 560],
-            [320, 360],
-            [420, 226],
-            [650, 170],
-            [770, 300],
-            [730, 480],
-            [535, 392],
-        ],
+        start: [220, 610],
+        end: [535, 392],
     },
     {
         id: "south-east",
         delay: 0.26,
-        points: [
-            [980, 620],
-            [650, 620],
-            [445, 456],
-            [380, 260],
-            [585, 126],
-            [820, 180],
-            [900, 366],
-            [800, 550],
-            [625, 590],
-            [430, 450],
-            [435, 300],
-            [600, 160],
-            [760, 280],
-            [720, 484],
-            [665, 392],
-        ],
+        start: [980, 620],
+        end: [665, 392],
     },
 ] as const;
 
-const convergenceStreams = convergenceStreamSpecs.map((stream) => ({ ...stream, path: createSmoothPath(stream.points) }));
+const convergenceStreams = convergenceStreamSpecs.map((stream) => ({ ...stream, path: createSpiralPath(stream.start, stream.end) }));
 
 const streamTrail = [
     { lag: 0.022, rx: 18, ry: 1.35, opacity: 0.66 },
