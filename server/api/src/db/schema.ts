@@ -734,6 +734,27 @@ export const adminAuditLogs = pgTable("admin_audit_logs", {
     .notNull(),
 });
 
+export const userFeedback = pgTable(
+  "user_feedback",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    category: text("category").notNull(),
+    content: text("content").notNull(),
+    contact: text("contact"),
+    pagePath: text("page_path"),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => [
+    index("user_feedback_created_idx").on(table.createdAt),
+    index("user_feedback_user_created_idx").on(table.userId, table.createdAt),
+  ],
+);
+
 export const schema = {
   users,
   sessions,
@@ -763,4 +784,5 @@ export const schema = {
   teamMembers,
   teamProjects,
   adminAuditLogs,
+  userFeedback,
 };

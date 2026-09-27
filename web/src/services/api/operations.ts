@@ -166,6 +166,15 @@ export type AdminJob = {
     finishedAt?: string;
 };
 export type AdminAuditLog = { id: number; action: string; targetType?: string; targetId?: string; requestId?: string; metadata: Record<string, unknown>; actorEmail?: string; createdAt: string };
+export type UserFeedback = {
+    id: string;
+    category: "problem" | "suggestion";
+    content: string;
+    contact?: string;
+    pagePath?: string;
+    userEmail: string;
+    createdAt: string;
+};
 export type PageResult<T> = { items: T[]; total: number; page: number; pageSize: number };
 export type UsageBreakdown = Record<"model" | "project" | "capability" | "day", Array<{ key: string; currency: string; calls: number; totalTokens: string; totalAmount: string }>>;
 export type AdminUserDetail = {
@@ -178,6 +187,12 @@ export type AdminUserDetail = {
 
 export function getOperationsCapabilities(signal?: AbortSignal) {
     return platformRequest<OperationsCapabilities>("/api/operations/capabilities", { signal });
+}
+export function createFeedback(input: { category: UserFeedback["category"]; content: string; contact?: string; pagePath?: string }) {
+    return platformRequest<{ feedback: Pick<UserFeedback, "id" | "category" | "createdAt"> }>("/api/feedback", {
+        method: "POST",
+        body: JSON.stringify(input),
+    });
 }
 export function getCreditAccount(signal?: AbortSignal) {
     return platformRequest<CreditAccount>("/api/billing/account", { signal });
@@ -318,6 +333,9 @@ export function reconcileAdminJob(jobId: string) {
 }
 export function getAdminAuditLogs(input: Record<string, string | number | boolean | undefined> = {}, signal?: AbortSignal) {
     return platformRequest<PageResult<AdminAuditLog>>(`/api/admin/audit-logs${adminQuery(input)}`, { signal });
+}
+export function getAdminFeedback(input: Record<string, string | number | boolean | undefined> = {}, signal?: AbortSignal) {
+    return platformRequest<PageResult<UserFeedback>>(`/api/admin/feedback${adminQuery(input)}`, { signal });
 }
 export function getAdminProjectContent(projectId: string, signal?: AbortSignal) {
     return platformRequest<Record<string, unknown>>(`/api/admin/projects/${encodeURIComponent(projectId)}/content`, { signal });

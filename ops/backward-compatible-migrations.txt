@@ -5,3 +5,4 @@
 0029_email_verification.sql
 0030_password_reset.sql
 0031_runninghub_global_llm.sql
+0032_user_feedback.sql

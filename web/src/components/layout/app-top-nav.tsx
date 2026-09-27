@@ -1,4 +1,4 @@
-import { Bot, LoaderCircle, Menu, ShieldCheck } from "lucide-react";
+import { Bot, LoaderCircle, Menu, MessageSquareText, ShieldCheck } from "lucide-react";
 import { Button, Tooltip } from "antd";
 import { Link, useLocation } from "react-router-dom";
 import { useTranslation } from "react-i18next";
@@ -7,6 +7,7 @@ import { navigationTools, type NavigationToolSlug } from "@/constant/navigation-
 import { AppConfigModal } from "@/components/layout/app-config-modal";
 import { MobileNavDrawer } from "@/components/layout/mobile-nav-drawer";
 import { UserStatusActions } from "@/components/layout/user-status-actions";
+import { FeedbackModal } from "@/components/layout/feedback-modal";
 import { CODEX_AGENT_ENABLED } from "@/constant/env";
 import { cn } from "@/lib/utils";
 import { preloadNavigationRoute } from "@/lib/route-modules";
@@ -27,6 +28,7 @@ export function AppTopNav({ canvasProject, canvasVisible, onCanvasPointerEnter, 
     const { user } = useAuth();
     const { pathname } = useLocation();
     const [mobileNavOpen, setMobileNavOpen] = useState(false);
+    const [feedbackOpen, setFeedbackOpen] = useState(false);
     const [loadingToolSlug, setLoadingToolSlug] = useState<NavigationToolSlug | null>(null);
     const autoConnectRef = useRef(false);
     const navigationRequestRef = useRef(0);
@@ -116,6 +118,17 @@ export function AppTopNav({ canvasProject, canvasVisible, onCanvasPointerEnter, 
                     </div>
 
                     <div className="my-auto flex h-9 min-w-0 items-center justify-end gap-2 justify-self-end whitespace-nowrap">
+                        <Tooltip title={t("feedback.title")}>
+                            <Button
+                                type="text"
+                                className="!h-8 !min-w-8 !px-2"
+                                icon={<MessageSquareText className="size-4" />}
+                                onClick={() => setFeedbackOpen(true)}
+                                aria-label={t("feedback.title")}
+                            >
+                                <span className="hidden 2xl:inline">{t("feedback.shortLabel")}</span>
+                            </Button>
+                        </Tooltip>
                         {user.isAdmin ? (
                             <Tooltip title="管理后台">
                                 <Link to="/admin" className="inline-flex size-8 items-center justify-center rounded-full text-stone-500 transition hover:bg-stone-100 hover:text-stone-950 dark:hover:bg-white/10 dark:hover:text-white" aria-label="管理后台">
@@ -135,6 +148,7 @@ export function AppTopNav({ canvasProject, canvasVisible, onCanvasPointerEnter, 
 
             <MobileNavDrawer open={mobileNavOpen} activeToolSlug={activeToolSlug} showOperations={user.isAdmin} onClose={() => setMobileNavOpen(false)} />
             <AppConfigModal />
+            <FeedbackModal open={feedbackOpen} onClose={() => setFeedbackOpen(false)} />
         </>
     );
 }

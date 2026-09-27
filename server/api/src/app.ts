@@ -1342,6 +1342,28 @@ export function createApp(
     return context.json(success(context, download));
   });
 
+  app.post("/api/feedback", async (context) => {
+    const user = await requireUser(context.req.raw, repository, config);
+    const feedback = await requireOperationsService(operationsService).createFeedback(
+      user.id,
+      feedbackInput.parse(await readJson(context.req.raw)),
+    );
+    return context.json(success(context, { feedback }), 201);
+  });
+
+  app.get("/api/admin/feedback", async (context) => {
+    const user = await requireUser(context.req.raw, repository, config);
+    return context.json(
+      success(
+        context,
+        await requireOperationsService(operationsService).adminFeedback(
+          user.id,
+          parseAdminQuery(context),
+        ),
+      ),
+    );
+  });
+
   app.get("/api/assets/storage-usage", async (context) => {
     const user = await requireUser(context.req.raw, repository, config);
     const service = requireAssetService(assetService);
@@ -1708,6 +1730,12 @@ const managedProviderInput = z
   .strict();
 const modelEnabledInput = z.object({ enabled: z.boolean() }).strict();
 const paymentAccessInput = z.object({ publicRechargeEnabled: z.boolean() }).strict();
+const feedbackInput = z.object({
+  category: z.enum(["problem", "suggestion"]),
+  content: z.string().trim().min(2).max(2000),
+  contact: z.string().trim().max(200).optional(),
+  pagePath: z.string().trim().max(500).optional(),
+}).strict();
 const adminOverviewQueryInput = z
   .object({
     dateFrom: z.string().date().optional(),

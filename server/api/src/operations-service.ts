@@ -64,6 +64,11 @@ export interface OperationsServicePort {
     userId: string,
     projectId: string,
   ): Promise<unknown>;
+  createFeedback(
+    userId: string,
+    input: { category: "problem" | "suggestion"; content: string; contact?: string; pagePath?: string },
+  ): Promise<unknown>;
+  adminFeedback(userId: string, query: AdminListQuery): Promise<unknown>;
   adminOverview(userId: string, range?: AdminOverviewRange): Promise<unknown>;
   adminFailures(userId: string): Promise<unknown>;
   adminModels(userId: string, providerId?: string): Promise<unknown>;
@@ -226,6 +231,60 @@ export class OperationsService implements OperationsServicePort {
       [isAdmin],
     );
     return result.rows.map(serializeBillingPlan);
+  }
+
+  async createFeedback(
+    userId: string,
+    input: { category: "problem" | "suggestion"; content: string; contact?: string; pagePath?: string },
+  ) {
+    const result = await this.pool.query(
+      `insert into user_feedback(user_id,category,content,contact,page_path)
+       values($1,$2,$3,$4,$5)
+       returning id,category,created_at`,
+      [userId, input.category, input.content, input.contact || null, input.pagePath || null],
+    );
+    const row = result.rows[0];
+    return { id: row.id, category: row.category, createdAt: iso(row.created_at) };
+  }
+
+  async adminFeedback(userId: string, query: AdminListQuery) {
+    await this.requireAdmin(userId);
+    const values: unknown[] = [];
+    const filters: string[] = [];
+    if (query.q) {
+      values.push(`%${query.q.toLowerCase()}%`);
+      filters.push(`lower(u.email||' '||f.content||' '||coalesce(f.contact,'')) like $${values.length}`);
+    }
+    if (query.status && ["problem", "suggestion"].includes(query.status)) {
+      values.push(query.status);
+      filters.push(`f.category=$${values.length}`);
+    }
+    const where = filters.length ? `where ${filters.join(" and ")}` : "";
+    const count = await this.pool.query(
+      `select count(*)::int total from user_feedback f join users u on u.id=f.user_id ${where}`,
+      values,
+    );
+    values.push(query.pageSize, (query.page - 1) * query.pageSize);
+    const result = await this.pool.query(
+      `select f.id,f.category,f.content,f.contact,f.page_path,f.created_at,u.email user_email
+       from user_feedback f join users u on u.id=f.user_id ${where}
+       order by f.created_at desc limit $${values.length - 1} offset $${values.length}`,
+      values,
+    );
+    return {
+      items: result.rows.map((row) => ({
+        id: row.id,
+        category: row.category,
+        content: row.content,
+        contact: row.contact,
+        pagePath: row.page_path,
+        userEmail: row.user_email,
+        createdAt: iso(row.created_at),
+      })),
+      total: count.rows[0].total,
+      page: query.page,
+      pageSize: query.pageSize,
+    };
   }
 
   async requestSms(_input: SmsRequestInput): Promise<never> {

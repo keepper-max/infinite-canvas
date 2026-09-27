@@ -1,4 +1,4 @@
-import { ArrowLeft, Boxes, CircleDollarSign, ClipboardList, CreditCard, LayoutDashboard, ReceiptText, ShieldCheck, Users } from "lucide-react";
+import { ArrowLeft, Boxes, CircleDollarSign, ClipboardList, CreditCard, LayoutDashboard, MessageSquareText, ReceiptText, ShieldCheck, Users } from "lucide-react";
 import { Button, DatePicker, Drawer, Empty, Input, InputNumber, Modal, Select, Space, Spin, Switch, Table, Tag, Tooltip, message } from "antd";
 import dayjs, { type Dayjs } from "dayjs";
 import { useCallback, useEffect, useState } from "react";
@@ -8,6 +8,7 @@ import { useAuth } from "@/components/auth/auth-context";
 import { randomUuid } from "@/lib/utils";
 import {
     getAdminAuditLogs,
+    getAdminFeedback,
     getAdminAssetDownload,
     getAdminJobs,
     getAdminModels,
@@ -39,6 +40,7 @@ import {
     createAdminBillingRule,
     updateAdminBillingRule,
     type AdminAuditLog,
+    type UserFeedback,
     type AdminJob,
     type AdminModel,
     type AdminOverview,
@@ -66,6 +68,7 @@ const sections = [
     { key: "billing", label: "计费规则", icon: ReceiptText },
     { key: "payments", label: "充值", icon: CreditCard },
     { key: "models", label: "模型", icon: Boxes },
+    { key: "feedback", label: "反馈", icon: MessageSquareText },
     { key: "audit", label: "审计", icon: ShieldCheck },
 ] as const;
 
@@ -173,6 +176,7 @@ function AdminSection({ section, modelProvider }: { section: Section; modelProvi
     if (section === "billing") return <BillingRulesPanel />;
     if (section === "payments") return <PaymentsPanel />;
     if (section === "models") return <ModelsPanel provider={modelProvider} />;
+    if (section === "feedback") return <FeedbackPanel />;
     return <AuditPanel />;
 }
 
@@ -1668,6 +1672,77 @@ function AuditPanel() {
                             </span>
                         ),
                     },
+                ]}
+            />
+        </Panel>
+    );
+}
+
+function FeedbackPanel() {
+    const [items, setItems] = useState<UserFeedback[]>([]);
+    const [total, setTotal] = useState(0);
+    const [page, setPage] = useState(1);
+    const [q, setQ] = useState("");
+    const [category, setCategory] = useState("");
+    const [loading, setLoading] = useState(true);
+    useEffect(() => {
+        const controller = new AbortController();
+        setLoading(true);
+        getAdminFeedback({ page, pageSize: 20, q, status: category }, controller.signal)
+            .then((data) => {
+                setItems(data.items);
+                setTotal(data.total);
+            })
+            .catch((error) => message.error(error.message))
+            .finally(() => setLoading(false));
+        return () => controller.abort();
+    }, [category, page, q]);
+    return (
+        <Panel
+            title="用户反馈"
+            note="用户从工作台提交的问题和建议；备用联系邮箱：shoushouhuabu@126.com"
+            actions={
+                <Space>
+                    <Select
+                        className="w-32"
+                        value={category}
+                        options={[
+                            { value: "", label: "全部类型" },
+                            { value: "problem", label: "问题" },
+                            { value: "suggestion", label: "建议" },
+                        ]}
+                        onChange={(value) => {
+                            setPage(1);
+                            setCategory(value);
+                        }}
+                    />
+                    <Input.Search
+                        allowClear
+                        placeholder="账号 / 内容 / 联系方式"
+                        onSearch={(value) => {
+                            setPage(1);
+                            setQ(value);
+                        }}
+                    />
+                </Space>
+            }
+        >
+            <Table
+                rowKey="id"
+                loading={loading}
+                dataSource={items}
+                pagination={{ current: page, pageSize: 20, total, showSizeChanger: false, onChange: setPage }}
+                columns={[
+                    { title: "时间", dataIndex: "createdAt", width: 170, render: formatDate },
+                    { title: "类型", dataIndex: "category", width: 90, render: (value) => <Tag color={value === "problem" ? "red" : "blue"}>{value === "problem" ? "问题" : "建议"}</Tag> },
+                    { title: "账号", dataIndex: "userEmail", width: 220 },
+                    {
+                        title: "内容",
+                        dataIndex: "content",
+                        render: (value) => <span className="block min-w-64 whitespace-pre-wrap break-words">{value}</span>,
+                    },
+                    { title: "联系方式", dataIndex: "contact", width: 180, render: (value) => value || "—" },
+                    { title: "提交页面", dataIndex: "pagePath", width: 180, render: (value) => value || "—" },
                 ]}
             />
         </Panel>
