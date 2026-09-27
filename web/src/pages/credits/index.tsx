@@ -144,7 +144,7 @@ export default function CreditsPage() {
                     <div className="flex flex-wrap items-center justify-between gap-4 border-b border-stone-200/80 p-5 dark:border-white/10">
                         <div className="flex items-center gap-3">
                             <img src="/alipay-logo-official.png" alt="支付宝" className="size-10 rounded-xl" />
-                            <div><h2 className="font-semibold">{acceptanceMode ? "支付宝验收订单" : "支付宝充值"}</h2><p className="mt-0.5 text-xs text-stone-500">{acceptanceMode ? "仅超级管理员可使用的 0.01 元真实支付验收。" : "按所选订单套餐充值，订单 10 分钟内有效，积分到账后有效 12 个月。"}</p></div>
+                            <div><h2 className="font-semibold">{acceptanceMode ? "支付宝验收订单" : "支付宝充值"}</h2><p className="mt-0.5 text-xs text-stone-500">{acceptanceMode ? "仅超级管理员可使用的 0.01 元真实支付验收。" : "按所选订单套餐充值，订单 10 分钟内有效，积分到账后有效 12 个月且不支持无理由退款。"}</p></div>
                         </div>
                         {paymentsEnabled ? <Tag color="blue">安全支付</Tag> : <Tag>暂未开放</Tag>}
                     </div>
@@ -163,7 +163,7 @@ export default function CreditsPage() {
                             </div>
                             <div className="mt-4 flex items-start gap-2 text-xs text-stone-500">
                                 <Checkbox checked={acceptedAgreement} onChange={(event) => setAcceptedAgreement(event.target.checked)} />
-                                <span>我已阅读并同意<button type="button" className="mx-1 text-[#1677ff] hover:underline" onClick={() => setAgreementOpen(true)}>《积分充值与使用协议》</button>，付款将在支付宝官方收银台完成。</span>
+                                <span>我已阅读并同意<button type="button" className="mx-1 text-[#1677ff] hover:underline" onClick={() => setAgreementOpen(true)}>《积分充值与使用协议》</button>，并确认积分到账后不支持无理由退款；付款将在支付宝官方收银台完成。</span>
                             </div>
                         </div>
                     ) : <div className="p-5 text-sm text-stone-500">充值功能正在进行上线验收，当前仍可使用积分激活码。</div>}
@@ -186,10 +186,10 @@ export default function CreditsPage() {
             <Modal open={agreementOpen} onCancel={() => setAgreementOpen(false)} footer={<Button type="primary" onClick={() => { setAcceptedAgreement(true); setAgreementOpen(false); }}>同意并关闭</Button>} title="积分充值与使用协议（简明版）" width={680}>
                 <div className="max-h-[60vh] space-y-4 overflow-y-auto pr-2 text-sm leading-7 text-stone-600 dark:text-stone-300">
                     <AgreementSection title="一、适用与生效">本协议由守密人（大连）科技有限公司向守守画布用户提供，适用于积分充值与使用。请在充值前阅读；您勾选同意并完成充值后，本协议生效。</AgreementSection>
-                    <AgreementSection title="二、充值与使用">积分数量及订单金额以您下单时所选套餐为准。积分仅用于本平台服务，不是现金，不可转让或提现；依法应退款的情形不受此限制。服务消耗以相关页面提示和账户流水为准。</AgreementSection>
+                    <AgreementSection title="二、充值与使用">积分数量及订单金额以您下单时所选套餐为准。积分仅用于本平台服务，不是现金，不可转让、提现或折现。服务消耗以相关页面提示和账户流水为准。</AgreementSection>
                     <AgreementSection title="三、有效期与余额">购买积分自到账起有效 12 个月，赠送积分以活动说明为准，并优先使用较早到期的积分。余额不足时不能提交新的生成任务。</AgreementSection>
-                    <AgreementSection title="四、退款与异常">未使用的付费积分可通过客服渠道申请退款；已实际使用部分按消费记录核算。重复扣分、计费错误或未按约提供服务的，经核实后依法退还相应积分或款项。退款原则上退回原支付渠道，赠送积分不折算现金。</AgreementSection>
-                    <AgreementSection title="五、争议与联系">如对充值、扣分或退款有疑问，请联系微信 JPdai8888，并提交订单或任务编号。协议或价格规则调整将提前显著告知，原则上不影响调整前已提交的任务。</AgreementSection>
+                    <AgreementSection title="四、充值确认与异常处理">积分到账即视为对应数字化服务权益已交付，正常充值到账后不支持撤销或无理由退款，请在支付前确认套餐、金额和账号。重复扣款、计费错误、积分未到账或平台未按约提供服务的，经核实后优先通过补发积分、返还误扣积分或冲正流水处理；法律法规另有强制性规定的，从其规定。</AgreementSection>
+                    <AgreementSection title="五、争议与联系">如对充值订单、积分到账或扣分记录有疑问，请联系微信 JPdai8888，并提交订单或任务编号。协议或价格规则调整将提前显著告知，原则上不影响调整前已提交的任务。</AgreementSection>
                 </div>
             </Modal>
         </main>
