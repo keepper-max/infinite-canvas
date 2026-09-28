@@ -20,6 +20,7 @@ import {
     getAdminOverview,
     getAdminProjectContent,
     getAdminCreditPricing,
+    getAdminCreditGuard,
     getAdminActivationCodes,
     getAdminUsage,
     getAdminUser,
@@ -34,6 +35,7 @@ import {
     setAdminModelEnabled,
     setAdminFeedbackStatus,
     setAdminCreditPricing,
+    setAdminCreditGuard,
     setActiveAdminProvider,
     syncAdminPaymentOrder,
     createAdminPaymentPlan,
@@ -58,6 +60,7 @@ import {
     type AdminUser,
     type AdminUserDetail,
     type CreditPricing,
+    type CreditGuardSettings,
     type ActivationCodeRecord,
     type UsageBreakdown,
 } from "@/services/api/operations";
@@ -707,7 +710,7 @@ function UserDrawer({ userId, onClose, onChanged }: { userId?: string; onClose: 
                                 { title: "项目", dataIndex: "projectName" },
                                 { title: "模型", dataIndex: "modelId" },
                                 { title: "金额", render: (_, item) => formatUsageAmount(item.currency, item.totalAmount) },
-                                { title: "积分", render: (_, item) => (item.creditPoints ? `${formatPoints(item.creditPoints)} 分` : creditStatusLabel(item.creditStatus)) },
+                                { title: "积分", render: (_, item) => (item.creditStatus === "payment_required" ? `待支付 ${formatPoints(item.creditPoints || 0)} 分` : item.creditPoints ? `${formatPoints(item.creditPoints)} 分` : creditStatusLabel(item.creditStatus)) },
                             ]}
                         />
                     </Panel>
@@ -842,6 +845,8 @@ function UsagePanel() {
     const [loading, setLoading] = useState(true);
     const [pricing, setPricing] = useState<CreditPricing>();
     const [usdRate, setUsdRate] = useState("");
+    const [guard, setGuard] = useState<CreditGuardSettings>();
+    const [videoMinimumPoints, setVideoMinimumPoints] = useState<number | null>(null);
     const [codeCredits, setCodeCredits] = useState("");
     const [codeExpiry, setCodeExpiry] = useState("");
     const [issuedCode, setIssuedCode] = useState("");
@@ -868,6 +873,16 @@ function UsagePanel() {
     }, []);
     useEffect(() => {
         const controller = new AbortController();
+        getAdminCreditGuard(controller.signal)
+            .then((value) => {
+                setGuard(value);
+                setVideoMinimumPoints(value.videoMinimumPoints);
+            })
+            .catch((error) => message.error(error.message));
+        return () => controller.abort();
+    }, []);
+    useEffect(() => {
+        const controller = new AbortController();
         getAdminActivationCodes(controller.signal).then(setCodes).catch((error) => message.error(error.message));
         return () => controller.abort();
     }, []);
@@ -876,6 +891,16 @@ function UsagePanel() {
         setPricing(value);
         setUsdRate(value.usdCnyRate || "");
         message.success("USD/CNY 结算汇率已更新，待计费任务将自动重试");
+    };
+    const saveGuard = async () => {
+        if (!Number.isSafeInteger(videoMinimumPoints) || !videoMinimumPoints || videoMinimumPoints <= 0) {
+            message.error("请输入大于 0 的整数积分");
+            return;
+        }
+        const value = await setAdminCreditGuard(videoMinimumPoints);
+        setGuard(value);
+        setVideoMinimumPoints(value.videoMinimumPoints);
+        message.success("视频最低生成许可值已更新");
     };
     const issueCode = async () => {
         const credits = Number(codeCredits);
@@ -908,6 +933,18 @@ function UsagePanel() {
                         保存汇率
                     </Button>
                     <span className="pb-2 text-xs text-stone-500">Token360 返回 USD 时按此汇率换算；CNY 账单不使用汇率。</span>
+                </div>
+            </Panel>
+            <Panel title="生成积分保护" note="视频任务提交时先检查并冻结最低许可积分；实际费用不足时结果将等待充值后自动交付">
+                <div className="flex flex-wrap items-end gap-3">
+                    <label className="text-sm">
+                        <span className="mb-1 block text-stone-500">视频最低生成许可值</span>
+                        <InputNumber min={1} max={1_000_000_000} precision={0} value={videoMinimumPoints} className="w-52" onChange={setVideoMinimumPoints} addonAfter="积分" />
+                    </label>
+                    <Button type="primary" disabled={!videoMinimumPoints || videoMinimumPoints === guard?.videoMinimumPoints} onClick={() => void saveGuard()}>
+                        保存许可值
+                    </Button>
+                    <span className="pb-2 text-xs text-stone-500">默认 3000；修改后仅影响新提交的视频任务。</span>
                 </div>
             </Panel>
             <Panel title="积分激活码" note="与其他积分共用余额；完整激活码仅在生成时显示一次">
@@ -954,7 +991,7 @@ function UsagePanel() {
                                 ? <span className="font-mono text-stone-500">{formatUsageAmount(item.currency, item.providerPaidAmount)}</span>
                                 : "—",
                         },
-                        { title: "扣除积分", render: (_, item) => (item.creditPoints ? <b className="font-mono">{formatPoints(item.creditPoints)}</b> : creditStatusLabel(item.creditStatus)) },
+                        { title: "扣除积分", render: (_, item) => (item.creditStatus === "payment_required" ? <b className="font-mono text-amber-600">待支付 {formatPoints(item.creditPoints || 0)}</b> : item.creditPoints ? <b className="font-mono">{formatPoints(item.creditPoints)}</b> : creditStatusLabel(item.creditStatus)) },
                         { title: "账单 ID", dataIndex: "billingRequestId", render: copyable },
                         { title: "对账时间", dataIndex: "reconciledAt", render: formatDate },
                     ]}
@@ -1038,7 +1075,7 @@ function JobsPanel() {
                         allowClear
                         className="w-32"
                         placeholder="生成状态"
-                        options={["completed", "failed", "cancelled", "running"].map((value) => ({ value }))}
+                        options={["completed", "payment_required", "billing_pending", "failed", "cancelled", "running"].map((value) => ({ value }))}
                         onChange={(value) => {
                             setPage(1);
                             setStatus(value);
@@ -1954,6 +1991,7 @@ function creditStatusLabel(value?: string) {
         pending: "待计费",
         pending_rate: "待设置汇率",
         pending_currency: "待确认币种",
+        payment_required: "待支付",
         unsupported_currency: "币种不支持",
         unavailable: "无实际金额",
         free: "0 分",

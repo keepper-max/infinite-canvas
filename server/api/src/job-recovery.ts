@@ -57,10 +57,11 @@ export async function recoverInterruptedProviderJobs(
       [row.id],
     );
     if (versions.rowCount) {
-      const versionIds = versions.rows.map((item) => item.asset_version_id);
       await pool.query(
-        "update generation_jobs set status='completed',progress=100,output_asset_version_ids=$2,finished_at=now(),heartbeat_at=now(),updated_at=now() where id=$1 and status in ('submitting','running','downloading','persisting')",
-        [row.id, JSON.stringify(versionIds)],
+        `update generation_jobs set status='billing_pending',credit_delivery_status='billing_pending',
+         progress=100,output_asset_version_ids='[]'::jsonb,finished_at=now(),heartbeat_at=now(),updated_at=now()
+         where id=$1 and status in ('submitting','running','downloading','persisting')`,
+        [row.id],
       );
       continue;
     }

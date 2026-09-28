@@ -101,6 +101,7 @@ const executor = new JobExecutor(
   billing,
   undefined,
   storageQuota,
+  credits,
 );
 const recoveryQueue = createQueue(config.jobs);
 const transferPort = recoveryQueue.transferPort;
@@ -114,6 +115,7 @@ const transferExecutor = new JobExecutor(
   billing,
   transferPort,
   storageQuota,
+  credits,
 );
 const recoveredJobs = await recoverInterruptedProviderJobs(
   pool,

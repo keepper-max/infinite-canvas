@@ -59,7 +59,11 @@ await modelGateway
     ),
   );
 const jobQueue = createQueue(config.jobs);
-const creditService = new CreditService(pool, config.operations.adminEmails);
+const creditService = new CreditService(
+  pool,
+  config.operations.adminEmails,
+  jobQueue.publish,
+);
 const storageQuota = new StorageQuotaService(
   pool,
   config.assetStorageQuotaBytes,

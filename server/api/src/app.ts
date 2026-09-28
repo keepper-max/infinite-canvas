@@ -1342,6 +1342,31 @@ export function createApp(
     return context.json(success(context, download));
   });
 
+  app.get("/api/admin/credits/guard", async (context) => {
+    const user = await requireUser(context.req.raw, repository, config);
+    return context.json(
+      success(
+        context,
+        await requireOperationsService(operationsService).creditGuard(user.id),
+      ),
+    );
+  });
+
+  app.patch("/api/admin/credits/guard", async (context) => {
+    const user = await requireUser(context.req.raw, repository, config);
+    const input = creditGuardInput.parse(await readJson(context.req.raw));
+    return context.json(
+      success(
+        context,
+        await requireOperationsService(operationsService).setCreditGuard(
+          user.id,
+          input.videoMinimumPoints,
+          context.get("requestId"),
+        ),
+      ),
+    );
+  });
+
   app.post("/api/feedback", async (context) => {
     const user = await requireUser(context.req.raw, repository, config);
     const feedback = await requireOperationsService(operationsService).createFeedback(
@@ -1776,6 +1801,11 @@ const creditPricingInput = z
       .trim()
       .max(32)
       .regex(/^\d+(?:\.\d{1,8})?$/),
+  })
+  .strict();
+const creditGuardInput = z
+  .object({
+    videoMinimumPoints: z.number().int().positive().max(1_000_000_000),
   })
   .strict();
 const creditGrantInput = z

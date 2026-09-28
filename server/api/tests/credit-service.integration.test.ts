@@ -33,8 +33,59 @@ test("activation code is one-time and joins the same credit balance", { skip: !d
   } finally { await pool.end(); }
 });
 
+test("video generation reserves the configurable minimum atomically", { skip: !databaseUrl }, async () => {
+  const { pool } = createDatabase(databaseUrl!);
+  try {
+    await applyMigrations(pool);
+    const suffix = crypto.randomUUID();
+    const user = await pool.query<{ id: string }>(
+      "insert into users(email,password_hash,is_admin) values($1,'test',true) returning id",
+      [`credit-guard-${suffix}@example.com`],
+    );
+    const userId = user.rows[0]!.id;
+    const credits = new CreditService(pool);
+    await credits.grant(userId, userId, {
+      credits: 2999,
+      source: "promotion",
+      note: "guard test",
+      idempotencyKey: crypto.randomUUID(),
+    }, crypto.randomUUID());
+    const insufficient = await pool.connect();
+    try {
+      await insufficient.query("begin");
+      await assert.rejects(() => credits.reserveForJob(insufficient, userId, "video"), {
+        code: "INSUFFICIENT_CREDITS",
+      });
+      await insufficient.query("rollback");
+    } finally {
+      insufficient.release();
+    }
+    await credits.setVideoMinimumPoints(userId, 2500, crypto.randomUUID());
+    assert.deepEqual(await credits.guardSettings(), { videoMinimumPoints: 2500 });
+    const client = await pool.connect();
+    try {
+      await client.query("begin");
+      assert.equal(await credits.reserveForJob(client, userId, "video"), 2500n);
+      const account = await client.query<{ reserved: string }>(
+        "select reserved::text from credit_accounts where user_id=$1",
+        [userId],
+      );
+      assert.equal(account.rows[0]!.reserved, "2500");
+      await client.query("rollback");
+    } finally {
+      client.release();
+    }
+  } finally {
+    await pool.query(
+      `update platform_settings set value='{"videoMinimumPoints":3000}'::jsonb,updated_at=now()
+       where key='credit_guard'`,
+    ).catch(() => undefined);
+    await pool.end();
+  }
+});
+
 test(
-  "credit settlement is idempotent and consumes earliest grants before debt",
+  "credit settlement is idempotent, locks unaffordable results, and unlocks after top-up",
   { skip: !databaseUrl },
   async () => {
     const { pool } = createDatabase(databaseUrl!);
@@ -154,10 +205,17 @@ test(
         amount: "10",
       });
       assert.deepEqual(await credits.settleUsage(secondJobId), {
-        status: "charged",
+        status: "payment_required",
         points: "1200",
-        balance: "-400",
+        balance: "800",
       });
+      const held = await pool.query<{ balance: string; reserved: string; charges: string }>(
+        `select balance::text,reserved::text,
+          (select count(*)::text from credit_ledger where idempotency_key=$2) charges
+         from credit_accounts where user_id=$1`,
+        [userId, `generation:${secondJobId}`],
+      );
+      assert.deepEqual(held.rows[0], { balance: "800", reserved: "1200", charges: "0" });
       await assert.rejects(() => credits.assertCanCreate(userId), {
         code: "INSUFFICIENT_CREDITS",
       });

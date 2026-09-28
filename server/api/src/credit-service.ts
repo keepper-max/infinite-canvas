@@ -34,8 +34,18 @@ export type PaymentCreditInput = {
   providerOrderId: string;
 };
 
+export type CreditGuardSettings = {
+  videoMinimumPoints: number;
+};
+
+type CreditEventPublisher = (projectId: string) => Promise<unknown>;
+
 export class CreditService {
-  constructor(private readonly pool: Pool, private readonly adminEmails: string[] = []) {}
+  constructor(
+    private readonly pool: Pool,
+    private readonly adminEmails: string[] = [],
+    private readonly publish: CreditEventPublisher = async () => undefined,
+  ) {}
 
   async issueActivationCode(actorId: string, credits: number, expiresAt: string, requestId: string) {
     if (!Number.isSafeInteger(credits) || credits <= 0 || new Date(expiresAt).getTime() <= Date.now() || Number.isNaN(new Date(expiresAt).getTime()))
@@ -66,7 +76,7 @@ export class CreditService {
   async redeemActivationCode(userId: string, code: string) {
     if (!isActivationCode(code))
       throw new DomainError("ACTIVATION_INVALID", "激活码无效或已使用", 400);
-    return transaction(this.pool, async (client) => {
+    const credited = await transaction(this.pool, async (client) => {
       const [claimed] = (await client.query(
         `update activation_codes set redeemed_by=$2,redeemed_at=now()
          where code_hash=$1 and redeemed_at is null and revoked_at is null and expires_at>now()
@@ -74,6 +84,7 @@ export class CreditService {
         [hashActivationCode(code), userId],
       )).rows;
       if (!claimed) throw new DomainError("ACTIVATION_INVALID", "激活码无效或已使用", 400);
+      await lockCreditUser(client, userId);
       const account = await ensureAccount(client, userId, true);
       await expireLots(client, account);
       const current = await accountRow(client, userId);
@@ -97,6 +108,94 @@ export class CreditService {
           `activation:${claimed.id}`, JSON.stringify({ source: "activation", activationCodeId: claimed.id })],
       );
       return { credits: credits.toString(), balance: String(updated.balance) };
+    });
+    const settled = await this.settleHeldForUser(userId);
+    return { ...credited, balance: settled.balance };
+  }
+
+  async guardSettings(client: Queryable = this.pool): Promise<CreditGuardSettings> {
+    const result = await client.query(
+      "select value from platform_settings where key='credit_guard'",
+    );
+    const value = asRecord(result.rows[0]?.value);
+    const configured = Number(value.videoMinimumPoints);
+    return {
+      videoMinimumPoints:
+        Number.isSafeInteger(configured) && configured > 0 ? configured : 3000,
+    };
+  }
+
+  async setVideoMinimumPoints(
+    actorId: string,
+    points: number,
+    requestId: string,
+  ) {
+    if (!Number.isSafeInteger(points) || points <= 0 || points > 1_000_000_000)
+      throw new DomainError(
+        "CREDIT_GUARD_INVALID",
+        "视频最低许可值必须是 1 至 1000000000 之间的整数",
+        400,
+      );
+    return transaction(this.pool, async (client) => {
+      await assertActiveAdmin(client, actorId, this.adminEmails);
+      await client.query(
+        `insert into platform_settings(key,value,updated_by) values('credit_guard',$1,$2)
+         on conflict(key) do update set value=excluded.value,updated_by=excluded.updated_by,updated_at=now()`,
+        [JSON.stringify({ videoMinimumPoints: points }), actorId],
+      );
+      await audit(
+        client,
+        actorId,
+        "credits.guard.update",
+        "platform_setting",
+        "credit_guard",
+        { videoMinimumPoints: points },
+        requestId,
+      );
+      return { videoMinimumPoints: points };
+    });
+  }
+
+  async reserveForJob(
+    client: PoolClient,
+    userId: string,
+    capability: string,
+  ) {
+    await lockCreditUser(client, userId);
+    const account = await ensureAccount(client, userId, true);
+    await expireLots(client, account);
+    const current = await accountRow(client, userId, true);
+    const required = BigInt(
+      capability === "video"
+        ? (await this.guardSettings(client)).videoMinimumPoints
+        : 1,
+    );
+    const balance = BigInt(String(current.balance));
+    const reserved = BigInt(String(current.reserved));
+    if (balance - reserved < required)
+      throw new DomainError(
+        "INSUFFICIENT_CREDITS",
+        capability === "video"
+          ? `视频生成至少需要 ${required.toString()} 积分，当前可用积分不足`
+          : "积分余额不足，请充值或联系管理员补充积分",
+        409,
+      );
+    await client.query(
+      "update credit_accounts set reserved=reserved+$2::bigint,updated_at=now() where id=$1",
+      [current.id, required.toString()],
+    );
+    return required;
+  }
+
+  async releaseReservation(jobId: string) {
+    return transaction(this.pool, async (client) => {
+      const job = await client.query(
+        "select created_by from generation_jobs where id=$1",
+        [jobId],
+      );
+      if (!job.rows[0]) return false;
+      await lockCreditUser(client, String(job.rows[0].created_by));
+      return releaseJobReservation(client, jobId);
     });
   }
 
@@ -151,6 +250,7 @@ export class CreditService {
 
   async account(userId: string) {
     return transaction(this.pool, async (client) => {
+      await lockCreditUser(client, userId);
       const account = await ensureAccount(client, userId, true);
       await expireLots(client, account);
       const refreshed = await accountRow(client, userId);
@@ -167,7 +267,7 @@ export class CreditService {
         ),
         client.query(
           `select count(*)::int total from generation_usage
-           where user_id=$1 and credit_status in ('pending','pending_rate','pending_currency')`,
+           where user_id=$1 and credit_status in ('pending','pending_rate','pending_currency','payment_required')`,
           [userId],
         ),
       ]);
@@ -184,10 +284,14 @@ export class CreditService {
 
   async assertCanCreate(userId: string) {
     return transaction(this.pool, async (client) => {
+      await lockCreditUser(client, userId);
       const account = await ensureAccount(client, userId, true);
       await expireLots(client, account);
       const refreshed = await accountRow(client, userId);
-      if (BigInt(String(refreshed.balance)) <= 0n)
+      if (
+        BigInt(String(refreshed.balance)) - BigInt(String(refreshed.reserved)) <=
+        0n
+      )
         throw new DomainError(
           "INSUFFICIENT_CREDITS",
           "积分余额不足，请充值或联系管理员补充积分",
@@ -202,8 +306,9 @@ export class CreditService {
     input: CreditGrantInput,
     requestId: string,
   ) {
-    return transaction(this.pool, async (client) => {
+    const granted = await transaction(this.pool, async (client) => {
       const credits = BigInt(input.credits);
+      await lockCreditUser(client, targetUserId);
       const account = await ensureAccount(client, targetUserId, true);
       await expireLots(client, account);
       const current = await accountRow(client, targetUserId);
@@ -305,9 +410,21 @@ export class CreditService {
         lot: serializeLot(lot.rows[0]),
       };
     });
+    const settled = await this.settleHeldForUser(targetUserId);
+    const refreshedLot = granted.lot?.id
+      ? (
+          await this.pool.query("select * from credit_lots where id=$1", [granted.lot.id])
+        ).rows[0]
+      : undefined;
+    return {
+      ...granted,
+      account: { ...granted.account, balance: settled.balance, reserved: settled.reserved },
+      ...(refreshedLot ? { lot: serializeLot(refreshedLot) } : {}),
+    };
   }
 
   async creditPurchase(client: PoolClient, input: PaymentCreditInput) {
+    await lockCreditUser(client, input.userId);
     const account = await ensureAccount(client, input.userId, true);
     await expireLots(client, account);
     const current = await accountRow(client, input.userId, true);
@@ -371,17 +488,37 @@ export class CreditService {
   }
 
   async settleUsage(jobId: string) {
-    return transaction(this.pool, async (client) => {
+    const outcome = await transaction(this.pool, async (client) => {
+      const preview = await client.query(
+        "select user_id from generation_usage where job_id=$1",
+        [jobId],
+      );
+      if (!preview.rows[0]) return { status: "missing" };
+      await lockCreditUser(client, String(preview.rows[0].user_id));
       const result = await client.query(
         `select * from generation_usage where job_id=$1 for update`,
         [jobId],
       );
       const usage = result.rows[0];
       if (!usage) return { status: "missing" };
-      if (["charged", "free", "historical"].includes(String(usage.credit_status)))
+      const job = (
+        await client.query("select * from generation_jobs where id=$1 for update", [jobId])
+      ).rows[0];
+      if (!job) return { status: "missing" };
+      if (["charged", "free", "historical"].includes(String(usage.credit_status))) {
+        const projectId = ["charged", "free"].includes(String(usage.credit_status))
+          ? await releaseDelivery(client, jobId)
+          : undefined;
         return {
           status: String(usage.credit_status),
           points: usage.credit_points,
+          projectId,
+        };
+      }
+      if (String(usage.credit_status) === "payment_required")
+        return {
+          status: "payment_required",
+          points: String(usage.credit_points || job.credits_due || 0),
         };
       const amount = positiveOrZeroDecimal(
         usage.total_amount ?? usage.amount_final,
@@ -423,7 +560,9 @@ export class CreditService {
            exchange_rate=$3,markup=$4,points_per_cny=$5,updated_at=now() where job_id=$1`,
           [jobId, amount, exchangeRate, MARKUP, POINTS_PER_CNY.toString()],
         );
-        return { status: "free", points: "0" };
+        await releaseJobReservation(client, jobId);
+        const projectId = await releaseDelivery(client, jobId);
+        return { status: "free", points: "0", projectId };
       }
       const idempotencyKey = `generation:${jobId}`;
       const existing = await client.query(
@@ -439,14 +578,55 @@ export class CreditService {
           exchangeRate,
           points,
         );
-        return { status: "charged", points: points.toString() };
+        await releaseJobReservation(client, jobId);
+        const projectId = await releaseDelivery(client, jobId);
+        return { status: "charged", points: points.toString(), projectId };
       }
       const account = await ensureAccount(client, String(usage.user_id), true);
       await expireLots(client, account);
-      const current = await accountRow(client, String(usage.user_id));
+      const current = await accountRow(client, String(usage.user_id), true);
+      const balance = BigInt(String(current.balance));
+      const reserved = BigInt(String(current.reserved));
+      const jobReservation = BigInt(String(job.credits_reserved || 0));
+      const otherReservations = reserved > jobReservation ? reserved - jobReservation : 0n;
+      if (balance - otherReservations < points) {
+        await client.query(
+          `update credit_accounts set reserved=greatest(0,reserved-$2::bigint)+$3::bigint,updated_at=now()
+           where id=$1`,
+          [current.id, jobReservation.toString(), points.toString()],
+        );
+        await client.query(
+          `update generation_jobs set status='payment_required',credit_delivery_status='payment_required',
+           credits_reserved=0,credits_due=$2,output_asset_version_ids='[]'::jsonb,
+           user_error_code='PAYMENT_REQUIRED',user_error_message=$3,finished_at=now(),updated_at=now()
+           where id=$1`,
+          [jobId, points.toString(), `本次生成需 ${points.toString()} 积分，充值后将自动交付结果`],
+        );
+        await client.query(
+          `update generation_usage set credit_status='payment_required',credit_points=$2,
+           cost_cny=$3::numeric*$4::numeric,exchange_rate=$4,markup=$5,points_per_cny=$6,updated_at=now()
+           where job_id=$1`,
+          [jobId, points.toString(), amount, exchangeRate, MARKUP, POINTS_PER_CNY.toString()],
+        );
+        await appendCreditEvent(
+          client,
+          job,
+          "job.payment_required",
+          "payment_required",
+          `积分不足，需补足 ${points.toString()} 积分后交付结果`,
+          { creditsDue: points.toString() },
+        );
+        return {
+          status: "payment_required",
+          points: points.toString(),
+          balance: balance.toString(),
+          projectId: String(job.project_id),
+        };
+      }
       const updated = await client.query(
-        "update credit_accounts set balance=balance-$2::bigint,updated_at=now() where id=$1 returning *",
-        [current.id, points.toString()],
+        `update credit_accounts set balance=balance-$2::bigint,
+         reserved=greatest(0,reserved-$3::bigint),updated_at=now() where id=$1 returning *`,
+        [current.id, points.toString(), jobReservation.toString()],
       );
       const ledger = await client.query(
         `insert into credit_ledger(account_id,entry_type,delta,balance_after,reference_type,reference_id,idempotency_key,metadata)
@@ -479,12 +659,93 @@ export class CreditService {
         exchangeRate,
         points,
       );
+      const projectId = await releaseDelivery(client, jobId);
       return {
         status: "charged",
         points: points.toString(),
         balance: String(updated.rows[0].balance),
+        projectId,
       };
     });
+    if ("projectId" in outcome && outcome.projectId)
+      await this.publish(String(outcome.projectId)).catch(() => undefined);
+    return withoutProjectId(outcome);
+  }
+
+  async settleHeldForUser(userId: string) {
+    const outcome = await transaction(this.pool, async (client) => {
+      await lockCreditUser(client, userId);
+      const account = await ensureAccount(client, userId, true);
+      await expireLots(client, account);
+      let current = await accountRow(client, userId, true);
+      let balance = BigInt(String(current.balance));
+      const projects: string[] = [];
+      const jobs = await client.query(
+        `select * from generation_jobs where created_by=$1 and credit_delivery_status='payment_required'
+         and credits_due>0 order by created_at,id for update`,
+        [userId],
+      );
+      for (const job of jobs.rows) {
+        const points = BigInt(String(job.credits_due));
+        if (balance < points) break;
+        const usage = (
+          await client.query("select * from generation_usage where job_id=$1 for update", [job.id])
+        ).rows[0];
+        if (!usage || String(usage.credit_status) !== "payment_required") continue;
+        const idempotencyKey = `generation:${job.id}`;
+        const existing = await client.query(
+          "select * from credit_ledger where idempotency_key=$1",
+          [idempotencyKey],
+        );
+        let ledger = existing.rows[0];
+        if (!ledger) {
+          const updated = await client.query(
+            `update credit_accounts set balance=balance-$2::bigint,
+             reserved=greatest(0,reserved-$2::bigint),updated_at=now() where id=$1 returning *`,
+            [current.id, points.toString()],
+          );
+          const inserted = await client.query(
+            `insert into credit_ledger(account_id,entry_type,delta,balance_after,reference_type,reference_id,idempotency_key,metadata)
+             values($1,'generation',-$2::bigint,$3,'generation_job',$4,$5,$6) returning *`,
+            [
+              current.id,
+              points.toString(),
+              String(updated.rows[0].balance),
+              job.id,
+              idempotencyKey,
+              JSON.stringify(usageChargeMetadata(usage)),
+            ],
+          );
+          ledger = inserted.rows[0];
+          await allocateLots(client, current.id, String(ledger.id), points);
+          current = updated.rows[0];
+          balance = BigInt(String(current.balance));
+        }
+        await linkUsageCharge(
+          client,
+          usage,
+          ledger,
+          positiveOrZeroDecimal(usage.total_amount ?? usage.amount_final) || "0",
+          positiveOrZeroDecimal(usage.exchange_rate) || "1",
+          points,
+        );
+        const projectId = await releaseDelivery(client, String(job.id));
+        if (projectId) projects.push(projectId);
+      }
+      current = await accountRow(client, userId, true);
+      return {
+        balance: String(current.balance),
+        reserved: String(current.reserved),
+        projects,
+      };
+    });
+    await this.publishProjects(outcome.projects);
+    return { balance: outcome.balance, reserved: outcome.reserved };
+  }
+
+  async publishProjects(projectIds: string[]) {
+    for (const projectId of [...new Set(projectIds)])
+      await this.publish(projectId).catch(() => undefined);
   }
 
   async runPending(limit = 50) {
@@ -498,12 +759,124 @@ export class CreditService {
   }
 }
 
+async function releaseJobReservation(client: PoolClient, jobId: string) {
+  const job = (
+    await client.query("select * from generation_jobs where id=$1 for update", [jobId])
+  ).rows[0];
+  if (!job) return false;
+  const reserved = BigInt(String(job.credits_reserved || 0));
+  if (reserved > 0n) {
+    await client.query(
+      `update credit_accounts set reserved=greatest(0,reserved-$2::bigint),updated_at=now()
+       where user_id=$1`,
+      [job.created_by, reserved.toString()],
+    );
+    await client.query(
+      "update generation_jobs set credits_reserved=0,updated_at=now() where id=$1",
+      [jobId],
+    );
+  }
+  return reserved > 0n;
+}
+
+async function releaseDelivery(client: PoolClient, jobId: string) {
+  const job = (
+    await client.query("select * from generation_jobs where id=$1 for update", [jobId])
+  ).rows[0];
+  if (!job || String(job.credit_delivery_status) === "released") return undefined;
+  if (!["billing_pending", "payment_required"].includes(String(job.credit_delivery_status))) {
+    await client.query(
+      `update generation_jobs set credit_delivery_status='released',credits_reserved=0,credits_due=0,updated_at=now()
+       where id=$1`,
+      [jobId],
+    );
+    return undefined;
+  }
+  const artifacts = await client.query(
+    `select id,asset_id,asset_version_id,role,sort_order,mime_type,metadata
+     from job_artifacts where job_id=$1 order by sort_order`,
+    [jobId],
+  );
+  const versionIds = artifacts.rows
+    .map((row) => row.asset_version_id)
+    .filter(Boolean)
+    .map(String);
+  await client.query(
+    `update assets set status='active',updated_at=now()
+     where id in (select asset_id from job_artifacts where job_id=$1 and asset_id is not null)`,
+    [jobId],
+  );
+  await client.query(
+    `update generation_jobs set status='completed',progress=100,credit_delivery_status='released',
+     credits_reserved=0,credits_due=0,output_asset_version_ids=$2::jsonb,
+     user_error_code=null,user_error_message=null,finished_at=coalesce(finished_at,now()),updated_at=now()
+     where id=$1`,
+    [jobId, JSON.stringify(versionIds)],
+  );
+  await appendCreditEvent(
+    client,
+    job,
+    "job.completed",
+    "completed",
+    "生成完成，请尽快下载到本地",
+    {
+      artifacts: artifacts.rows.map((row) => ({
+        id: row.id,
+        assetId: row.asset_id,
+        assetVersionId: row.asset_version_id,
+        role: row.role,
+        mimeType: row.mime_type,
+        ...(row.metadata || {}),
+      })),
+    },
+  );
+  return String(job.project_id);
+}
+
+async function appendCreditEvent(
+  client: PoolClient,
+  job: QueryResultRow,
+  type: string,
+  status: string,
+  message: string,
+  data: Record<string, unknown> = {},
+) {
+  await client.query(
+    `insert into job_events(job_id,project_id,node_key,sequence,event_type,status,progress,message,data)
+     values($1,$2,$3,coalesce((select max(sequence)+1 from job_events where job_id=$1),1),$4,$5,100,$6,$7)`,
+    [job.id, job.project_id, job.node_key, type, status, message, data],
+  );
+}
+
+function usageChargeMetadata(usage: QueryResultRow) {
+  return {
+    amount: String(usage.total_amount ?? usage.amount_final ?? "0"),
+    currency: String(usage.currency || ""),
+    exchangeRate: String(usage.exchange_rate || "1"),
+    costCny: "calculated",
+    pointsPerCny: 100,
+    markup: MARKUP,
+    rounding: "ceil",
+    modelId: usage.model_id,
+    capability: usage.capability,
+  };
+}
+
+function withoutProjectId<T extends { projectId?: string }>(value: T) {
+  const { projectId: _projectId, ...rest } = value;
+  return rest;
+}
+
 async function ensureAccount(client: Queryable, userId: string, lock = false) {
   await client.query(
     "insert into credit_accounts(user_id) values($1) on conflict(user_id) do nothing",
     [userId],
   );
   return accountRow(client, userId, lock);
+}
+
+async function lockCreditUser(client: Queryable, userId: string) {
+  await client.query("select pg_advisory_xact_lock(hashtextextended($1,0))", [userId]);
 }
 
 async function accountRow(client: Queryable, userId: string, lock = false) {
@@ -526,22 +899,31 @@ async function expireLots(client: Queryable, account: QueryResultRow) {
       [`expiry:${lot.id}`],
     );
     if (existing.rowCount) continue;
-    const updated = await client.query(
-      "update credit_accounts set balance=balance-$2::bigint,updated_at=now() where id=$1 returning balance",
-      [account.id, String(lot.remaining)],
+    const latest = (
+      await client.query("select balance from credit_accounts where id=$1 for update", [account.id])
+    ).rows[0];
+    const expiring = min(
+      BigInt(String(lot.remaining)),
+      max(BigInt(String(latest.balance)), 0n),
     );
-    await client.query(
-      `insert into credit_ledger(account_id,entry_type,delta,balance_after,reference_type,reference_id,idempotency_key,metadata)
-       values($1,'expiry',-$2::bigint,$3,'credit_lot',$4,$5,$6)`,
-      [
-        account.id,
-        String(lot.remaining),
-        String(updated.rows[0].balance),
-        lot.id,
-        `expiry:${lot.id}`,
-        JSON.stringify({ source: lot.source, expiresAt: lot.expires_at }),
-      ],
-    );
+    if (expiring > 0n) {
+      const updated = await client.query(
+        "update credit_accounts set balance=balance-$2::bigint,updated_at=now() where id=$1 returning balance",
+        [account.id, expiring.toString()],
+      );
+      await client.query(
+        `insert into credit_ledger(account_id,entry_type,delta,balance_after,reference_type,reference_id,idempotency_key,metadata)
+         values($1,'expiry',-$2::bigint,$3,'credit_lot',$4,$5,$6)`,
+        [
+          account.id,
+          expiring.toString(),
+          String(updated.rows[0].balance),
+          lot.id,
+          `expiry:${lot.id}`,
+          JSON.stringify({ source: lot.source, expiresAt: lot.expires_at }),
+        ],
+      );
+    }
     await client.query(
       "update credit_lots set remaining=0,updated_at=now() where id=$1",
       [lot.id],
@@ -703,6 +1085,10 @@ export function decimalProductCeil(values: string[]) {
 
 function min(left: bigint, right: bigint) {
   return left < right ? left : right;
+}
+
+function max(left: bigint, right: bigint) {
+  return left > right ? left : right;
 }
 
 function asRecord(value: unknown): Record<string, unknown> {

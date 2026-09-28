@@ -228,7 +228,9 @@ export class TextWorkbenchService {
   private async reconcileMessages(conversationId: string) {
     const result = await this.pool.query(
       `select m.id,j.status,j.user_error_message,
-        (select metadata->>'text' from job_artifacts where job_id=j.id order by sort_order limit 1) as output_text
+        case when j.credit_delivery_status='released' then
+          (select metadata->>'text' from job_artifacts where job_id=j.id order by sort_order limit 1)
+        end as output_text
        from text_messages m join generation_jobs j on j.id=m.generation_job_id
        where m.conversation_id=$1 and m.role='assistant' and m.status in ('pending','failed')`,
       [conversationId],
@@ -268,6 +270,7 @@ function messageStatusFromJob(
 ): "pending" | "completed" | "failed" | "cancelled" | null {
   if (status === "completed") return "completed";
   if (status === "failed") return "failed";
+  if (status === "payment_required") return "failed";
   if (status === "cancelled") return "cancelled";
   if (
     [
@@ -278,6 +281,7 @@ function messageStatusFromJob(
       "running",
       "downloading",
       "persisting",
+      "billing_pending",
       "cancel_requested",
     ].includes(status)
   )

@@ -8,3 +8,4 @@
 0032_user_feedback.sql
 0033_feedback_conversations.sql
 0034_feedback_read_state.sql
+0035_credit_delivery_guard.sql

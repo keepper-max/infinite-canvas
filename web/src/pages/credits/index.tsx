@@ -116,6 +116,8 @@ export default function CreditsPage() {
     if (loading && !data) return <div className="grid h-full place-items-center"><Spin /></div>;
     if (!data) return null;
     const balance = BigInt(data.account.balance);
+    const reserved = BigInt(data.account.reserved);
+    const available = balance > reserved ? balance - reserved : BigInt(0);
     const paymentsEnabled = Boolean(capabilities?.payments);
     return (
         <main className="h-full overflow-y-auto bg-[radial-gradient(circle_at_top_left,rgba(180,83,9,0.08),transparent_32%)] px-5 py-8 sm:px-8">
@@ -134,8 +136,9 @@ export default function CreditsPage() {
                         <div className="absolute -right-14 -top-16 size-44 rounded-full border border-amber-300/20" />
                         <Coins className="size-5 text-amber-300" />
                         <p className="mt-8 text-sm text-stone-400">当前可用积分</p>
-                        <p className={`mt-1 font-mono text-5xl font-semibold tracking-tight ${balance < BigInt(0) ? "text-red-400" : "text-white"}`}>{formatPoints(data.account.balance)}</p>
-                        {balance < BigInt(0) ? <p className="mt-3 text-sm text-red-300">余额不足，补足积分后可继续提交托管生成任务。</p> : null}
+                        <p className="mt-1 font-mono text-5xl font-semibold tracking-tight text-white">{formatPoints(available.toString())}</p>
+                        {reserved > BigInt(0) ? <p className="mt-3 text-sm text-amber-200">账户余额 {formatPoints(balance.toString())}，任务已冻结 {formatPoints(reserved.toString())} 积分。</p> : null}
+                        {balance < BigInt(0) ? <p className="mt-3 text-sm text-red-300">历史欠费需先补足后才能继续提交托管生成任务。</p> : null}
                     </div>
                     <Metric icon={<ReceiptText className="size-4" />} label="待计费任务" value={String(data.pendingCharges)} note="完成结算后，积分流水会自动更新" />
                 </section>

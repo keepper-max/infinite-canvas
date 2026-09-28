@@ -33,10 +33,13 @@ export type ManagedJob = {
     modelId: string;
     capability: ManagedCapability;
     mode: ManagedMode;
-    status: "pending" | "queued" | "submitting" | "retrying" | "running" | "downloading" | "persisting" | "cancel_requested" | "cancelled" | "failed" | "completed";
+    status: "pending" | "queued" | "submitting" | "retrying" | "running" | "downloading" | "persisting" | "billing_pending" | "payment_required" | "cancel_requested" | "cancelled" | "failed" | "completed";
     progress: number;
     error?: { code: string; message: string; retryable: boolean } | null;
     outputAssetVersionIds: string[];
+    creditDeliveryStatus?: "pending" | "billing_pending" | "payment_required" | "released";
+    creditsReserved?: string;
+    creditsDue?: string;
     artifacts?: Array<{ id: string; assetId?: string; assetVersionId?: string; mimeType?: string; text?: string }>;
 };
 
@@ -101,6 +104,7 @@ export async function waitForManagedJob(jobId: string, signal?: AbortSignal) {
             if (signal?.aborted) throw new DOMException("Aborted", "AbortError");
             const job = await getManagedJob(jobId, signal);
             if (job.status === "completed") return job;
+            if (job.status === "payment_required") throw new Error(job.error?.message || "积分不足，充值后系统将自动交付本次生成结果");
             if (job.status === "failed" || job.status === "cancelled") throw new Error(job.error?.message || (job.status === "cancelled" ? "任务已取消" : "生成失败"));
             await delay(1_500, signal);
         }
@@ -127,7 +131,7 @@ export type ManagedJobEvent = {
 
 export function subscribeProjectJobEvents(projectId: string, onEvent: (event: ManagedJobEvent) => void) {
     const source = new EventSource(`/api/projects/${encodeURIComponent(projectId)}/events`, { withCredentials: true });
-    const types = ["job.created", "job.queued", "job.started", "job.progress", "job.downloading", "job.persisting", "job.completed", "job.failed", "job.retrying", "job.recovering", "job.cancel_requested", "job.cancelled"];
+    const types = ["job.created", "job.queued", "job.started", "job.progress", "job.downloading", "job.persisting", "job.billing_pending", "job.payment_required", "job.completed", "job.failed", "job.retrying", "job.recovering", "job.cancel_requested", "job.cancelled"];
     const listener = (message: MessageEvent<string>) => {
         try {
             onEvent(JSON.parse(message.data) as ManagedJobEvent);

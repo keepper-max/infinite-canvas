@@ -25,6 +25,12 @@ export interface OperationsServicePort {
     usdCnyRate: string,
     requestId: string,
   ): Promise<unknown>;
+  creditGuard(userId: string): Promise<unknown>;
+  setCreditGuard(
+    userId: string,
+    videoMinimumPoints: number,
+    requestId: string,
+  ): Promise<unknown>;
   grantCredits(
     userId: string,
     targetUserId: string,
@@ -218,6 +224,24 @@ export class OperationsService implements OperationsServicePort {
   ) {
     await this.requireAdmin(userId);
     return this.requireCredits().setUsdCnyRate(userId, usdCnyRate, requestId);
+  }
+
+  async creditGuard(userId: string) {
+    await this.requireAdmin(userId);
+    return this.requireCredits().guardSettings();
+  }
+
+  async setCreditGuard(
+    userId: string,
+    videoMinimumPoints: number,
+    requestId: string,
+  ) {
+    await this.requireAdmin(userId);
+    return this.requireCredits().setVideoMinimumPoints(
+      userId,
+      videoMinimumPoints,
+      requestId,
+    );
   }
 
   async grantCredits(
@@ -777,7 +801,7 @@ export class OperationsService implements OperationsServicePort {
         (select count(*)::int from projects where deleted_at is null) projects,
         (select count(*)::int from assets where status='active') assets,
         (select coalesce(sum(bytes),0)::bigint from asset_versions) asset_bytes,
-        (select count(*)::int from generation_jobs where status not in ('completed','failed','cancelled')) active_jobs,
+        (select count(*)::int from generation_jobs where status not in ('completed','failed','cancelled','billing_pending','payment_required')) active_jobs,
         (select count(*)::int from generation_jobs where status='failed') failed_jobs,
         (select count(*)::int from generation_jobs where created_at>=now()-interval '24 hours') jobs_24h,
         (select count(*)::int from generation_jobs where created_at>=now()-interval '7 days') jobs_7d,
@@ -791,7 +815,7 @@ export class OperationsService implements OperationsServicePort {
         (select count(*)::int from generation_jobs where status='completed' and created_at>=coalesce($1::date,current_date-29) and created_at<coalesce($2::date,current_date)+1) completed_jobs_range,
         (select coalesce(avg(extract(epoch from (finished_at-coalesce(started_at,created_at)))) filter(where status='completed' and finished_at is not null and created_at>=coalesce($1::date,current_date-29) and created_at<coalesce($2::date,current_date)+1),0)::float8 from generation_jobs) avg_completion_seconds_range,
         (select count(*)::int from generation_jobs where billing_status in ('pending','reconciling')) pending_billing_jobs,
-        (select count(*)::int from generation_usage where credit_status in ('pending','pending_rate','pending_currency')) pending_credit_charges,
+        (select count(*)::int from generation_usage where credit_status in ('pending','pending_rate','pending_currency','payment_required')) pending_credit_charges,
         (select coalesce(-sum(delta) filter(where entry_type='generation' and created_at>=now()-interval '24 hours'),0)::bigint from credit_ledger) credits_consumed_24h,
         (select coalesce(-sum(delta) filter(where entry_type='generation' and created_at>=now()-interval '7 days'),0)::bigint from credit_ledger) credits_consumed_7d,
         (select coalesce(-sum(delta) filter(where entry_type='generation' and created_at>=now()-interval '30 days'),0)::bigint from credit_ledger) credits_consumed_30d,

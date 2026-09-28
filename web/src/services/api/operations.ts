@@ -2,6 +2,7 @@ import { PlatformApiError, platformRequest } from "./platform";
 
 export type OperationsCapabilities = { sms: boolean; credits: boolean; payments: boolean; teams: boolean; admin: boolean };
 export type CreditPricing = { pointsPerCny: 100; markup: "1.2"; rounding: "ceil"; usdCnyRate?: string };
+export type CreditGuardSettings = { videoMinimumPoints: number };
 export type CreditLedgerItem = {
     id: string;
     type: string;
@@ -314,6 +315,15 @@ export function getAdminCreditPricing(signal?: AbortSignal) {
 }
 export function setAdminCreditPricing(usdCnyRate: string) {
     return platformRequest<CreditPricing>("/api/admin/credits/pricing", { method: "PATCH", body: JSON.stringify({ usdCnyRate }) });
+}
+export function getAdminCreditGuard(signal?: AbortSignal) {
+    return platformRequest<CreditGuardSettings>("/api/admin/credits/guard", { signal });
+}
+export function setAdminCreditGuard(videoMinimumPoints: number) {
+    return platformRequest<CreditGuardSettings>("/api/admin/credits/guard", {
+        method: "PATCH",
+        body: JSON.stringify({ videoMinimumPoints }),
+    });
 }
 function adminQuery(input: Record<string, string | number | boolean | undefined>) {
     const params = new URLSearchParams();

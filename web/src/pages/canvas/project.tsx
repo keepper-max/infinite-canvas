@@ -598,8 +598,8 @@ function InfiniteCanvasPage({ projectId }: { projectId: string }) {
                                   metadata: {
                                       ...node.metadata,
                                       ...(node.type === CanvasNodeType.Video ? { videoTaskId: event.jobId, videoTaskProvider: "managed" as const } : {}),
-                                      status: event.status === "completed" && node.metadata?.content ? NODE_STATUS_SUCCESS : event.status === "failed" || event.status === "cancelled" ? NODE_STATUS_ERROR : NODE_STATUS_LOADING,
-                                      errorDetails: event.status === "failed" ? event.message : undefined,
+                                      status: event.status === "completed" && node.metadata?.content ? NODE_STATUS_SUCCESS : event.status === "failed" || event.status === "cancelled" || event.status === "payment_required" ? NODE_STATUS_ERROR : NODE_STATUS_LOADING,
+                                      errorDetails: event.status === "failed" || event.status === "payment_required" ? event.message : undefined,
                                       jobStatusMessage: event.status === "completed" ? undefined : event.message,
                                       jobProgress: event.status === "completed" ? undefined : visibleJobProgress(event),
                                   },

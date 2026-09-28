@@ -250,7 +250,7 @@ export class PaymentService {
     receipt?: { eventId: string; payloadSha256: string },
   ) {
     if (!providerOrderId || !/^\d+(?:\.\d{1,2})?$/.test(totalAmount)) return false;
-    return transaction(this.pool, async (client) => {
+    const applied = await transaction(this.pool, async (client) => {
       if (receipt) {
         const inserted = await client.query(
           `insert into payment_callback_receipts(provider,event_id,payload_sha256,signature_valid,status)
@@ -316,6 +316,11 @@ export class PaymentService {
         );
       return true;
     });
+    if (applied) {
+      const paidOrder = await this.order(orderId);
+      await this.credits.settleHeldForUser(String(paidOrder.user_id));
+    }
+    return applied;
   }
 
   private async closeOrder(order: QueryResultRow) {

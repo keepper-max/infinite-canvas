@@ -65,7 +65,6 @@ export class JobService {
     }
     if (input.capability !== "text")
       await this.storageQuota?.assertHasCapacity(userId);
-    await this.credits?.assertCanCreate(userId);
     const compiled = await this.gateway.compile(input);
     const maxAttempts = generationJobAttempts();
     const client = await this.pool.connect();
@@ -116,8 +115,8 @@ export class JobService {
             client,
           )) || {};
       const result = await client.query(
-        `insert into generation_jobs(id,project_id,node_key,created_by,provider,model_id,mode,capability,input,parameters,input_snapshot,compiled_request,status,progress,max_attempts,idempotency_key,request_fingerprint,bullmq_job_id,queued_at,retry_of_job_id,billing_rule_snapshot,billing_trace_id,billing_status,billing_next_check_at)
-                values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,'pending',0,$13,$14,$15,$16,now(),$17,$18,$19,'pending',now()) on conflict(project_id,idempotency_key) where idempotency_key is not null do nothing returning *`,
+        `insert into generation_jobs(id,project_id,node_key,created_by,provider,model_id,mode,capability,input,parameters,input_snapshot,compiled_request,status,progress,max_attempts,idempotency_key,request_fingerprint,bullmq_job_id,queued_at,retry_of_job_id,billing_rule_snapshot,billing_trace_id,billing_status,billing_next_check_at,credit_delivery_status)
+                values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,'pending',0,$13,$14,$15,$16,now(),$17,$18,$19,'pending',now(),'pending') on conflict(project_id,idempotency_key) where idempotency_key is not null do nothing returning *`,
         [
           jobId,
           projectId,
@@ -155,6 +154,18 @@ export class JobService {
         return serializeJob(raced.rows[0]);
       }
       job = result.rows[0];
+      const reserved = await this.credits?.reserveForJob(
+        client,
+        userId,
+        input.capability,
+      );
+      if (reserved !== undefined) {
+        const updated = await client.query(
+          "update generation_jobs set credits_reserved=$2,updated_at=now() where id=$1 returning *",
+          [job.id, reserved.toString()],
+        );
+        job = updated.rows[0];
+      }
       await appendEvent(
         client,
         job.id as string,
@@ -193,6 +204,7 @@ export class JobService {
         "insert into job_events(job_id,project_id,node_key,sequence,event_type,status,progress,message) select id,project_id,node_key,coalesce((select max(sequence)+1 from job_events where job_id=$1),1),'job.failed','failed',0,'任务队列暂时不可用' from generation_jobs where id=$1",
         [job.id],
       );
+      await this.credits?.releaseReservation(String(job.id)).catch(() => undefined);
       throw new DomainError(
         "QUEUE_UNAVAILABLE",
         "任务队列暂时不可用",
@@ -218,10 +230,12 @@ export class JobService {
       [jobId, userId],
     );
     if (!result.rows[0]) return null;
-    const artifacts = await this.pool.query(
-      "select id,asset_id,asset_version_id,role,sort_order,mime_type,metadata from job_artifacts where job_id=$1 order by sort_order",
-      [jobId],
-    );
+    const artifacts = String(result.rows[0].credit_delivery_status) === "released"
+      ? await this.pool.query(
+          "select id,asset_id,asset_version_id,role,sort_order,mime_type,metadata from job_artifacts where job_id=$1 order by sort_order",
+          [jobId],
+        )
+      : { rows: [] };
     return {
       ...serializeJob(result.rows[0]),
       artifacts: artifacts.rows.map((row) => ({
@@ -312,6 +326,7 @@ export class JobService {
       [jobId],
     );
     if (!updated.rows[0]) return;
+    await this.credits?.releaseReservation(jobId).catch(() => undefined);
     const result = await this.pool.query(
       "insert into job_events(job_id,project_id,node_key,sequence,event_type,status,progress,message) select id,project_id,node_key,coalesce((select max(sequence)+1 from job_events where job_id=$1),1),'job.cancelled','cancelled',progress,'任务已取消' from generation_jobs where id=$1 returning project_id",
       [jobId],
@@ -338,6 +353,7 @@ export class JobExecutor {
     private readonly billing?: BillingService,
     private readonly transferQueue?: TransferQueuePort,
     private readonly storageQuota?: StorageQuotaService,
+    private readonly credits?: CreditService,
   ) {}
   async execute(jobId: string, attempt: number, signal?: AbortSignal) {
     const row = (
@@ -346,10 +362,10 @@ export class JobExecutor {
       ])
     ).rows[0];
     if (!row) return;
-    if (["completed", "failed", "cancelled"].includes(row.status)) return;
+    if (["completed", "failed", "cancelled", "billing_pending", "payment_required"].includes(row.status)) return;
     if (row.status === "cancel_requested") return this.cancel(row, signal);
     const submitting = await this.pool.query(
-      "update generation_jobs set status='submitting',progress=greatest(progress,1),attempt_count=$2,started_at=coalesce(started_at,now()),heartbeat_at=now(),updated_at=now() where id=$1 and status not in ('cancel_requested','cancelled','completed','failed') returning id",
+      "update generation_jobs set status='submitting',progress=greatest(progress,1),attempt_count=$2,started_at=coalesce(started_at,now()),heartbeat_at=now(),updated_at=now() where id=$1 and status not in ('cancel_requested','cancelled','completed','failed','billing_pending','payment_required') returning id",
       [jobId, attempt],
     );
     if (!submitting.rowCount) {
@@ -566,7 +582,7 @@ export class JobExecutor {
         jobId,
       ])
     ).rows[0];
-    if (!row || ["completed", "failed", "cancelled"].includes(row.status))
+    if (!row || ["completed", "failed", "cancelled", "billing_pending", "payment_required"].includes(row.status))
       return;
     if (row.status === "cancel_requested") return this.cancel(row, signal);
     if (!row.provider_job_id)
@@ -651,12 +667,11 @@ export class JobExecutor {
       signal,
       providerJobId,
     );
-    const versionIds = artifacts
-      .map((artifact) => artifact.assetVersionId)
-      .filter(Boolean);
     await this.pool.query(
-      "update generation_jobs set status='completed',progress=100,output_asset_version_ids=$2,finished_at=now(),heartbeat_at=now(),updated_at=now() where id=$1 and status <> 'cancel_requested'",
-      [jobId, JSON.stringify(versionIds)],
+      `update generation_jobs set status='billing_pending',credit_delivery_status='billing_pending',
+       progress=100,output_asset_version_ids='[]'::jsonb,finished_at=now(),heartbeat_at=now(),updated_at=now()
+       where id=$1 and status <> 'cancel_requested'`,
+      [jobId],
     );
     const current = (
       await this.pool.query("select status from generation_jobs where id=$1", [
@@ -669,17 +684,23 @@ export class JobExecutor {
       [jobId, attempt],
     );
     await this.billing?.finalizeProviderUsage(jobId).catch(() => undefined);
-    await this.event(
-      row,
-      "job.completed",
-      "completed",
-      100,
-      "生成完成，请尽快下载到本地",
-      {
-      artifacts,
-      },
-    );
-    return { artifacts };
+    const delivered = (
+      await this.pool.query(
+        "select status,credit_delivery_status from generation_jobs where id=$1",
+        [jobId],
+      )
+    ).rows[0];
+    if (delivered?.credit_delivery_status === "billing_pending")
+      await this.event(
+        row,
+        "job.billing_pending",
+        "billing_pending",
+        100,
+        "生成已完成，正在核对实际费用",
+      );
+    return {
+      artifacts: delivered?.credit_delivery_status === "released" ? artifacts : [],
+    };
   }
   async markAttemptFailed(jobId: string, final: boolean) {
     const row = (
@@ -689,7 +710,7 @@ export class JobExecutor {
     ).rows[0];
     if (
       !row ||
-      ["cancel_requested", "cancelled", "completed", "failed"].includes(
+      ["cancel_requested", "cancelled", "completed", "failed", "billing_pending", "payment_required"].includes(
         row.status,
       )
     )
@@ -701,6 +722,8 @@ export class JobExecutor {
     );
     if (final)
       await this.billing?.finalizeProviderUsage(jobId).catch(() => undefined);
+    if (final && !row.provider_job_id)
+      await this.credits?.releaseReservation(jobId).catch(() => undefined);
     await this.event(
       row,
       final ? "job.failed" : "job.retrying",
@@ -722,6 +745,8 @@ export class JobExecutor {
     await this.billing
       ?.finalizeProviderUsage(String(row.id))
       .catch(() => undefined);
+    if (!row.provider_job_id)
+      await this.credits?.releaseReservation(String(row.id)).catch(() => undefined);
     await this.event(
       row,
       "job.cancelled",
@@ -876,7 +901,7 @@ export class JobExecutor {
         try {
           await client.query("begin");
           const asset = await client.query(
-            "insert into assets(project_id,kind,name,status,created_by) values($1,$2,$3,'active',$4) returning id",
+            "insert into assets(project_id,kind,name,status,created_by) values($1,$2,$3,'payment_locked',$4) returning id",
             [
               row.project_id,
               assetKind,
@@ -1066,6 +1091,9 @@ function serializeJob(row: Record<string, any>) {
     billingTraceId: row.billing_trace_id,
     billingStatus: row.billing_status,
     billingError: row.billing_error,
+    creditDeliveryStatus: row.credit_delivery_status,
+    creditsReserved: String(row.credits_reserved || 0),
+    creditsDue: String(row.credits_due || 0),
     billingLastCheckedAt:
       row.billing_last_checked_at?.toISOString?.() ||
       row.billing_last_checked_at,

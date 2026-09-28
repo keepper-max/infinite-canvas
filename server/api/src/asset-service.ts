@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { and, asc, desc, eq, inArray, isNull, sql } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, isNull, ne, sql } from "drizzle-orm";
 import type {
   NodePgDatabase,
   NodePgTransaction,
@@ -426,6 +426,7 @@ export class PostgresAssetService implements AssetServicePort {
         and(
           eq(tables.assetVersions.id, versionId),
           eq(tables.projectMembers.userId, userId),
+          ne(tables.assets.status, "payment_locked"),
           isNull(tables.projects.deletedAt),
         ),
       )
@@ -446,7 +447,12 @@ export class PostgresAssetService implements AssetServicePort {
       .innerJoin(tables.assets, eq(tables.assets.id, tables.assetVersions.assetId))
       .innerJoin(tables.projectMembers, eq(tables.projectMembers.projectId, tables.assets.projectId))
       .innerJoin(tables.projects, eq(tables.projects.id, tables.assets.projectId))
-      .where(and(inArray(tables.assetVersions.id, [...new Set(versionIds)]), eq(tables.projectMembers.userId, userId), isNull(tables.projects.deletedAt)));
+      .where(and(
+        inArray(tables.assetVersions.id, [...new Set(versionIds)]),
+        eq(tables.projectMembers.userId, userId),
+        ne(tables.assets.status, "payment_locked"),
+        isNull(tables.projects.deletedAt),
+      ));
     return Object.fromEntries(
       await Promise.all(
         rows.map(async (row) => [
@@ -505,6 +511,7 @@ export class PostgresAssetService implements AssetServicePort {
         and(
           eq(tables.assetVersions.id, versionId),
           eq(tables.projectMembers.userId, userId),
+          ne(tables.assets.status, "payment_locked"),
           isNull(tables.projects.deletedAt),
         ),
       )
@@ -875,6 +882,7 @@ export class PostgresAssetService implements AssetServicePort {
         and(
           eq(tables.assets.id, assetId),
           eq(tables.projectMembers.userId, userId),
+          ne(tables.assets.status, "payment_locked"),
           isNull(tables.projects.deletedAt),
         ),
       )
