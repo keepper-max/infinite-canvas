@@ -527,6 +527,72 @@ test("RunningHub provider submits every image accepted by a multiple-input field
   }
 });
 
+test("RunningHub provider omits catalog sentinel parameters", async () => {
+  const originalFetch = globalThis.fetch;
+  let submitted: Record<string, unknown> | undefined;
+  globalThis.fetch = async (input, init) => {
+    const url = String(input);
+    if (url.endsWith("/bytedance/seedream-v5-pro/image-to-image")) {
+      submitted = JSON.parse(String(init?.body));
+      return Response.json({ taskId: "rh-seedream-task-1" });
+    }
+    throw new Error(`unexpected request: ${url}`);
+  };
+  try {
+    const provider = new RunningHubProvider(
+      {
+        baseUrl: "https://www.runninghub.cn/openapi/v2",
+        apiKey: "test-only",
+        catalogUrl: "",
+      },
+      0,
+    );
+    await provider.create({
+      modelId: "runninghub.image.seedream-v5-pro-image-to-image",
+      upstreamModel: "bytedance/seedream-v5-pro/image-to-image",
+      providerId: "runninghub",
+      capability: "image",
+      mode: "i2i",
+      prompt: "生成一张图片",
+      parameters: {},
+      upstreamParameters: {
+        width: 1024,
+        height: 1024,
+        resolution: "empty",
+        outputFormat: "jpeg",
+      },
+      providerMetadata: {
+        params: [
+          { fieldKey: "prompt", type: "STRING", required: true },
+          { fieldKey: "width", type: "INT" },
+          { fieldKey: "height", type: "INT" },
+          {
+            fieldKey: "resolution",
+            type: "LIST",
+            options: [
+              {
+                value: "empty",
+                description: "empty（不传该参数，使用widthxheight）",
+                descriptionEn: "empty (omit this field; use widthxheight)",
+              },
+              { value: "1k" },
+              { value: "2k" },
+            ],
+          },
+        ],
+      },
+    });
+    assert.deepEqual(submitted, {
+      width: 1024,
+      height: 1024,
+      outputFormat: "jpeg",
+      prompt: "生成一张图片",
+    });
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
 test("RunningHub global GPT Image converts canvas size into API ratio and resolution", async () => {
   const originalFetch = globalThis.fetch;
   let submitted: Record<string, unknown> | undefined;

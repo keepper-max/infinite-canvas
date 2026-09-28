@@ -13,6 +13,7 @@ type RegistryParameter = {
   type: string;
   required?: boolean;
   multipleInputs?: boolean;
+  omittedValues?: string[];
 };
 
 export class RunningHubProvider implements GenerationProvider {
@@ -58,6 +59,7 @@ export class RunningHubProvider implements GenerationProvider {
       request.references || [],
       requestSignal,
     );
+    omitCatalogSentinels(body, parameters);
     normalizeRunningHubImageParameters(request.upstreamModel, body);
     if (
       request.upstreamModel.endsWith(
@@ -371,6 +373,15 @@ function registryParameters(value: unknown): RegistryParameter[] {
         const row = asRecord(item);
         const fieldKey = String(row.fieldKey || "");
         const type = String(row.type || "").toUpperCase();
+        const omittedValues = Array.isArray(row.options)
+          ? row.options.flatMap((option) => {
+              const record = asRecord(option);
+              const description = `${record.description || ""} ${record.descriptionEn || ""}`;
+              return typeof record.value === "string" && /不传|\bomit\b/i.test(description)
+                ? [record.value]
+                : [];
+            })
+          : [];
         return fieldKey && type
           ? [
               {
@@ -378,11 +389,28 @@ function registryParameters(value: unknown): RegistryParameter[] {
                 type,
                 required: row.required === true,
                 multipleInputs: row.multipleInputs === true,
+                ...(omittedValues.length ? { omittedValues } : {}),
               },
             ]
           : [];
       })
     : [];
+}
+
+function omitCatalogSentinels(
+  body: Record<string, unknown>,
+  parameters: RegistryParameter[],
+) {
+  for (const parameter of parameters) {
+    if (
+      parameter.omittedValues?.some(
+        (value) =>
+          value.toLowerCase() ===
+          String(body[parameter.fieldKey] ?? "").toLowerCase(),
+      )
+    )
+      delete body[parameter.fieldKey];
+  }
 }
 
 function normalizeRunningHubImageParameters(

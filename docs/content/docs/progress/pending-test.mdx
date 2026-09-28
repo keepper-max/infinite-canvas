@@ -5,6 +5,8 @@ description: Implemented changes that still need manual verification
 
 # Pending Tests
 
+- 海马云图片分辨率参数：在生图工作台和画布分别使用 Seedream V5 文生图/参考图模式，选择 1K、2K、常用比例和手动宽高后提交；请求应保留实际宽高且不再向服务商发送 `resolution=empty`，生成任务应正常进入运行和完成状态。其他图片模型原有分辨率、比例和数量映射保持不变。
+
 - Existing-database credit reservation migration: upgrade a database whose `generation_jobs` table predates the managed job schema, verify that migration `0037` adds `credits_reserved` with zero for existing rows, and confirm text, image, video, retry, cancellation, billing settlement, and payment-required delivery flows can reserve and release credits without missing-column errors or negative balances.
 
 - Local reference image generation: upload a local image in the image workbench, canvas, or video workbench and verify that the visible reference is read from IndexedDB and submitted successfully without a `Failed to fetch` error; a genuinely missing local original should show a clear reference-image read error.
