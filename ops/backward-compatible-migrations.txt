@@ -10,3 +10,4 @@
 0034_feedback_read_state.sql
 0035_credit_delivery_guard.sql
 0036_channel_attribution.sql
+0037_generation_job_credit_reservation.sql
