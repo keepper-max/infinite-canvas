@@ -1,4 +1,6 @@
 import { randomUUID } from "node:crypto";
+import { isIP } from "node:net";
+
 import { deleteCookie, getCookie, setCookie } from "hono/cookie";
 import { Hono, type Context } from "hono";
 import { streamSSE } from "hono/streaming";
@@ -23,6 +25,19 @@ import type { AssetServicePort } from "./asset-service.js";
 import { parseCanvasWrite } from "./canvas-contract.js";
 import { createCompositionJobSchema } from "./composition-contract.js";
 import type { CompositionService } from "./composition-service.js";
+import {
+  attributionListQuery,
+  attributionStatusInput,
+  batchInput,
+  campaignInput,
+  channelInput,
+  inviteBatchInput,
+  inviteCodeInput,
+  inviteModeInput,
+  inviteValidateInput,
+  userAttributionInput,
+} from "./channel-attribution-contract.js";
+import type { ChannelAttributionService } from "./channel-attribution-service.js";
 import type { ApiConfig } from "./config.js";
 import {
   DomainError,
@@ -68,6 +83,7 @@ export function createApp(
   textWorkbenchService?: TextWorkbenchService,
   virtualPortraitService?: VirtualPortraitServicePort,
   emailVerificationService?: EmailVerificationServicePort,
+  channelAttributionService?: ChannelAttributionService,
 ) {
   const app = new Hono<AppEnv>();
 
@@ -94,7 +110,8 @@ export function createApp(
   app.use("/api/*", async (context, next) => {
     context.header("cache-control", "no-store");
     const isAlipayNotify =
-      context.req.method === "POST" && context.req.path === "/api/payments/notify";
+      context.req.method === "POST" &&
+      context.req.path === "/api/payments/notify";
     if (
       isUnsafeMethod(context.req.method) &&
       !isAlipayNotify &&
@@ -122,15 +139,39 @@ export function createApp(
     });
   });
 
-  app.get("/api/auth/config", (context) =>
-    context.json(
+  app.get("/api/auth/config", async (context) => {
+    const attribution = channelAttributionService
+      ? await channelAttributionService.registrationConfig()
+      : { inviteMode: "optional" };
+    return context.json(
       success(context, {
-        emailVerificationRequired: Boolean(
-          config.emailVerification?.enabled,
-        ),
+        emailVerificationRequired: Boolean(config.emailVerification?.enabled),
+        ...attribution,
       }),
-    ),
-  );
+    );
+  });
+
+  app.post("/api/auth/invite-code/validate", async (context) => {
+    if (!channelAttributionService)
+      throw new DomainError(
+        "ATTRIBUTION_UNAVAILABLE",
+        "邀请码服务暂时不可用",
+        503,
+        true,
+      );
+    const input = inviteValidateInput.parse(await readJson(context.req.raw));
+    const ip = clientIpOrNull(context.req.raw);
+    return context.json(
+      success(
+        context,
+        await channelAttributionService.validateInvite(
+          input.code,
+          ip,
+          channelAttributionService.deviceHash(input.deviceId),
+        ),
+      ),
+    );
+  });
 
   app.post("/api/auth/email-verification/request", async (context) => {
     const input = emailVerificationRequestInput.parse(
@@ -154,8 +195,7 @@ export function createApp(
     return context.json(
       success(context, {
         accepted: true,
-        retryAfterSeconds:
-          config.emailVerification.resendCooldownSeconds,
+        retryAfterSeconds: config.emailVerification.resendCooldownSeconds,
       }),
     );
   });
@@ -163,6 +203,20 @@ export function createApp(
   app.post("/api/auth/register", async (context) => {
     const input = registerInput.parse(await readJson(context.req.raw));
     const email = normalizeEmail(input.email);
+    const registrationIp = clientIpOrNull(context.req.raw);
+    const deviceHash = channelAttributionService?.deviceHash(input.deviceId);
+    if (channelAttributionService) {
+      await channelAttributionService.beginRegistration(
+        registrationIp,
+        deviceHash || null,
+      );
+      if (input.inviteCode)
+        await channelAttributionService.validateInvite(
+          input.inviteCode,
+          registrationIp,
+          deviceHash || null,
+        );
+    }
     let verification: VerifiedEmailCode | undefined;
     if (config.emailVerification?.enabled) {
       if (!emailVerificationService)
@@ -183,13 +237,27 @@ export function createApp(
     const result = await repository.createUserWithWorkspace(
       email,
       passwordHash,
+      {
+        inviteCode: input.inviteCode,
+        registrationIp,
+        verificationCodeId: verification?.id,
+      },
     );
-    if (verification)
+    if (verification && !result.verificationConsumed)
       await emailVerificationService!
         .consumeCode(verification)
         .catch((error) =>
           console.warn(
             "[platform-api] verification code cleanup failed:",
+            error instanceof Error ? error.message : "unknown error",
+          ),
+        );
+    if (channelAttributionService)
+      await channelAttributionService
+        .finishRegistration(registrationIp, deviceHash || null)
+        .catch((error) =>
+          console.warn(
+            "[platform-api] registration risk success event failed:",
             error instanceof Error ? error.message : "unknown error",
           ),
         );
@@ -253,8 +321,7 @@ export function createApp(
     return context.json(
       success(context, {
         accepted: true,
-        retryAfterSeconds:
-          config.emailVerification.resendCooldownSeconds,
+        retryAfterSeconds: config.emailVerification.resendCooldownSeconds,
       }),
     );
   });
@@ -290,12 +357,11 @@ export function createApp(
     const sessionUser = await requireUser(context.req.raw, repository, config);
     const input = passwordChangeInput.parse(await readJson(context.req.raw));
     const user = await repository.findUserByEmail(sessionUser.email);
-    if (!user || !(await verifyPassword(user.passwordHash, input.currentPassword)))
-      throw new DomainError(
-        "INVALID_CURRENT_PASSWORD",
-        "当前密码不正确",
-        422,
-      );
+    if (
+      !user ||
+      !(await verifyPassword(user.passwordHash, input.currentPassword))
+    )
+      throw new DomainError("INVALID_CURRENT_PASSWORD", "当前密码不正确", 422);
     if (await verifyPassword(user.passwordHash, input.newPassword))
       throw new DomainError(
         "PASSWORD_UNCHANGED",
@@ -338,7 +404,9 @@ export function createApp(
     return context.json(
       success(
         context,
-        await requireOperationsService(operationsService).capabilities(publicUser(user, config).isAdmin),
+        await requireOperationsService(operationsService).capabilities(
+          publicUser(user, config).isAdmin,
+        ),
       ),
     );
   });
@@ -369,21 +437,35 @@ export function createApp(
     const user = await requireUser(context.req.raw, repository, config);
     return context.json(
       success(context, {
-        plans: await requireOperationsService(operationsService).plans(publicUser(user, config).isAdmin),
+        plans: await requireOperationsService(operationsService).plans(
+          publicUser(user, config).isAdmin,
+        ),
       }),
     );
   });
 
   app.post("/api/billing/activation-codes/redeem", async (context) => {
     const user = await requireUser(context.req.raw, repository, config);
-    const input = z.object({ code: z.string() }).strict().parse(await readJson(context.req.raw));
-    return context.json(success(context,
-      await requireOperationsService(operationsService).redeemActivationCode(user.id, input.code)));
+    const input = z
+      .object({ code: z.string() })
+      .strict()
+      .parse(await readJson(context.req.raw));
+    return context.json(
+      success(
+        context,
+        await requireOperationsService(operationsService).redeemActivationCode(
+          user.id,
+          input.code,
+        ),
+      ),
+    );
   });
 
   app.post("/api/payments/orders", async (context) => {
     const user = await requireUser(context.req.raw, repository, config);
-    const payment = await requireOperationsService(operationsService).createPaymentOrder(
+    const payment = await requireOperationsService(
+      operationsService,
+    ).createPaymentOrder(
       user.id,
       publicUser(user, config).isAdmin,
       paymentOrderSchema.parse(await readJson(context.req.raw)),
@@ -393,19 +475,27 @@ export function createApp(
 
   app.get("/api/payments/orders", async (context) => {
     const user = await requireUser(context.req.raw, repository, config);
-    return context.json(success(context, {
-      orders: await requireOperationsService(operationsService).listPaymentOrders(user.id),
-    }));
+    return context.json(
+      success(context, {
+        orders: await requireOperationsService(
+          operationsService,
+        ).listPaymentOrders(user.id),
+      }),
+    );
   });
 
   app.post("/api/payments/orders/:orderId/sync", async (context) => {
     const user = await requireUser(context.req.raw, repository, config);
-    return context.json(success(context, {
-      order: await requireOperationsService(operationsService).syncPaymentOrder(
-        user.id,
-        uuidParam.parse(context.req.param("orderId")),
-      ),
-    }));
+    return context.json(
+      success(context, {
+        order: await requireOperationsService(
+          operationsService,
+        ).syncPaymentOrder(
+          user.id,
+          uuidParam.parse(context.req.param("orderId")),
+        ),
+      }),
+    );
   });
 
   app.post("/api/payments/notify", async (context) => {
@@ -418,9 +508,10 @@ export function createApp(
       for (const [key, value] of form.entries()) {
         if (typeof value === "string") fields[key] = value;
       }
-      const accepted = await requireOperationsService(
-        operationsService,
-      ).receivePaymentCallback(fields);
+      const accepted =
+        await requireOperationsService(
+          operationsService,
+        ).receivePaymentCallback(fields);
       return context.text(accepted ? "success" : "failure", 200);
     } catch (error) {
       console.error("[payment-notify] processing failed", {
@@ -480,6 +571,350 @@ export function createApp(
     return context.json(success(context, { project }), 201);
   });
 
+  app.get("/api/admin/attribution/settings", async (context) => {
+    const user = await requireUser(context.req.raw, repository, config);
+    await requireOperationsService(operationsService).auditAdminAccess(
+      user.id,
+      "attribution.settings.view",
+      "platform_setting",
+      "registration_invite",
+      context.get("requestId"),
+    );
+    return context.json(
+      success(
+        context,
+        await requireAttributionService(
+          channelAttributionService,
+        ).registrationConfig(),
+      ),
+    );
+  });
+  app.patch("/api/admin/attribution/settings", async (context) => {
+    const user = await requireUser(context.req.raw, repository, config);
+    const input = inviteModeInput.parse(await readJson(context.req.raw));
+    return context.json(
+      success(
+        context,
+        await requireAttributionService(
+          channelAttributionService,
+        ).setInviteMode(
+          user.id,
+          input.mode,
+          context.get("requestId"),
+          clientIpOrNull(context.req.raw),
+        ),
+      ),
+    );
+  });
+  app.get("/api/admin/attribution/dashboard", async (context) => {
+    const user = await requireUser(context.req.raw, repository, config);
+    return context.json(
+      success(
+        context,
+        await requireAttributionService(channelAttributionService).dashboard(
+          user.id,
+          attributionListQuery.parse(context.req.query()),
+        ),
+      ),
+    );
+  });
+
+  app.get("/api/admin/channels", async (context) => {
+    const user = await requireUser(context.req.raw, repository, config);
+    return context.json(
+      success(
+        context,
+        await requireAttributionService(channelAttributionService).listChannels(
+          user.id,
+          attributionListQuery.parse(context.req.query()),
+        ),
+      ),
+    );
+  });
+  app.post("/api/admin/channels", async (context) => {
+    const user = await requireUser(context.req.raw, repository, config);
+    return context.json(
+      success(
+        context,
+        await requireAttributionService(
+          channelAttributionService,
+        ).createChannel(
+          user.id,
+          channelInput.parse(await readJson(context.req.raw)),
+          context.get("requestId"),
+          clientIpOrNull(context.req.raw),
+        ),
+      ),
+      201,
+    );
+  });
+  app.patch("/api/admin/channels/:id", async (context) => {
+    const user = await requireUser(context.req.raw, repository, config);
+    return context.json(
+      success(
+        context,
+        await requireAttributionService(
+          channelAttributionService,
+        ).updateChannel(
+          user.id,
+          uuidParam.parse(context.req.param("id")),
+          channelInput.parse(await readJson(context.req.raw)),
+          context.get("requestId"),
+          clientIpOrNull(context.req.raw),
+        ),
+      ),
+    );
+  });
+
+  app.get("/api/admin/campaigns", async (context) => {
+    const user = await requireUser(context.req.raw, repository, config);
+    return context.json(
+      success(
+        context,
+        await requireAttributionService(
+          channelAttributionService,
+        ).listCampaigns(
+          user.id,
+          attributionListQuery.parse(context.req.query()),
+        ),
+      ),
+    );
+  });
+  app.post("/api/admin/campaigns", async (context) => {
+    const user = await requireUser(context.req.raw, repository, config);
+    return context.json(
+      success(
+        context,
+        await requireAttributionService(
+          channelAttributionService,
+        ).createCampaign(
+          user.id,
+          campaignInput.parse(await readJson(context.req.raw)),
+          context.get("requestId"),
+          clientIpOrNull(context.req.raw),
+        ),
+      ),
+      201,
+    );
+  });
+  app.patch("/api/admin/campaigns/:id", async (context) => {
+    const user = await requireUser(context.req.raw, repository, config);
+    return context.json(
+      success(
+        context,
+        await requireAttributionService(
+          channelAttributionService,
+        ).updateCampaign(
+          user.id,
+          uuidParam.parse(context.req.param("id")),
+          campaignInput.parse(await readJson(context.req.raw)),
+          context.get("requestId"),
+          clientIpOrNull(context.req.raw),
+        ),
+      ),
+    );
+  });
+
+  app.get("/api/admin/batches", async (context) => {
+    const user = await requireUser(context.req.raw, repository, config);
+    return context.json(
+      success(
+        context,
+        await requireAttributionService(channelAttributionService).listBatches(
+          user.id,
+          attributionListQuery.parse(context.req.query()),
+        ),
+      ),
+    );
+  });
+  app.post("/api/admin/batches", async (context) => {
+    const user = await requireUser(context.req.raw, repository, config);
+    return context.json(
+      success(
+        context,
+        await requireAttributionService(channelAttributionService).createBatch(
+          user.id,
+          batchInput.parse(await readJson(context.req.raw)),
+          context.get("requestId"),
+          clientIpOrNull(context.req.raw),
+        ),
+      ),
+      201,
+    );
+  });
+  app.patch("/api/admin/batches/:id", async (context) => {
+    const user = await requireUser(context.req.raw, repository, config);
+    return context.json(
+      success(
+        context,
+        await requireAttributionService(channelAttributionService).updateBatch(
+          user.id,
+          uuidParam.parse(context.req.param("id")),
+          batchInput.parse(await readJson(context.req.raw)),
+          context.get("requestId"),
+          clientIpOrNull(context.req.raw),
+        ),
+      ),
+    );
+  });
+
+  app.get("/api/admin/invite-codes", async (context) => {
+    const user = await requireUser(context.req.raw, repository, config);
+    return context.json(
+      success(
+        context,
+        await requireAttributionService(channelAttributionService).listInvites(
+          user.id,
+          attributionListQuery.parse(context.req.query()),
+        ),
+      ),
+    );
+  });
+  app.post("/api/admin/invite-codes", async (context) => {
+    const user = await requireUser(context.req.raw, repository, config);
+    return context.json(
+      success(
+        context,
+        await requireAttributionService(channelAttributionService).createInvite(
+          user.id,
+          inviteCodeInput.parse(await readJson(context.req.raw)),
+          context.get("requestId"),
+          clientIpOrNull(context.req.raw),
+        ),
+      ),
+      201,
+    );
+  });
+  app.post("/api/admin/invite-codes/batch", async (context) => {
+    const user = await requireUser(context.req.raw, repository, config);
+    return context.json(
+      success(
+        context,
+        await requireAttributionService(
+          channelAttributionService,
+        ).createInviteBatch(
+          user.id,
+          inviteBatchInput.parse(await readJson(context.req.raw)),
+          context.get("requestId"),
+          clientIpOrNull(context.req.raw),
+        ),
+      ),
+      201,
+    );
+  });
+  app.patch("/api/admin/invite-codes/:id", async (context) => {
+    const user = await requireUser(context.req.raw, repository, config);
+    return context.json(
+      success(
+        context,
+        await requireAttributionService(channelAttributionService).updateInvite(
+          user.id,
+          uuidParam.parse(context.req.param("id")),
+          inviteCodeInput.parse(await readJson(context.req.raw)),
+          context.get("requestId"),
+          clientIpOrNull(context.req.raw),
+        ),
+      ),
+    );
+  });
+
+  app.patch("/api/admin/attribution/:kind/:id/status", async (context) => {
+    const user = await requireUser(context.req.raw, repository, config);
+    const kind = attributionKind.parse(context.req.param("kind"));
+    const input = attributionStatusInput.parse(await readJson(context.req.raw));
+    return context.json(
+      success(
+        context,
+        await requireAttributionService(channelAttributionService).setStatus(
+          user.id,
+          kind,
+          uuidParam.parse(context.req.param("id")),
+          input.status,
+          context.get("requestId"),
+          clientIpOrNull(context.req.raw),
+        ),
+      ),
+    );
+  });
+  app.delete("/api/admin/attribution/:kind/:id", async (context) => {
+    const user = await requireUser(context.req.raw, repository, config);
+    const kind = attributionKind.parse(context.req.param("kind"));
+    return context.json(
+      success(
+        context,
+        await requireAttributionService(channelAttributionService).deleteUnused(
+          user.id,
+          kind,
+          uuidParam.parse(context.req.param("id")),
+          context.get("requestId"),
+          clientIpOrNull(context.req.raw),
+        ),
+      ),
+    );
+  });
+  app.get("/api/admin/attribution/:kind/:id", async (context) => {
+    const user = await requireUser(context.req.raw, repository, config);
+    return context.json(
+      success(
+        context,
+        await requireAttributionService(channelAttributionService).detail(
+          user.id,
+          attributionKind.parse(context.req.param("kind")),
+          uuidParam.parse(context.req.param("id")),
+          attributionListQuery.parse(context.req.query()),
+        ),
+      ),
+    );
+  });
+  app.get("/api/admin/attribution/:kind/:id/users", async (context) => {
+    const user = await requireUser(context.req.raw, repository, config);
+    return context.json(
+      success(
+        context,
+        await requireAttributionService(channelAttributionService).users(
+          user.id,
+          attributionKind.parse(context.req.param("kind")),
+          uuidParam.parse(context.req.param("id")),
+          attributionListQuery.parse(context.req.query()),
+        ),
+      ),
+    );
+  });
+  app.get("/api/admin/attribution/:kind/:id/users.csv", async (context) => {
+    const user = await requireUser(context.req.raw, repository, config);
+    const csv = await requireAttributionService(
+      channelAttributionService,
+    ).exportUsers(
+      user.id,
+      attributionKind.parse(context.req.param("kind")),
+      uuidParam.parse(context.req.param("id")),
+      attributionListQuery.parse(context.req.query()),
+    );
+    context.header("content-type", "text/csv; charset=utf-8");
+    context.header(
+      "content-disposition",
+      `attachment; filename="attribution-users-${context.req.param("id")}.csv"`,
+    );
+    return context.body(csv);
+  });
+  app.patch("/api/admin/users/:userId/attribution", async (context) => {
+    const user = await requireUser(context.req.raw, repository, config);
+    return context.json(
+      success(
+        context,
+        await requireAttributionService(
+          channelAttributionService,
+        ).updateUserAttribution(
+          user.id,
+          uuidParam.parse(context.req.param("userId")),
+          userAttributionInput.parse(await readJson(context.req.raw)),
+          context.get("requestId"),
+          clientIpOrNull(context.req.raw),
+        ),
+      ),
+    );
+  });
+
   app.get("/api/admin/overview", async (context) => {
     const user = await requireUser(context.req.raw, repository, config);
     const range = adminOverviewQueryInput.parse(context.req.query());
@@ -507,14 +942,20 @@ export function createApp(
 
   app.get("/api/admin/billing-rules", async (context) => {
     const user = await requireUser(context.req.raw, repository, config);
-    return context.json(success(context, {
-      rules: await requireOperationsService(operationsService).adminBillingRules(user.id),
-    }));
+    return context.json(
+      success(context, {
+        rules: await requireOperationsService(
+          operationsService,
+        ).adminBillingRules(user.id),
+      }),
+    );
   });
 
   app.post("/api/admin/billing-rules", async (context) => {
     const user = await requireUser(context.req.raw, repository, config);
-    const rule = await requireOperationsService(operationsService).createAdminBillingRule(
+    const rule = await requireOperationsService(
+      operationsService,
+    ).createAdminBillingRule(
       user.id,
       providerBillingRuleInputSchema.parse(await readJson(context.req.raw)),
       context.get("requestId"),
@@ -524,8 +965,15 @@ export function createApp(
 
   app.put("/api/admin/billing-rules/:ruleKey", async (context) => {
     const user = await requireUser(context.req.raw, repository, config);
-    const ruleKey = z.string().trim().min(1).max(100).parse(context.req.param("ruleKey"));
-    const rule = await requireOperationsService(operationsService).updateAdminBillingRule(
+    const ruleKey = z
+      .string()
+      .trim()
+      .min(1)
+      .max(100)
+      .parse(context.req.param("ruleKey"));
+    const rule = await requireOperationsService(
+      operationsService,
+    ).updateAdminBillingRule(
       user.id,
       ruleKey,
       providerBillingRuleInputSchema.parse(await readJson(context.req.raw)),
@@ -536,40 +984,58 @@ export function createApp(
 
   app.get("/api/admin/payments/orders", async (context) => {
     const user = await requireUser(context.req.raw, repository, config);
-    return context.json(success(context, {
-      orders: await requireOperationsService(operationsService).adminPaymentOrders(user.id),
-    }));
+    return context.json(
+      success(context, {
+        orders: await requireOperationsService(
+          operationsService,
+        ).adminPaymentOrders(user.id),
+      }),
+    );
   });
 
   app.get("/api/admin/payments/plans", async (context) => {
     const user = await requireUser(context.req.raw, repository, config);
-    return context.json(success(context, {
-      plans: await requireOperationsService(operationsService).adminPaymentPlans(user.id),
-    }));
+    return context.json(
+      success(context, {
+        plans: await requireOperationsService(
+          operationsService,
+        ).adminPaymentPlans(user.id),
+      }),
+    );
   });
 
   app.get("/api/admin/payments/settings", async (context) => {
     const user = await requireUser(context.req.raw, repository, config);
-    return context.json(success(context, {
-      settings: await requireOperationsService(operationsService).adminPaymentSettings(user.id),
-    }));
+    return context.json(
+      success(context, {
+        settings: await requireOperationsService(
+          operationsService,
+        ).adminPaymentSettings(user.id),
+      }),
+    );
   });
 
   app.patch("/api/admin/payments/settings", async (context) => {
     const user = await requireUser(context.req.raw, repository, config);
     const input = paymentAccessInput.parse(await readJson(context.req.raw));
-    return context.json(success(context, {
-      settings: await requireOperationsService(operationsService).setAdminPaymentSettings(
-        user.id,
-        input.publicRechargeEnabled,
-        context.get("requestId"),
-      ),
-    }));
+    return context.json(
+      success(context, {
+        settings: await requireOperationsService(
+          operationsService,
+        ).setAdminPaymentSettings(
+          user.id,
+          input.publicRechargeEnabled,
+          context.get("requestId"),
+        ),
+      }),
+    );
   });
 
   app.post("/api/admin/payments/plans", async (context) => {
     const user = await requireUser(context.req.raw, repository, config);
-    const plan = await requireOperationsService(operationsService).createAdminPaymentPlan(
+    const plan = await requireOperationsService(
+      operationsService,
+    ).createAdminPaymentPlan(
       user.id,
       paymentPlanInputSchema.parse(await readJson(context.req.raw)),
       context.get("requestId"),
@@ -579,8 +1045,15 @@ export function createApp(
 
   app.put("/api/admin/payments/plans/:planId", async (context) => {
     const user = await requireUser(context.req.raw, repository, config);
-    const planId = z.string().trim().min(1).max(100).parse(context.req.param("planId"));
-    const plan = await requireOperationsService(operationsService).updateAdminPaymentPlan(
+    const planId = z
+      .string()
+      .trim()
+      .min(1)
+      .max(100)
+      .parse(context.req.param("planId"));
+    const plan = await requireOperationsService(
+      operationsService,
+    ).updateAdminPaymentPlan(
       user.id,
       planId,
       paymentPlanInputSchema.parse(await readJson(context.req.raw)),
@@ -601,9 +1074,11 @@ export function createApp(
       orderId,
       context.get("requestId"),
     );
-    return context.json(success(context, {
-      order,
-    }));
+    return context.json(
+      success(context, {
+        order,
+      }),
+    );
   });
 
   app.get("/api/admin/models", async (context) => {
@@ -623,7 +1098,12 @@ export function createApp(
 
   app.patch("/api/admin/models/:modelId", async (context) => {
     const user = await requireUser(context.req.raw, repository, config);
-    const modelId = z.string().trim().min(1).max(200).parse(context.req.param("modelId"));
+    const modelId = z
+      .string()
+      .trim()
+      .min(1)
+      .max(200)
+      .parse(context.req.param("modelId"));
     const input = modelEnabledInput.parse(await context.req.json());
     return context.json(
       success(
@@ -679,20 +1159,36 @@ export function createApp(
 
   app.get("/api/admin/credits/activation-codes", async (context) => {
     const user = await requireUser(context.req.raw, repository, config);
-    return context.json(success(context, {
-      codes: await requireOperationsService(operationsService).listActivationCodes(user.id),
-    }));
+    return context.json(
+      success(context, {
+        codes: await requireOperationsService(
+          operationsService,
+        ).listActivationCodes(user.id),
+      }),
+    );
   });
 
   app.post("/api/admin/credits/activation-codes", async (context) => {
     const user = await requireUser(context.req.raw, repository, config);
-    const input = z.object({
-      credits: z.number().int().positive().max(1_000_000_000),
-      expiresAt: z.string().datetime(),
-    }).strict().parse(await readJson(context.req.raw));
-    return context.json(success(context,
-      await requireOperationsService(operationsService).issueActivationCode(
-        user.id, input.credits, input.expiresAt, context.get("requestId"))), 201);
+    const input = z
+      .object({
+        credits: z.number().int().positive().max(1_000_000_000),
+        expiresAt: z.string().datetime(),
+      })
+      .strict()
+      .parse(await readJson(context.req.raw));
+    return context.json(
+      success(
+        context,
+        await requireOperationsService(operationsService).issueActivationCode(
+          user.id,
+          input.credits,
+          input.expiresAt,
+          context.get("requestId"),
+        ),
+      ),
+      201,
+    );
   });
 
   app.patch("/api/admin/credits/pricing", async (context) => {
@@ -1369,7 +1865,9 @@ export function createApp(
 
   app.post("/api/feedback", async (context) => {
     const user = await requireUser(context.req.raw, repository, config);
-    const feedback = await requireOperationsService(operationsService).createFeedback(
+    const feedback = await requireOperationsService(
+      operationsService,
+    ).createFeedback(
       user.id,
       feedbackInput.parse(await readJson(context.req.raw)),
     );
@@ -1391,7 +1889,9 @@ export function createApp(
     return context.json(
       success(
         context,
-        await requireOperationsService(operationsService).feedbackUnread(user.id),
+        await requireOperationsService(operationsService).feedbackUnread(
+          user.id,
+        ),
       ),
     );
   });
@@ -1427,16 +1927,15 @@ export function createApp(
     const user = await requireUser(context.req.raw, repository, config);
     const feedbackId = uuidParam.parse(context.req.param("feedbackId"));
     const input = feedbackReplyInput.parse(await readJson(context.req.raw));
-    const result = await requireOperationsService(operationsService).replyFeedback(
+    const result = await requireOperationsService(
+      operationsService,
+    ).replyFeedback(
       user.id,
       feedbackId,
       input.content,
       context.get("requestId"),
     );
-    return context.json(
-      success(context, { reply: result.reply }),
-      201,
-    );
+    return context.json(success(context, { reply: result.reply }), 201);
   });
 
   app.patch("/api/admin/feedback/:feedbackId/status", async (context) => {
@@ -1473,67 +1972,68 @@ export function createApp(
 
   app.post("/api/asset-versions/downloads", async (context) => {
     const user = await requireUser(context.req.raw, repository, config);
-    const { versionIds } = assetVersionDownloadsSchema.parse(await readJson(context.req.raw));
-    const versions = await requireAssetService(assetService).createDownloadUrls(versionIds, user.id);
+    const { versionIds } = assetVersionDownloadsSchema.parse(
+      await readJson(context.req.raw),
+    );
+    const versions = await requireAssetService(assetService).createDownloadUrls(
+      versionIds,
+      user.id,
+    );
     return context.json(success(context, { versions }));
   });
 
-  app.on(["GET", "HEAD"], "/api/media/asset-versions/:versionId", async (context) => {
-    const user = await requireUser(context.req.raw, repository, config);
-    const thumbnailValue = context.req.query("thumbnail");
-    if (thumbnailValue !== undefined && thumbnailValue !== "1")
-      throw new DomainError(
-        "INVALID_MEDIA_VARIANT",
-        "请求的素材版本无效",
-        400,
-      );
-    const thumbnail = thumbnailValue === "1";
-    const service = requireAssetService(assetService);
-    if (context.req.header("x-media-authorize-only") === "1") {
-      if (
-        !(await service.authorizeMediaDownload(
-          context.req.param("versionId"),
-          user.id,
-          thumbnail,
-        ))
-      )
+  app.on(
+    ["GET", "HEAD"],
+    "/api/media/asset-versions/:versionId",
+    async (context) => {
+      const user = await requireUser(context.req.raw, repository, config);
+      const thumbnailValue = context.req.query("thumbnail");
+      if (thumbnailValue !== undefined && thumbnailValue !== "1")
         throw new DomainError(
-          "MEDIA_FORBIDDEN",
-          "无权访问该素材版本",
-          403,
+          "INVALID_MEDIA_VARIANT",
+          "请求的素材版本无效",
+          400,
         );
-      return context.body(null, 204);
-    }
-    const range = context.req.header("range");
-    if (range && !validMediaRange(range))
-      throw new DomainError(
-        "INVALID_MEDIA_RANGE",
-        "请求的素材范围无效",
-        416,
+      const thumbnail = thumbnailValue === "1";
+      const service = requireAssetService(assetService);
+      if (context.req.header("x-media-authorize-only") === "1") {
+        if (
+          !(await service.authorizeMediaDownload(
+            context.req.param("versionId"),
+            user.id,
+            thumbnail,
+          ))
+        )
+          throw new DomainError("MEDIA_FORBIDDEN", "无权访问该素材版本", 403);
+        return context.body(null, 204);
+      }
+      const range = context.req.header("range");
+      if (range && !validMediaRange(range))
+        throw new DomainError("INVALID_MEDIA_RANGE", "请求的素材范围无效", 416);
+      const download = await service.openMediaDownload(
+        context.req.param("versionId"),
+        user.id,
+        thumbnail,
+        range,
       );
-    const download = await service.openMediaDownload(
-      context.req.param("versionId"),
-      user.id,
-      thumbnail,
-      range,
-    );
-    if (!download)
-      throw new DomainError(
-        "ASSET_VERSION_NOT_FOUND",
-        "找不到该素材版本",
-        404,
-      );
-    context.header("cache-control", "private, no-cache");
-    context.header("accept-ranges", download.acceptRanges || "bytes");
-    context.header("content-type", download.mimeType);
-    context.header("content-length", String(download.bytes));
-    if (download.contentRange)
-      context.header("content-range", download.contentRange);
-    if (download.etag) context.header("etag", download.etag);
-    if (download.lastModified)
-      context.header("last-modified", download.lastModified);
-    return context.body(download.body, download.status);
-  });
+      if (!download)
+        throw new DomainError(
+          "ASSET_VERSION_NOT_FOUND",
+          "找不到该素材版本",
+          404,
+        );
+      context.header("cache-control", "private, no-cache");
+      context.header("accept-ranges", download.acceptRanges || "bytes");
+      context.header("content-type", download.mimeType);
+      context.header("content-length", String(download.bytes));
+      if (download.contentRange)
+        context.header("content-range", download.contentRange);
+      if (download.etag) context.header("etag", download.etag);
+      if (download.lastModified)
+        context.header("last-modified", download.lastModified);
+      return context.body(download.body, download.status);
+    },
+  );
 
   app.patch("/api/assets/:assetId/current-version", async (context) => {
     const user = await requireUser(context.req.raw, repository, config);
@@ -1690,6 +2190,17 @@ function requireOperationsService(service?: OperationsServicePort) {
   return service;
 }
 
+function requireAttributionService(service?: ChannelAttributionService) {
+  if (!service)
+    throw new DomainError(
+      "ATTRIBUTION_UNAVAILABLE",
+      "渠道归因服务暂时不可用",
+      503,
+      true,
+    );
+  return service;
+}
+
 function requireTextWorkbenchService(service?: TextWorkbenchService) {
   if (!service)
     throw new DomainError(
@@ -1714,14 +2225,23 @@ const registerInput = z
   .object({
     email: emailSchema,
     password: passwordSchema,
-    verificationCode: z.string().trim().regex(/^\d{6}$/).optional(),
+    verificationCode: z
+      .string()
+      .trim()
+      .regex(/^\d{6}$/)
+      .optional(),
+    inviteCode: z.string().trim().toUpperCase().max(40).optional(),
+    deviceId: z.string().trim().min(16).max(200).optional(),
   })
   .strict();
 const emailVerificationRequestInput = z.object({ email: emailSchema }).strict();
 const passwordResetInput = z
   .object({
     email: emailSchema,
-    verificationCode: z.string().trim().regex(/^\d{6}$/),
+    verificationCode: z
+      .string()
+      .trim()
+      .regex(/^\d{6}$/),
     newPassword: passwordSchema,
   })
   .strict();
@@ -1787,6 +2307,7 @@ const textConversationCreateInput = z
   })
   .strict();
 const uuidParam = z.string().uuid();
+const attributionKind = z.enum(["channel", "campaign", "batch", "invite"]);
 const adminStatusInput = z
   .object({
     status: z.enum(["active", "disabled"]),
@@ -1826,22 +2347,32 @@ const managedProviderInput = z
   .object({ providerId: managedProviderId })
   .strict();
 const modelEnabledInput = z.object({ enabled: z.boolean() }).strict();
-const paymentAccessInput = z.object({ publicRechargeEnabled: z.boolean() }).strict();
-const feedbackInput = z.object({
-  category: z.enum(["problem", "suggestion"]),
-  content: z.string().trim().min(2).max(2000),
-  contact: z.string().trim().max(200).optional(),
-  pagePath: z.string().trim().max(500).optional(),
-}).strict();
-const feedbackReplyInput = z.object({
-  content: z.string().trim().min(1).max(2000),
-}).strict();
-const feedbackReadInput = z.object({
-  readThrough: z.string().datetime({ offset: true }),
-}).strict();
-const feedbackStatusInput = z.object({
-  status: z.enum(["open", "replied", "closed"]),
-}).strict();
+const paymentAccessInput = z
+  .object({ publicRechargeEnabled: z.boolean() })
+  .strict();
+const feedbackInput = z
+  .object({
+    category: z.enum(["problem", "suggestion"]),
+    content: z.string().trim().min(2).max(2000),
+    contact: z.string().trim().max(200).optional(),
+    pagePath: z.string().trim().max(500).optional(),
+  })
+  .strict();
+const feedbackReplyInput = z
+  .object({
+    content: z.string().trim().min(1).max(2000),
+  })
+  .strict();
+const feedbackReadInput = z
+  .object({
+    readThrough: z.string().datetime({ offset: true }),
+  })
+  .strict();
+const feedbackStatusInput = z
+  .object({
+    status: z.enum(["open", "replied", "closed"]),
+  })
+  .strict();
 const adminOverviewQueryInput = z
   .object({
     dateFrom: z.string().date().optional(),
@@ -1950,6 +2481,11 @@ function clientIp(request: Request) {
     request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ||
     "unknown"
   );
+}
+
+function clientIpOrNull(request: Request) {
+  const value = clientIp(request);
+  return value !== "unknown" && isIP(value) ? value : null;
 }
 
 function invalidRegistrationCode() {

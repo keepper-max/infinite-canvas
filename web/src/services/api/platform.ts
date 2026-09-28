@@ -28,12 +28,16 @@ export class PlatformApiError extends Error {
     }
 }
 
-export function register(email: string, password: string, verificationCode?: string) {
-    return platformRequest<AuthSession>("/api/auth/register", { method: "POST", body: JSON.stringify({ email, password, verificationCode }) });
+export function register(email: string, password: string, verificationCode?: string, inviteCode?: string, deviceId?: string) {
+    return platformRequest<AuthSession>("/api/auth/register", { method: "POST", body: JSON.stringify({ email, password, verificationCode, inviteCode: inviteCode || undefined, deviceId }) });
 }
 
 export function getAuthConfig() {
-    return platformRequest<{ emailVerificationRequired: boolean }>("/api/auth/config");
+    return platformRequest<{ emailVerificationRequired: boolean; inviteMode: "required" | "optional" | "disabled" }>("/api/auth/config");
+}
+
+export function validateInviteCode(code: string, deviceId?: string) {
+    return platformRequest<{ valid: true }>("/api/auth/invite-code/validate", { method: "POST", body: JSON.stringify({ code, deviceId }) });
 }
 
 export function requestEmailVerification(email: string) {

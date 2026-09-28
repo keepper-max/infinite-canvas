@@ -11,6 +11,7 @@ import { JobService } from "./job-service.js";
 import { ModelGateway } from "./model-gateway.js";
 import { createQueue } from "./queue.js";
 import { CompositionService } from "./composition-service.js";
+import { ChannelAttributionService } from "./channel-attribution-service.js";
 import { createCompositionQueue } from "./queue.js";
 import { OperationsService } from "./operations-service.js";
 import { TextWorkbenchService } from "./text-workbench-service.js";
@@ -110,6 +111,10 @@ const virtualPortraitService = new VirtualPortraitService(
 const emailVerificationService = config.emailVerification?.enabled
   ? new EmailVerificationService(pool, config.emailVerification)
   : undefined;
+const channelAttributionService = new ChannelAttributionService(
+  pool,
+  config.operations,
+);
 const app = createApp(
   new PostgresPlatformRepository(db),
   config,
@@ -121,6 +126,7 @@ const app = createApp(
   textWorkbenchService,
   virtualPortraitService,
   emailVerificationService,
+  channelAttributionService,
 );
 
 const server = serve({ fetch: app.fetch, port: config.port }, (info) => {

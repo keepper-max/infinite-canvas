@@ -1,11 +1,13 @@
-import { ArrowLeft, Boxes, CircleDollarSign, ClipboardList, CreditCard, LayoutDashboard, MessageSquareText, ReceiptText, ShieldCheck, Users } from "lucide-react";
+import { ArrowLeft, Boxes, CircleDollarSign, ClipboardList, CreditCard, LayoutDashboard, MessageSquareText, ReceiptText, Share2, ShieldCheck, Users } from "lucide-react";
 import { Button, DatePicker, Drawer, Empty, Input, InputNumber, Modal, Select, Space, Spin, Switch, Table, Tag, Tooltip, message } from "antd";
 import dayjs, { type Dayjs } from "dayjs";
 import { useCallback, useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 
 import { useAuth } from "@/components/auth/auth-context";
+import ChannelManagement from "./channels";
 import { randomUuid } from "@/lib/utils";
+import { getBatches, getCampaigns, getChannels, getInvites, updateUserAttribution, type Batch, type Campaign, type Channel, type InviteCode } from "@/services/api/channel-attribution";
 import {
     getAdminAuditLogs,
     getAdminFeedback,
@@ -68,6 +70,7 @@ import {
 const sections = [
     { key: "overview", label: "概览", icon: LayoutDashboard },
     { key: "users", label: "账号", icon: Users },
+    { key: "channels", label: "渠道管理", icon: Share2 },
     { key: "usage", label: "消耗", icon: CircleDollarSign },
     { key: "jobs", label: "任务", icon: ClipboardList },
     { key: "billing", label: "计费规则", icon: ReceiptText },
@@ -176,6 +179,7 @@ function AdminForbidden() {
 function AdminSection({ section, modelProvider }: { section: Section; modelProvider: AdminProvider["id"] }) {
     if (section === "overview") return <Overview />;
     if (section === "users") return <UsersPanel />;
+    if (section === "channels") return <ChannelManagement />;
     if (section === "usage") return <UsagePanel />;
     if (section === "jobs") return <JobsPanel />;
     if (section === "billing") return <BillingRulesPanel />;
@@ -269,134 +273,156 @@ function Overview() {
     };
     return (
         <Spin spinning={loading} tip="正在更新数据">
-        <div className="space-y-6">
-            <div className="flex flex-wrap items-center justify-between gap-4 rounded-2xl border border-stone-200 bg-white px-5 py-4 shadow-sm shadow-stone-200/40 dark:border-white/10 dark:bg-stone-950 dark:shadow-none">
-                <div>
-                    <p className="text-xs font-medium text-stone-500">数据周期</p>
-                    <p className="mt-1 text-sm font-semibold">{rangeLabel}</p>
-                </div>
-                <div className="flex flex-wrap items-center gap-2">
-                    {(["today", "yesterday", "week", "month"] as const).map((preset) => (
-                        <button
-                            key={preset}
-                            type="button"
-                            aria-pressed={rangePreset === preset}
-                            onClick={() => applyPreset(preset)}
-                            style={rangePreset === preset ? { backgroundColor: "#f5f5f4", borderColor: "#f5f5f4", color: "#0c0a09" } : undefined}
-                            className={`rounded-lg border px-3.5 py-2 text-sm font-medium transition ${rangePreset === preset ? "shadow-sm" : "border-stone-200 bg-transparent text-stone-600 hover:border-stone-400 hover:text-stone-950 dark:border-white/15 dark:text-stone-300 dark:hover:border-white/40 dark:hover:text-white"}`}
-                        >
-                            {overviewPresetLabel[preset]}
-                        </button>
-                    ))}
-                    <DatePicker.RangePicker
-                        value={range}
-                        allowClear={false}
-                        format="YYYY-MM-DD"
-                        onChange={(values) => {
-                            if (!values?.[0] || !values?.[1]) return;
-                            if (values[1].diff(values[0], "day") > 365) {
-                                message.warning("自定义统计范围最多为 366 天");
-                                return;
-                            }
-                            setRangePreset("custom");
-                            setRangeJobsPage(1);
-                            setRange([values[0], values[1]]);
-                        }}
-                        className={`h-[38px] w-[250px] ${rangePreset === "custom" ? "ring-1 ring-stone-950 dark:ring-white" : ""}`}
-                    />
-                </div>
-            </div>
-            <div className="grid grid-cols-2 gap-4 xl:grid-cols-6">
-                {metrics.map((item) => (
-                    <Metric key={item.label} label={item.label} value={item.value} note={item.note} />
-                ))}
-            </div>
-            <div className="grid gap-6 xl:grid-cols-[1.5fr_1fr]">
-                <Panel title={`${rangeLabel}活跃趋势`} note="活跃用户按登录或提交生成任务统计">
-                    <div className="mb-5 flex items-center gap-5 text-xs text-stone-600 dark:text-stone-300">
-                        <span className="flex items-center gap-2"><i className="size-2 rounded-full bg-stone-200" />任务</span>
-                        <span className="flex items-center gap-2"><i className="size-2 rounded-full bg-emerald-400" />活跃用户</span>
+            <div className="space-y-6">
+                <div className="flex flex-wrap items-center justify-between gap-4 rounded-2xl border border-stone-200 bg-white px-5 py-4 shadow-sm shadow-stone-200/40 dark:border-white/10 dark:bg-stone-950 dark:shadow-none">
+                    <div>
+                        <p className="text-xs font-medium text-stone-500">数据周期</p>
+                        <p className="mt-1 text-sm font-semibold">{rangeLabel}</p>
                     </div>
-                    <div className="flex h-52 items-end gap-1">
-                        {data.trends.map((item) => (
-                            <div key={item.day} className="group relative flex h-full min-w-0 flex-1 items-end justify-center gap-px">
-                                <div className="w-1/2 max-w-2 rounded-t-sm bg-stone-300 transition group-hover:bg-white dark:bg-stone-200" style={{ height: `${Math.max(2, (item.jobs / peak) * 100)}%` }} />
-                                <div className="w-1/2 max-w-2 rounded-t-sm bg-emerald-500/70 transition group-hover:bg-emerald-400" style={{ height: `${Math.max(2, (item.activeUsers / peak) * 100)}%` }} />
-                                <span className="pointer-events-none absolute bottom-full left-1/2 z-10 hidden -translate-x-1/2 whitespace-nowrap rounded-lg border border-white/10 bg-black px-2.5 py-1.5 text-[10px] text-white shadow-xl group-hover:block">
-                                    {item.day} · {item.jobs} 任务 · {item.activeUsers} 活跃 · +{item.newUsers} 用户
-                                </span>
-                            </div>
+                    <div className="flex flex-wrap items-center gap-2">
+                        {(["today", "yesterday", "week", "month"] as const).map((preset) => (
+                            <button
+                                key={preset}
+                                type="button"
+                                aria-pressed={rangePreset === preset}
+                                onClick={() => applyPreset(preset)}
+                                style={rangePreset === preset ? { backgroundColor: "#f5f5f4", borderColor: "#f5f5f4", color: "#0c0a09" } : undefined}
+                                className={`rounded-lg border px-3.5 py-2 text-sm font-medium transition ${rangePreset === preset ? "shadow-sm" : "border-stone-200 bg-transparent text-stone-600 hover:border-stone-400 hover:text-stone-950 dark:border-white/15 dark:text-stone-300 dark:hover:border-white/40 dark:hover:text-white"}`}
+                            >
+                                {overviewPresetLabel[preset]}
+                            </button>
                         ))}
+                        <DatePicker.RangePicker
+                            value={range}
+                            allowClear={false}
+                            format="YYYY-MM-DD"
+                            onChange={(values) => {
+                                if (!values?.[0] || !values?.[1]) return;
+                                if (values[1].diff(values[0], "day") > 365) {
+                                    message.warning("自定义统计范围最多为 366 天");
+                                    return;
+                                }
+                                setRangePreset("custom");
+                                setRangeJobsPage(1);
+                                setRange([values[0], values[1]]);
+                            }}
+                            className={`h-[38px] w-[250px] ${rangePreset === "custom" ? "ring-1 ring-stone-950 dark:ring-white" : ""}`}
+                        />
                     </div>
-                    <div className="mt-3 flex justify-between border-t border-stone-200 pt-2 font-mono text-[11px] text-stone-600 dark:border-white/10 dark:text-stone-400">
-                        {trendTicks.map((item) => <span key={item.day}>{dayjs(item.day).format("M/D")}</span>)}
+                </div>
+                <div className="grid grid-cols-2 gap-4 xl:grid-cols-6">
+                    {metrics.map((item) => (
+                        <Metric key={item.label} label={item.label} value={item.value} note={item.note} />
+                    ))}
+                </div>
+                <div className="grid gap-6 xl:grid-cols-[1.5fr_1fr]">
+                    <Panel title={`${rangeLabel}活跃趋势`} note="活跃用户按登录或提交生成任务统计">
+                        <div className="mb-5 flex items-center gap-5 text-xs text-stone-600 dark:text-stone-300">
+                            <span className="flex items-center gap-2">
+                                <i className="size-2 rounded-full bg-stone-200" />
+                                任务
+                            </span>
+                            <span className="flex items-center gap-2">
+                                <i className="size-2 rounded-full bg-emerald-400" />
+                                活跃用户
+                            </span>
+                        </div>
+                        <div className="flex h-52 items-end gap-1">
+                            {data.trends.map((item) => (
+                                <div key={item.day} className="group relative flex h-full min-w-0 flex-1 items-end justify-center gap-px">
+                                    <div className="w-1/2 max-w-2 rounded-t-sm bg-stone-300 transition group-hover:bg-white dark:bg-stone-200" style={{ height: `${Math.max(2, (item.jobs / peak) * 100)}%` }} />
+                                    <div className="w-1/2 max-w-2 rounded-t-sm bg-emerald-500/70 transition group-hover:bg-emerald-400" style={{ height: `${Math.max(2, (item.activeUsers / peak) * 100)}%` }} />
+                                    <span className="pointer-events-none absolute bottom-full left-1/2 z-10 hidden -translate-x-1/2 whitespace-nowrap rounded-lg border border-white/10 bg-black px-2.5 py-1.5 text-[10px] text-white shadow-xl group-hover:block">
+                                        {item.day} · {item.jobs} 任务 · {item.activeUsers} 活跃 · +{item.newUsers} 用户
+                                    </span>
+                                </div>
+                            ))}
+                        </div>
+                        <div className="mt-3 flex justify-between border-t border-stone-200 pt-2 font-mono text-[11px] text-stone-600 dark:border-white/10 dark:text-stone-400">
+                            {trendTicks.map((item) => (
+                                <span key={item.day}>{dayjs(item.day).format("M/D")}</span>
+                            ))}
+                        </div>
+                    </Panel>
+                    <Panel title="供应商原始费用" note={`${rangeLabel}与历史累计；优惠实付另见消耗流水`}>
+                        {usageCurrencies.length ? (
+                            <div className="space-y-3">
+                                {usageCurrencies.map((currency) => {
+                                    const recent = data.usageRange.find((item) => item.currency === currency);
+                                    const total = data.usage.find((item) => item.currency === currency);
+                                    return (
+                                        <div key={currency} className="rounded-xl border border-stone-200 bg-stone-50/60 p-4 dark:border-white/10 dark:bg-white/[0.025]">
+                                            <div className="flex items-center justify-between">
+                                                <b>{usageAmountLabel(currency, recent?.totalAmount || total?.totalAmount, true)}</b>
+                                                <span className="font-mono text-xl">{formatUsageAmount(currency, recent?.totalAmount || "0")}</span>
+                                            </div>
+                                            <div className="mt-3 flex items-center justify-between text-xs text-stone-600 dark:text-stone-400">
+                                                <span>
+                                                    {rangeLabel} {recent?.calls || 0} 笔
+                                                </span>
+                                                <span>累计 {formatUsageAmount(currency, total?.totalAmount || "0")}</span>
+                                            </div>
+                                        </div>
+                                    );
+                                })}
+                            </div>
+                        ) : (
+                            <Empty description="暂无已对账账单" />
+                        )}
+                    </Panel>
+                </div>
+                <Panel title="运行监控" note="优先关注红色和黄色指标">
+                    <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-6">
+                        <OperationalSignal label="有效登录用户" value={formatCount(data.userActivity.activeSessionUsers)} note="当前未过期会话" />
+                        <OperationalSignal label="运行中任务" value={formatCount(data.activeJobs)} note="生成队列实时值" tone={data.activeJobs > 10 ? "warning" : "normal"} />
+                        <OperationalSignal label="区间失败" value={formatCount(data.jobActivity.failedInRange)} note="需要排查失败原因" tone={data.jobActivity.failedInRange ? "danger" : "normal"} />
+                        <OperationalSignal label="待对账" value={formatCount(data.alerts.pendingBillingJobs)} note="供应商账单处理中" tone={data.alerts.pendingBillingJobs ? "warning" : "normal"} />
+                        <OperationalSignal label="待扣积分" value={formatCount(data.alerts.pendingCreditCharges)} note="计费尚未最终入账" tone={data.alerts.pendingCreditCharges ? "warning" : "normal"} />
+                        <OperationalSignal label="平均生成耗时" value={formatDuration(data.jobActivity.avgCompletionSecondsInRange)} note={`${rangeLabel}成功任务`} />
                     </div>
                 </Panel>
-                <Panel title="供应商原始费用" note={`${rangeLabel}与历史累计；优惠实付另见消耗流水`}>
-                    {usageCurrencies.length ? (
-                        <div className="space-y-3">
-                            {usageCurrencies.map((currency) => {
-                                const recent = data.usageRange.find((item) => item.currency === currency);
-                                const total = data.usage.find((item) => item.currency === currency);
-                                return <div key={currency} className="rounded-xl border border-stone-200 bg-stone-50/60 p-4 dark:border-white/10 dark:bg-white/[0.025]">
-                                    <div className="flex items-center justify-between">
-                                        <b>{usageAmountLabel(currency, recent?.totalAmount || total?.totalAmount, true)}</b>
-                                        <span className="font-mono text-xl">{formatUsageAmount(currency, recent?.totalAmount || "0")}</span>
-                                    </div>
-                                    <div className="mt-3 flex items-center justify-between text-xs text-stone-600 dark:text-stone-400">
-                                        <span>{rangeLabel} {recent?.calls || 0} 笔</span>
-                                        <span>累计 {formatUsageAmount(currency, total?.totalAmount || "0")}</span>
-                                    </div>
-                                </div>;
-                            })}
-                        </div>
-                    ) : (
-                        <Empty description="暂无已对账账单" />
-                    )}
+                <Panel title="所选周期任务明细" note={`${rangeLabel}共 ${formatCount(rangeJobsTotal)} 个任务，按提交时间倒序`}>
+                    <Table
+                        rowKey="id"
+                        loading={rangeJobsLoading}
+                        dataSource={rangeJobs}
+                        scroll={{ x: 1080 }}
+                        pagination={{ current: rangeJobsPage, pageSize: 10, total: rangeJobsTotal, showSizeChanger: false, onChange: setRangeJobsPage }}
+                        columns={[
+                            { title: "提交时间", dataIndex: "createdAt", width: 170, render: formatDate },
+                            {
+                                title: "用户 / 项目",
+                                width: 230,
+                                render: (_, item) => (
+                                    <>
+                                        <span className="block font-medium text-stone-900 dark:text-stone-100">{item.userEmail}</span>
+                                        <small className="text-stone-600 dark:text-stone-400">{item.projectName}</small>
+                                    </>
+                                ),
+                            },
+                            {
+                                title: "模型 / 能力",
+                                width: 240,
+                                render: (_, item) => (
+                                    <>
+                                        <span className="block">{item.modelId}</span>
+                                        <small className="text-stone-600 dark:text-stone-400">{item.capability}</small>
+                                    </>
+                                ),
+                            },
+                            { title: "任务状态", dataIndex: "status", width: 110, render: (value) => <StatusTag value={value} /> },
+                            { title: "对账状态", dataIndex: "billingStatus", width: 110, render: (value) => <StatusTag value={value} /> },
+                            { title: "耗时", width: 100, render: (_, item) => formatJobDuration(item.createdAt, item.finishedAt) },
+                            {
+                                title: "任务 ID",
+                                dataIndex: "id",
+                                width: 150,
+                                render: copyable,
+                            },
+                        ]}
+                    />
                 </Panel>
             </div>
-            <Panel title="运行监控" note="优先关注红色和黄色指标">
-                <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-6">
-                    <OperationalSignal label="有效登录用户" value={formatCount(data.userActivity.activeSessionUsers)} note="当前未过期会话" />
-                    <OperationalSignal label="运行中任务" value={formatCount(data.activeJobs)} note="生成队列实时值" tone={data.activeJobs > 10 ? "warning" : "normal"} />
-                    <OperationalSignal label="区间失败" value={formatCount(data.jobActivity.failedInRange)} note="需要排查失败原因" tone={data.jobActivity.failedInRange ? "danger" : "normal"} />
-                    <OperationalSignal label="待对账" value={formatCount(data.alerts.pendingBillingJobs)} note="供应商账单处理中" tone={data.alerts.pendingBillingJobs ? "warning" : "normal"} />
-                    <OperationalSignal label="待扣积分" value={formatCount(data.alerts.pendingCreditCharges)} note="计费尚未最终入账" tone={data.alerts.pendingCreditCharges ? "warning" : "normal"} />
-                    <OperationalSignal label="平均生成耗时" value={formatDuration(data.jobActivity.avgCompletionSecondsInRange)} note={`${rangeLabel}成功任务`} />
-                </div>
-            </Panel>
-            <Panel title="所选周期任务明细" note={`${rangeLabel}共 ${formatCount(rangeJobsTotal)} 个任务，按提交时间倒序`}>
-                <Table
-                    rowKey="id"
-                    loading={rangeJobsLoading}
-                    dataSource={rangeJobs}
-                    scroll={{ x: 1080 }}
-                    pagination={{ current: rangeJobsPage, pageSize: 10, total: rangeJobsTotal, showSizeChanger: false, onChange: setRangeJobsPage }}
-                    columns={[
-                        { title: "提交时间", dataIndex: "createdAt", width: 170, render: formatDate },
-                        {
-                            title: "用户 / 项目",
-                            width: 230,
-                            render: (_, item) => <><span className="block font-medium text-stone-900 dark:text-stone-100">{item.userEmail}</span><small className="text-stone-600 dark:text-stone-400">{item.projectName}</small></>,
-                        },
-                        {
-                            title: "模型 / 能力",
-                            width: 240,
-                            render: (_, item) => <><span className="block">{item.modelId}</span><small className="text-stone-600 dark:text-stone-400">{item.capability}</small></>,
-                        },
-                        { title: "任务状态", dataIndex: "status", width: 110, render: (value) => <StatusTag value={value} /> },
-                        { title: "对账状态", dataIndex: "billingStatus", width: 110, render: (value) => <StatusTag value={value} /> },
-                        { title: "耗时", width: 100, render: (_, item) => formatJobDuration(item.createdAt, item.finishedAt) },
-                        {
-                            title: "任务 ID",
-                            dataIndex: "id",
-                            width: 150,
-                            render: copyable,
-                        },
-                    ]}
-                />
-            </Panel>
-        </div>
         </Spin>
     );
 }
@@ -522,6 +548,8 @@ function UsersPanel() {
                         ),
                     },
                     { title: "项目 / 任务", render: (_, record) => `${record.projectCount} / ${record.jobCount}` },
+                    { title: "注册 IP", dataIndex: "registrationIp", render: (value) => value || "—" },
+                    { title: "来源渠道", dataIndex: "channelName", render: (value, record) => (value ? `${value}${record.inviteCode ? ` · ${record.inviteCode}` : ""}` : "—") },
                     { title: "积分", dataIndex: "creditBalance", render: (value) => <span className="font-mono">{formatPoints(value)}</span> },
                     { title: "存储", dataIndex: "storageBytes", render: formatBytes },
                     {
@@ -567,6 +595,17 @@ function UserDrawer({ userId, onClose, onChanged }: { userId?: string; onClose: 
     const [grantNote, setGrantNote] = useState("");
     const [grantKey, setGrantKey] = useState(randomUuid);
     const [granting, setGranting] = useState(false);
+    const [attributionOpen, setAttributionOpen] = useState(false);
+    const [attributionSaving, setAttributionSaving] = useState(false);
+    const [channels, setChannels] = useState<Channel[]>([]);
+    const [campaigns, setCampaigns] = useState<Campaign[]>([]);
+    const [batches, setBatches] = useState<Batch[]>([]);
+    const [invites, setInvites] = useState<InviteCode[]>([]);
+    const [attributionChannelId, setAttributionChannelId] = useState<string>();
+    const [attributionCampaignId, setAttributionCampaignId] = useState<string>();
+    const [attributionBatchId, setAttributionBatchId] = useState<string>();
+    const [attributionInviteId, setAttributionInviteId] = useState<string>();
+    const [attributionReason, setAttributionReason] = useState("");
     useEffect(() => {
         setDetail(undefined);
         if (!userId) return;
@@ -632,114 +671,167 @@ function UserDrawer({ userId, onClose, onChanged }: { userId?: string; onClose: 
             setGranting(false);
         }
     };
+    const openAttribution = async () => {
+        if (!detail) return;
+        try {
+            const [channelData, campaignData, batchData, inviteData] = await Promise.all([getChannels({ pageSize: 100 }), getCampaigns({ pageSize: 100 }), getBatches({ pageSize: 100 }), getInvites({ pageSize: 100 })]);
+            setChannels(channelData.items);
+            setCampaigns(campaignData.items);
+            setBatches(batchData.items);
+            setInvites(inviteData.items);
+            setAttributionChannelId(detail.user.channelId);
+            setAttributionCampaignId(detail.user.campaignId);
+            setAttributionBatchId(detail.user.batchId);
+            setAttributionInviteId(detail.user.inviteCodeId);
+            setAttributionReason("");
+            setAttributionOpen(true);
+        } catch (error) {
+            message.error(error instanceof Error ? error.message : "归因选项读取失败");
+        }
+    };
+    const submitAttribution = async () => {
+        if (!attributionChannelId || !attributionReason.trim()) {
+            message.error("请选择渠道并填写修正原因");
+            return;
+        }
+        setAttributionSaving(true);
+        try {
+            await updateUserAttribution(userId, {
+                channelId: attributionChannelId,
+                campaignId: attributionCampaignId || null,
+                batchId: attributionBatchId || null,
+                inviteCodeId: attributionInviteId || null,
+                reason: attributionReason.trim(),
+            });
+            setDetail(await getAdminUser(userId));
+            setAttributionOpen(false);
+            onChanged();
+            message.success("用户来源已修正并写入审计日志");
+        } catch (error) {
+            message.error(error instanceof Error ? error.message : "来源修正失败");
+        } finally {
+            setAttributionSaving(false);
+        }
+    };
     return (
         <>
             <Drawer open width={720} onClose={onClose} title="用户详情" destroyOnHidden>
-            {!detail ? (
-                <Loading />
-            ) : (
-                <div className="space-y-6">
-                    <div className="rounded-2xl bg-stone-950 p-5 text-white">
-                        <p className="text-xl font-semibold">{detail.user.email}</p>
-                        <p className="mt-1 font-mono text-xs text-stone-500">{detail.user.id}</p>
-                        <div className="mt-5 flex flex-wrap gap-2">
-                            <StatusTag value={detail.user.status} />
-                            <Tag>{detail.user.projectCount} 项目</Tag>
-                            <Tag>{detail.user.jobCount} 任务</Tag>
+                {!detail ? (
+                    <Loading />
+                ) : (
+                    <div className="space-y-6">
+                        <div className="rounded-2xl bg-stone-950 p-5 text-white">
+                            <p className="text-xl font-semibold">{detail.user.email}</p>
+                            <p className="mt-1 font-mono text-xs text-stone-500">{detail.user.id}</p>
+                            <div className="mt-5 flex flex-wrap gap-2">
+                                <StatusTag value={detail.user.status} />
+                                <Tag>{detail.user.projectCount} 项目</Tag>
+                                <Tag>{detail.user.jobCount} 任务</Tag>
+                            </div>
                         </div>
+                        <Space wrap>
+                            <Button onClick={() => void mutate("sessions")}>强制下线全部会话</Button>
+                            <Button onClick={() => void mutate("admin")}>{detail.user.isAdmin ? "取消管理员" : "设为管理员"}</Button>
+                        </Space>
+                        <Panel title="注册来源" actions={<Button onClick={() => void openAttribution()}>修正归因</Button>}>
+                            <div className="grid gap-3 sm:grid-cols-3">
+                                <Metric label="注册 IP" value={detail.user.registrationIp || "—"} />
+                                <Metric label="渠道" value={detail.user.channelName || "—"} />
+                                <Metric label="邀请码" value={detail.user.inviteCode || "自然注册"} />
+                            </div>
+                        </Panel>
+                        <Panel
+                            title="积分账户"
+                            note="购买和管理员发放积分默认 12 个月有效"
+                            actions={
+                                <Button
+                                    type="primary"
+                                    onClick={() => {
+                                        setGrantKey(randomUuid());
+                                        setGrantOpen(true);
+                                    }}
+                                >
+                                    发放积分
+                                </Button>
+                            }
+                        >
+                            <div className="grid gap-3 sm:grid-cols-3">
+                                <Metric label="当前余额" value={formatPoints(detail.credits?.account.balance || "0")} />
+                                <Metric label="待计费" value={String(detail.credits?.pendingCharges || 0)} />
+                                <Metric label="有效批次" value={String(detail.credits?.lots.filter((lot) => BigInt(lot.remaining) > BigInt(0)).length || 0)} />
+                            </div>
+                        </Panel>
+                        <Panel title="实际消耗">
+                            {detail.usage.length ? (
+                                detail.usage.map((item) => (
+                                    <p key={item.currency} className="mb-2 font-mono">
+                                        {formatUsageAmount(item.currency, item.totalAmount)} · {item.totalTokens} Tokens
+                                    </p>
+                                ))
+                            ) : (
+                                <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="暂无账单" />
+                            )}
+                            <UsageBreakdownGrid breakdowns={detail.usageBreakdowns} compact />
+                        </Panel>
+                        <Panel title="任务记录">
+                            <Table
+                                rowKey="id"
+                                size="small"
+                                dataSource={jobs.items}
+                                pagination={{ current: jobPage, pageSize: 5, total: jobs.total, showSizeChanger: false, onChange: setJobPage }}
+                                columns={[
+                                    { title: "任务 ID", dataIndex: "id", render: copyable },
+                                    { title: "模型", dataIndex: "modelId" },
+                                    { title: "生成状态", dataIndex: "status", render: (value) => <StatusTag value={value} /> },
+                                    { title: "对账", dataIndex: "billingStatus", render: (value) => <StatusTag value={value} /> },
+                                ]}
+                            />
+                        </Panel>
+                        <Panel title="消耗流水">
+                            <Table
+                                rowKey="jobId"
+                                size="small"
+                                dataSource={usage.items}
+                                pagination={{ current: usagePage, pageSize: 5, total: usage.total, showSizeChanger: false, onChange: setUsagePage }}
+                                columns={[
+                                    { title: "任务 ID", dataIndex: "jobId", render: copyable },
+                                    { title: "项目", dataIndex: "projectName" },
+                                    { title: "模型", dataIndex: "modelId" },
+                                    { title: "金额", render: (_, item) => formatUsageAmount(item.currency, item.totalAmount) },
+                                    {
+                                        title: "积分",
+                                        render: (_, item) =>
+                                            item.creditStatus === "payment_required" ? `待支付 ${formatPoints(item.creditPoints || 0)} 分` : item.creditPoints ? `${formatPoints(item.creditPoints)} 分` : creditStatusLabel(item.creditStatus),
+                                    },
+                                ]}
+                            />
+                        </Panel>
+                        <Panel title="项目与业务内容" note="只读访问将写入审计日志">
+                            <Table
+                                rowKey="id"
+                                size="small"
+                                pagination={false}
+                                dataSource={detail.projects}
+                                columns={[
+                                    { title: "项目", dataIndex: "name" },
+                                    { title: "素材", dataIndex: "assetCount" },
+                                    { title: "任务", dataIndex: "jobCount" },
+                                    {
+                                        title: "操作",
+                                        render: (_, record) => (
+                                            <Button size="small" onClick={async () => setContent(await getAdminProjectContent(record.id))}>
+                                                查看内容
+                                            </Button>
+                                        ),
+                                    },
+                                ]}
+                            />
+                        </Panel>
                     </div>
-                    <Space wrap>
-                        <Button onClick={() => void mutate("sessions")}>强制下线全部会话</Button>
-                        <Button onClick={() => void mutate("admin")}>{detail.user.isAdmin ? "取消管理员" : "设为管理员"}</Button>
-                    </Space>
-                    <Panel
-                        title="积分账户"
-                        note="购买和管理员发放积分默认 12 个月有效"
-                        actions={
-                            <Button
-                                type="primary"
-                                onClick={() => {
-                                    setGrantKey(randomUuid());
-                                    setGrantOpen(true);
-                                }}
-                            >
-                                发放积分
-                            </Button>
-                        }
-                    >
-                        <div className="grid gap-3 sm:grid-cols-3">
-                            <Metric label="当前余额" value={formatPoints(detail.credits?.account.balance || "0")} />
-                            <Metric label="待计费" value={String(detail.credits?.pendingCharges || 0)} />
-                            <Metric label="有效批次" value={String(detail.credits?.lots.filter((lot) => BigInt(lot.remaining) > BigInt(0)).length || 0)} />
-                        </div>
-                    </Panel>
-                    <Panel title="实际消耗">
-                        {detail.usage.length ? (
-                            detail.usage.map((item) => (
-                                <p key={item.currency} className="mb-2 font-mono">
-                                    {formatUsageAmount(item.currency, item.totalAmount)} · {item.totalTokens} Tokens
-                                </p>
-                            ))
-                        ) : (
-                            <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="暂无账单" />
-                        )}
-                        <UsageBreakdownGrid breakdowns={detail.usageBreakdowns} compact />
-                    </Panel>
-                    <Panel title="任务记录">
-                        <Table
-                            rowKey="id"
-                            size="small"
-                            dataSource={jobs.items}
-                            pagination={{ current: jobPage, pageSize: 5, total: jobs.total, showSizeChanger: false, onChange: setJobPage }}
-                            columns={[
-                                { title: "任务 ID", dataIndex: "id", render: copyable },
-                                { title: "模型", dataIndex: "modelId" },
-                                { title: "生成状态", dataIndex: "status", render: (value) => <StatusTag value={value} /> },
-                                { title: "对账", dataIndex: "billingStatus", render: (value) => <StatusTag value={value} /> },
-                            ]}
-                        />
-                    </Panel>
-                    <Panel title="消耗流水">
-                        <Table
-                            rowKey="jobId"
-                            size="small"
-                            dataSource={usage.items}
-                            pagination={{ current: usagePage, pageSize: 5, total: usage.total, showSizeChanger: false, onChange: setUsagePage }}
-                            columns={[
-                                { title: "任务 ID", dataIndex: "jobId", render: copyable },
-                                { title: "项目", dataIndex: "projectName" },
-                                { title: "模型", dataIndex: "modelId" },
-                                { title: "金额", render: (_, item) => formatUsageAmount(item.currency, item.totalAmount) },
-                                { title: "积分", render: (_, item) => (item.creditStatus === "payment_required" ? `待支付 ${formatPoints(item.creditPoints || 0)} 分` : item.creditPoints ? `${formatPoints(item.creditPoints)} 分` : creditStatusLabel(item.creditStatus)) },
-                            ]}
-                        />
-                    </Panel>
-                    <Panel title="项目与业务内容" note="只读访问将写入审计日志">
-                        <Table
-                            rowKey="id"
-                            size="small"
-                            pagination={false}
-                            dataSource={detail.projects}
-                            columns={[
-                                { title: "项目", dataIndex: "name" },
-                                { title: "素材", dataIndex: "assetCount" },
-                                { title: "任务", dataIndex: "jobCount" },
-                                {
-                                    title: "操作",
-                                    render: (_, record) => (
-                                        <Button size="small" onClick={async () => setContent(await getAdminProjectContent(record.id))}>
-                                            查看内容
-                                        </Button>
-                                    ),
-                                },
-                            ]}
-                        />
-                    </Panel>
-                </div>
-            )}
-            <Modal open={Boolean(content)} width={900} title="只读项目内容" footer={null} onCancel={() => setContent(undefined)}>
-                {content ? <ProjectContent content={content} /> : null}
-            </Modal>
+                )}
+                <Modal open={Boolean(content)} width={900} title="只读项目内容" footer={null} onCancel={() => setContent(undefined)}>
+                    {content ? <ProjectContent content={content} /> : null}
+                </Modal>
             </Drawer>
             <Modal
                 open={grantOpen}
@@ -768,6 +860,56 @@ function UserDrawer({ userId, onClose, onChanged }: { userId?: string; onClose: 
                     />
                     <Input.TextArea value={grantNote} maxLength={500} showCount placeholder="发放原因或关联订单号" onChange={(event) => setGrantNote(event.target.value)} />
                     <p className="text-xs text-stone-500">积分仅通过新增批次和流水入账，不能直接覆盖余额。</p>
+                </div>
+            </Modal>
+            <Modal open={attributionOpen} zIndex={1600} title="修正用户来源" okText="保存修正" confirmLoading={attributionSaving} onOk={() => void submitAttribution()} onCancel={() => setAttributionOpen(false)}>
+                <div className="space-y-4">
+                    <Select
+                        className="w-full"
+                        placeholder="渠道"
+                        value={attributionChannelId}
+                        options={channels.map((item) => ({ value: item.id, label: item.channelName }))}
+                        onChange={(value) => {
+                            setAttributionChannelId(value);
+                            setAttributionCampaignId(undefined);
+                            setAttributionBatchId(undefined);
+                            setAttributionInviteId(undefined);
+                        }}
+                    />
+                    <Select
+                        allowClear
+                        className="w-full"
+                        placeholder="活动（可选）"
+                        value={attributionCampaignId}
+                        options={campaigns.filter((item) => !item.channelId || item.channelId === attributionChannelId).map((item) => ({ value: item.id, label: item.name }))}
+                        onChange={(value) => {
+                            setAttributionCampaignId(value);
+                            setAttributionBatchId(undefined);
+                            setAttributionInviteId(undefined);
+                        }}
+                    />
+                    <Select
+                        allowClear
+                        className="w-full"
+                        placeholder="批次（可选）"
+                        value={attributionBatchId}
+                        options={batches.filter((item) => item.campaignId === attributionCampaignId).map((item) => ({ value: item.id, label: item.name }))}
+                        onChange={(value) => {
+                            setAttributionBatchId(value);
+                            setAttributionInviteId(undefined);
+                        }}
+                    />
+                    <Select
+                        allowClear
+                        className="w-full"
+                        placeholder="邀请码（可选）"
+                        value={attributionInviteId}
+                        options={invites
+                            .filter((item) => item.channelId === attributionChannelId && (item.campaignId || undefined) === attributionCampaignId && (item.batchId || undefined) === attributionBatchId)
+                            .map((item) => ({ value: item.id, label: `${item.code} · ${item.name}` }))}
+                        onChange={setAttributionInviteId}
+                    />
+                    <Input.TextArea maxLength={500} showCount value={attributionReason} placeholder="必填：说明修正原因" onChange={(event) => setAttributionReason(event.target.value)} />
                 </div>
             </Modal>
         </>
@@ -883,7 +1025,9 @@ function UsagePanel() {
     }, []);
     useEffect(() => {
         const controller = new AbortController();
-        getAdminActivationCodes(controller.signal).then(setCodes).catch((error) => message.error(error.message));
+        getAdminActivationCodes(controller.signal)
+            .then(setCodes)
+            .catch((error) => message.error(error.message));
         return () => controller.abort();
     }, []);
     const saveRate = async () => {
@@ -949,12 +1093,35 @@ function UsagePanel() {
             </Panel>
             <Panel title="积分激活码" note="与其他积分共用余额；完整激活码仅在生成时显示一次">
                 <div className="flex flex-wrap items-end gap-3">
-                    <label className="text-sm"><span className="mb-1 block text-stone-500">积分数量</span><Input value={codeCredits} inputMode="numeric" className="w-40" onChange={(event) => setCodeCredits(event.target.value.replace(/\D/g, ""))} /></label>
-                    <label className="text-sm"><span className="mb-1 block text-stone-500">兑换截止时间</span><Input type="datetime-local" value={codeExpiry} className="w-56" onChange={(event) => setCodeExpiry(event.target.value)} /></label>
-                    <Button type="primary" loading={issuingCode} onClick={() => void issueCode()}>生成激活码</Button>
+                    <label className="text-sm">
+                        <span className="mb-1 block text-stone-500">积分数量</span>
+                        <Input value={codeCredits} inputMode="numeric" className="w-40" onChange={(event) => setCodeCredits(event.target.value.replace(/\D/g, ""))} />
+                    </label>
+                    <label className="text-sm">
+                        <span className="mb-1 block text-stone-500">兑换截止时间</span>
+                        <Input type="datetime-local" value={codeExpiry} className="w-56" onChange={(event) => setCodeExpiry(event.target.value)} />
+                    </label>
+                    <Button type="primary" loading={issuingCode} onClick={() => void issueCode()}>
+                        生成激活码
+                    </Button>
                 </div>
-                {issuedCode && <div className="mt-4 flex flex-wrap items-center gap-3 rounded-xl bg-emerald-500/10 p-3"><code className="break-all font-mono">{issuedCode}</code><Button size="small" onClick={() => void navigator.clipboard.writeText(issuedCode)}>复制</Button></div>}
-                <div className="mt-4 space-y-1 text-xs text-stone-500">{codes.map((item) => <div key={item.id} className="flex flex-wrap gap-3"><span>尾号 {item.codeHint}</span><span>{formatPoints(item.credits)} 积分</span><span>{item.redeemedAt ? "已兑换" : new Date(item.expiresAt) <= new Date() ? "已过期" : "待兑换"}</span></div>)}</div>
+                {issuedCode && (
+                    <div className="mt-4 flex flex-wrap items-center gap-3 rounded-xl bg-emerald-500/10 p-3">
+                        <code className="break-all font-mono">{issuedCode}</code>
+                        <Button size="small" onClick={() => void navigator.clipboard.writeText(issuedCode)}>
+                            复制
+                        </Button>
+                    </div>
+                )}
+                <div className="mt-4 space-y-1 text-xs text-stone-500">
+                    {codes.map((item) => (
+                        <div key={item.id} className="flex flex-wrap gap-3">
+                            <span>尾号 {item.codeHint}</span>
+                            <span>{formatPoints(item.credits)} 积分</span>
+                            <span>{item.redeemedAt ? "已兑换" : new Date(item.expiresAt) <= new Date() ? "已过期" : "待兑换"}</span>
+                        </div>
+                    ))}
+                </div>
             </Panel>
             <div className="grid gap-4 md:grid-cols-3">
                 {data.summary.map((item) => (
@@ -987,11 +1154,19 @@ function UsagePanel() {
                         },
                         {
                             title: "优惠实付",
-                            render: (_, item) => item.providerPaidAmount && item.providerPaidAmount !== item.totalAmount
-                                ? <span className="font-mono text-stone-500">{formatUsageAmount(item.currency, item.providerPaidAmount)}</span>
-                                : "—",
+                            render: (_, item) => (item.providerPaidAmount && item.providerPaidAmount !== item.totalAmount ? <span className="font-mono text-stone-500">{formatUsageAmount(item.currency, item.providerPaidAmount)}</span> : "—"),
                         },
-                        { title: "扣除积分", render: (_, item) => (item.creditStatus === "payment_required" ? <b className="font-mono text-amber-600">待支付 {formatPoints(item.creditPoints || 0)}</b> : item.creditPoints ? <b className="font-mono">{formatPoints(item.creditPoints)}</b> : creditStatusLabel(item.creditStatus)) },
+                        {
+                            title: "扣除积分",
+                            render: (_, item) =>
+                                item.creditStatus === "payment_required" ? (
+                                    <b className="font-mono text-amber-600">待支付 {formatPoints(item.creditPoints || 0)}</b>
+                                ) : item.creditPoints ? (
+                                    <b className="font-mono">{formatPoints(item.creditPoints)}</b>
+                                ) : (
+                                    creditStatusLabel(item.creditStatus)
+                                ),
+                        },
                         { title: "账单 ID", dataIndex: "billingRequestId", render: copyable },
                         { title: "对账时间", dataIndex: "reconciledAt", render: formatDate },
                     ]}
@@ -1181,15 +1356,19 @@ function BillingRulesPanel() {
     }, [load]);
     const openEditor = (rule?: ProviderBillingRule) => {
         setEditing(rule);
-        setDraft(rule ? {
-            provider: rule.provider,
-            modelPattern: rule.modelPattern,
-            matchType: rule.matchType,
-            discountPercent: Number(rule.discountRate) * 100,
-            priority: rule.priority,
-            enabled: rule.enabled,
-            note: rule.note,
-        } : emptyBillingRuleDraft);
+        setDraft(
+            rule
+                ? {
+                      provider: rule.provider,
+                      modelPattern: rule.modelPattern,
+                      matchType: rule.matchType,
+                      discountPercent: Number(rule.discountRate) * 100,
+                      priority: rule.priority,
+                      enabled: rule.enabled,
+                      note: rule.note,
+                  }
+                : emptyBillingRuleDraft,
+        );
         setEditorOpen(true);
     };
     const save = async () => {
@@ -1206,12 +1385,8 @@ function BillingRulesPanel() {
         };
         setSaving(true);
         try {
-            const saved = editing
-                ? await updateAdminBillingRule(editing.ruleKey, input)
-                : await createAdminBillingRule(input);
-            setItems((current) => editing
-                ? current?.map((item) => item.ruleKey === saved.ruleKey ? saved : item)
-                : [...(current || []), saved]);
+            const saved = editing ? await updateAdminBillingRule(editing.ruleKey, input) : await createAdminBillingRule(input);
+            setItems((current) => (editing ? current?.map((item) => (item.ruleKey === saved.ruleKey ? saved : item)) : [...(current || []), saved]));
             setEditorOpen(false);
             message.success(editing ? `计费规则 v${saved.version} 已生效` : "计费规则已创建");
         } catch (error) {
@@ -1226,14 +1401,16 @@ function BillingRulesPanel() {
             <Panel
                 title="供应商计费规则"
                 note="任务创建时固化命中的规则版本；后续调整不会改变历史任务"
-                actions={<Button type="primary" onClick={() => openEditor()}>新建规则</Button>}
+                actions={
+                    <Button type="primary" onClick={() => openEditor()}>
+                        新建规则
+                    </Button>
+                }
             >
                 <div className="mb-5 grid gap-3 border-y border-stone-200 py-4 text-sm dark:border-white/10 lg:grid-cols-2">
                     <div>
                         <p className="text-xs font-medium text-stone-500">计费公式</p>
-                        <p className="mt-1.5 font-mono font-semibold text-stone-900 dark:text-stone-100">
-                            用户扣除积分 = ⌈供应商实际扣费 ÷ 折扣率 × 1.2 × 100⌉
-                        </p>
+                        <p className="mt-1.5 font-mono font-semibold text-stone-900 dark:text-stone-100">用户扣除积分 = ⌈供应商实际扣费 ÷ 折扣率 × 1.2 × 100⌉</p>
                         <p className="mt-1 text-xs text-stone-500">1.2 为平台计费系数，100 为每元兑换的积分数，计算结果向上取整。</p>
                         <p className="mt-1 text-xs text-stone-500">不同模型分别匹配各自折扣率；调整时请在对应规则上新建版本，只影响后续新任务。</p>
                     </div>
@@ -1249,14 +1426,37 @@ function BillingRulesPanel() {
                     pagination={false}
                     dataSource={items}
                     columns={[
-                        { title: "渠道", dataIndex: "provider", render: (value) => value === "runninghub_global" ? "海马云 · 国际区" : "海马云 · 中国区" },
-                        { title: "模型匹配", render: (_, item) => <div><b className="font-mono text-xs">{item.modelPattern}</b><p className="mt-1 text-xs text-stone-500">{item.matchType === "exact" ? "完全匹配" : "包含匹配"}</p></div> },
+                        { title: "渠道", dataIndex: "provider", render: (value) => (value === "runninghub_global" ? "海马云 · 国际区" : "海马云 · 中国区") },
+                        {
+                            title: "模型匹配",
+                            render: (_, item) => (
+                                <div>
+                                    <b className="font-mono text-xs">{item.modelPattern}</b>
+                                    <p className="mt-1 text-xs text-stone-500">{item.matchType === "exact" ? "完全匹配" : "包含匹配"}</p>
+                                </div>
+                            ),
+                        },
                         { title: "折扣率", dataIndex: "discountRate", render: (value) => <b className="font-mono">{formatDecimal(String(Number(value) * 100), 4)}%</b> },
                         { title: "优先级", dataIndex: "priority" },
                         { title: "版本", dataIndex: "version", render: (value) => <Tag bordered={false}>v{value}</Tag> },
-                        { title: "状态", dataIndex: "enabled", render: (value) => <Tag bordered={false} color={value ? "green" : "default"}>{value ? "已启用" : "已停用"}</Tag> },
+                        {
+                            title: "状态",
+                            dataIndex: "enabled",
+                            render: (value) => (
+                                <Tag bordered={false} color={value ? "green" : "default"}>
+                                    {value ? "已启用" : "已停用"}
+                                </Tag>
+                            ),
+                        },
                         { title: "生效时间", dataIndex: "createdAt", render: formatDate },
-                        { title: "操作", render: (_, item) => <Button size="small" onClick={() => openEditor(item)}>新建版本</Button> },
+                        {
+                            title: "操作",
+                            render: (_, item) => (
+                                <Button size="small" onClick={() => openEditor(item)}>
+                                    新建版本
+                                </Button>
+                            ),
+                        },
                     ]}
                 />
             </Panel>
@@ -1274,11 +1474,27 @@ function BillingRulesPanel() {
                     <div className="grid grid-cols-2 gap-3">
                         <label className="block">
                             <span className="mb-1.5 block text-sm text-stone-500">供应商渠道</span>
-                            <Select className="w-full" value={draft.provider} options={[{ value: "runninghub", label: "海马云 · 中国区" }, { value: "runninghub_global", label: "海马云 · 国际区" }]} onChange={(provider) => setDraft((current) => ({ ...current, provider }))} />
+                            <Select
+                                className="w-full"
+                                value={draft.provider}
+                                options={[
+                                    { value: "runninghub", label: "海马云 · 中国区" },
+                                    { value: "runninghub_global", label: "海马云 · 国际区" },
+                                ]}
+                                onChange={(provider) => setDraft((current) => ({ ...current, provider }))}
+                            />
                         </label>
                         <label className="block">
                             <span className="mb-1.5 block text-sm text-stone-500">匹配方式</span>
-                            <Select className="w-full" value={draft.matchType} options={[{ value: "contains", label: "模型 ID 包含" }, { value: "exact", label: "模型 ID 完全等于" }]} onChange={(matchType) => setDraft((current) => ({ ...current, matchType }))} />
+                            <Select
+                                className="w-full"
+                                value={draft.matchType}
+                                options={[
+                                    { value: "contains", label: "模型 ID 包含" },
+                                    { value: "exact", label: "模型 ID 完全等于" },
+                                ]}
+                                onChange={(matchType) => setDraft((current) => ({ ...current, matchType }))}
+                            />
                         </label>
                     </div>
                     <label className="block">
@@ -1296,16 +1512,17 @@ function BillingRulesPanel() {
                         </label>
                     </div>
                     <label className="flex items-center justify-between rounded-lg border border-stone-200 px-3 py-2 dark:border-white/10">
-                        <span><b className="block text-sm">启用此版本</b><small className="text-stone-500">停用后新任务不再匹配，历史任务不受影响</small></span>
+                        <span>
+                            <b className="block text-sm">启用此版本</b>
+                            <small className="text-stone-500">停用后新任务不再匹配，历史任务不受影响</small>
+                        </span>
                         <Switch checked={draft.enabled} onChange={(enabled) => setDraft((current) => ({ ...current, enabled }))} />
                     </label>
                     <label className="block">
                         <span className="mb-1.5 block text-sm text-stone-500">变更说明</span>
                         <Input maxLength={200} value={draft.note} placeholder="记录本次调整原因" onChange={(event) => setDraft((current) => ({ ...current, note: event.target.value }))} />
                     </label>
-                    <p className="rounded-lg border border-amber-500/20 bg-amber-500/[0.06] px-3 py-2 text-xs text-amber-600 dark:text-amber-400">
-                        保存后只影响新创建的任务；已创建任务继续使用原规则版本和折扣率。
-                    </p>
+                    <p className="rounded-lg border border-amber-500/20 bg-amber-500/[0.06] px-3 py-2 text-xs text-amber-600 dark:text-amber-400">保存后只影响新创建的任务；已创建任务继续使用原规则版本和折扣率。</p>
                 </div>
             </Modal>
         </>
@@ -1428,11 +1645,7 @@ function PaymentsPanel() {
     const load = useCallback(async (signal?: AbortSignal) => {
         setLoading(true);
         try {
-            const [nextItems, nextPlans, nextSettings] = await Promise.all([
-                getAdminPaymentOrders(signal),
-                getAdminPaymentPlans(signal),
-                getAdminPaymentSettings(signal),
-            ]);
+            const [nextItems, nextPlans, nextSettings] = await Promise.all([getAdminPaymentOrders(signal), getAdminPaymentPlans(signal), getAdminPaymentSettings(signal)]);
             setItems(nextItems);
             setPlans(nextPlans);
             setSettings(nextSettings);
@@ -1451,7 +1664,7 @@ function PaymentsPanel() {
         setSyncingId(orderId);
         try {
             const order = await syncAdminPaymentOrder(orderId);
-            setItems((current) => current.map((item) => item.id === order.id ? { ...item, ...order } : item));
+            setItems((current) => current.map((item) => (item.id === order.id ? { ...item, ...order } : item)));
             message.success(order.status === "paid" ? "订单已到账" : "订单状态已同步");
         } catch (error) {
             message.error(error instanceof Error ? error.message : "订单同步失败");
@@ -1481,12 +1694,8 @@ function PaymentsPanel() {
         };
         setSavingPlan(true);
         try {
-            const saved = editingPlan
-                ? await updateAdminPaymentPlan(editingPlan.id, input)
-                : await createAdminPaymentPlan(input);
-            setPlans((current) => editingPlan
-                ? current.map((item) => item.id === saved.id ? saved : item)
-                : [...current, saved]);
+            const saved = editingPlan ? await updateAdminPaymentPlan(editingPlan.id, input) : await createAdminPaymentPlan(input);
+            setPlans((current) => (editingPlan ? current.map((item) => (item.id === saved.id ? saved : item)) : [...current, saved]));
             setPlanEditorOpen(false);
             message.success(editingPlan ? "套餐调整已保存" : "草稿套餐已创建");
         } catch (error) {
@@ -1510,7 +1719,7 @@ function PaymentsPanel() {
                         priceCents: plan.priceCents,
                         enabled,
                     });
-                    setPlans((current) => current.map((item) => item.id === saved.id ? saved : item));
+                    setPlans((current) => current.map((item) => (item.id === saved.id ? saved : item)));
                     message.success(enabled ? "套餐已发布" : "套餐已下架");
                 } catch (error) {
                     message.error(error instanceof Error ? error.message : "套餐状态更新失败");
@@ -1544,12 +1753,7 @@ function PaymentsPanel() {
                         <Tag bordered={false} color={settings?.publicRechargeEnabled ? "green" : "default"}>
                             {settings?.publicRechargeEnabled ? "已开放" : "已关闭"}
                         </Tag>
-                        <Switch
-                            checked={Boolean(settings?.publicRechargeEnabled)}
-                            loading={savingAccess}
-                            disabled={!settings}
-                            onChange={(enabled) => void changePublicRecharge(enabled)}
-                        />
+                        <Switch checked={Boolean(settings?.publicRechargeEnabled)} loading={savingAccess} disabled={!settings} onChange={(enabled) => void changePublicRecharge(enabled)} />
                     </div>
                 }
             >
@@ -1565,7 +1769,11 @@ function PaymentsPanel() {
             <Panel
                 title="充值套餐"
                 note="调价仅影响新订单；历史订单保留创建时的金额与积分快照"
-                actions={<Button type="primary" onClick={() => openPlanEditor()}>新建套餐</Button>}
+                actions={
+                    <Button type="primary" onClick={() => openPlanEditor()}>
+                        新建套餐
+                    </Button>
+                }
             >
                 <Table<BillingPlan>
                     rowKey="id"
@@ -1573,23 +1781,36 @@ function PaymentsPanel() {
                     dataSource={plans}
                     pagination={false}
                     columns={[
-                        { title: "套餐", dataIndex: "name", render: (value, plan) => <div><b>{value}</b><p className="mt-1 font-mono text-[11px] text-stone-500">{plan.id}</p></div> },
+                        {
+                            title: "套餐",
+                            dataIndex: "name",
+                            render: (value, plan) => (
+                                <div>
+                                    <b>{value}</b>
+                                    <p className="mt-1 font-mono text-[11px] text-stone-500">{plan.id}</p>
+                                </div>
+                            ),
+                        },
                         { title: "售价", dataIndex: "priceCents", render: (value) => <b className="font-mono">¥{formatPaymentAmount(value)}</b> },
                         { title: "到账积分", dataIndex: "credits", render: formatPoints },
-                        { title: "状态", dataIndex: "enabled", render: (value) => <Tag bordered={false} color={value ? "green" : "default"}>{value ? "已发布" : "草稿 / 已下架"}</Tag> },
+                        {
+                            title: "状态",
+                            dataIndex: "enabled",
+                            render: (value) => (
+                                <Tag bordered={false} color={value ? "green" : "default"}>
+                                    {value ? "已发布" : "草稿 / 已下架"}
+                                </Tag>
+                            ),
+                        },
                         { title: "更新时间", dataIndex: "updatedAt", render: formatDate },
                         {
                             title: "操作",
                             render: (_, plan) => (
                                 <Space>
-                                    <Button size="small" onClick={() => openPlanEditor(plan)}>调价</Button>
-                                    <Button
-                                        size="small"
-                                        loading={updatingPlanId === plan.id}
-                                        danger={plan.enabled}
-                                        type={plan.enabled ? "default" : "primary"}
-                                        onClick={() => setPlanPublished(plan, !plan.enabled)}
-                                    >
+                                    <Button size="small" onClick={() => openPlanEditor(plan)}>
+                                        调价
+                                    </Button>
+                                    <Button size="small" loading={updatingPlanId === plan.id} danger={plan.enabled} type={plan.enabled ? "default" : "primary"} onClick={() => setPlanPublished(plan, !plan.enabled)}>
                                         {plan.enabled ? "下架" : "发布"}
                                     </Button>
                                 </Space>
@@ -1613,7 +1834,17 @@ function PaymentsPanel() {
                         { title: "状态", dataIndex: "status", render: (_, order) => <PaymentStatusTag order={order} /> },
                         { title: "到账时间", dataIndex: "paidAt", render: formatDate },
                         { title: "异常", dataIndex: "failureMessage", ellipsis: true, render: (value) => value || "—" },
-                        { title: "操作", render: (_, item) => item.status === "pending" ? <Button size="small" loading={syncingId === item.id} onClick={() => void sync(item.id)}>同步</Button> : "—" },
+                        {
+                            title: "操作",
+                            render: (_, item) =>
+                                item.status === "pending" ? (
+                                    <Button size="small" loading={syncingId === item.id} onClick={() => void sync(item.id)}>
+                                        同步
+                                    </Button>
+                                ) : (
+                                    "—"
+                                ),
+                        },
                     ]}
                 />
             </Panel>
@@ -1655,7 +1886,11 @@ function PaymentStatusTag({ order }: { order: PaymentOrder }) {
     const value = order.status;
     const labels = { pending: "待支付", paid: "已到账", closed: "已关闭" } as const;
     const label = value === "closed" && order.failureCode === "PAYMENT_EXPIRED" ? "未支付已过期" : labels[value];
-    return <Tag bordered={false} color={value === "paid" ? "green" : value === "pending" ? "gold" : "default"}>{label}</Tag>;
+    return (
+        <Tag bordered={false} color={value === "paid" ? "green" : value === "pending" ? "gold" : "default"}>
+            {label}
+        </Tag>
+    );
 }
 
 function AuditPanel() {
@@ -1699,6 +1934,7 @@ function AuditPanel() {
                 columns={[
                     { title: "时间", dataIndex: "createdAt", render: formatDate },
                     { title: "管理员", dataIndex: "actorEmail" },
+                    { title: "操作 IP", dataIndex: "actorIp", render: (value) => value || "—" },
                     { title: "动作", dataIndex: "action", render: (value) => <code>{value}</code> },
                     { title: "目标", render: (_, item) => `${item.targetType || "—"} · ${item.targetId || "—"}` },
                     { title: "Request ID", dataIndex: "requestId", render: copyable },
@@ -1728,22 +1964,25 @@ function FeedbackPanel() {
     const [selected, setSelected] = useState<UserFeedback>();
     const [reply, setReply] = useState("");
     const [saving, setSaving] = useState(false);
-    const load = useCallback((signal?: AbortSignal) => {
-        const controller = new AbortController();
-        setLoading(true);
-        getAdminFeedback({ page, pageSize: 20, q, category, status }, signal || controller.signal)
-            .then((data) => {
-                setItems(data.items);
-                setTotal(data.total);
-                setSelected((current) => current ? data.items.find((item) => item.id === current.id) : undefined);
-            })
-            .catch((error) => {
-                if (error instanceof DOMException && error.name === "AbortError") return;
-                message.error(error.message);
-            })
-            .finally(() => setLoading(false));
-        return controller;
-    }, [category, page, q, status]);
+    const load = useCallback(
+        (signal?: AbortSignal) => {
+            const controller = new AbortController();
+            setLoading(true);
+            getAdminFeedback({ page, pageSize: 20, q, category, status }, signal || controller.signal)
+                .then((data) => {
+                    setItems(data.items);
+                    setTotal(data.total);
+                    setSelected((current) => (current ? data.items.find((item) => item.id === current.id) : undefined));
+                })
+                .catch((error) => {
+                    if (error instanceof DOMException && error.name === "AbortError") return;
+                    message.error(error.message);
+                })
+                .finally(() => setLoading(false));
+            return controller;
+        },
+        [category, page, q, status],
+    );
     useEffect(() => {
         const controller = load();
         return () => controller.abort();
@@ -1836,7 +2075,16 @@ function FeedbackPanel() {
                     },
                     { title: "联系方式", dataIndex: "contact", width: 180, render: (value) => value || "—" },
                     { title: "提交页面", dataIndex: "pagePath", width: 180, render: (value) => value || "—" },
-                    { title: "操作", width: 90, fixed: "right", render: (_, record) => <Button type="link" onClick={() => setSelected(record)}>查看 / 回复</Button> },
+                    {
+                        title: "操作",
+                        width: 90,
+                        fixed: "right",
+                        render: (_, record) => (
+                            <Button type="link" onClick={() => setSelected(record)}>
+                                查看 / 回复
+                            </Button>
+                        ),
+                    },
                 ]}
             />
             <Modal
@@ -1858,7 +2106,10 @@ function FeedbackPanel() {
                         </div>
                         <div className="rounded-xl border border-stone-200 p-4 dark:border-white/10">
                             <p className="whitespace-pre-wrap break-words text-sm">{selected.content}</p>
-                            <p className="mt-3 text-xs text-stone-500">提交于 {formatDate(selected.createdAt)}{selected.contact ? ` · 联系方式：${selected.contact}` : ""}</p>
+                            <p className="mt-3 text-xs text-stone-500">
+                                提交于 {formatDate(selected.createdAt)}
+                                {selected.contact ? ` · 联系方式：${selected.contact}` : ""}
+                            </p>
                         </div>
                         {selected.replies.map((item) => (
                             <div key={item.id} className="rounded-xl bg-stone-100 p-4 dark:bg-white/[0.06]">
@@ -1879,7 +2130,9 @@ function FeedbackPanel() {
                                 ]}
                                 onChange={(value) => void changeStatus(value)}
                             />
-                            <Button type="primary" loading={saving} disabled={!reply.trim()} onClick={() => void submitReply()}>发送回复</Button>
+                            <Button type="primary" loading={saving} disabled={!reply.trim()} onClick={() => void submitReply()}>
+                                发送回复
+                            </Button>
                         </div>
                     </div>
                 ) : null}
@@ -1922,8 +2175,19 @@ function Metric({ label, value, note }: { label: string; value: string; note?: s
     );
 }
 function OperationalSignal({ label, value, note, tone = "normal" }: { label: string; value: string; note: string; tone?: "normal" | "warning" | "danger" }) {
-    const toneClass = tone === "danger" ? "border-red-500/30 bg-red-500/[0.06] text-red-500" : tone === "warning" ? "border-amber-500/30 bg-amber-500/[0.06] text-amber-500" : "border-stone-200 bg-stone-50 text-stone-950 dark:border-white/10 dark:bg-white/[0.025] dark:text-stone-100";
-    return <div className={`rounded-xl border p-4 ${toneClass}`}><p className="text-xs opacity-75">{label}</p><p className="mt-2 font-mono text-2xl font-semibold tracking-tight">{value}</p><p className="mt-2 text-[11px] opacity-70">{note}</p></div>;
+    const toneClass =
+        tone === "danger"
+            ? "border-red-500/30 bg-red-500/[0.06] text-red-500"
+            : tone === "warning"
+              ? "border-amber-500/30 bg-amber-500/[0.06] text-amber-500"
+              : "border-stone-200 bg-stone-50 text-stone-950 dark:border-white/10 dark:bg-white/[0.025] dark:text-stone-100";
+    return (
+        <div className={`rounded-xl border p-4 ${toneClass}`}>
+            <p className="text-xs opacity-75">{label}</p>
+            <p className="mt-2 font-mono text-2xl font-semibold tracking-tight">{value}</p>
+            <p className="mt-2 text-[11px] opacity-70">{note}</p>
+        </div>
+    );
 }
 function formatCount(value: number) {
     return new Intl.NumberFormat("zh-CN").format(value || 0);

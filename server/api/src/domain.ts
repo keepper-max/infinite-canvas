@@ -23,7 +23,14 @@ export type Workspace = {
 
 export type ProjectSummary = Workspace & { role: string };
 
-export type ApiStatus = 400 | 401 | 403 | 404 | 409 | 415 | 416 | 422 | 429 | 500 | 503;
+export type RegistrationContext = {
+  inviteCode?: string;
+  registrationIp?: string | null;
+  verificationCodeId?: string;
+};
+
+export type ApiStatus =
+  400 | 401 | 403 | 404 | 409 | 415 | 416 | 422 | 429 | 500 | 503;
 
 export class DomainError extends Error {
   public readonly details?: Record<string, unknown>;
@@ -45,7 +52,12 @@ export interface PlatformRepository {
   createUserWithWorkspace(
     email: string,
     passwordHash: string,
-  ): Promise<{ user: PlatformUser; workspace: Workspace }>;
+    registration?: RegistrationContext,
+  ): Promise<{
+    user: PlatformUser;
+    workspace: Workspace;
+    verificationConsumed?: boolean;
+  }>;
   findUserByEmail(
     email: string,
   ): Promise<(PlatformUser & { passwordHash: string }) | null>;

@@ -505,3 +505,16 @@
 - 生产只读样本和 RunningHub 官方接口说明均未发现独立“原价”字段；终态只返回 `thirdPartyConsumeMoney`/`consumeMoney` 等实际扣款信息。Seedance 2.5 因已知统一 8 折，原价采用十进制定点计算 `实付 ÷ 0.8`，不使用浮点参与计费。
 - `generation_usage.amount_final` 保存优惠实付，`total_amount` 保存还原原价；积分服务继续只读取 `total_amount`，因此最终扣分为 `原价 × 100 × 1.2`，已到账历史流水不会被重复扣款。
 - 准备金统计只累加所有账户正余额并除以 120；负余额不会抵消其他用户持有积分，指标明确标注为“原价口径建议准备金”，不冒充供应商实时余额。
+# 2026-09-28 邀请码与渠道归因审计
+
+- 生产仓库为 `H:\CodexStorage\infinite-canvas-upgrade`；当前迁移到 0035，迁移按事务、校验和及 advisory lock 执行。
+- 注册由 `repository.createUserWithWorkspace` 创建用户与默认空间；邮箱验证码目前在注册事务外消费，需要在归因注册中一并收口。
+- 当前权限只有 `users.is_admin` 与管理员邮箱兜底，用户已确认本功能只允许超级管理员，不新增角色层级。
+- 充值权威数据为 `payment_orders(status='paid')`；积分余额为 `credit_accounts.balance`；积分消耗为 `credit_ledger(entry_type='generation')`；能力拆分和 Token 来自 `generation_usage`。
+- 现有活跃用户口径为周期内登录或创建生成任务；渠道统计沿用该口径。
+- 现有邮箱验证码具备邮箱/IP发送频率限制，但注册接口缺少注册频率、邀请码失败尝试、设备匿名标识和每日成功注册上限。
+- 用户确认：注册频率和邀请码失败尝试均为 10 分钟最多 5 次，同 IP 24 小时最多成功注册 50 个账号，注册 IP 后台可见，设备标识保留 7 天，不接入人机验证。
+- 已使用记录只允许停用；邀请码有效状态中的“过期/名额已满”应由时间和计数动态推导，避免持久状态失真。
+- 实现采用现有 `users.is_admin`/管理员邮箱兜底权限，不新增运营管理员；所有管理写操作均由服务端再次鉴权。
+- 邀请码计数和用户/默认空间/邮箱验证码消费已收口到同一数据库事务，并对邀请码行加锁，最后一个名额并发时只允许一个注册成功。
+- 渠道统计直接读取 `payment_orders`、`credit_accounts`、`credit_ledger` 和 `generation_usage`；未新增重复充值或消费流水。

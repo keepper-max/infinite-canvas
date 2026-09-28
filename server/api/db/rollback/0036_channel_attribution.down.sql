@@ -1,0 +1,16 @@
+drop index if exists credit_ledger_generation_created_idx;
+drop index if exists generation_jobs_creator_created_idx;
+drop index if exists payment_orders_paid_user_idx;
+delete from platform_settings where key in ('registration_invite','registration_risk');
+alter table admin_audit_logs drop column if exists actor_ip;
+drop table if exists registration_risk_events;
+alter table users drop column if exists registration_ip;
+alter table users drop column if exists source_registered_at;
+alter table users drop column if exists batch_id;
+alter table users drop column if exists campaign_id;
+alter table users drop column if exists channel_id;
+alter table users drop column if exists invite_code_id;
+drop table if exists invite_codes;
+drop table if exists batches;
+drop table if exists campaigns;
+drop table if exists channels;

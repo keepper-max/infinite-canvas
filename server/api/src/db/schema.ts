@@ -4,6 +4,7 @@ import {
   bigserial,
   boolean,
   index,
+  inet,
   integer,
   jsonb,
   pgTable,
@@ -24,6 +25,91 @@ export const users = pgTable("users", {
   disabledAt: timestamp("disabled_at", { withTimezone: true }),
   disabledBy: uuid("disabled_by"),
   lastLoginAt: timestamp("last_login_at", { withTimezone: true }),
+  inviteCodeId: uuid("invite_code_id"),
+  channelId: uuid("channel_id")
+    .default(sql`'00000000-0000-4000-8000-000000000362'::uuid`)
+    .notNull(),
+  campaignId: uuid("campaign_id"),
+  batchId: uuid("batch_id"),
+  sourceRegisteredAt: timestamp("source_registered_at", { withTimezone: true })
+    .defaultNow()
+    .notNull(),
+  registrationIp: inet("registration_ip"),
+  createdAt: timestamp("created_at", { withTimezone: true })
+    .defaultNow()
+    .notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true })
+    .defaultNow()
+    .notNull(),
+});
+
+export const channels = pgTable("channels", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  systemKey: text("system_key").unique(),
+  channelType: text("channel_type").notNull(),
+  channelName: text("channel_name").notNull(),
+  codePrefix: text("code_prefix"),
+  contactName: text("contact_name"),
+  contactPhone: text("contact_phone"),
+  remark: text("remark").default("").notNull(),
+  status: text("status").default("active").notNull(),
+  createdBy: uuid("created_by"),
+  createdAt: timestamp("created_at", { withTimezone: true })
+    .defaultNow()
+    .notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true })
+    .defaultNow()
+    .notNull(),
+});
+
+export const campaigns = pgTable("campaigns", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  channelId: uuid("channel_id"),
+  name: text("name").notNull(),
+  description: text("description").default("").notNull(),
+  startAt: timestamp("start_at", { withTimezone: true }),
+  endAt: timestamp("end_at", { withTimezone: true }),
+  status: text("status").default("active").notNull(),
+  createdBy: uuid("created_by"),
+  createdAt: timestamp("created_at", { withTimezone: true })
+    .defaultNow()
+    .notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true })
+    .defaultNow()
+    .notNull(),
+});
+
+export const batches = pgTable("batches", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  campaignId: uuid("campaign_id").notNull(),
+  name: text("name").notNull(),
+  description: text("description").default("").notNull(),
+  startAt: timestamp("start_at", { withTimezone: true }),
+  endAt: timestamp("end_at", { withTimezone: true }),
+  status: text("status").default("active").notNull(),
+  createdBy: uuid("created_by"),
+  createdAt: timestamp("created_at", { withTimezone: true })
+    .defaultNow()
+    .notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true })
+    .defaultNow()
+    .notNull(),
+});
+
+export const inviteCodes = pgTable("invite_codes", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  code: text("code").notNull(),
+  channelId: uuid("channel_id").notNull(),
+  campaignId: uuid("campaign_id"),
+  batchId: uuid("batch_id"),
+  name: text("name").notNull(),
+  description: text("description").default("").notNull(),
+  maxUses: integer("max_uses"),
+  usedCount: integer("used_count").default(0).notNull(),
+  startAt: timestamp("start_at", { withTimezone: true }),
+  expireAt: timestamp("expire_at", { withTimezone: true }),
+  status: text("status").default("active").notNull(),
+  createdBy: uuid("created_by"),
   createdAt: timestamp("created_at", { withTimezone: true })
     .defaultNow()
     .notNull(),
@@ -591,11 +677,19 @@ export const activationCodes = pgTable("activation_codes", {
   codeHint: text("code_hint").notNull(),
   credits: bigint("credits", { mode: "bigint" }).notNull(),
   expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
-  createdBy: uuid("created_by").notNull().references(() => users.id, { onDelete: "restrict" }),
-  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
-  redeemedBy: uuid("redeemed_by").references(() => users.id, { onDelete: "set null" }),
+  createdBy: uuid("created_by")
+    .notNull()
+    .references(() => users.id, { onDelete: "restrict" }),
+  createdAt: timestamp("created_at", { withTimezone: true })
+    .defaultNow()
+    .notNull(),
+  redeemedBy: uuid("redeemed_by").references(() => users.id, {
+    onDelete: "set null",
+  }),
   redeemedAt: timestamp("redeemed_at", { withTimezone: true }),
-  revokedBy: uuid("revoked_by").references(() => users.id, { onDelete: "set null" }),
+  revokedBy: uuid("revoked_by").references(() => users.id, {
+    onDelete: "set null",
+  }),
   revokedAt: timestamp("revoked_at", { withTimezone: true }),
 });
 
@@ -787,6 +881,10 @@ export const userFeedbackMessages = pgTable(
 
 export const schema = {
   users,
+  channels,
+  campaigns,
+  batches,
+  inviteCodes,
   sessions,
   projects,
   projectMembers,

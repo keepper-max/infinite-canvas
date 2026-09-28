@@ -38,25 +38,56 @@ export interface OperationsServicePort {
     requestId: string,
   ): Promise<unknown>;
   listActivationCodes(userId: string): Promise<unknown>;
-  issueActivationCode(userId: string, credits: number, expiresAt: string, requestId: string): Promise<unknown>;
+  issueActivationCode(
+    userId: string,
+    credits: number,
+    expiresAt: string,
+    requestId: string,
+  ): Promise<unknown>;
   redeemActivationCode(userId: string, code: string): Promise<unknown>;
   plans(isAdmin?: boolean): Promise<unknown[]>;
   requestSms(input: SmsRequestInput): Promise<never>;
   verifySms(input: SmsVerifyInput): Promise<never>;
-  createPaymentOrder(userId: string, isAdmin: boolean, input: PaymentOrderInput): Promise<unknown>;
+  createPaymentOrder(
+    userId: string,
+    isAdmin: boolean,
+    input: PaymentOrderInput,
+  ): Promise<unknown>;
   listPaymentOrders(userId: string): Promise<unknown>;
   syncPaymentOrder(userId: string, orderId: string): Promise<unknown>;
   receivePaymentCallback(fields: Record<string, string>): Promise<boolean>;
   adminPaymentOrders(userId: string): Promise<unknown>;
   adminSyncPaymentOrder(userId: string, orderId: string): Promise<unknown>;
   adminPaymentPlans(userId: string): Promise<unknown[]>;
-  createAdminPaymentPlan(userId: string, input: PaymentPlanInput, requestId: string): Promise<unknown>;
-  updateAdminPaymentPlan(userId: string, planId: string, input: PaymentPlanInput, requestId: string): Promise<unknown>;
+  createAdminPaymentPlan(
+    userId: string,
+    input: PaymentPlanInput,
+    requestId: string,
+  ): Promise<unknown>;
+  updateAdminPaymentPlan(
+    userId: string,
+    planId: string,
+    input: PaymentPlanInput,
+    requestId: string,
+  ): Promise<unknown>;
   adminPaymentSettings(userId: string): Promise<unknown>;
-  setAdminPaymentSettings(userId: string, publicRechargeEnabled: boolean, requestId: string): Promise<unknown>;
+  setAdminPaymentSettings(
+    userId: string,
+    publicRechargeEnabled: boolean,
+    requestId: string,
+  ): Promise<unknown>;
   adminBillingRules(userId: string): Promise<unknown[]>;
-  createAdminBillingRule(userId: string, input: ProviderBillingRuleInput, requestId: string): Promise<unknown>;
-  updateAdminBillingRule(userId: string, ruleKey: string, input: ProviderBillingRuleInput, requestId: string): Promise<unknown>;
+  createAdminBillingRule(
+    userId: string,
+    input: ProviderBillingRuleInput,
+    requestId: string,
+  ): Promise<unknown>;
+  updateAdminBillingRule(
+    userId: string,
+    ruleKey: string,
+    input: ProviderBillingRuleInput,
+    requestId: string,
+  ): Promise<unknown>;
   listTeams(userId: string): Promise<unknown[]>;
   createTeam(userId: string, input: TeamCreateInput): Promise<unknown>;
   listTeamMembers(teamId: string, userId: string): Promise<unknown[]>;
@@ -72,11 +103,19 @@ export interface OperationsServicePort {
   ): Promise<unknown>;
   createFeedback(
     userId: string,
-    input: { category: "problem" | "suggestion"; content: string; contact?: string; pagePath?: string },
+    input: {
+      category: "problem" | "suggestion";
+      content: string;
+      contact?: string;
+      pagePath?: string;
+    },
   ): Promise<unknown>;
   listFeedback(userId: string): Promise<unknown>;
   feedbackUnread(userId: string): Promise<{ unreadCount: number }>;
-  markFeedbackRead(userId: string, readThrough: string): Promise<{ unreadCount: number }>;
+  markFeedbackRead(
+    userId: string,
+    readThrough: string,
+  ): Promise<{ unreadCount: number }>;
   adminFeedback(userId: string, query: AdminListQuery): Promise<unknown>;
   replyFeedback(
     userId: string,
@@ -164,7 +203,12 @@ export type AdminListQuery = {
 
 export type FeedbackStatus = "open" | "replied" | "closed";
 export type FeedbackReplyResult = {
-  reply: { id: string; content: string; authorRole: "admin"; createdAt: string };
+  reply: {
+    id: string;
+    content: string;
+    authorRole: "admin";
+    createdAt: string;
+  };
 };
 
 export type AdminOverviewRange = {
@@ -187,7 +231,9 @@ export class OperationsService implements OperationsServicePort {
     return {
       sms: false,
       credits: Boolean(this.credits),
-      payments: Boolean(this.payments?.enabled() && (publicRechargeEnabled || isAdmin)),
+      payments: Boolean(
+        this.payments?.enabled() && (publicRechargeEnabled || isAdmin),
+      ),
       teams: true,
       admin: true,
     };
@@ -259,9 +305,19 @@ export class OperationsService implements OperationsServicePort {
     return this.requireCredits().listActivationCodes(userId);
   }
 
-  async issueActivationCode(userId: string, credits: number, expiresAt: string, requestId: string) {
+  async issueActivationCode(
+    userId: string,
+    credits: number,
+    expiresAt: string,
+    requestId: string,
+  ) {
     await this.requireAdmin(userId);
-    return this.requireCredits().issueActivationCode(userId, credits, expiresAt, requestId);
+    return this.requireCredits().issueActivationCode(
+      userId,
+      credits,
+      expiresAt,
+      requestId,
+    );
   }
 
   async redeemActivationCode(userId: string, code: string) {
@@ -280,13 +336,24 @@ export class OperationsService implements OperationsServicePort {
 
   async createFeedback(
     userId: string,
-    input: { category: "problem" | "suggestion"; content: string; contact?: string; pagePath?: string },
+    input: {
+      category: "problem" | "suggestion";
+      content: string;
+      contact?: string;
+      pagePath?: string;
+    },
   ) {
     const result = await this.pool.query(
       `insert into user_feedback(user_id,category,content,contact,page_path)
        values($1,$2,$3,$4,$5)
        returning id,category,status,created_at,updated_at`,
-      [userId, input.category, input.content, input.contact || null, input.pagePath || null],
+      [
+        userId,
+        input.category,
+        input.content,
+        input.contact || null,
+        input.pagePath || null,
+      ],
     );
     const row = result.rows[0];
     return {
@@ -342,7 +409,9 @@ export class OperationsService implements OperationsServicePort {
     const filters: string[] = [];
     if (query.q) {
       values.push(`%${query.q.toLowerCase()}%`);
-      filters.push(`lower(u.email||' '||f.content||' '||coalesce(f.contact,'')) like $${values.length}`);
+      filters.push(
+        `lower(u.email||' '||f.content||' '||coalesce(f.contact,'')) like $${values.length}`,
+      );
     }
     if (query.category && ["problem", "suggestion"].includes(query.category)) {
       values.push(query.category);
@@ -395,16 +464,25 @@ export class OperationsService implements OperationsServicePort {
         "update user_feedback set status='replied',updated_at=now() where id=$1",
         [feedbackId],
       );
-      await audit(client, userId, "feedback.reply", "user_feedback", feedbackId, {}, requestId);
+      await audit(
+        client,
+        userId,
+        "feedback.reply",
+        "user_feedback",
+        feedbackId,
+        {},
+        requestId,
+      );
       const row = inserted.rows[0];
       return {
         reply: {
           id: String(row.id),
           content: row.content,
           authorRole: "admin",
-          createdAt: row.created_at instanceof Date
-            ? row.created_at.toISOString()
-            : String(row.created_at),
+          createdAt:
+            row.created_at instanceof Date
+              ? row.created_at.toISOString()
+              : String(row.created_at),
         },
       };
     });
@@ -513,7 +591,15 @@ export class OperationsService implements OperationsServicePort {
         ],
       );
       const plan = serializeBillingPlan(created.rows[0]);
-      await audit(client, userId, "payment.plan.create", "billing_plan", String(plan.id), { next: plan }, requestId);
+      await audit(
+        client,
+        userId,
+        "payment.plan.create",
+        "billing_plan",
+        String(plan.id),
+        { next: plan },
+        requestId,
+      );
       return plan;
     });
   }
@@ -535,7 +621,11 @@ export class OperationsService implements OperationsServicePort {
       if (!row || row.metadata?.paymentProvider !== "alipay")
         throw new DomainError("PAYMENT_PLAN_NOT_FOUND", "充值套餐不存在", 404);
       if (row.metadata?.experimental === true)
-        throw new DomainError("PAYMENT_PLAN_LOCKED", "验收套餐已锁定，不能修改", 409);
+        throw new DomainError(
+          "PAYMENT_PLAN_LOCKED",
+          "验收套餐已锁定，不能修改",
+          409,
+        );
       const previous = serializeBillingPlan(row);
       const updated = await client.query(
         `update billing_plans
@@ -545,7 +635,15 @@ export class OperationsService implements OperationsServicePort {
         [planId, input.name, input.credits, input.priceCents, input.enabled],
       );
       const plan = serializeBillingPlan(updated.rows[0]);
-      await audit(client, userId, "payment.plan.update", "billing_plan", planId, { previous, next: plan }, requestId);
+      await audit(
+        client,
+        userId,
+        "payment.plan.update",
+        "billing_plan",
+        planId,
+        { previous, next: plan },
+        requestId,
+      );
       return plan;
     });
   }
@@ -559,7 +657,8 @@ export class OperationsService implements OperationsServicePort {
     );
     const row = balances.rows[0];
     return {
-      publicRechargeEnabled: await this.requirePayments().publicRechargeEnabled(),
+      publicRechargeEnabled:
+        await this.requirePayments().publicRechargeEnabled(),
       totalUserCredits: String(row.total_credits),
       providerReserveCny: String(row.provider_reserve_cny),
       pointsPerProviderCny: 120,
@@ -629,10 +728,28 @@ export class OperationsService implements OperationsServicePort {
         `insert into provider_billing_rules(rule_key,version,provider,model_pattern,match_type,discount_rate,priority,enabled,note,created_by)
          values($1,1,$2,$3,$4,$5,$6,$7,$8,$9)
          returning id,rule_key,version,provider,model_pattern,match_type,discount_rate::text,priority,enabled,note,created_at`,
-        [ruleKey, input.provider, input.modelPattern, input.matchType, input.discountRate, input.priority, input.enabled, input.note, userId],
+        [
+          ruleKey,
+          input.provider,
+          input.modelPattern,
+          input.matchType,
+          input.discountRate,
+          input.priority,
+          input.enabled,
+          input.note,
+          userId,
+        ],
       );
       const rule = serializeProviderBillingRule(created.rows[0]);
-      await audit(client, userId, "billing.rule.create", "provider_billing_rule", ruleKey, { next: rule }, requestId);
+      await audit(
+        client,
+        userId,
+        "billing.rule.create",
+        "provider_billing_rule",
+        ruleKey,
+        { next: rule },
+        requestId,
+      );
       return rule;
     });
   }
@@ -645,7 +762,9 @@ export class OperationsService implements OperationsServicePort {
   ) {
     await this.requireAdmin(userId);
     return inTransaction(this.pool, async (client) => {
-      await client.query("select pg_advisory_xact_lock(hashtext($1))", [ruleKey]);
+      await client.query("select pg_advisory_xact_lock(hashtext($1))", [
+        ruleKey,
+      ]);
       const existing = await client.query(
         `select id,rule_key,version,provider,model_pattern,match_type,discount_rate::text,priority,enabled,note,created_at
          from provider_billing_rules where rule_key=$1 order by version desc limit 1`,
@@ -658,10 +777,29 @@ export class OperationsService implements OperationsServicePort {
         `insert into provider_billing_rules(rule_key,version,provider,model_pattern,match_type,discount_rate,priority,enabled,note,created_by)
          values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
          returning id,rule_key,version,provider,model_pattern,match_type,discount_rate::text,priority,enabled,note,created_at`,
-        [ruleKey, Number(existing.rows[0].version) + 1, input.provider, input.modelPattern, input.matchType, input.discountRate, input.priority, input.enabled, input.note, userId],
+        [
+          ruleKey,
+          Number(existing.rows[0].version) + 1,
+          input.provider,
+          input.modelPattern,
+          input.matchType,
+          input.discountRate,
+          input.priority,
+          input.enabled,
+          input.note,
+          userId,
+        ],
       );
       const rule = serializeProviderBillingRule(created.rows[0]);
-      await audit(client, userId, "billing.rule.update", "provider_billing_rule", ruleKey, { previous, next: rule }, requestId);
+      await audit(
+        client,
+        userId,
+        "billing.rule.update",
+        "provider_billing_rule",
+        ruleKey,
+        { previous, next: rule },
+        requestId,
+      );
       return rule;
     });
   }
@@ -868,7 +1006,9 @@ export class OperationsService implements OperationsServicePort {
             ? row.completed_jobs_range /
               (row.completed_jobs_range + row.failed_jobs_range)
             : 0,
-        avgCompletionSecondsInRange: Number(row.avg_completion_seconds_range || 0),
+        avgCompletionSecondsInRange: Number(
+          row.avg_completion_seconds_range || 0,
+        ),
       },
       creditActivity: {
         consumed24h: String(row.credits_consumed_24h),
@@ -882,7 +1022,12 @@ export class OperationsService implements OperationsServicePort {
       },
       usage: await this.usageSummary(),
       usage30d: await this.usageSummary(undefined, 30),
-      usageRange: await this.usageSummary(undefined, undefined, row.range_from, row.range_to),
+      usageRange: await this.usageSummary(
+        undefined,
+        undefined,
+        row.range_from,
+        row.range_to,
+      ),
       trends: await this.adminTrends(row.range_from, row.range_to),
     };
   }
@@ -943,8 +1088,7 @@ export class OperationsService implements OperationsServicePort {
       [modelId],
     );
     const model = current.rows[0];
-    if (!model)
-      throw new DomainError("MODEL_NOT_FOUND", "模型不存在", 404);
+    if (!model) throw new DomainError("MODEL_NOT_FOUND", "模型不存在", 404);
     if (enabled && !model.configurable)
       throw new DomainError(
         "MODEL_NOT_CONFIGURABLE",
@@ -1048,7 +1192,8 @@ export class OperationsService implements OperationsServicePort {
     );
     values.push(query.pageSize, (query.page - 1) * query.pageSize);
     const rows = await this.pool.query(
-      `select u.id,u.email,u.is_admin,u.account_status,u.disabled_reason,u.disabled_at,u.created_at,u.last_login_at,
+      `select u.id,u.email,u.is_admin,u.account_status,u.disabled_reason,u.disabled_at,u.created_at,u.last_login_at,u.registration_ip,
+        u.invite_code_id,u.channel_id,u.campaign_id,u.batch_id,c.channel_name,ic.code invite_code,
         (select count(*)::int from projects p where p.owner_id=u.id and p.deleted_at is null) project_count,
         (select count(*)::int from generation_jobs j where j.created_by=u.id) job_count,
         (select coalesce(sum(v.bytes),0)::bigint from asset_versions v where v.created_by=u.id) storage_bytes,
@@ -1057,7 +1202,7 @@ export class OperationsService implements OperationsServicePort {
         (select coalesce(jsonb_object_agg(x.currency,x.amount),'{}'::jsonb) from
           (select ${usageCurrencySql("gu")} currency,sum(coalesce(gu.total_amount,gu.amount_final,0))::text amount
            from generation_usage gu where gu.user_id=u.id group by ${usageCurrencySql("gu")}) x) usage_amounts
-       from users u ${where} order by u.created_at desc limit $${values.length - 1} offset $${values.length}`,
+       from users u left join channels c on c.id=u.channel_id left join invite_codes ic on ic.id=u.invite_code_id ${where} order by u.created_at desc limit $${values.length - 1} offset $${values.length}`,
       values,
     );
     return {
@@ -1071,7 +1216,8 @@ export class OperationsService implements OperationsServicePort {
   async adminUser(userId: string, targetUserId: string) {
     await this.requireAdmin(userId);
     const user = await this.pool.query(
-      `select u.id,u.email,u.is_admin,u.account_status,u.disabled_reason,u.disabled_at,u.created_at,u.last_login_at,
+      `select u.id,u.email,u.is_admin,u.account_status,u.disabled_reason,u.disabled_at,u.created_at,u.last_login_at,u.registration_ip,
+        u.invite_code_id,u.channel_id,u.campaign_id,u.batch_id,c.channel_name,ic.code invite_code,
         (select count(*)::int from projects p where p.owner_id=u.id and p.deleted_at is null) project_count,
         (select count(*)::int from generation_jobs j where j.created_by=u.id) job_count,
         (select coalesce(sum(v.bytes),0)::bigint from asset_versions v where v.created_by=u.id) storage_bytes,
@@ -1080,7 +1226,7 @@ export class OperationsService implements OperationsServicePort {
         (select coalesce(jsonb_object_agg(x.currency,x.amount),'{}'::jsonb) from
           (select ${usageCurrencySql("gu")} currency,sum(coalesce(gu.total_amount,gu.amount_final,0))::text amount
            from generation_usage gu where gu.user_id=u.id group by ${usageCurrencySql("gu")}) x) usage_amounts
-       from users u where u.id=$1`,
+       from users u left join channels c on c.id=u.channel_id left join invite_codes ic on ic.id=u.invite_code_id where u.id=$1`,
       [targetUserId],
     );
     if (!user.rows[0])
@@ -1259,7 +1405,7 @@ export class OperationsService implements OperationsServicePort {
     );
     values.push(query.pageSize, (query.page - 1) * query.pageSize);
     const result = await this.pool.query(
-      `select l.id,l.action,l.target_type,l.target_id,l.request_id,l.metadata,l.created_at,u.email actor_email
+      `select l.id,l.action,l.target_type,l.target_id,l.request_id,l.metadata,l.actor_ip,l.created_at,u.email actor_email
        from admin_audit_logs l left join users u on u.id=l.actor_user_id ${filter} order by l.id desc limit $${values.length - 1} offset $${values.length}`,
       values,
     );
@@ -1272,6 +1418,7 @@ export class OperationsService implements OperationsServicePort {
         requestId: row.request_id,
         metadata: row.metadata,
         actorEmail: row.actor_email,
+        actorIp: row.actor_ip,
         createdAt: iso(row.created_at),
       })),
       total: count.rows[0].total,
@@ -1379,7 +1526,12 @@ export class OperationsService implements OperationsServicePort {
     await this.auditDirect(userId, action, targetType, targetId, {}, requestId);
   }
 
-  private async usageSummary(userId?: string, sinceDays?: number, dateFrom?: string, dateTo?: string) {
+  private async usageSummary(
+    userId?: string,
+    sinceDays?: number,
+    dateFrom?: string,
+    dateTo?: string,
+  ) {
     const result = await this.pool.query(
       `select ${usageCurrencySql("gu")} currency,count(*)::int calls,
         coalesce(sum(total_tokens),0)::bigint total_tokens,
@@ -1706,6 +1858,13 @@ function serializeAdminUser(row: Record<string, unknown>) {
     disabledAt: iso(row.disabled_at),
     createdAt: iso(row.created_at),
     lastLoginAt: iso(row.last_login_at),
+    registrationIp: row.registration_ip,
+    inviteCodeId: row.invite_code_id,
+    inviteCode: row.invite_code,
+    channelId: row.channel_id,
+    channelName: row.channel_name,
+    campaignId: row.campaign_id,
+    batchId: row.batch_id,
     projectCount: Number(row.project_count || 0),
     jobCount: Number(row.job_count || 0),
     storageBytes: Number(row.storage_bytes || 0),
@@ -1857,7 +2016,9 @@ function adminJobFilters(query: AdminListQuery, alias: string) {
   }
   if (query.createdTo) {
     values.push(query.createdTo);
-    filters.push(`${alias}.created_at<($${values.length}::date+interval '1 day')`);
+    filters.push(
+      `${alias}.created_at<($${values.length}::date+interval '1 day')`,
+    );
   }
   return {
     where: filters.length ? `where ${filters.join(" and ")}` : "",

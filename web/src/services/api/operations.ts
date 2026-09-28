@@ -109,6 +109,13 @@ export type AdminUser = {
     disabledAt?: string;
     createdAt: string;
     lastLoginAt?: string;
+    registrationIp?: string;
+    inviteCodeId?: string;
+    inviteCode?: string;
+    channelId?: string;
+    channelName?: string;
+    campaignId?: string;
+    batchId?: string;
     projectCount: number;
     jobCount: number;
     storageBytes: number;
@@ -166,7 +173,7 @@ export type AdminJob = {
     updatedAt: string;
     finishedAt?: string;
 };
-export type AdminAuditLog = { id: number; action: string; targetType?: string; targetId?: string; requestId?: string; metadata: Record<string, unknown>; actorEmail?: string; createdAt: string };
+export type AdminAuditLog = { id: number; action: string; targetType?: string; targetId?: string; requestId?: string; metadata: Record<string, unknown>; actorEmail?: string; actorIp?: string; createdAt: string };
 export type UserFeedback = {
     id: string;
     category: "problem" | "suggestion";

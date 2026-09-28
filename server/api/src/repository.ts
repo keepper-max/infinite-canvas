@@ -20,6 +20,7 @@ import {
   DomainError,
   type PlatformRepository,
   type ProjectSummary,
+  type RegistrationContext,
   type Workspace,
 } from "./domain.js";
 import * as tables from "./db/schema.js";
@@ -66,12 +67,78 @@ function isReliableSha256(value: string) {
 export class PostgresPlatformRepository implements PlatformRepository {
   constructor(private readonly db: Database) {}
 
-  async createUserWithWorkspace(email: string, passwordHash: string) {
+  async createUserWithWorkspace(
+    email: string,
+    passwordHash: string,
+    registration: RegistrationContext = {},
+  ) {
     try {
       return await this.db.transaction(async (tx) => {
+        const settings = (await tx.execute(
+          sql`select value from platform_settings where key='registration_invite'`,
+        )) as unknown as { rows: Array<{ value?: { mode?: string } }> };
+        const mode = String(settings.rows[0]?.value?.mode || "optional");
+        const inviteCode = registration.inviteCode?.trim().toUpperCase();
+        if (mode === "required" && !inviteCode)
+          throw new DomainError("INVITE_CODE_REQUIRED", "请输入邀请码", 422);
+        if (mode === "disabled" && inviteCode)
+          throw new DomainError(
+            "INVITE_CODE_DISABLED",
+            "当前注册不使用邀请码",
+            422,
+          );
+        let attribution: {
+          inviteCodeId: string | null;
+          channelId: string;
+          campaignId: string | null;
+          batchId: string | null;
+        };
+        let invite: typeof tables.inviteCodes.$inferSelect | undefined;
+        if (inviteCode) {
+          [invite] = await tx
+            .select()
+            .from(tables.inviteCodes)
+            .where(
+              sql`upper(${tables.inviteCodes.code}) = upper(${inviteCode})`,
+            )
+            .for("update")
+            .limit(1);
+          validateRegistrationInvite(invite);
+          attribution = {
+            inviteCodeId: invite!.id,
+            channelId: invite!.channelId,
+            campaignId: invite!.campaignId,
+            batchId: invite!.batchId,
+          };
+        } else {
+          const [organic] = await tx
+            .select({ id: tables.channels.id })
+            .from(tables.channels)
+            .where(eq(tables.channels.systemKey, "organic"))
+            .limit(1);
+          if (!organic)
+            throw new DomainError(
+              "ORGANIC_CHANNEL_MISSING",
+              "自然注册渠道未初始化",
+              503,
+              true,
+            );
+          attribution = {
+            inviteCodeId: null,
+            channelId: organic.id,
+            campaignId: null,
+            batchId: null,
+          };
+        }
         const [user] = await tx
           .insert(tables.users)
-          .values({ email, passwordHash })
+          .values({
+            email,
+            passwordHash,
+            ...attribution,
+            sourceRegisteredAt: new Date(),
+            registrationIp: registration.registrationIp || null,
+          })
           .returning({
             id: tables.users.id,
             email: tables.users.email,
@@ -79,7 +146,34 @@ export class PostgresPlatformRepository implements PlatformRepository {
             accountStatus: tables.users.accountStatus,
           });
         const workspace = await createDefaultWorkspace(tx, user.id);
-        return { user: normalizePlatformUser(user), workspace };
+        if (invite)
+          await tx
+            .update(tables.inviteCodes)
+            .set({
+              usedCount: sql`${tables.inviteCodes.usedCount} + 1`,
+              updatedAt: new Date(),
+            })
+            .where(eq(tables.inviteCodes.id, invite.id));
+        let verificationConsumed = false;
+        if (registration.verificationCodeId) {
+          const consumed = (await tx.execute(sql`
+            update email_verification_codes set status='consumed',consumed_at=now()
+            where id=${registration.verificationCodeId} and email=${email} and purpose='register' and status='pending'
+            returning id
+          `)) as unknown as { rowCount: number };
+          if (consumed.rowCount !== 1)
+            throw new DomainError(
+              "INVALID_VERIFICATION_CODE",
+              "验证码无效或已过期，请重新获取",
+              422,
+            );
+          verificationConsumed = true;
+        }
+        return {
+          user: normalizePlatformUser(user),
+          workspace,
+          verificationConsumed,
+        };
       });
     } catch (error) {
       if (isUniqueViolation(error))
@@ -499,6 +593,26 @@ export class PostgresPlatformRepository implements PlatformRepository {
     await this.db.select({ id: tables.users.id }).from(tables.users).limit(1);
     return true;
   }
+}
+
+function validateRegistrationInvite(
+  invite?: typeof tables.inviteCodes.$inferSelect,
+) {
+  if (!invite)
+    throw new DomainError(
+      "INVITE_CODE_NOT_FOUND",
+      "邀请码不存在，请检查后重新输入",
+      422,
+    );
+  if (invite.status !== "active")
+    throw new DomainError("INVITE_CODE_DISABLED", "该邀请码当前不可使用", 422);
+  const now = Date.now();
+  if (invite.startAt && invite.startAt.getTime() > now)
+    throw new DomainError("INVITE_CODE_NOT_STARTED", "该邀请码尚未生效", 422);
+  if (invite.expireAt && invite.expireAt.getTime() < now)
+    throw new DomainError("INVITE_CODE_EXPIRED", "该邀请码已过期", 422);
+  if (invite.maxUses !== null && invite.usedCount >= invite.maxUses)
+    throw new DomainError("INVITE_CODE_FULL", "该邀请码可使用名额已满", 422);
 }
 
 function normalizePlatformUser(user: {

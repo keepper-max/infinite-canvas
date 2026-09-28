@@ -1,10 +1,10 @@
 import { App, Button, Form, Input } from "antd";
-import { ArrowRight, BadgeCheck, LockKeyhole, Mail } from "lucide-react";
+import { ArrowRight, BadgeCheck, KeyRound, LockKeyhole, Mail } from "lucide-react";
 import { useEffect, useState } from "react";
 import { Link, Navigate, useNavigate } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 
-import { confirmPasswordReset, getAuthConfig, login, PlatformApiError, register, requestEmailVerification, requestPasswordReset } from "@/services/api/platform";
+import { confirmPasswordReset, getAuthConfig, login, PlatformApiError, register, requestEmailVerification, requestPasswordReset, validateInviteCode } from "@/services/api/platform";
 import { useCanvasStore } from "@/stores/canvas/use-canvas-store";
 
 type AuthMode = "login" | "register" | "forgot-password";
@@ -17,6 +17,9 @@ export default function AuthPage({ mode }: { mode: AuthMode }) {
     const [sendingCode, setSendingCode] = useState(false);
     const [countdown, setCountdown] = useState(0);
     const [verificationRequired, setVerificationRequired] = useState<boolean | null>(mode === "register" ? null : mode === "forgot-password");
+    const [inviteMode, setInviteMode] = useState<"required" | "optional" | "disabled">("disabled");
+    const [inviteValidating, setInviteValidating] = useState(false);
+    const [inviteValid, setInviteValid] = useState(false);
     const [authenticatedProjectId, setAuthenticatedProjectId] = useState<string | null>(null);
     const hydrated = useCanvasStore((state) => state.hydrated);
     const [form] = Form.useForm();
@@ -42,7 +45,10 @@ export default function AuthPage({ mode }: { mode: AuthMode }) {
         let active = true;
         void getAuthConfig()
             .then((result) => {
-                if (active) setVerificationRequired(result.emailVerificationRequired);
+                if (active) {
+                    setVerificationRequired(result.emailVerificationRequired);
+                    setInviteMode(result.inviteMode);
+                }
             })
             .catch(() => {
                 if (active) setVerificationRequired(true);
@@ -72,7 +78,23 @@ export default function AuthPage({ mode }: { mode: AuthMode }) {
         }
     };
 
-    const submit = async (values: { email: string; password?: string; newPassword?: string; verificationCode?: string }) => {
+    const deviceId = registrationDeviceId();
+    const checkInvite = async () => {
+        const code = String(form.getFieldValue("inviteCode") || "").trim();
+        setInviteValid(false);
+        if (!code) return;
+        setInviteValidating(true);
+        try {
+            await validateInviteCode(code, deviceId);
+            setInviteValid(true);
+        } catch (error) {
+            message.error(error instanceof PlatformApiError ? error.message : t("auth.inviteInvalid"));
+        } finally {
+            setInviteValidating(false);
+        }
+    };
+
+    const submit = async (values: { email: string; password?: string; newPassword?: string; verificationCode?: string; inviteCode?: string }) => {
         setSubmitting(true);
         try {
             if (mode === "forgot-password") {
@@ -81,7 +103,7 @@ export default function AuthPage({ mode }: { mode: AuthMode }) {
                 navigate("/login", { replace: true });
                 return;
             }
-            const session = await (mode === "register" ? register(values.email, values.password || "", values.verificationCode) : login(values.email, values.password || ""));
+            const session = await (mode === "register" ? register(values.email, values.password || "", values.verificationCode, values.inviteCode, deviceId) : login(values.email, values.password || ""));
             useCanvasStore.getState().ensureProjectShell(session.workspace);
             setAuthenticatedProjectId(session.workspace.projectId);
             message.success(t(mode === "register" ? "auth.registered" : "auth.loggedIn"));
@@ -106,16 +128,12 @@ export default function AuthPage({ mode }: { mode: AuthMode }) {
                 <h1 className="mt-10 text-3xl font-semibold tracking-tight">{t(mode === "register" ? "auth.registerTitle" : mode === "forgot-password" ? "auth.forgotPasswordTitle" : "auth.loginTitle")}</h1>
                 <p className="mt-3 text-sm leading-6 text-stone-400">{t(mode === "forgot-password" ? "auth.forgotPasswordHint" : "auth.directEntry")}</p>
 
-                <Form form={form} layout="vertical" requiredMark={false} className="mt-8" onFinish={(values) => void submit(values as { email: string; password?: string; newPassword?: string; verificationCode?: string })}>
+                <Form form={form} layout="vertical" requiredMark={false} className="mt-8" onFinish={(values) => void submit(values as { email: string; password?: string; newPassword?: string; verificationCode?: string; inviteCode?: string })}>
                     <Form.Item name="email" label={<span className="text-stone-300">{t("auth.email")}</span>} rules={[{ required: true, type: "email", message: t("auth.emailInvalid") }]}>
                         <Input size="large" prefix={<Mail className="size-4 text-stone-500" />} placeholder="you@example.com" autoComplete="email" />
                     </Form.Item>
                     {mode !== "login" && verificationRequired && (
-                        <Form.Item
-                            name="verificationCode"
-                            label={<span className="text-stone-300">{t("auth.verificationCode")}</span>}
-                            rules={[{ required: true, pattern: /^\d{6}$/, message: t("auth.codeInvalid") }]}
-                        >
+                        <Form.Item name="verificationCode" label={<span className="text-stone-300">{t("auth.verificationCode")}</span>} rules={[{ required: true, pattern: /^\d{6}$/, message: t("auth.codeInvalid") }]}>
                             <Input
                                 size="large"
                                 prefix={<BadgeCheck className="size-4 text-stone-500" />}
@@ -124,25 +142,47 @@ export default function AuthPage({ mode }: { mode: AuthMode }) {
                                 autoComplete="one-time-code"
                                 maxLength={6}
                                 suffix={
-                                    <Button
-                                        type="text"
-                                        size="small"
-                                        loading={sendingCode}
-                                        disabled={countdown > 0}
-                                        onClick={() => void sendCode()}
-                                    >
+                                    <Button type="text" size="small" loading={sendingCode} disabled={countdown > 0} onClick={() => void sendCode()}>
                                         {countdown > 0 ? t("auth.resendCountdown", { seconds: countdown }) : t("auth.sendCode")}
                                     </Button>
                                 }
                             />
                         </Form.Item>
                     )}
+                    {mode === "register" && inviteMode !== "disabled" ? (
+                        <Form.Item
+                            name="inviteCode"
+                            label={<span className="text-stone-300">{t(inviteMode === "required" ? "auth.inviteCode" : "auth.inviteCodeOptional")}</span>}
+                            rules={[{ required: inviteMode === "required", message: t("auth.inviteRequired") }]}
+                        >
+                            <Input
+                                size="large"
+                                prefix={<KeyRound className="size-4 text-stone-500" />}
+                                placeholder={t("auth.invitePlaceholder")}
+                                onChange={() => setInviteValid(false)}
+                                onBlur={() => void checkInvite()}
+                                suffix={inviteValidating ? t("auth.inviteChecking") : inviteValid ? <span className="text-emerald-400">✓ {t("auth.inviteValid")}</span> : null}
+                            />
+                        </Form.Item>
+                    ) : null}
                     {mode === "forgot-password" ? (
                         <>
                             <Form.Item name="newPassword" label={<span className="text-stone-300">{t("auth.newPassword")}</span>} rules={[{ required: true, min: 8, message: t("auth.passwordInvalid") }]}>
                                 <Input.Password size="large" prefix={<LockKeyhole className="size-4 text-stone-500" />} placeholder={t("auth.passwordPlaceholder")} autoComplete="new-password" />
                             </Form.Item>
-                            <Form.Item name="confirmPassword" dependencies={["newPassword"]} label={<span className="text-stone-300">{t("auth.confirmPassword")}</span>} rules={[{ required: true, message: t("auth.passwordInvalid") }, ({ getFieldValue }) => ({ validator(_, value) { return !value || getFieldValue("newPassword") === value ? Promise.resolve() : Promise.reject(new Error(t("auth.passwordMismatch"))); } })]}>
+                            <Form.Item
+                                name="confirmPassword"
+                                dependencies={["newPassword"]}
+                                label={<span className="text-stone-300">{t("auth.confirmPassword")}</span>}
+                                rules={[
+                                    { required: true, message: t("auth.passwordInvalid") },
+                                    ({ getFieldValue }) => ({
+                                        validator(_, value) {
+                                            return !value || getFieldValue("newPassword") === value ? Promise.resolve() : Promise.reject(new Error(t("auth.passwordMismatch")));
+                                        },
+                                    }),
+                                ]}
+                            >
                                 <Input.Password size="large" prefix={<LockKeyhole className="size-4 text-stone-500" />} placeholder={t("auth.passwordPlaceholder")} autoComplete="new-password" />
                             </Form.Item>
                         </>
@@ -153,29 +193,49 @@ export default function AuthPage({ mode }: { mode: AuthMode }) {
                     )}
                     {mode === "login" ? (
                         <div className="-mt-3 mb-3 text-right text-sm">
-                            <Link className="text-stone-300 underline underline-offset-4" to="/forgot-password">{t("auth.forgotPassword")}</Link>
+                            <Link className="text-stone-300 underline underline-offset-4" to="/forgot-password">
+                                {t("auth.forgotPassword")}
+                            </Link>
                         </div>
                     ) : null}
-                    <Button htmlType="submit" type="primary" size="large" block loading={submitting} disabled={!hydrated || (mode === "register" && verificationRequired === null)} icon={<ArrowRight className="size-4" />} iconPlacement="end" className="mt-3">
+                    <Button
+                        htmlType="submit"
+                        type="primary"
+                        size="large"
+                        block
+                        loading={submitting}
+                        disabled={!hydrated || (mode === "register" && verificationRequired === null)}
+                        icon={<ArrowRight className="size-4" />}
+                        iconPlacement="end"
+                        className="mt-3"
+                    >
                         {t(mode === "register" ? "auth.registerAction" : mode === "forgot-password" ? "auth.resetPasswordAction" : "auth.loginAction")}
                     </Button>
                 </Form>
 
                 <p className="mt-6 text-center text-sm text-stone-400">
-                    {t(mode === "register" ? "auth.hasAccount" : mode === "forgot-password" ? "auth.rememberPassword" : "auth.noAccount")} {" "}
+                    {t(mode === "register" ? "auth.hasAccount" : mode === "forgot-password" ? "auth.rememberPassword" : "auth.noAccount")}{" "}
                     <Link className="text-stone-100 underline underline-offset-4" to={mode === "login" ? "/register" : "/login"}>
                         {t(mode === "login" ? "auth.goRegister" : "auth.goLogin")}
                     </Link>
                 </p>
             </section>
-            <a
-                className="absolute bottom-4 text-xs text-stone-500 transition-colors hover:text-stone-300"
-                href="https://beian.miit.gov.cn/"
-                target="_blank"
-                rel="noreferrer"
-            >
+            <a className="absolute bottom-4 text-xs text-stone-500 transition-colors hover:text-stone-300" href="https://beian.miit.gov.cn/" target="_blank" rel="noreferrer">
                 辽ICP备2026022425号-1
             </a>
         </main>
     );
+}
+
+function registrationDeviceId() {
+    const key = "shoushou-registration-device";
+    try {
+        const existing = window.localStorage.getItem(key);
+        if (existing) return existing;
+        const value = crypto.randomUUID();
+        window.localStorage.setItem(key, value);
+        return value;
+    } catch {
+        return undefined;
+    }
 }
