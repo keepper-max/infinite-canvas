@@ -898,12 +898,15 @@ export class ChannelAttributionService {
     const to = query.dateTo || new Date().toISOString().slice(0, 10);
     const column = scopeColumn(kind, "u");
     const result = await this.pool.query(
-      `with days as(select generate_series($2::date,$3::date,interval '1 day')::date day), scoped as(select id,created_at from users u where ${column}=$1)
-       select d.day::text,
-        (select count(*)::int from scoped s where s.created_at>=d.day and s.created_at<d.day+1) registrations,
-        (select coalesce(sum(p.amount_cents),0)::bigint from payment_orders p join scoped s on s.id=p.user_id where p.status='paid' and p.paid_at>=d.day and p.paid_at<d.day+1) recharge_cents,
-        (select coalesce(-sum(l.delta) filter(where l.entry_type='generation'),0)::bigint from credit_ledger l join credit_accounts a on a.id=l.account_id join scoped s on s.id=a.user_id where l.created_at>=d.day and l.created_at<d.day+1) consumed_points
-       from days d order by d.day`,
+      `with days as(
+         select generated_at::date as trend_day
+         from generate_series($2::date,$3::date,interval '1 day') as generated_at
+       ), scoped as(select id,created_at from users u where ${column}=$1)
+       select d.trend_day::text as day,
+        (select count(*)::int from scoped s where s.created_at>=d.trend_day and s.created_at<d.trend_day+interval '1 day') registrations,
+        (select coalesce(sum(p.amount_cents),0)::bigint from payment_orders p join scoped s on s.id=p.user_id where p.status='paid' and p.paid_at>=d.trend_day and p.paid_at<d.trend_day+interval '1 day') recharge_cents,
+        (select coalesce(-sum(l.delta) filter(where l.entry_type='generation'),0)::bigint from credit_ledger l join credit_accounts a on a.id=l.account_id join scoped s on s.id=a.user_id where l.created_at>=d.trend_day and l.created_at<d.trend_day+interval '1 day') consumed_points
+       from days d order by d.trend_day`,
       [id, from, to],
     );
     return result.rows;

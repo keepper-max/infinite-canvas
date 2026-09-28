@@ -539,17 +539,40 @@ function DetailDrawer({ target, onClose }: { target?: { kind: AttributionKind; i
     useEffect(() => {
         if (!target) {
             setDetail(undefined);
-            setUsers([]);
             return;
         }
-        void Promise.all([getAttributionDetail(target.kind, target.id, { dateFrom, dateTo }), getAttributionUsers(target.kind, target.id, { page, pageSize: 20, q, status })])
-            .then(([a, b]) => {
-                setDetail(a);
-                setUsers(b.items);
-                setTotal(b.total);
+        let cancelled = false;
+        void getAttributionDetail(target.kind, target.id, { dateFrom, dateTo })
+            .then((nextDetail) => {
+                if (!cancelled) setDetail(nextDetail);
             })
-            .catch((error) => message.error(error instanceof Error ? error.message : "读取详情失败"));
-    }, [dateFrom, dateTo, message, page, q, status, target]);
+            .catch((error) => {
+                if (!cancelled) message.error(error instanceof Error ? error.message : "读取统计失败");
+            });
+        return () => {
+            cancelled = true;
+        };
+    }, [dateFrom, dateTo, message, target]);
+    useEffect(() => {
+        if (!target) {
+            setUsers([]);
+            setTotal(0);
+            return;
+        }
+        let cancelled = false;
+        void getAttributionUsers(target.kind, target.id, { page, pageSize: 20, q, status })
+            .then((result) => {
+                if (cancelled) return;
+                setUsers(result.items);
+                setTotal(result.total);
+            })
+            .catch((error) => {
+                if (!cancelled) message.error(error instanceof Error ? error.message : "读取用户失败");
+            });
+        return () => {
+            cancelled = true;
+        };
+    }, [message, page, q, status, target]);
     useEffect(() => {
         setPage(1);
         setQ("");

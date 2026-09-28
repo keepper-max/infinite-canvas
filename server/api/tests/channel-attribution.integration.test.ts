@@ -182,6 +182,23 @@ test(
           error instanceof DomainError && error.code === "ATTRIBUTION_IN_USE",
       );
 
+      const today = new Date().toISOString().slice(0, 10);
+      const detail = await service.detail(admin.user.id, "channel", channel.id, {
+        page: 1,
+        pageSize: 20,
+        dateFrom: today,
+        dateTo: today,
+      });
+      const attributedUsers = await service.users(
+        admin.user.id,
+        "channel",
+        channel.id,
+        { page: 1, pageSize: 20 },
+      );
+      assert.equal(detail.trends.length, 1);
+      assert.equal(detail.trends[0].day, today);
+      assert.equal(attributedUsers.total, 1);
+
       const riskIp = "127.0.0.34";
       for (let index = 0; index < 5; index++)
         await service.beginRegistration(riskIp, `device-${suffix}`);
