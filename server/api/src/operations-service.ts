@@ -923,9 +923,18 @@ export class OperationsService implements OperationsServicePort {
   async adminOverview(userId: string, range: AdminOverviewRange = {}) {
     await this.requireAdmin(userId);
     const result = await this.pool.query(
-      `select
-        coalesce($1::date,current_date-29)::text range_from,
-        coalesce($2::date,current_date)::text range_to,
+      `with reporting_range as (
+        select
+          coalesce($1::date,(now() at time zone 'Asia/Shanghai')::date-29) range_from,
+          coalesce($2::date,(now() at time zone 'Asia/Shanghai')::date) range_to
+       ), reporting_bounds as (
+        select range_from,range_to,
+          range_from::timestamp at time zone 'Asia/Shanghai' range_start,
+          (range_to+1)::timestamp at time zone 'Asia/Shanghai' range_end
+        from reporting_range
+       ) select
+        b.range_from::text range_from,
+        b.range_to::text range_to,
         (select count(*)::int from users) users,
         (select count(*)::int from users where created_at>=now()-interval '24 hours') new_users_24h,
         (select count(*)::int from users where created_at>=now()-interval '7 days') new_users_7d,
@@ -933,8 +942,8 @@ export class OperationsService implements OperationsServicePort {
         (select count(*)::int from users u where u.last_login_at>=now()-interval '24 hours' or exists(select 1 from generation_jobs j where j.created_by=u.id and j.created_at>=now()-interval '24 hours')) active_users_24h,
         (select count(*)::int from users u where u.last_login_at>=now()-interval '7 days' or exists(select 1 from generation_jobs j where j.created_by=u.id and j.created_at>=now()-interval '7 days')) active_users_7d,
         (select count(*)::int from users u where u.last_login_at>=now()-interval '30 days' or exists(select 1 from generation_jobs j where j.created_by=u.id and j.created_at>=now()-interval '30 days')) active_users_30d,
-        (select count(*)::int from users where created_at>=coalesce($1::date,current_date-29) and created_at<coalesce($2::date,current_date)+1) new_users_range,
-        (select count(*)::int from users u where (u.last_login_at>=coalesce($1::date,current_date-29) and u.last_login_at<coalesce($2::date,current_date)+1) or exists(select 1 from generation_jobs j where j.created_by=u.id and j.created_at>=coalesce($1::date,current_date-29) and j.created_at<coalesce($2::date,current_date)+1)) active_users_range,
+        (select count(*)::int from users where created_at>=b.range_start and created_at<b.range_end) new_users_range,
+        (select count(*)::int from users u where (u.last_login_at>=b.range_start and u.last_login_at<b.range_end) or exists(select 1 from generation_jobs j where j.created_by=u.id and j.created_at>=b.range_start and j.created_at<b.range_end)) active_users_range,
         (select count(distinct user_id)::int from sessions where expires_at>now()) active_session_users,
         (select count(*)::int from projects where deleted_at is null) projects,
         (select count(*)::int from assets where status='active') assets,
@@ -948,20 +957,21 @@ export class OperationsService implements OperationsServicePort {
         (select count(*)::int from generation_jobs where status='completed' and created_at>=now()-interval '30 days') completed_jobs_30d,
         (select count(*)::int from generation_jobs where status='failed' and created_at>=now()-interval '30 days') failed_jobs_30d,
         (select coalesce(avg(extract(epoch from (finished_at-coalesce(started_at,created_at)))) filter(where status='completed' and finished_at is not null and created_at>=now()-interval '30 days'),0)::float8 from generation_jobs) avg_completion_seconds_30d,
-        (select count(*)::int from generation_jobs where created_at>=coalesce($1::date,current_date-29) and created_at<coalesce($2::date,current_date)+1) jobs_range,
-        (select count(*)::int from generation_jobs where status='failed' and created_at>=coalesce($1::date,current_date-29) and created_at<coalesce($2::date,current_date)+1) failed_jobs_range,
-        (select count(*)::int from generation_jobs where status='completed' and created_at>=coalesce($1::date,current_date-29) and created_at<coalesce($2::date,current_date)+1) completed_jobs_range,
-        (select coalesce(avg(extract(epoch from (finished_at-coalesce(started_at,created_at)))) filter(where status='completed' and finished_at is not null and created_at>=coalesce($1::date,current_date-29) and created_at<coalesce($2::date,current_date)+1),0)::float8 from generation_jobs) avg_completion_seconds_range,
+        (select count(*)::int from generation_jobs where created_at>=b.range_start and created_at<b.range_end) jobs_range,
+        (select count(*)::int from generation_jobs where status='failed' and created_at>=b.range_start and created_at<b.range_end) failed_jobs_range,
+        (select count(*)::int from generation_jobs where status='completed' and created_at>=b.range_start and created_at<b.range_end) completed_jobs_range,
+        (select coalesce(avg(extract(epoch from (finished_at-coalesce(started_at,created_at)))) filter(where status='completed' and finished_at is not null and created_at>=b.range_start and created_at<b.range_end),0)::float8 from generation_jobs) avg_completion_seconds_range,
         (select count(*)::int from generation_jobs where billing_status in ('pending','reconciling')) pending_billing_jobs,
         (select count(*)::int from generation_usage where credit_status in ('pending','pending_rate','pending_currency','payment_required')) pending_credit_charges,
         (select coalesce(-sum(delta) filter(where entry_type='generation' and created_at>=now()-interval '24 hours'),0)::bigint from credit_ledger) credits_consumed_24h,
         (select coalesce(-sum(delta) filter(where entry_type='generation' and created_at>=now()-interval '7 days'),0)::bigint from credit_ledger) credits_consumed_7d,
         (select coalesce(-sum(delta) filter(where entry_type='generation' and created_at>=now()-interval '30 days'),0)::bigint from credit_ledger) credits_consumed_30d,
-        (select coalesce(-sum(delta) filter(where entry_type='generation' and created_at>=coalesce($1::date,current_date-29) and created_at<coalesce($2::date,current_date)+1),0)::bigint from credit_ledger) credits_consumed_range,
+        (select coalesce(-sum(delta) filter(where entry_type='generation' and created_at>=b.range_start and created_at<b.range_end),0)::bigint from credit_ledger) credits_consumed_range,
         (select count(*)::int from composition_jobs where status not in ('completed','failed','cancelled')) active_compositions,
         (select count(*)::int from composition_jobs where status='failed') failed_compositions,
         (select count(*)::int from generation_jobs) total_jobs,
-        (select count(*)::int from generation_jobs where status='completed') completed_jobs`,
+        (select count(*)::int from generation_jobs where status='completed') completed_jobs
+       from reporting_bounds b`,
       [range.dateFrom || null, range.dateTo || null],
     );
     const row = result.rows[0];
@@ -1177,12 +1187,14 @@ export class OperationsService implements OperationsServicePort {
     }
     if (query.createdFrom) {
       values.push(query.createdFrom);
-      filters.push(`u.created_at >= $${values.length}::timestamptz`);
+      filters.push(
+        `u.created_at >= (($${values.length}::date)::timestamp at time zone 'Asia/Shanghai')`,
+      );
     }
     if (query.createdTo) {
       values.push(query.createdTo);
       filters.push(
-        `u.created_at < $${values.length}::timestamptz + interval '1 day'`,
+        `u.created_at < (($${values.length}::date+1)::timestamp at time zone 'Asia/Shanghai')`,
       );
     }
     const where = filters.length ? `where ${filters.join(" and ")}` : "";
@@ -1541,8 +1553,8 @@ export class OperationsService implements OperationsServicePort {
         coalesce(sum(coalesce(total_amount,amount_final,0)),0)::text total_amount
        from generation_usage gu where ($1::uuid is null or gu.user_id=$1)
         and ($2::int is null or gu.reconciled_at>=now()-($2::int*interval '1 day'))
-        and ($3::date is null or gu.reconciled_at>=$3::date)
-        and ($4::date is null or gu.reconciled_at<$4::date+1)
+        and ($3::date is null or gu.reconciled_at>=(($3::date)::timestamp at time zone 'Asia/Shanghai'))
+        and ($4::date is null or gu.reconciled_at<(($4::date+1)::timestamp at time zone 'Asia/Shanghai'))
        group by ${usageCurrencySql("gu")} order by currency`,
       [userId || null, sinceDays || null, dateFrom || null, dateTo || null],
     );
@@ -1559,14 +1571,24 @@ export class OperationsService implements OperationsServicePort {
 
   private async adminTrends(dateFrom?: string, dateTo?: string) {
     const result = await this.pool.query(
-      `with days as (select generate_series(coalesce($1::date,current_date-29),coalesce($2::date,current_date),interval '1 day')::date as day)
-       select d.day::text,
-        (select count(*)::int from users u where u.created_at>=d.day and u.created_at<d.day+1) new_users,
-        (select count(*)::int from users u where (u.last_login_at>=d.day and u.last_login_at<d.day+1) or exists(select 1 from generation_jobs j where j.created_by=u.id and j.created_at>=d.day and j.created_at<d.day+1)) active_users,
-        (select count(*)::int from generation_jobs j where j.created_at>=d.day and j.created_at<d.day+1) jobs,
-        (select count(*)::int from generation_jobs j where j.status='completed' and j.created_at>=d.day and j.created_at<d.day+1) completed_jobs,
-        (select coalesce(-sum(l.delta) filter(where l.entry_type='generation'),0)::bigint from credit_ledger l where l.created_at>=d.day and l.created_at<d.day+1) credit_points
-       from days d order by d.day`,
+      `with days as (
+        select generate_series(
+          coalesce($1::date,(now() at time zone 'Asia/Shanghai')::date-29),
+          coalesce($2::date,(now() at time zone 'Asia/Shanghai')::date),
+          interval '1 day'
+        )::date as day
+       ), day_bounds as (
+        select day,
+          day::timestamp at time zone 'Asia/Shanghai' day_start,
+          (day+1)::timestamp at time zone 'Asia/Shanghai' day_end
+        from days
+       ) select d.day::text,
+        (select count(*)::int from users u where u.created_at>=d.day_start and u.created_at<d.day_end) new_users,
+        (select count(*)::int from users u where (u.last_login_at>=d.day_start and u.last_login_at<d.day_end) or exists(select 1 from generation_jobs j where j.created_by=u.id and j.created_at>=d.day_start and j.created_at<d.day_end)) active_users,
+        (select count(*)::int from generation_jobs j where j.created_at>=d.day_start and j.created_at<d.day_end) jobs,
+        (select count(*)::int from generation_jobs j where j.status='completed' and j.created_at>=d.day_start and j.created_at<d.day_end) completed_jobs,
+        (select coalesce(-sum(l.delta) filter(where l.entry_type='generation'),0)::bigint from credit_ledger l where l.created_at>=d.day_start and l.created_at<d.day_end) credit_points
+       from day_bounds d order by d.day`,
       [dateFrom || null, dateTo || null],
     );
     return result.rows.map((row) => ({
@@ -1584,7 +1606,7 @@ export class OperationsService implements OperationsServicePort {
       model: "gu.model_id",
       project: "p.id::text||' · '||p.name",
       capability: "gu.capability",
-      day: "gu.reconciled_at::date::text",
+      day: "(gu.reconciled_at at time zone 'Asia/Shanghai')::date::text",
     } as const;
     const entries = await Promise.all(
       Object.entries(dimensions).map(async ([name, expression]) => {
@@ -2012,12 +2034,14 @@ function adminJobFilters(query: AdminListQuery, alias: string) {
   }
   if (query.createdFrom) {
     values.push(query.createdFrom);
-    filters.push(`${alias}.created_at>=$${values.length}::date`);
+    filters.push(
+      `${alias}.created_at>=(($${values.length}::date)::timestamp at time zone 'Asia/Shanghai')`,
+    );
   }
   if (query.createdTo) {
     values.push(query.createdTo);
     filters.push(
-      `${alias}.created_at<($${values.length}::date+interval '1 day')`,
+      `${alias}.created_at<(($${values.length}::date+1)::timestamp at time zone 'Asia/Shanghai')`,
     );
   }
   return {

@@ -863,7 +863,7 @@ export class ChannelAttributionService {
     const result = await this.pool.query(
       `with scoped as (select u.* from users u ${scope}) select
         count(*)::int registered_users,
-        count(*) filter(where created_at>=current_date)::int today_users,
+        count(*) filter(where created_at>=((now() at time zone 'Asia/Shanghai')::date)::timestamp at time zone 'Asia/Shanghai')::int today_users,
         count(*) filter(where created_at>=now()-interval '7 days')::int users_7d,
         count(*) filter(where created_at>=now()-interval '30 days')::int users_30d,
         count(*) filter(where last_login_at>=now()-interval '30 days' or exists(select 1 from generation_jobs j where j.created_by=scoped.id and j.created_at>=now()-interval '30 days'))::int active_users,
@@ -892,22 +892,27 @@ export class ChannelAttributionService {
     id: string,
     query: AttributionListQuery,
   ) {
-    const from =
-      query.dateFrom ||
-      new Date(Date.now() - 29 * 86400000).toISOString().slice(0, 10);
-    const to = query.dateTo || new Date().toISOString().slice(0, 10);
     const column = scopeColumn(kind, "u");
     const result = await this.pool.query(
       `with days as(
          select generated_at::date as trend_day
-         from generate_series($2::date,$3::date,interval '1 day') as generated_at
+         from generate_series(
+           coalesce($2::date,(now() at time zone 'Asia/Shanghai')::date-29),
+           coalesce($3::date,(now() at time zone 'Asia/Shanghai')::date),
+           interval '1 day'
+         ) as generated_at
+       ), day_bounds as(
+         select trend_day,
+           trend_day::timestamp at time zone 'Asia/Shanghai' day_start,
+           (trend_day+1)::timestamp at time zone 'Asia/Shanghai' day_end
+         from days
        ), scoped as(select id,created_at from users u where ${column}=$1)
        select d.trend_day::text as day,
-        (select count(*)::int from scoped s where s.created_at>=d.trend_day and s.created_at<d.trend_day+interval '1 day') registrations,
-        (select coalesce(sum(p.amount_cents),0)::bigint from payment_orders p join scoped s on s.id=p.user_id where p.status='paid' and p.paid_at>=d.trend_day and p.paid_at<d.trend_day+interval '1 day') recharge_cents,
-        (select coalesce(-sum(l.delta) filter(where l.entry_type='generation'),0)::bigint from credit_ledger l join credit_accounts a on a.id=l.account_id join scoped s on s.id=a.user_id where l.created_at>=d.trend_day and l.created_at<d.trend_day+interval '1 day') consumed_points
-       from days d order by d.trend_day`,
-      [id, from, to],
+        (select count(*)::int from scoped s where s.created_at>=d.day_start and s.created_at<d.day_end) registrations,
+        (select coalesce(sum(p.amount_cents),0)::bigint from payment_orders p join scoped s on s.id=p.user_id where p.status='paid' and p.paid_at>=d.day_start and p.paid_at<d.day_end) recharge_cents,
+        (select coalesce(-sum(l.delta) filter(where l.entry_type='generation'),0)::bigint from credit_ledger l join credit_accounts a on a.id=l.account_id join scoped s on s.id=a.user_id where l.created_at>=d.day_start and l.created_at<d.day_end) consumed_points
+       from day_bounds d order by d.trend_day`,
+      [id, query.dateFrom || null, query.dateTo || null],
     );
     return result.rows;
   }
