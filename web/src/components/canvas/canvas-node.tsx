@@ -64,6 +64,7 @@ type CanvasNodeProps = {
 type NodeContentRendererProps = {
     node: CanvasNodeData;
     scale: number;
+    isActive: boolean;
     theme: (typeof canvasThemes)[keyof typeof canvasThemes];
     isEditingContent: boolean;
     textareaRef: React.RefObject<HTMLTextAreaElement | null>;
@@ -431,6 +432,7 @@ export const CanvasNode = React.memo(function CanvasNode({
                     <NodeContent
                         node={data}
                         scale={scale}
+                        isActive={isActive}
                         theme={theme}
                         isEditingContent={isEditingContent}
                         textareaRef={textareaRef}
@@ -794,7 +796,7 @@ function primaryImageContent(node: CanvasNodeData) {
     return (images.find((image) => image.id === primaryImageId) || images[0])?.content || node.metadata?.content;
 }
 
-function VideoNodeContent({ node, theme }: NodeContentRendererProps) {
+function VideoNodeContent({ node, theme, isActive }: NodeContentRendererProps) {
     const { t } = useTranslation();
     useSyncExternalStore(subscribeImagePreviews, getImagePreviewRevision, () => 0);
     if (!node.metadata?.content)
@@ -804,7 +806,20 @@ function VideoNodeContent({ node, theme }: NodeContentRendererProps) {
                 <span className="text-sm">{t("canvas.node.emptyVideo")}</span>
             </div>
         );
-    return <video src={node.metadata.content} poster={previewUrlFor(node.metadata.assetVersionId) || node.metadata.thumbnailUrl} preload="none" controls className="h-full w-full rounded-[18px] bg-black object-contain" data-canvas-video={node.id} data-canvas-no-zoom />;
+    return (
+        <video
+            src={node.metadata.content}
+            poster={previewUrlFor(node.metadata.assetVersionId) || node.metadata.thumbnailUrl}
+            preload={isActive ? "metadata" : "none"}
+            controls
+            playsInline
+            className="h-full w-full rounded-[18px] bg-black object-contain"
+            data-canvas-video={node.id}
+            data-canvas-no-zoom
+            onMouseDown={(event) => event.stopPropagation()}
+            onPointerDown={(event) => event.stopPropagation()}
+        />
+    );
 }
 
 function AudioNodeContent({ node, theme }: NodeContentRendererProps) {
