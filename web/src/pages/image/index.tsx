@@ -243,9 +243,17 @@ export default function ImagePage() {
         saveAs(image.dataUrl, `image-${index + 1}.png`);
     };
 
-    const addResultToReferences = async (image: GeneratedImage, index: number) => {
-        const stored = await uploadImage(image.dataUrl);
-        setReferences((value) => [...value, { id: nanoid(), name: `result-${index + 1}.png`, type: stored.mimeType, dataUrl: stored.url, storageKey: stored.storageKey }]);
+    const addResultToReferences = (image: GeneratedImage, index: number) => {
+        setReferences((value) => [
+            ...value,
+            {
+                id: nanoid(),
+                name: `result-${index + 1}.png`,
+                type: image.mimeType || "image/png",
+                dataUrl: image.dataUrl,
+                ...(image.storageKey ? { storageKey: image.storageKey } : {}),
+            },
+        ]);
         message.success(t("imageWorkbench.addedReference"));
     };
 
