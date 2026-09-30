@@ -36,6 +36,13 @@ export interface GenerationProvider {
   ): Promise<Response>;
 }
 
+export interface ProviderReferenceUploader {
+  uploadReference(
+    reference: NonNullable<CompiledGenerationRequest["references"]>[number],
+    signal?: AbortSignal,
+  ): Promise<string>;
+}
+
 export class ProviderError extends Error {
   constructor(
     public readonly code: string,
@@ -51,6 +58,7 @@ export class Token360Provider implements GenerationProvider {
   constructor(
     private readonly config: ProviderConfig,
     private readonly submitTimeoutMs: number,
+    private readonly referenceUploader?: ProviderReferenceUploader,
   ) {}
 
   async create(
@@ -100,12 +108,16 @@ export class Token360Provider implements GenerationProvider {
       };
     }
     if (request.capability === "image") {
+      const upstreamParameters = await this.stageProviderReferences(
+        request.upstreamParameters,
+        requestSignal,
+      );
       const { payload, response } = await this.jsonResponse(
         "/v1/images/generations",
         {
           model: request.upstreamModel,
           prompt: request.prompt,
-          ...request.upstreamParameters,
+          ...upstreamParameters,
         },
         requestSignal,
         "POST",
@@ -157,9 +169,13 @@ export class Token360Provider implements GenerationProvider {
         ],
       };
     }
+    const upstreamParameters = await this.stageProviderReferences(
+      request.upstreamParameters,
+      requestSignal,
+    );
     const { payload, response } = await this.jsonResponse(
       "/v1/videos",
-      compileVideoBody(request),
+      compileVideoBody({ ...request, upstreamParameters }),
       requestSignal,
       "POST",
       correlationHeaders,
@@ -185,13 +201,16 @@ export class Token360Provider implements GenerationProvider {
         false,
       );
     const status = normalizeStatus(payload);
-    if (status === "failed")
+    if (status === "failed") {
+      const message = readError(payload);
+      const referenceTimeout = isReferenceDownloadTimeout(message);
       throw new ProviderError(
-        "PROVIDER_REJECTED",
-        providerUserMessage(readError(payload), "视频生成失败"),
-        false,
-        { upstreamMessage: sanitizeProviderDetail(readError(payload)) },
+        referenceTimeout ? "PROVIDER_REFERENCE_TIMEOUT" : "PROVIDER_REJECTED",
+        providerUserMessage(message, "视频生成失败"),
+        referenceTimeout,
+        { upstreamMessage: sanitizeProviderDetail(message) },
       );
+    }
     return {
       providerJobId: id,
       billingTraceId,
@@ -246,12 +265,52 @@ export class Token360Provider implements GenerationProvider {
         progress: readProgress(payload),
         usage: readUsage(payload),
       };
+    const message = readError(payload);
+    const referenceTimeout = isReferenceDownloadTimeout(message);
     throw new ProviderError(
-      "PROVIDER_REJECTED",
-      providerUserMessage(readError(payload), "视频生成失败"),
-      false,
-      { upstreamMessage: sanitizeProviderDetail(readError(payload)) },
+      referenceTimeout ? "PROVIDER_REFERENCE_TIMEOUT" : "PROVIDER_REJECTED",
+      providerUserMessage(message, "视频生成失败"),
+      referenceTimeout,
+      { upstreamMessage: sanitizeProviderDetail(message) },
     );
+  }
+
+  private async stageProviderReferences(
+    parameters: Record<string, unknown>,
+    signal?: AbortSignal,
+  ) {
+    if (!this.referenceUploader) return parameters;
+    const staged = { ...parameters };
+    const cache = new Map<string, Promise<Record<string, unknown>>>();
+    const stage = async (value: unknown) => {
+      const reference = asRecord(value) as NonNullable<
+        CompiledGenerationRequest["references"]
+      >[number];
+      const source = reference.url || reference.dataUrl;
+      if (!source || source.startsWith("asset://")) return value;
+      const key = reference.storageKey || source;
+      let pending = cache.get(key);
+      if (!pending) {
+        pending = this.referenceUploader!
+          .uploadReference(reference, signal)
+          .then((url) => {
+            const externalReference = { ...reference };
+            delete externalReference.storageKey;
+            delete externalReference.assetVersionId;
+            delete externalReference.virtualPortraitId;
+            return { ...externalReference, url, dataUrl: undefined };
+          });
+        cache.set(key, pending);
+      }
+      return pending;
+    };
+    if (staged.firstFrame) staged.firstFrame = await stage(staged.firstFrame);
+    if (staged.lastFrame) staged.lastFrame = await stage(staged.lastFrame);
+    if (Array.isArray(staged.references))
+      staged.references = await Promise.all(staged.references.map(stage));
+    if (Array.isArray(staged.images))
+      staged.images = await Promise.all(staged.images.map(stage));
+    return staged;
   }
 
   async cancel(providerJobId: string, signal?: AbortSignal) {
@@ -511,6 +570,7 @@ function readError(value: unknown): string {
 }
 export function providerUserMessage(value: string, fallback: string) {
   const message = value.toLowerCase();
+  if (isReferenceDownloadTimeout(value)) return "参考素材下载超时，请重试";
   if (
     message.includes("copyright") &&
     (message.includes("audio") || message.includes("music"))
@@ -527,6 +587,14 @@ export function providerUserMessage(value: string, fallback: string) {
   return sanitizeProviderDetail(value)
     .replace(/\b(?:Token\s*360|Running\s*Hub|RH)\b/gi, "模型服务")
     .replace(/海马云/g, "模型服务") || fallback;
+}
+
+export function isReferenceDownloadTimeout(value: string) {
+  const message = value.toLowerCase();
+  return (
+    message.includes("timeout") &&
+    (message.includes("download") || message.includes("url"))
+  );
 }
 function sanitizeProviderDetail(value: string) {
   if (!value) return "";

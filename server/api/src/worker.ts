@@ -67,21 +67,28 @@ await gateway
       error instanceof Error ? error.message : "unknown error",
     ),
   );
+const runningHubProvider = new RunningHubProvider(
+  config.runningHub,
+  config.jobs.submitTimeoutMs,
+  storage,
+);
 const provider = new ProviderRouter(
   new Map<string, GenerationProvider>([
     [
       "token360",
-      new Token360Provider(config.provider, config.jobs.submitTimeoutMs),
+      new Token360Provider(
+        config.provider,
+        config.jobs.submitTimeoutMs,
+        config.runningHub.apiKey ? runningHubProvider : undefined,
+      ),
     ],
-    [
-      "runninghub",
-      new RunningHubProvider(config.runningHub, config.jobs.submitTimeoutMs),
-    ],
+    ["runninghub", runningHubProvider],
     [
       "runninghub_global",
       new RunningHubProvider(
         config.runningHubGlobal,
         config.jobs.submitTimeoutMs,
+        storage,
       ),
     ],
   ]),

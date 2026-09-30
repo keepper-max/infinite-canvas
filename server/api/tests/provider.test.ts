@@ -292,6 +292,149 @@ test("video provider emits documented frame and multimodal reference shapes", as
   }
 });
 
+test("Token360 stages stored video references before submitting them", async () => {
+  const originalFetch = globalThis.fetch;
+  let submitted: Record<string, unknown> | undefined;
+  const uploadedStorageKeys: string[] = [];
+  globalThis.fetch = async (_input, init) => {
+    submitted = JSON.parse(String(init?.body || "{}"));
+    return Response.json({ id: "video-staged", status: "queued" });
+  };
+  try {
+    const provider = new Token360Provider(
+      {
+        baseUrl: "https://example.invalid",
+        apiKey: "test-only",
+        catalogUrl: "https://example.invalid/models",
+      },
+      1_000,
+      {
+        async uploadReference(reference) {
+          uploadedStorageKeys.push(String(reference.storageKey));
+          return "https://media.example/staged-reference.png";
+        },
+      },
+    );
+    await provider.create(
+      request("multiref", {
+        references: [
+          {
+            role: "identity_reference",
+            url: "https://slow.example/reference.png",
+            storageKey: "projects/project-1/reference.png",
+            mimeType: "image/png",
+          },
+          {
+            role: "identity_reference",
+            url: "asset://ta_portrait_1",
+            mimeType: "image/png",
+          },
+        ],
+      }),
+    );
+    assert.deepEqual(uploadedStorageKeys, [
+      "projects/project-1/reference.png",
+    ]);
+    assert.deepEqual(submitted?.input_references, [
+      {
+        type: "image_url",
+        image_url: { url: "https://media.example/staged-reference.png" },
+        role: "reference",
+      },
+      {
+        type: "image_url",
+        image_url: { url: "asset://ta_portrait_1" },
+        role: "reference",
+      },
+    ]);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("Token360 stages stored image references before submitting them", async () => {
+  const originalFetch = globalThis.fetch;
+  let submitted: Record<string, unknown> | undefined;
+  globalThis.fetch = async (_input, init) => {
+    submitted = JSON.parse(String(init?.body || "{}"));
+    return Response.json({ data: [{ b64_json: "AA==" }] });
+  };
+  try {
+    const provider = new Token360Provider(
+      {
+        baseUrl: "https://example.invalid",
+        apiKey: "test-only",
+        catalogUrl: "https://example.invalid/models",
+      },
+      1_000,
+      {
+        async uploadReference() {
+          return "https://media.example/staged-image.png";
+        },
+      },
+    );
+    await provider.create({
+      modelId: "image.reference-test",
+      upstreamModel: "image-reference-test",
+      providerId: "token360",
+      capability: "image",
+      mode: "i2i",
+      prompt: "test",
+      parameters: {},
+      references: [],
+      upstreamParameters: {
+        images: [
+          {
+            role: "identity_reference",
+            url: "https://slow.example/reference.png",
+            storageKey: "projects/project-1/reference.png",
+            mimeType: "image/png",
+          },
+        ],
+      },
+    });
+    assert.deepEqual(submitted?.images, [
+      {
+        role: "identity_reference",
+        url: "https://media.example/staged-image.png",
+        mimeType: "image/png",
+      },
+    ]);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("reference download timeouts are retryable and user friendly", async () => {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async () =>
+    Response.json({
+      id: "video-timeout",
+      status: "failed",
+      error: { message: "Timeout while downloading url=https://private.invalid" },
+    });
+  try {
+    const provider = new Token360Provider(
+      {
+        baseUrl: "https://example.invalid",
+        apiKey: "test-only",
+        catalogUrl: "https://example.invalid/models",
+      },
+      1_000,
+    );
+    await assert.rejects(
+      provider.get("video-timeout"),
+      (error: unknown) =>
+        error instanceof ProviderError &&
+        error.code === "PROVIDER_REFERENCE_TIMEOUT" &&
+        error.message === "参考素材下载超时，请重试" &&
+        error.retryable,
+    );
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
 test("completed video without inline URL defers canonical content download", async () => {
   const originalFetch = globalThis.fetch;
   const urls: string[] = [];

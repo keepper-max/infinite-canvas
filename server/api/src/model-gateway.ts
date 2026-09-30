@@ -40,6 +40,7 @@ export type GenerationInput = {
     role: string;
     url?: string;
     dataUrl?: string;
+    storageKey?: string;
     assetVersionId?: string;
     virtualPortraitId?: string;
     mimeType?: string;

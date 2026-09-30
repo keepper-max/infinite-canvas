@@ -318,7 +318,69 @@ test("RunningHub virtual portrait references use their source images", async () 
     resolved.references?.[0]?.url,
     "https://assets.example/portrait/source.webp",
   );
+  assert.equal(
+    resolved.references?.[0]?.storageKey,
+    "portrait/source.webp",
+  );
   assert.equal(resolved.references?.[0]?.mimeType, "image/webp");
+});
+
+test("stored asset references retain an internal storage key", async () => {
+  const pool = {
+    async query() {
+      return {
+        rows: [
+          {
+            storage_key: "projects/project-1/assets/reference.png",
+            mime_type: "image/png",
+          },
+        ],
+      };
+    },
+  };
+  const storage = {
+    async createDownloadUrl() {
+      return "https://assets.example/reference.png";
+    },
+  };
+  const executor = new JobExecutor(
+    pool as never,
+    {} as never,
+    {} as never,
+    storage as never,
+    {} as never,
+  );
+  const resolver = executor as unknown as {
+    resolveAssetReferences(
+      input: GenerationInput,
+      projectId: string,
+      providerId: string,
+    ): Promise<GenerationInput>;
+  };
+  const resolved = await resolver.resolveAssetReferences(
+    {
+      modelId: "video.seedance-2-5",
+      capability: "video",
+      mode: "multiref",
+      prompt: "test",
+      references: [
+        {
+          role: "identity_reference",
+          assetVersionId: "11111111-1111-4111-8111-111111111111",
+        },
+      ],
+    },
+    "project-1",
+    "token360",
+  );
+  assert.equal(
+    resolved.references?.[0]?.storageKey,
+    "projects/project-1/assets/reference.png",
+  );
+  assert.equal(
+    resolved.references?.[0]?.url,
+    "https://assets.example/reference.png",
+  );
 });
 
 test("managed job input accepts project portrait IDs but rejects direct asset URLs", () => {

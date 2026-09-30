@@ -527,6 +527,78 @@ test("RunningHub provider submits every image accepted by a multiple-input field
   }
 });
 
+test("RunningHub uploads stored references through the internal object store", async () => {
+  const originalFetch = globalThis.fetch;
+  const requestedUrls: string[] = [];
+  let submitted: Record<string, unknown> | undefined;
+  globalThis.fetch = async (input, init) => {
+    const url = String(input);
+    requestedUrls.push(url);
+    if (url.endsWith("/media/upload/binary"))
+      return Response.json({
+        code: 0,
+        data: {
+          download_url: "https://runninghub.example/upload/reference.png",
+        },
+      });
+    if (url.endsWith("/bytedance/seedream-v5-pro/image-to-image")) {
+      submitted = JSON.parse(String(init?.body));
+      return Response.json({ taskId: "rh-internal-reference-task" });
+    }
+    throw new Error(`unexpected request: ${url}`);
+  };
+  try {
+    const provider = new RunningHubProvider(
+      {
+        baseUrl: "https://www.runninghub.cn/openapi/v2",
+        apiKey: "test-only",
+        catalogUrl: "",
+      },
+      0,
+      {
+        async get(storageKey: string) {
+          assert.equal(storageKey, "projects/project-1/reference.png");
+          return new Uint8Array([1, 2, 3]);
+        },
+      } as never,
+    );
+    await provider.create({
+      modelId: "runninghub.image.seedream-v5-pro-image-to-image",
+      upstreamModel: "bytedance/seedream-v5-pro/image-to-image",
+      providerId: "runninghub",
+      capability: "image",
+      mode: "i2i",
+      prompt: "生成一张图片",
+      parameters: {},
+      upstreamParameters: {},
+      references: [
+        {
+          role: "identity_reference",
+          url: "https://slow.example/reference.png",
+          storageKey: "projects/project-1/reference.png",
+          mimeType: "image/png",
+        },
+      ],
+      providerMetadata: {
+        params: [
+          { fieldKey: "prompt", type: "STRING", required: true },
+          { fieldKey: "imageUrl", type: "IMAGE", required: true },
+        ],
+      },
+    });
+    assert.equal(
+      requestedUrls.includes("https://slow.example/reference.png"),
+      false,
+    );
+    assert.deepEqual(submitted, {
+      prompt: "生成一张图片",
+      imageUrl: "https://runninghub.example/upload/reference.png",
+    });
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
 test("RunningHub provider omits catalog sentinel parameters", async () => {
   const originalFetch = globalThis.fetch;
   let submitted: Record<string, unknown> | undefined;

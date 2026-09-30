@@ -1006,6 +1006,9 @@ export class JobExecutor {
               providerId === "token360"
                 ? `asset://${portrait.provider_asset_id}`
                 : await this.storage.createDownloadUrl(portrait.storage_key),
+            ...(providerId === "token360"
+              ? {}
+              : { storageKey: portrait.storage_key }),
             mimeType: reference.mimeType || portrait.mime_type || "image/png",
           };
         }
@@ -1026,6 +1029,7 @@ export class JobExecutor {
         return {
           ...reference,
           url: await this.storage.createDownloadUrl(version.storage_key),
+          storageKey: version.storage_key,
           mimeType: reference.mimeType || version.mime_type,
         };
       }),

@@ -1,10 +1,13 @@
 import type { RunningHubConfig } from "./config.js";
 import type { CompiledGenerationRequest } from "./model-gateway.js";
+import type { ObjectStorage } from "./object-storage.js";
 import {
   ProviderError,
+  isReferenceDownloadTimeout,
   providerUserMessage,
   type GenerationProvider,
   type ProviderArtifact,
+  type ProviderReferenceUploader,
   type ProviderResult,
 } from "./provider.js";
 
@@ -16,10 +19,13 @@ type RegistryParameter = {
   omittedValues?: string[];
 };
 
-export class RunningHubProvider implements GenerationProvider {
+export class RunningHubProvider
+  implements GenerationProvider, ProviderReferenceUploader
+{
   constructor(
     private readonly config: RunningHubConfig,
     private readonly submitTimeoutMs: number,
+    private readonly storage?: ObjectStorage,
   ) {}
 
   async create(
@@ -138,13 +144,16 @@ export class RunningHubProvider implements GenerationProvider {
     );
     const usage = runningHubUsage(payload, providerJobId);
     const status = normalizeStatus(payload);
-    if (status === "failed")
+    if (status === "failed") {
+      const message = readError(payload);
+      const referenceTimeout = isReferenceDownloadTimeout(message);
       throw new ProviderError(
-        "PROVIDER_REJECTED",
-        providerUserMessage(readError(payload), "生成失败"),
-        false,
-        { upstreamMessage: sanitize(readError(payload)), usage },
+        referenceTimeout ? "PROVIDER_REFERENCE_TIMEOUT" : "PROVIDER_REJECTED",
+        providerUserMessage(message, "生成失败"),
+        referenceTimeout,
+        { upstreamMessage: sanitize(message), usage },
       );
+    }
     if (status !== "completed")
       return {
         providerJobId,
@@ -240,21 +249,47 @@ export class RunningHubProvider implements GenerationProvider {
     }
   }
 
-  private async uploadReference(
+  async uploadReference(
     reference: NonNullable<CompiledGenerationRequest["references"]>[number],
     signal?: AbortSignal,
   ) {
+    if (!this.config.apiKey)
+      throw new ProviderError(
+        "PROVIDER_AUTH_FAILED",
+        "模型服务尚未配置",
+        false,
+      );
     const source = reference.url || reference.dataUrl;
-    if (!source)
+    if (!source && !reference.storageKey)
       throw new ProviderError(
         "PROVIDER_UPLOAD_FAILED",
         "参考素材缺少可上传内容",
         false,
       );
-    let response: Response;
+    let blob: Blob;
     try {
-      response = await fetch(source, { signal });
+      if (reference.storageKey && this.storage) {
+        const bytes = await this.storage.get(reference.storageKey);
+        const body = bytes.buffer.slice(
+          bytes.byteOffset,
+          bytes.byteOffset + bytes.byteLength,
+        ) as ArrayBuffer;
+        blob = new Blob([body], {
+          type: referenceMimeType(reference) || "application/octet-stream",
+        });
+      } else {
+        const response = await fetch(source!, { signal });
+        if (!response.ok)
+          throw new ProviderError(
+            "PROVIDER_UPLOAD_FAILED",
+            "读取参考素材失败",
+            true,
+            { status: response.status },
+          );
+        blob = await response.blob();
+      }
     } catch (error) {
+      if (error instanceof ProviderError) throw error;
       throw new ProviderError(
         "PROVIDER_UPLOAD_FAILED",
         "读取参考素材失败",
@@ -262,15 +297,7 @@ export class RunningHubProvider implements GenerationProvider {
         { errorName: error instanceof Error ? error.name : "UnknownError" },
       );
     }
-    if (!response.ok)
-      throw new ProviderError(
-        "PROVIDER_UPLOAD_FAILED",
-        "读取参考素材失败",
-        true,
-        { status: response.status },
-      );
     const form = new FormData();
-    const blob = await response.blob();
     form.append("file", blob, `reference.${extensionFor(blob.type)}`);
     const payload = await this.request("/media/upload/binary", {
       method: "POST",
