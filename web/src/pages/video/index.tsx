@@ -3,7 +3,6 @@ import { useEffect, useRef, useState, type DragEvent } from "react";
 import { App, Button, Checkbox, Drawer, Empty, Input, Modal, Tag, Typography } from "antd";
 import localforage from "localforage";
 import { nanoid } from "nanoid";
-import { saveAs } from "file-saver";
 import { useTranslation } from "react-i18next";
 import { useLocation } from "react-router-dom";
 
@@ -25,6 +24,7 @@ import { boolConfig, modelOptionLabel, useConfigStore, useEffectiveConfig, type 
 import { useThemeStore } from "@/stores/use-theme-store";
 import type { ReferenceImage } from "@/types/image";
 import i18n from "@/i18n";
+import { useDownloadMedia } from "@/hooks/use-download-media";
 
 type GeneratedVideo = {
     id: string;
@@ -73,6 +73,7 @@ const logStore = localforage.createInstance({ name: "infinite-canvas", storeName
 
 export default function VideoPage() {
     const { message } = App.useApp();
+    const downloadMedia = useDownloadMedia();
     const { t } = useTranslation();
     const location = useLocation();
     const handoffRef = useRef(false);
@@ -262,7 +263,7 @@ export default function VideoPage() {
     };
 
     const downloadVideo = (video: GeneratedVideo) => {
-        saveAs(video.url, "video.mp4");
+        void downloadMedia(video.url, "video.mp4");
     };
 
     const saveResultToAssets = (video: GeneratedVideo) => {

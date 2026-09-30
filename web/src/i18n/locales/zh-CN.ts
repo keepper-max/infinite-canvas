@@ -68,6 +68,8 @@ export default {
         all: "全部",
         view: "查看",
         download: "下载",
+        downloadFailed: "下载失败，请稍后重试",
+        downloadLoginExpired: "登录状态已失效，请重新登录后下载",
         upload: "上传",
         requestCanceled: "请求已取消",
         durationMinutes: "{{minutes}}分{{seconds}}秒",

@@ -68,6 +68,8 @@ export default {
         all: "All",
         view: "View",
         download: "Download",
+        downloadFailed: "Download failed. Please try again later.",
+        downloadLoginExpired: "Your session has expired. Please sign in again to download.",
         upload: "Upload",
         requestCanceled: "Request canceled",
         durationMinutes: "{{minutes}}m {{seconds}}s",

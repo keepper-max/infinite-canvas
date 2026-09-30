@@ -2,7 +2,6 @@ import { ArrowLeft, ArrowRight, BookOpen, CheckSquare, ClipboardPaste, Download,
 import { useEffect, useRef, useState } from "react";
 import { App, Button, Checkbox, Drawer, Empty, Image, Input, Modal, Tag, Tooltip, Typography } from "antd";
 import localforage from "localforage";
-import { saveAs } from "file-saver";
 import { useTranslation } from "react-i18next";
 import { useLocation } from "react-router-dom";
 
@@ -22,6 +21,7 @@ import { useAssetStore } from "@/stores/use-asset-store";
 import { useWorkbenchAgentStore } from "@/stores/use-workbench-agent-store";
 import type { ReferenceImage } from "@/types/image";
 import i18n from "@/i18n";
+import { useDownloadMedia } from "@/hooks/use-download-media";
 
 type GeneratedImage = {
     id: string;
@@ -71,6 +71,7 @@ const logStore = localforage.createInstance({ name: "infinite-canvas", storeName
 
 export default function ImagePage() {
     const { message } = App.useApp();
+    const downloadMedia = useDownloadMedia();
     const { t } = useTranslation();
     const location = useLocation();
     const handoffRef = useRef(false);
@@ -240,7 +241,7 @@ export default function ImagePage() {
     }, [autoRunToken]);
 
     const downloadImage = (image: GeneratedImage, index: number) => {
-        saveAs(image.dataUrl, `image-${index + 1}.png`);
+        void downloadMedia(image.dataUrl, `image-${index + 1}.png`);
     };
 
     const addResultToReferences = (image: GeneratedImage, index: number) => {

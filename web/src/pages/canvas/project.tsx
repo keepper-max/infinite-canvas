@@ -3,7 +3,6 @@ import type { ChangeEvent as ReactChangeEvent, DragEvent as ReactDragEvent, Mous
 import { flushSync } from "react-dom";
 import { useBlocker, useLocation, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { Group, Video } from "lucide-react";
-import { saveAs } from "file-saver";
 import { useTranslation } from "react-i18next";
 
 import { requestEdit, requestGeneration, requestImageQuestion } from "@/services/api/image";
@@ -12,6 +11,7 @@ import { createVideoGenerationTask, storeGeneratedVideo, waitForVideoGenerationT
 import { abortForManualJobCancellation, getManagedJob, retryManagedJob, subscribeProjectJobEvents, type ManagedJobEvent } from "@/services/api/jobs";
 import { createCanvasDraft, type CanvasDraft } from "@/services/api/canvas";
 import { invalidateCloudAssetDownloadUrls } from "@/services/api/assets";
+import { useDownloadMedia } from "@/hooks/use-download-media";
 import { defaultConfig, useConfigStore, useEffectiveConfig } from "@/stores/use-config-store";
 import { uploadImage } from "@/services/image-storage";
 import { uploadMediaFile, type UploadedFile } from "@/services/file-storage";
@@ -213,6 +213,7 @@ export default function CanvasPage() {
 
 function InfiniteCanvasPage({ projectId }: { projectId: string }) {
     const { message, modal } = App.useApp();
+    const downloadMedia = useDownloadMedia();
     const { logout } = useAuth();
     const { t } = useTranslation();
     // Subscribe to the registry version so plugin registration changes rerender the canvas.
@@ -2241,14 +2242,14 @@ function InfiniteCanvasPage({ projectId }: { projectId: string }) {
 
     const downloadNodeImage = useCallback((node: CanvasNodeData) => {
         if ((node.type !== CanvasNodeType.Image && node.type !== CanvasNodeType.Video && node.type !== CanvasNodeType.Audio) || !node.metadata?.content) return;
-        saveAs(node.metadata.content, `canvas-${node.type}-${node.id}.${node.type === CanvasNodeType.Video ? "mp4" : node.type === CanvasNodeType.Audio ? audioExtension(node.metadata.mimeType) : imageExtension(node.metadata.content)}`);
-    }, []);
+        void downloadMedia(node.metadata.content, `canvas-${node.type}-${node.id}.${node.type === CanvasNodeType.Video ? "mp4" : node.type === CanvasNodeType.Audio ? audioExtension(node.metadata.mimeType) : imageExtension(node.metadata.content)}`);
+    }, [downloadMedia]);
 
     const downloadBatchImage = useCallback((node: CanvasNodeData, imageId: string) => {
         const image = node.metadata?.images?.find((item) => item.id === imageId);
         if (!image?.content) return;
-        saveAs(image.content, `canvas-image-${node.id}-${image.id}.${imageExtension(image.content)}`);
-    }, []);
+        void downloadMedia(image.content, `canvas-image-${node.id}-${image.id}.${imageExtension(image.content)}`);
+    }, [downloadMedia]);
 
     const captureVideoNodeFrame = useCallback(
         async (nodeId: string, position: VideoFramePosition) => {
