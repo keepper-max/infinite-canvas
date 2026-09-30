@@ -251,7 +251,17 @@ export class RunningHubProvider implements GenerationProvider {
         "参考素材缺少可上传内容",
         false,
       );
-    const response = await fetch(source, { signal });
+    let response: Response;
+    try {
+      response = await fetch(source, { signal });
+    } catch (error) {
+      throw new ProviderError(
+        "PROVIDER_UPLOAD_FAILED",
+        "读取参考素材失败",
+        true,
+        { errorName: error instanceof Error ? error.name : "UnknownError" },
+      );
+    }
     if (!response.ok)
       throw new ProviderError(
         "PROVIDER_UPLOAD_FAILED",

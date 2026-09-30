@@ -218,16 +218,33 @@ test("job ID and billing trace use distinct SQL parameters", async () => {
   assert.equal(insertValues[18], insertValues[0]);
 });
 
-test("virtual portrait references are resolved from the current project only", async () => {
+test("Token360 virtual portrait references keep their provider asset IDs", async () => {
   const pool = {
     async query(sql: string, values?: unknown[]) {
       assert.match(sql, /virtual_portraits/);
-      assert.deepEqual(values, ["11111111-1111-4111-8111-111111111111", "project-1"]);
-      return { rows: [{ provider_asset_id: "ta_portrait_1" }] };
+      assert.deepEqual(values, [
+        "11111111-1111-4111-8111-111111111111",
+        "project-1",
+      ]);
+      return {
+        rows: [
+          {
+            provider_asset_id: "ta_portrait_1",
+            storage_key: "portrait/source.png",
+            mime_type: "image/png",
+          },
+        ],
+      };
     },
   };
   const executor = new JobExecutor(pool as never, {} as never, {} as never, {} as never, {} as never);
-  const resolver = executor as unknown as { resolveAssetReferences(input: GenerationInput, projectId: string): Promise<GenerationInput> };
+  const resolver = executor as unknown as {
+    resolveAssetReferences(
+      input: GenerationInput,
+      projectId: string,
+      providerId: string,
+    ): Promise<GenerationInput>;
+  };
   const resolved = await resolver.resolveAssetReferences(
     {
       modelId: "video.seedance-2-0",
@@ -237,8 +254,71 @@ test("virtual portrait references are resolved from the current project only", a
       references: [{ role: "first_frame", virtualPortraitId: "11111111-1111-4111-8111-111111111111" }],
     },
     "project-1",
+    "token360",
   );
   assert.equal(resolved.references?.[0]?.url, "asset://ta_portrait_1");
+});
+
+test("RunningHub virtual portrait references use their source images", async () => {
+  const pool = {
+    async query(sql: string, values?: unknown[]) {
+      assert.match(sql, /source_asset_version_id/);
+      assert.deepEqual(values, [
+        "11111111-1111-4111-8111-111111111111",
+        "project-1",
+      ]);
+      return {
+        rows: [
+          {
+            provider_asset_id: "ta_portrait_1",
+            storage_key: "portrait/source.webp",
+            mime_type: "image/webp",
+          },
+        ],
+      };
+    },
+  };
+  const storage = {
+    async createDownloadUrl(storageKey: string) {
+      assert.equal(storageKey, "portrait/source.webp");
+      return "https://assets.example/portrait/source.webp";
+    },
+  };
+  const executor = new JobExecutor(
+    pool as never,
+    {} as never,
+    {} as never,
+    storage as never,
+    {} as never,
+  );
+  const resolver = executor as unknown as {
+    resolveAssetReferences(
+      input: GenerationInput,
+      projectId: string,
+      providerId: string,
+    ): Promise<GenerationInput>;
+  };
+  const resolved = await resolver.resolveAssetReferences(
+    {
+      modelId: "runninghub.video.seedance-2-5",
+      capability: "video",
+      mode: "multiref",
+      prompt: "test",
+      references: [
+        {
+          role: "identity_reference",
+          virtualPortraitId: "11111111-1111-4111-8111-111111111111",
+        },
+      ],
+    },
+    "project-1",
+    "runninghub",
+  );
+  assert.equal(
+    resolved.references?.[0]?.url,
+    "https://assets.example/portrait/source.webp",
+  );
+  assert.equal(resolved.references?.[0]?.mimeType, "image/webp");
 });
 
 test("managed job input accepts project portrait IDs but rejects direct asset URLs", () => {

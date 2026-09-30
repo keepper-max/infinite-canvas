@@ -408,6 +408,7 @@ export class JobExecutor {
             await this.resolveAssetReferences(
               row.input_snapshot as GenerationInput,
               String(row.project_id),
+              String(row.provider),
             ),
           );
       let result = row.provider_job_id
@@ -975,14 +976,16 @@ export class JobExecutor {
   private async resolveAssetReferences(
     input: GenerationInput,
     projectId: string,
+    providerId: string,
   ): Promise<GenerationInput> {
     const references = await Promise.all(
       (input.references || []).map(async (reference) => {
         if (reference.virtualPortraitId) {
           const result = await this.pool.query(
-            `select vp.provider_asset_id
+            `select vp.provider_asset_id, v.storage_key, v.mime_type
                from virtual_portraits vp
                join virtual_portrait_libraries vpl on vpl.id=vp.library_id
+               join asset_versions v on v.id=vp.source_asset_version_id
               where vp.id=$1 and vp.project_id=$2 and vp.status='active'
                 and vp.archived_at is null and vpl.provider_status='active'`,
             [reference.virtualPortraitId, projectId],
@@ -999,8 +1002,11 @@ export class JobExecutor {
             );
           return {
             ...reference,
-            url: `asset://${portrait.provider_asset_id}`,
-            mimeType: reference.mimeType || "image/png",
+            url:
+              providerId === "token360"
+                ? `asset://${portrait.provider_asset_id}`
+                : await this.storage.createDownloadUrl(portrait.storage_key),
+            mimeType: reference.mimeType || portrait.mime_type || "image/png",
           };
         }
         if (!reference.assetVersionId) return reference;
