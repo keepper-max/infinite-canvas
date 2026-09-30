@@ -150,7 +150,8 @@ function videoPluginResult(result: unknown): VideoGenerationResult {
 export async function storeGeneratedVideo(result: VideoGenerationResult): Promise<UploadedFile> {
     if (result.url && result.assetVersionId) {
         const downloads: Record<string, { url: string; thumbnailUrl?: string }> = await getCloudAssetDownloadUrls([result.assetVersionId]).catch(() => ({}));
-        return { url: result.url, thumbnailUrl: downloads[result.assetVersionId]?.thumbnailUrl, storageKey: "", bytes: 0, mimeType: result.mimeType || "video/mp4", assetId: result.assetId, assetVersionId: result.assetVersionId };
+        const download = downloads[result.assetVersionId];
+        return { url: download?.url || result.url, thumbnailUrl: download?.thumbnailUrl, storageKey: "", bytes: 0, mimeType: result.mimeType || "video/mp4", assetId: result.assetId, assetVersionId: result.assetVersionId };
     }
     if (result.blob) return { ...(await uploadMediaFile(result.blob, "video")), assetId: result.assetId, assetVersionId: result.assetVersionId };
     if (result.url) {
