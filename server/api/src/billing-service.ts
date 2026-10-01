@@ -72,7 +72,7 @@ export class BillingService {
     const effectiveTrace = traceId || jobId;
     await this.pool.query(
       `update generation_jobs set billing_trace_id=$2,
-        billing_status=case when $2<>id::text then 'mismatch' else 'pending' end,
+        billing_status='pending',
         billing_next_check_at=coalesce(billing_next_check_at,now()),
         billing_meter_usage=billing_meter_usage||$3::jsonb,updated_at=now()
        where id=$1`,
@@ -175,9 +175,6 @@ export class BillingService {
       ) {
         return this.reschedule(job);
       }
-      const mismatch =
-        requestId !== String(job.id) ||
-        String(job.billing_trace_id) !== String(job.id);
       await this.pool.query(
         `insert into generation_usage(job_id,project_id,user_id,billing_request_id,provider,model_id,capability,status,billed,credit_status,
           prompt_tokens,completion_tokens,input_tokens,output_tokens,total_tokens,generated_images,audio_duration_seconds,
@@ -235,10 +232,10 @@ export class BillingService {
       );
       await this.pool.query(
         "update generation_jobs set billing_status=$2,billing_error=null,billing_next_check_at=null,billing_last_checked_at=now(),updated_at=now() where id=$1",
-        [jobId, mismatch ? "mismatch" : "settled"],
+        [jobId, "settled"],
       );
       await this.credits?.settleUsage(jobId).catch(() => undefined);
-      return { status: mismatch ? "mismatch" : "settled", requestId };
+      return { status: "settled", requestId };
     } catch (error) {
       await this.markFailed(
         jobId,
@@ -263,7 +260,7 @@ export class BillingService {
     const attempt = Number(job.billing_attempt_count || 1);
     const delay = RECONCILE_DELAYS_SECONDS[Math.max(0, attempt - 1)] || 3600;
     await this.pool.query(
-      `update generation_jobs set billing_status=case when billing_trace_id<>id::text then 'mismatch' else 'pending' end,
+      `update generation_jobs set billing_status='pending',
         billing_error=null,billing_next_check_at=now()+($2::text||' seconds')::interval,updated_at=now() where id=$1`,
       [job.id, delay],
     );

@@ -20,7 +20,7 @@ const billingRuleSnapshot = {
   capturedAt: "2026-09-25T00:00:00.000Z",
 };
 
-test("billing reconciliation stores official usage fields and decimal amounts as strings", async () => {
+test("billing reconciliation accepts the provider billing record id and stores official usage", async () => {
   const calls: Array<{ sql: string; values?: unknown[] }> = [];
   const job = {
     id: "job-1",
@@ -46,8 +46,8 @@ test("billing reconciliation stores official usage fields and decimal amounts as
     return Response.json({
       code: 200,
       data: {
-        id: "job-1",
-        request_id: "job-1",
+        id: "bill-record-1",
+        request_id: "br-provider-1",
         amount_base: "0.28400000",
         amount_final: "0.28400000",
         total_amount: "0.28400000",
@@ -74,7 +74,7 @@ test("billing reconciliation stores official usage fields and decimal amounts as
       "job-1",
       true,
     );
-    assert.deepEqual(result, { status: "settled", requestId: "job-1" });
+    assert.deepEqual(result, { status: "settled", requestId: "br-provider-1" });
     const insert = calls.find(({ sql }) =>
       sql.includes("insert into generation_usage"),
     );
@@ -84,7 +84,7 @@ test("billing reconciliation stores official usage fields and decimal amounts as
     assert.equal(insert.values[16], "4");
     assert.equal(insert.values[20], "0.28400000");
     assert.equal(insert.values[24], "USD");
-    assert.equal(insert.values[25], "job-1");
+    assert.equal(insert.values[25], "bill-record-1");
   } finally {
     globalThis.fetch = originalFetch;
   }
@@ -237,6 +237,8 @@ test("terminal meter usage cannot overwrite the initial submission trace", async
   });
   await service.recordMeterUsage("job-4", { seconds: 6 });
   assert.equal(calls[0]?.values?.[1], "provider-trace-4");
+  assert.match(calls[0]?.sql || "", /billing_status='pending'/);
+  assert.doesNotMatch(calls[0]?.sql || "", /billing_status=case/);
   assert.doesNotMatch(calls[1]?.sql || "", /billing_trace_id/);
   assert.deepEqual(calls[1]?.values, ["job-4", JSON.stringify({ seconds: 6 })]);
 });

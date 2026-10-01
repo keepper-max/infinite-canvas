@@ -2241,7 +2241,7 @@ function billingStatusLabel(value: string) {
         pending: "待对账",
         reconciling: "对账中",
         settled: "已对账",
-        mismatch: "已对账（账单号不同）",
+        mismatch: "账单标识待确认",
         not_billed: "未出账",
         failed: "对账失败",
         unavailable: "不可对账",
