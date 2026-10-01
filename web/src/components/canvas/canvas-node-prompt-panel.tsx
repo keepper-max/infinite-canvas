@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { ArrowUp, LoaderCircle, Maximize2, Square } from "lucide-react";
+import { ArrowUp, LoaderCircle, Maximize2, ScanLine, Square } from "lucide-react";
 import { Button, Modal, Tooltip } from "antd";
 import { useTranslation } from "react-i18next";
 
@@ -17,6 +17,7 @@ import { CanvasTextSettingsPopover } from "./canvas-text-settings-popover";
 import { CanvasNodeType, type CanvasGenerationMode, type CanvasNodeData } from "@/types/canvas";
 import type { CanvasResourceReference } from "@/lib/canvas/canvas-resource-references";
 import { CanvasNodeReferenceBar } from "./canvas-node-reference-bar";
+import { selectedVideoModel, supportedVideoModes } from "@/lib/video-model-capabilities";
 
 export type CanvasNodeGenerationMode = CanvasGenerationMode;
 
@@ -35,6 +36,7 @@ type CanvasNodePromptPanelProps = {
     onImageSettingsOpenChange?: (open: boolean) => void;
     modeOverride?: CanvasNodeGenerationMode; // Plugin nodes set their generation type through useBuiltinPanel.mode.
     forceAdaptiveVideoRatio?: boolean;
+    onConvertDepthReference?: (targetNode: CanvasNodeData, sourceNode: CanvasNodeData) => void;
 };
 
 export function CanvasNodePromptPanel({
@@ -52,6 +54,7 @@ export function CanvasNodePromptPanel({
     onImageSettingsOpenChange,
     modeOverride,
     forceAdaptiveVideoRatio,
+    onConvertDepthReference,
 }: CanvasNodePromptPanelProps) {
     const { t } = useTranslation();
     const globalConfig = useEffectiveConfig();
@@ -64,6 +67,9 @@ export function CanvasNodePromptPanel({
     const isEditingExistingContent = hasTextContent || hasImageContent;
     const [prompt, setPrompt] = useState(node.metadata?.composerContent ?? node.metadata?.prompt ?? "");
     const [expanded, setExpanded] = useState(false);
+    const connectedVideoNodes = connectedNodes.filter((item) => item.type === CanvasNodeType.Video && item.metadata?.content);
+    const supportsDepthReference = supportedVideoModes(selectedVideoModel(config)).includes("multiref");
+    const depthActionDisabled = connectedVideoNodes.length !== 1 || !supportsDepthReference || !onConvertDepthReference;
 
     // Restore prompts only when switching nodes; preserve the current input after generation on the same node.
     useEffect(() => {
@@ -135,7 +141,12 @@ export function CanvasNodePromptPanel({
                     ) : mode === "video" ? (
                         <>
                             <ModelPicker config={config} value={config.model} onChange={(model) => onConfigChange(node.id, { model })} capability="video" onMissingConfig={() => openConfigDialog(true)} className="max-w-[190px]" />
-                            <CanvasVideoSettingsPopover config={config} forceAdaptiveRatio={forceAdaptiveVideoRatio} buttonClassName="!h-10 !max-w-[220px] !justify-start !rounded-full !px-3" onConfigChange={(key, value) => onConfigChange(node.id, videoConfigPatch(key, value))} />
+                            <CanvasVideoSettingsPopover
+                                config={config}
+                                forceAdaptiveRatio={forceAdaptiveVideoRatio}
+                                buttonClassName="!h-10 !max-w-[220px] !justify-start !rounded-full !px-3"
+                                onConfigChange={(key, value) => onConfigChange(node.id, videoConfigPatch(key, value))}
+                            />
                         </>
                     ) : mode === "audio" ? (
                         <>
@@ -175,6 +186,24 @@ export function CanvasNodePromptPanel({
                     </span>
                 </Button>
             </div>
+            {mode === "video" ? (
+                <Tooltip
+                    title={
+                        !supportsDepthReference ? t("depthMotion.unsupportedModel") : connectedVideoNodes.length === 0 ? t("depthMotion.canvasNoVideo") : connectedVideoNodes.length > 1 ? t("depthMotion.canvasMultipleVideos") : t("depthMotion.canvasHint")
+                    }
+                >
+                    <button
+                        type="button"
+                        disabled={depthActionDisabled}
+                        className="mt-2 flex h-8 w-full items-center justify-center gap-2 rounded-full border bg-transparent px-3 text-xs font-medium transition enabled:hover:opacity-75 disabled:cursor-not-allowed disabled:opacity-35"
+                        style={{ borderColor: theme.toolbar.border, color: theme.node.muted }}
+                        onClick={() => onConvertDepthReference?.(node, connectedVideoNodes[0])}
+                    >
+                        <ScanLine className="size-3.5" />
+                        {t("depthMotion.canvasConvertAction")}
+                    </button>
+                </Tooltip>
+            ) : null}
             <Modal title={t("canvas.promptPanel.editorTitle")} open={expanded} centered width={760} footer={null} onCancel={() => setExpanded(false)} destroyOnHidden>
                 <div data-canvas-no-zoom className="pt-2" onWheelCapture={(event) => event.stopPropagation()}>
                     <CanvasNodeReferenceBar

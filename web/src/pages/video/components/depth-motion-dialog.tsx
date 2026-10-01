@@ -3,34 +3,60 @@ import { Alert, Button, Modal, Progress } from "antd";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 
-import { DEPTH_VIDEO_FPS, DEPTH_VIDEO_MAX_SECONDS, DEPTH_VIDEO_RESOLUTION, generateDepthVideo, type DepthVideoProgress, type DepthVideoResult } from "@/lib/depth-motion/generate-depth-video";
+import { DEPTH_VIDEO_MAX_SECONDS, DEPTH_VIDEO_RESOLUTION, formatFrameRate, generateDepthVideo, inspectDepthVideoSource, type DepthVideoProgress, type DepthVideoResult, type DepthVideoSourceMetadata } from "@/lib/depth-motion/generate-depth-video";
 import { formatBytes } from "@/lib/image-utils";
 
 type DepthMotionDialogProps = {
     open: boolean;
+    sourceFile?: File | null;
     onCancel: () => void;
     onComplete: (result: DepthVideoResult, sourceName: string) => Promise<void> | void;
 };
 
-export function DepthMotionDialog({ open, onCancel, onComplete }: DepthMotionDialogProps) {
+export function DepthMotionDialog({ open, sourceFile = null, onCancel, onComplete }: DepthMotionDialogProps) {
     const { t } = useTranslation();
     const inputRef = useRef<HTMLInputElement>(null);
     const controllerRef = useRef<AbortController | null>(null);
+    const inspectionRef = useRef(0);
     const [file, setFile] = useState<File | null>(null);
+    const [sourceMetadata, setSourceMetadata] = useState<DepthVideoSourceMetadata | null>(null);
     const [progress, setProgress] = useState<DepthVideoProgress | null>(null);
     const [error, setError] = useState("");
     const [running, setRunning] = useState(false);
     const hasWebGpu = useMemo(() => typeof navigator !== "undefined" && "gpu" in navigator, [open]);
 
     useEffect(() => {
-        if (open) return;
-        controllerRef.current?.abort();
-        controllerRef.current = null;
-        setFile(null);
-        setProgress(null);
+        if (!open) {
+            inspectionRef.current += 1;
+            controllerRef.current?.abort();
+            controllerRef.current = null;
+            setFile(null);
+            setSourceMetadata(null);
+            setProgress(null);
+            setError("");
+            setRunning(false);
+            return;
+        }
+        if (sourceFile) void selectFile(sourceFile);
+        // `sourceFile` intentionally resets the canvas-provided source whenever the dialog opens.
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [open, sourceFile]);
+
+    async function selectFile(next: File) {
+        const inspection = ++inspectionRef.current;
+        setFile(next);
+        setSourceMetadata(null);
         setError("");
-        setRunning(false);
-    }, [open]);
+        setProgress(null);
+        try {
+            const metadata = await inspectDepthVideoSource(next);
+            if (inspection !== inspectionRef.current) return;
+            setSourceMetadata(metadata);
+        } catch (cause) {
+            if (inspection !== inspectionRef.current) return;
+            setError(cause instanceof Error ? cause.message : t("depthMotion.failed"));
+        }
+    }
 
     const start = async () => {
         if (!file || running) return;
@@ -39,7 +65,8 @@ export function DepthMotionDialog({ open, onCancel, onComplete }: DepthMotionDia
         setRunning(true);
         setError("");
         try {
-            const result = await generateDepthVideo(file, { signal: controller.signal, onProgress: setProgress });
+            const metadata = sourceMetadata || (await inspectDepthVideoSource(file));
+            const result = await generateDepthVideo(file, { signal: controller.signal, onProgress: setProgress, sourceMetadata: metadata });
             await onComplete(result, file.name);
         } catch (cause) {
             if (cause instanceof DOMException && cause.name === "AbortError") return;
@@ -84,7 +111,7 @@ export function DepthMotionDialog({ open, onCancel, onComplete }: DepthMotionDia
         >
             <div className="space-y-4 pt-2">
                 <div className="grid gap-3 sm:grid-cols-3">
-                    <Spec icon={<Gauge className="size-4" />} label={t("depthMotion.outputLabel")} value={`${DEPTH_VIDEO_RESOLUTION}p · ${DEPTH_VIDEO_FPS}fps`} />
+                    <Spec icon={<Gauge className="size-4" />} label={t("depthMotion.outputLabel")} value={`${DEPTH_VIDEO_RESOLUTION}p · ${sourceMetadata ? `${formatFrameRate(sourceMetadata.frameRate)}fps` : t("depthMotion.followSourceFps")}`} />
                     <Spec icon={<HardDrive className="size-4" />} label={t("depthMotion.limitLabel")} value={t("depthMotion.limitValue", { seconds: DEPTH_VIDEO_MAX_SECONDS })} />
                     <Spec icon={<ShieldCheck className="size-4" />} label={t("depthMotion.runtimeLabel")} value={hasWebGpu ? t("depthMotion.webGpuReady") : t("depthMotion.wasmFallback")} accent={hasWebGpu} />
                 </div>
@@ -101,7 +128,10 @@ export function DepthMotionDialog({ open, onCancel, onComplete }: DepthMotionDia
                                 <Upload className="size-4" />
                             </span>
                             <span className="max-w-full truncate text-sm font-semibold">{file.name}</span>
-                            <span className="mt-1 text-xs text-stone-500">{formatBytes(file.size)}</span>
+                            <span className="mt-1 text-xs text-stone-500">
+                                {formatBytes(file.size)}
+                                {sourceMetadata ? ` · ${(sourceMetadata.durationMs / 1000).toFixed(2).replace(/\.00$/, "")}s · ${formatFrameRate(sourceMetadata.frameRate)}fps` : ""}
+                            </span>
                             {!running ? <span className="mt-2 text-xs text-stone-500">{t("depthMotion.replaceFile")}</span> : null}
                         </>
                     ) : (
@@ -121,9 +151,7 @@ export function DepthMotionDialog({ open, onCancel, onComplete }: DepthMotionDia
                         const next = event.target.files?.[0] || null;
                         event.target.value = "";
                         if (!next) return;
-                        setFile(next);
-                        setError("");
-                        setProgress(null);
+                        void selectFile(next);
                     }}
                 />
 

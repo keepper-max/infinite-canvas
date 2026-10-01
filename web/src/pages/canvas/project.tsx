@@ -12,9 +12,9 @@ import { abortForManualJobCancellation, getManagedJob, retryManagedJob, subscrib
 import { createCanvasDraft, type CanvasDraft } from "@/services/api/canvas";
 import { invalidateCloudAssetDownloadUrls } from "@/services/api/assets";
 import { useDownloadMedia } from "@/hooks/use-download-media";
-import { defaultConfig, useConfigStore, useEffectiveConfig } from "@/stores/use-config-store";
+import { defaultConfig, useConfigStore, useEffectiveConfig, withLocalProxy } from "@/stores/use-config-store";
 import { uploadImage } from "@/services/image-storage";
-import { uploadMediaFile, type UploadedFile } from "@/services/file-storage";
+import { getMediaBlob, resolveMediaUrl, uploadMediaFile, type UploadedFile } from "@/services/file-storage";
 import { nanoid } from "nanoid";
 import { getDataUrlByteSize, readImageMeta } from "@/lib/image-utils";
 import { imageReferenceLabel } from "@/lib/image-reference-prompt";
@@ -43,6 +43,7 @@ import { InfiniteCanvas } from "@/components/canvas/infinite-canvas";
 import { Minimap } from "@/components/canvas/canvas-mini-map";
 import { CanvasNode } from "@/components/canvas/canvas-node";
 import { CanvasNodePromptPanel, type CanvasNodeGenerationMode } from "@/components/canvas/canvas-node-prompt-panel";
+import { DepthMotionDialog } from "@/pages/video/components/depth-motion-dialog";
 import { CanvasToolbar } from "@/components/canvas/canvas-toolbar";
 import { AssetPickerModal, CANVAS_ASSET_DRAG_TYPE, type InsertAssetPayload } from "@/components/canvas/asset-picker-modal";
 import { CanvasSidePanel } from "@/components/canvas/canvas-side-panel";
@@ -130,6 +131,8 @@ import {
 } from "@/types/canvas";
 import type { ReferenceImage } from "@/types/image";
 import type { ReferenceAudio, ReferenceVideo } from "@/types/media";
+import { selectedVideoModel, updateVideoModelParameter, videoParameter } from "@/lib/video-model-capabilities";
+import type { DepthVideoResult } from "@/lib/depth-motion/generate-depth-video";
 
 // Register built-in nodes in the shared registry once when the module loads.
 registerBuiltinNodes();
@@ -209,6 +212,29 @@ export default function CanvasPage() {
     if (!mounted) return <CanvasRefreshShell />;
 
     return <InfiniteCanvasPage key={id} projectId={id} />;
+}
+
+function supportedReferenceDuration(definition: ReturnType<typeof videoParameter>, requestedSeconds: number) {
+    const options = (definition?.options || [])
+        .map(Number)
+        .filter((value) => Number.isFinite(value) && value > 0)
+        .sort((left, right) => left - right);
+    let seconds = requestedSeconds;
+    if (options.length) {
+        seconds = options.reduce(
+            (closest, value) => (Math.abs(value - requestedSeconds) < Math.abs(closest - requestedSeconds) || (Math.abs(value - requestedSeconds) === Math.abs(closest - requestedSeconds) && value > closest) ? value : closest),
+            options[0],
+        );
+    } else {
+        const min = Number.isFinite(definition?.min) ? Number(definition?.min) : 1;
+        const max = Number.isFinite(definition?.max) ? Number(definition?.max) : requestedSeconds;
+        const step = Number.isFinite(definition?.step) && Number(definition?.step) > 0 ? Number(definition?.step) : 1;
+        const clamped = Math.max(min, Math.min(max, requestedSeconds));
+        seconds = min + Math.round((clamped - min) / step) * step;
+        seconds = Math.max(min, Math.min(max, seconds));
+    }
+    const value = String(Number(seconds.toFixed(3)));
+    return { value, adjusted: Number(value) !== requestedSeconds };
 }
 
 function InfiniteCanvasPage({ projectId }: { projectId: string }) {
@@ -323,6 +349,7 @@ function InfiniteCanvasPage({ projectId }: { projectId: string }) {
     const [performanceMode, setPerformanceMode] = useState(false);
     const [alignmentGuides, setAlignmentGuides] = useState<CanvasAlignmentGuides>({});
     const [dramaRunning, setDramaRunning] = useState(false);
+    const [depthMotionContext, setDepthMotionContext] = useState<{ targetNodeId: string; sourceNodeId: string; sourceFile: File } | null>(null);
 
     const nodesRef = useRef(nodes);
     const connectionsRef = useRef(connections);
@@ -599,7 +626,12 @@ function InfiniteCanvasPage({ projectId }: { projectId: string }) {
                                   metadata: {
                                       ...node.metadata,
                                       ...(node.type === CanvasNodeType.Video ? { videoTaskId: event.jobId, videoTaskProvider: "managed" as const } : {}),
-                                      status: event.status === "completed" && node.metadata?.content ? NODE_STATUS_SUCCESS : event.status === "failed" || event.status === "cancelled" || event.status === "payment_required" ? NODE_STATUS_ERROR : NODE_STATUS_LOADING,
+                                      status:
+                                          event.status === "completed" && node.metadata?.content
+                                              ? NODE_STATUS_SUCCESS
+                                              : event.status === "failed" || event.status === "cancelled" || event.status === "payment_required"
+                                                ? NODE_STATUS_ERROR
+                                                : NODE_STATUS_LOADING,
                                       errorDetails: event.status === "failed" || event.status === "payment_required" ? event.message : undefined,
                                       jobStatusMessage: event.status === "completed" ? undefined : event.message,
                                       jobProgress: event.status === "completed" ? undefined : visibleJobProgress(event),
@@ -2240,16 +2272,91 @@ function InfiniteCanvasPage({ projectId }: { projectId: string }) {
         setNodes((prev) => prev.map((node) => (node.id === nodeId ? applyNodeConfigPatch(node, patch) : node)));
     }, []);
 
-    const downloadNodeImage = useCallback((node: CanvasNodeData) => {
-        if ((node.type !== CanvasNodeType.Image && node.type !== CanvasNodeType.Video && node.type !== CanvasNodeType.Audio) || !node.metadata?.content) return;
-        void downloadMedia(node.metadata.content, `canvas-${node.type}-${node.id}.${node.type === CanvasNodeType.Video ? "mp4" : node.type === CanvasNodeType.Audio ? audioExtension(node.metadata.mimeType) : imageExtension(node.metadata.content)}`);
-    }, [downloadMedia]);
+    const openDepthMotionForReference = useCallback(
+        async (targetNode: CanvasNodeData, sourceNode: CanvasNodeData) => {
+            const closeLoading = message.loading(t("depthMotion.canvasLoadingSource"), 0);
+            try {
+                let blob = sourceNode.metadata?.storageKey ? await getMediaBlob(sourceNode.metadata.storageKey) : null;
+                if (!blob) {
+                    const url = await resolveMediaUrl(sourceNode.metadata?.storageKey, sourceNode.metadata?.content || "");
+                    if (!url) throw new Error(t("depthMotion.canvasSourceUnavailable"));
+                    const response = await fetch(withLocalProxy(url));
+                    if (!response.ok) throw new Error(t("depthMotion.canvasSourceUnavailable"));
+                    blob = await response.blob();
+                }
+                const sourceName = sourceNode.title || "reference-video.mp4";
+                const sourceFile = new File([blob], sourceName, { type: blob.type || sourceNode.metadata?.mimeType || "video/mp4" });
+                setDepthMotionContext({ targetNodeId: targetNode.id, sourceNodeId: sourceNode.id, sourceFile });
+            } catch (cause) {
+                message.error(cause instanceof Error ? cause.message : t("depthMotion.canvasSourceUnavailable"));
+            } finally {
+                closeLoading();
+            }
+        },
+        [message, t],
+    );
 
-    const downloadBatchImage = useCallback((node: CanvasNodeData, imageId: string) => {
-        const image = node.metadata?.images?.find((item) => item.id === imageId);
-        if (!image?.content) return;
-        void downloadMedia(image.content, `canvas-image-${node.id}-${image.id}.${imageExtension(image.content)}`);
-    }, [downloadMedia]);
+    const addCanvasDepthReference = useCallback(
+        async (result: DepthVideoResult, sourceName: string) => {
+            const context = depthMotionContext;
+            if (!context) return;
+            const sourceNode = nodesRef.current.find((item) => item.id === context.sourceNodeId);
+            const targetNode = nodesRef.current.find((item) => item.id === context.targetNodeId);
+            if (!sourceNode || !targetNode) throw new Error(t("depthMotion.canvasSourceUnavailable"));
+
+            const stored = await uploadMediaFile(result.blob, "depth-motion");
+            const size = fitNodeSize(stored.width || result.width, stored.height || result.height, VIDEO_NODE_MAX_WIDTH, VIDEO_NODE_MAX_HEIGHT);
+            const id = `video-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+            let y = targetNode.position.y + targetNode.height + 48;
+            const x = targetNode.position.x + targetNode.width / 2 - size.width / 2;
+            while (nodesRef.current.some((item) => item.position.x < x + size.width && item.position.x + item.width > x && item.position.y < y + size.height && item.position.y + item.height > y)) y += size.height + 32;
+
+            const requestedSeconds = Math.max(1, Math.round(result.durationMs / 1000));
+            const generationConfig = buildGenerationConfig(effectiveConfig, targetNode, "video");
+            const model = selectedVideoModel(generationConfig);
+            const duration = supportedReferenceDuration(videoParameter(model, "duration"), requestedSeconds);
+            const videoModelParameters = updateVideoModelParameter(generationConfig, model, "duration", duration.value);
+            const nextNode: CanvasNodeData = {
+                id,
+                type: CanvasNodeType.Video,
+                title: t("depthMotion.canvasNodeTitle", { name: sourceName }),
+                position: { x, y },
+                width: size.width,
+                height: size.height,
+                metadata: { ...videoMetadata(stored), durationMs: result.durationMs, frameRate: result.frameRate },
+            };
+            const targetPatch: Partial<CanvasNodeMetadata> = { seconds: duration.value, videoMode: "multiref", videoModelParameters };
+            const nextNodes = nodesRef.current.map((item) => (item.id === targetNode.id ? applyNodeConfigPatch(item, targetPatch) : item)).concat(nextNode);
+            const nextConnections = connectionsRef.current
+                .filter((item) => item.fromNodeId !== sourceNode.id || item.toNodeId !== targetNode.id)
+                .concat({ id: nanoid(), fromNodeId: nextNode.id, toNodeId: targetNode.id, resourceType: "video", role: "motion" });
+            nodesRef.current = nextNodes;
+            connectionsRef.current = nextConnections;
+            setNodes(nextNodes);
+            setConnections(nextConnections);
+            setDepthMotionContext(null);
+            message.success(t("depthMotion.canvasAdded", { seconds: duration.value }));
+            if (duration.adjusted) message.info(t("depthMotion.canvasDurationAdjusted", { source: requestedSeconds, target: duration.value }));
+        },
+        [depthMotionContext, effectiveConfig, message, t],
+    );
+
+    const downloadNodeImage = useCallback(
+        (node: CanvasNodeData) => {
+            if ((node.type !== CanvasNodeType.Image && node.type !== CanvasNodeType.Video && node.type !== CanvasNodeType.Audio) || !node.metadata?.content) return;
+            void downloadMedia(node.metadata.content, `canvas-${node.type}-${node.id}.${node.type === CanvasNodeType.Video ? "mp4" : node.type === CanvasNodeType.Audio ? audioExtension(node.metadata.mimeType) : imageExtension(node.metadata.content)}`);
+        },
+        [downloadMedia],
+    );
+
+    const downloadBatchImage = useCallback(
+        (node: CanvasNodeData, imageId: string) => {
+            const image = node.metadata?.images?.find((item) => item.id === imageId);
+            if (!image?.content) return;
+            void downloadMedia(image.content, `canvas-image-${node.id}-${image.id}.${imageExtension(image.content)}`);
+        },
+        [downloadMedia],
+    );
 
     const captureVideoNodeFrame = useCallback(
         async (nodeId: string, position: VideoFramePosition) => {
@@ -3706,6 +3813,7 @@ function InfiniteCanvasPage({ projectId }: { projectId: string }) {
                     onStop={confirmStopGeneration}
                     onDisconnectReference={disconnectNodeReference}
                     onStartReferenceSelection={startNodeReferenceSelection}
+                    onConvertDepthReference={(targetNode, sourceNode) => void openDepthMotionForReference(targetNode, sourceNode)}
                     modeOverride={getNodeDefinition(panelNode.type)?.useBuiltinPanel?.mode}
                     forceAdaptiveVideoRatio={hasVideoInputReference(panelNode.id, nodes, connections)}
                     onImageSettingsOpenChange={(open) => {
@@ -3725,6 +3833,7 @@ function InfiniteCanvasPage({ projectId }: { projectId: string }) {
             handleNodePromptChange,
             mentionReferencesByNodeId,
             nodes,
+            openDepthMotionForReference,
             renderPluginPanel,
             runningNodeId,
             startNodeReferenceSelection,
@@ -4061,6 +4170,7 @@ function InfiniteCanvasPage({ projectId }: { projectId: string }) {
 
                 <input ref={imageInputRef} type="file" multiple accept="image/*,video/*,audio/mpeg,audio/wav,audio/x-wav,.mp3,.wav" className="hidden" onChange={handleImageInputChange} />
 
+                <DepthMotionDialog open={Boolean(depthMotionContext)} sourceFile={depthMotionContext?.sourceFile} onCancel={() => setDepthMotionContext(null)} onComplete={addCanvasDepthReference} />
                 <CanvasNodeInfoModal node={infoNode} open={Boolean(infoNode)} onClose={() => setInfoNodeId(null)} />
                 <CanvasPluginManagerModal open={pluginManagerOpen} onClose={() => setPluginManagerOpen(false)} />
 

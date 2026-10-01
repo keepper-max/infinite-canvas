@@ -1,7 +1,6 @@
-import { BufferTarget, CanvasSource, Mp4OutputFormat, Output, Quality, canEncodeVideo } from "mediabunny";
+import { ALL_FORMATS, BlobSource, BufferTarget, CanvasSource, Input, Mp4OutputFormat, Output, Quality, canEncodeVideo } from "mediabunny";
 
 export const DEPTH_VIDEO_MAX_SECONDS = 10;
-export const DEPTH_VIDEO_FPS = 12;
 export const DEPTH_VIDEO_RESOLUTION = 480;
 const DEPTH_VIDEO_MAX_LONG_EDGE = 854;
 
@@ -16,7 +15,14 @@ export type DepthVideoResult = {
     width: number;
     height: number;
     durationMs: number;
+    frameRate: number;
     backend: string;
+};
+
+export type DepthVideoSourceMetadata = {
+    durationMs: number;
+    frameRate: number;
+    variableFrameRate: boolean;
 };
 
 type WorkerResult = {
@@ -107,9 +113,27 @@ class DepthWorkerClient {
     }
 }
 
-export async function generateDepthVideo(file: File, options: { signal?: AbortSignal; onProgress?: (progress: DepthVideoProgress) => void } = {}): Promise<DepthVideoResult> {
+export async function inspectDepthVideoSource(file: Blob): Promise<DepthVideoSourceMetadata> {
+    const input = new Input({ source: new BlobSource(file), formats: ALL_FORMATS });
+    try {
+        const track = await input.getPrimaryVideoTrack();
+        if (!track) throw new Error("未检测到可用的视频轨道");
+        const [durationFromMetadata, stats] = await Promise.all([input.getDurationFromMetadata([track]), track.computeFrameRateMetrics({ targetPacketCount: 256 })]);
+        const duration = durationFromMetadata ?? (await input.computeDuration([track]));
+        const frameRate = Number(stats.bestGuessFrameRate.toFixed(3));
+        if (!Number.isFinite(duration) || duration <= 0) throw new Error("无法读取视频时长，请更换 MP4、MOV 或 WebM 文件");
+        if (!Number.isFinite(frameRate) || frameRate <= 0) throw new Error("无法读取视频帧率，请更换视频文件");
+        return { durationMs: Math.round(duration * 1000), frameRate, variableFrameRate: stats.underlyingFrameRate === null };
+    } finally {
+        input.dispose();
+    }
+}
+
+export async function generateDepthVideo(file: File, options: { signal?: AbortSignal; onProgress?: (progress: DepthVideoProgress) => void; sourceMetadata?: DepthVideoSourceMetadata } = {}): Promise<DepthVideoResult> {
     const { signal, onProgress = () => undefined } = options;
     throwIfAborted(signal);
+    const sourceMetadata = options.sourceMetadata || (await inspectDepthVideoSource(file));
+    const frameRate = sourceMetadata.frameRate;
     const sourceUrl = URL.createObjectURL(file);
     const video = document.createElement("video");
     video.muted = true;
@@ -122,11 +146,11 @@ export async function generateDepthVideo(file: File, options: { signal?: AbortSi
     try {
         await waitForVideoMetadata(video, signal);
         if (!Number.isFinite(video.duration) || video.duration <= 0) throw new Error("无法读取视频时长，请更换 MP4、MOV 或 WebM 文件");
-        if (video.duration > DEPTH_VIDEO_MAX_SECONDS + 0.05) throw new Error(`首版仅支持 ${DEPTH_VIDEO_MAX_SECONDS} 秒以内的视频，请先裁剪后再转换`);
+        if (video.duration > DEPTH_VIDEO_MAX_SECONDS + 0.05) throw new Error(`当前仅支持 ${DEPTH_VIDEO_MAX_SECONDS} 秒以内的视频，请先裁剪后再转换`);
 
         const { width, height } = fitVideoSize(video.videoWidth, video.videoHeight, DEPTH_VIDEO_RESOLUTION, DEPTH_VIDEO_MAX_LONG_EDGE);
         const quality = new Quality({ bitrate: 6_000_000, bitrateMode: "variable" });
-        if (!(await canEncodeVideo("avc", { width, height, frameRate: DEPTH_VIDEO_FPS, quality }))) throw new Error("当前浏览器无法编码 MP4，请使用最新版 Chrome 或 Edge");
+        if (!(await canEncodeVideo("avc", { width, height, frameRate, quality }))) throw new Error(`当前浏览器无法按源视频的 ${formatFrameRate(frameRate)}fps 编码 MP4，请使用最新版 Chrome 或 Edge`);
 
         onProgress({ phase: "loading", percent: 1 });
         const backend = await client.init(signal);
@@ -144,20 +168,21 @@ export async function generateDepthVideo(file: File, options: { signal?: AbortSi
         const target = new BufferTarget();
         mediaOutput = new Output({ format: new Mp4OutputFormat({ fastStart: "in-memory" }), target });
         const canvasSource = new CanvasSource(canvas, { codec: "avc", quality, keyFrameInterval: 2 });
-        mediaOutput.addVideoTrack(canvasSource, { frameRate: DEPTH_VIDEO_FPS });
+        mediaOutput.addVideoTrack(canvasSource, { frameRate });
         await mediaOutput.start();
 
-        const frameCount = Math.max(1, Math.ceil(video.duration * DEPTH_VIDEO_FPS));
-        const frameDuration = 1 / DEPTH_VIDEO_FPS;
+        const frameCount = Math.max(1, Math.ceil(video.duration * frameRate));
+        const frameDuration = 1 / frameRate;
+        const keyFrameInterval = Math.max(1, Math.round(frameRate * 2));
         for (let index = 0; index < frameCount; index += 1) {
             throwIfAborted(signal);
-            await seekVideo(video, Math.min(video.duration - 0.001, index / DEPTH_VIDEO_FPS), signal);
+            await seekVideo(video, Math.min(video.duration - 0.001, index / frameRate), signal);
             context.drawImage(video, 0, 0, width, height);
             const image = context.getImageData(0, 0, width, height);
             const depth = await client.process(image.data, width, height, signal);
             drawDepth(context, depthContext, depthCanvas, depth.depth, depth.width, depth.height, width, height);
 
-            await canvasSource.add(index * frameDuration, frameDuration, { keyFrame: index % (DEPTH_VIDEO_FPS * 2) === 0 });
+            await canvasSource.add(index * frameDuration, frameDuration, { keyFrame: index % keyFrameInterval === 0 });
             onProgress({ phase: "analyzing", percent: 20 + Math.round(((index + 1) / frameCount) * 72), backend });
         }
 
@@ -165,7 +190,7 @@ export async function generateDepthVideo(file: File, options: { signal?: AbortSi
         await mediaOutput.finalize();
         if (!target.buffer || target.buffer.byteLength < 32) throw new Error("MP4 编码结果为空，请重试");
         onProgress({ phase: "encoding", percent: 100, backend });
-        return { blob: new Blob([target.buffer], { type: "video/mp4" }), width, height, durationMs: Math.round(video.duration * 1000), backend };
+        return { blob: new Blob([target.buffer], { type: "video/mp4" }), width, height, durationMs: Math.round(video.duration * 1000), frameRate, backend };
     } finally {
         if (mediaOutput && mediaOutput.state !== "finalized" && mediaOutput.state !== "canceled") await mediaOutput.cancel().catch(() => undefined);
         client.dispose();
@@ -173,6 +198,10 @@ export async function generateDepthVideo(file: File, options: { signal?: AbortSi
         video.load();
         URL.revokeObjectURL(sourceUrl);
     }
+}
+
+export function formatFrameRate(frameRate: number) {
+    return Number.isInteger(frameRate) ? String(frameRate) : frameRate.toFixed(2).replace(/0+$/, "").replace(/\.$/, "");
 }
 
 function fitVideoSize(sourceWidth: number, sourceHeight: number, shortEdge: number, maxLongEdge: number) {
