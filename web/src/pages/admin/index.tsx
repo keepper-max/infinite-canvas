@@ -97,7 +97,7 @@ export default function AdminPage() {
                     </span>
                     <span>
                         <b className="block text-sm">管理控制台</b>
-                        <small className="text-stone-500">Admin workspace</small>
+                        <small className="text-stone-500">管理工作台</small>
                     </span>
                 </Link>
                 <nav className="space-y-1">
@@ -147,7 +147,7 @@ export default function AdminPage() {
                 <div className="mx-auto max-w-[1500px] px-8 py-8">
                     <header className="mb-8 flex items-end justify-between">
                         <div>
-                            <p className="mb-1 text-xs font-semibold uppercase tracking-[0.18em] text-stone-500">System administration</p>
+                            <p className="mb-1 text-xs font-semibold uppercase tracking-[0.18em] text-stone-500">系统管理</p>
                             <h1 className="text-3xl font-semibold tracking-tight">{sections.find((item) => item.key === active)?.label}</h1>
                         </div>
                         <Tag bordered={false} color="green">
@@ -406,12 +406,12 @@ function Overview() {
                                 render: (_, item) => (
                                     <>
                                         <span className="block">{item.modelId}</span>
-                                        <small className="text-stone-600 dark:text-stone-400">{item.capability}</small>
+                                        <small className="text-stone-600 dark:text-stone-400">{capabilityLabel(item.capability)}</small>
                                     </>
                                 ),
                             },
-                            { title: "任务状态", dataIndex: "status", width: 110, render: (value) => <StatusTag value={value} /> },
-                            { title: "对账状态", dataIndex: "billingStatus", width: 110, render: (value) => <StatusTag value={value} /> },
+                            { title: "任务状态", dataIndex: "status", width: 110, render: (value) => <StatusTag value={value} kind="job" /> },
+                            { title: "对账状态", dataIndex: "billingStatus", width: 150, render: (value) => <StatusTag value={value} kind="billing" /> },
                             { title: "耗时", width: 100, render: (_, item) => formatJobDuration(item.createdAt, item.finishedAt) },
                             {
                                 title: "任务 ID",
@@ -765,7 +765,7 @@ function UserDrawer({ userId, onClose, onChanged }: { userId?: string; onClose: 
                             {detail.usage.length ? (
                                 detail.usage.map((item) => (
                                     <p key={item.currency} className="mb-2 font-mono">
-                                        {formatUsageAmount(item.currency, item.totalAmount)} · {item.totalTokens} Tokens
+                                        {formatUsageAmount(item.currency, item.totalAmount)} · {item.totalTokens} Token
                                     </p>
                                 ))
                             ) : (
@@ -782,8 +782,8 @@ function UserDrawer({ userId, onClose, onChanged }: { userId?: string; onClose: 
                                 columns={[
                                     { title: "任务 ID", dataIndex: "id", render: copyable },
                                     { title: "模型", dataIndex: "modelId" },
-                                    { title: "生成状态", dataIndex: "status", render: (value) => <StatusTag value={value} /> },
-                                    { title: "对账", dataIndex: "billingStatus", render: (value) => <StatusTag value={value} /> },
+                                    { title: "生成状态", dataIndex: "status", render: (value) => <StatusTag value={value} kind="job" /> },
+                                    { title: "对账", dataIndex: "billingStatus", render: (value) => <StatusTag value={value} kind="billing" /> },
                                 ]}
                             />
                         </Panel>
@@ -1125,7 +1125,7 @@ function UsagePanel() {
             </Panel>
             <div className="grid gap-4 md:grid-cols-3">
                 {data.summary.map((item) => (
-                    <Metric key={item.currency} label={usageAmountLabel(item.currency, item.totalAmount)} value={formatUsageAmount(item.currency, item.totalAmount)} note={`${item.totalTokens} Tokens · ${item.videoDurationSeconds}s`} />
+                    <Metric key={item.currency} label={usageAmountLabel(item.currency, item.totalAmount)} value={formatUsageAmount(item.currency, item.totalAmount)} note={`${item.totalTokens} Token · ${item.videoDurationSeconds} 秒`} />
                 ))}
             </div>
             <UsageBreakdownGrid breakdowns={data.breakdowns} />
@@ -1147,7 +1147,7 @@ function UsagePanel() {
                         },
                         { title: "模型", dataIndex: "modelId" },
                         { title: "渠道", dataIndex: "provider", render: providerLabel },
-                        { title: "计量", render: (_, item) => `${item.totalTokens || 0} T · ${item.videoDurationSeconds || 0}s · ${item.generatedImages || 0} 图` },
+                        { title: "计量", render: (_, item) => `${item.totalTokens || 0} Token · ${item.videoDurationSeconds || 0} 秒 · ${item.generatedImages || 0} 图` },
                         {
                             title: "原始费用",
                             render: (_, item) => <b className="font-mono">{formatUsageAmount(item.currency, item.totalAmount)}</b>,
@@ -1194,12 +1194,12 @@ function UsageBreakdownGrid({ breakdowns, compact = false }: { breakdowns: Usage
                             breakdowns[group.key].map((item) => (
                                 <div key={`${item.key}-${item.currency}`} className="flex items-start justify-between gap-3 text-xs">
                                     <span className="min-w-0 truncate" title={item.key}>
-                                        {item.key}
+                                        {group.key === "capability" ? capabilityLabel(item.key) : item.key}
                                     </span>
                                     <span className="shrink-0 text-right font-mono">
                                         {formatUsageAmount(item.currency, item.totalAmount)}
                                         <small className="block text-stone-500">
-                                            {item.calls} 次 · {item.totalTokens} T
+                                            {item.calls} 次 · {item.totalTokens} Token
                                         </small>
                                     </span>
                                 </div>
@@ -1240,7 +1240,7 @@ function JobsPanel() {
                 <Space>
                     <Input.Search
                         allowClear
-                        placeholder="任务 / Trace / 资源 ID"
+                        placeholder="任务 / 对账标识 / 资源 ID"
                         onSearch={(value) => {
                             setPage(1);
                             setQ(value);
@@ -1250,7 +1250,7 @@ function JobsPanel() {
                         allowClear
                         className="w-32"
                         placeholder="生成状态"
-                        options={["completed", "payment_required", "billing_pending", "failed", "cancelled", "running"].map((value) => ({ value }))}
+                        options={["completed", "payment_required", "billing_pending", "failed", "cancelled", "running"].map((value) => ({ value, label: jobStatusLabel(value) }))}
                         onChange={(value) => {
                             setPage(1);
                             setStatus(value);
@@ -1276,14 +1276,14 @@ function JobsPanel() {
                         ),
                     },
                     { title: "模型", dataIndex: "modelId" },
-                    { title: "生成", dataIndex: "status", render: (value) => <StatusTag value={value} /> },
-                    { title: "对账", dataIndex: "billingStatus", render: (value) => <StatusTag value={value} /> },
+                    { title: "生成", dataIndex: "status", render: (value) => <StatusTag value={value} kind="job" /> },
+                    { title: "对账", dataIndex: "billingStatus", render: (value) => <StatusTag value={value} kind="billing" /> },
                     {
                         title: "供应商标识",
                         render: (_, item) => (
                             <div className="max-w-52 space-y-1 text-xs">
-                                <p>Trace: {copyable(item.billingTraceId)}</p>
-                                <p>Resource: {copyable(item.providerJobId)}</p>
+                                <p>对账标识：{copyable(item.billingTraceId)}</p>
+                                <p>资源标识：{copyable(item.providerJobId)}</p>
                             </div>
                         ),
                     },
@@ -1303,7 +1303,7 @@ function JobsPanel() {
                                 disabled={!item.billingTraceId}
                                 onClick={async () => {
                                     const result = await reconcileAdminJob(item.id);
-                                    message.success(`对账状态：${result.status}`);
+                                    message.success(`对账状态：${billingStatusLabel(result.status)}`);
                                     load();
                                 }}
                             >
@@ -1584,7 +1584,7 @@ function ModelsPanel({ provider }: { provider: AdminProvider["id"] }) {
                             </>
                         ),
                     },
-                    { title: "能力", dataIndex: "capability" },
+                    { title: "能力", dataIndex: "capability", render: capabilityLabel },
                     {
                         title: "启用",
                         render: (_, item) => {
@@ -2223,12 +2223,62 @@ function providerLabel(value?: string) {
     if (value === "runninghub") return "海马云 · 中国区";
     return value === "token360" ? "Token360" : value || "—";
 }
-function StatusTag({ value }: { value: string }) {
+function jobStatusLabel(value: string) {
+    const labels: Record<string, string> = {
+        pending: "等待处理",
+        queued: "排队中",
+        running: "生成中",
+        completed: "已完成",
+        failed: "生成失败",
+        cancelled: "已取消",
+        billing_pending: "等待计费",
+        payment_required: "待补足积分",
+    };
+    return labels[value] || value;
+}
+function billingStatusLabel(value: string) {
+    const labels: Record<string, string> = {
+        pending: "待对账",
+        reconciling: "对账中",
+        settled: "已对账",
+        mismatch: "已对账（账单号不同）",
+        not_billed: "未出账",
+        failed: "对账失败",
+        unavailable: "不可对账",
+    };
+    return labels[value] || value;
+}
+function statusLabel(value: string) {
+    const labels: Record<string, string> = {
+        active: "正常",
+        disabled: "已停用",
+        healthy: "正常",
+        unhealthy: "异常",
+        success: "成功",
+        open: "待处理",
+        replied: "已回复",
+        closed: "已关闭",
+    };
+    return labels[value] || value;
+}
+function capabilityLabel(value?: string) {
+    const labels: Record<string, string> = {
+        text: "文本",
+        image: "图片",
+        video: "视频",
+        audio: "音频",
+        music: "音乐",
+        tts: "语音合成",
+    };
+    return value ? labels[value] || value : "—";
+}
+function StatusTag({ value, kind = "general" }: { value: string; kind?: "general" | "job" | "billing" }) {
     const good = ["active", "completed", "settled", "healthy", "success"].includes(value);
     const pending = ["pending", "running", "queued", "reconciling", "mismatch"].includes(value);
+    const label = kind === "job" ? jobStatusLabel(value) : kind === "billing" ? billingStatusLabel(value) : statusLabel(value);
     return (
         <Tag bordered={false} color={good ? "green" : pending ? "gold" : "red"}>
-            {value}
+            {label}
         </Tag>
     );
 }
