@@ -1,4 +1,4 @@
-import { ArrowLeft, ArrowRight, BookOpen, CheckSquare, ClipboardPaste, Download, FolderPlus, History, LoaderCircle, Plus, SlidersHorizontal, Sparkles, Square, Trash2, Upload, VideoIcon } from "lucide-react";
+import { ArrowLeft, ArrowRight, BookOpen, CheckSquare, ClipboardPaste, Download, FolderPlus, History, LoaderCircle, Plus, ScanLine, SlidersHorizontal, Sparkles, Square, Trash2, Upload, VideoIcon } from "lucide-react";
 import { useEffect, useRef, useState, type DragEvent } from "react";
 import { App, Button, Checkbox, Drawer, Empty, Input, Modal, Tag, Typography } from "antd";
 import localforage from "localforage";
@@ -10,11 +10,12 @@ import { AssetPickerModal, type InsertAssetPayload } from "@/components/canvas/a
 import { ModelPicker } from "@/components/model-picker";
 import { PromptSelectDialog } from "@/components/prompts/prompt-select-dialog";
 import { VideoSettingsPanel, normalizeVideoResolutionValue, normalizeVideoSizeValue, videoModeLabel, videoResolutionLabel, videoSizeLabel } from "@/components/video-settings-panel";
+import { DepthMotionDialog } from "@/pages/video/components/depth-motion-dialog";
 import { canvasThemes } from "@/lib/canvas-theme";
 import { clampVideoSeconds } from "@/lib/media-size";
 import { normalizeVideoGenerationMode, selectedVideoModel, supportedVideoModes, videoImageReferenceLimit } from "@/lib/video-model-capabilities";
 import { formatBytes, formatDuration } from "@/lib/image-utils";
-import { deleteStoredMedia, resolveMediaUrl } from "@/services/file-storage";
+import { deleteStoredMedia, resolveMediaUrl, uploadMediaFile } from "@/services/file-storage";
 import { resolveImageUrl, uploadImage } from "@/services/image-storage";
 import { createVideoGenerationTask, pollVideoGenerationTask, storeGeneratedVideo, type VideoGenerationTask } from "@/services/api/video";
 import { abortForManualJobCancellation, cancelManagedJobOnAbort } from "@/services/api/jobs";
@@ -23,6 +24,7 @@ import { useWorkbenchAgentStore } from "@/stores/use-workbench-agent-store";
 import { boolConfig, modelOptionLabel, useConfigStore, useEffectiveConfig, type AiConfig } from "@/stores/use-config-store";
 import { useThemeStore } from "@/stores/use-theme-store";
 import type { ReferenceImage } from "@/types/image";
+import type { ReferenceVideo } from "@/types/media";
 import i18n from "@/i18n";
 import { useDownloadMedia } from "@/hooks/use-download-media";
 
@@ -53,6 +55,7 @@ type GenerationLog = {
     model: string;
     config: GenerationLogConfig;
     references: ReferenceImage[];
+    videoReferences: ReferenceVideo[];
     durationMs: number;
     size: string;
     resolution: string;
@@ -89,6 +92,7 @@ export default function VideoPage() {
     const addAsset = useAssetStore((state) => state.addAsset);
     const [prompt, setPrompt] = useState("");
     const [references, setReferences] = useState<ReferenceImage[]>([]);
+    const [videoReferences, setVideoReferences] = useState<ReferenceVideo[]>([]);
     const [results, setResults] = useState<GenerationResult[]>([]);
     const [logs, setLogs] = useState<GenerationLog[]>([]);
     const [running, setRunning] = useState(false);
@@ -96,6 +100,7 @@ export default function VideoPage() {
     const [settingsOpen, setSettingsOpen] = useState(false);
     const [promptDialogOpen, setPromptDialogOpen] = useState(false);
     const [assetPickerOpen, setAssetPickerOpen] = useState(false);
+    const [depthMotionOpen, setDepthMotionOpen] = useState(false);
     const [startedAt, setStartedAt] = useState(0);
     const [elapsedMs, setElapsedMs] = useState(0);
     const [selectedLogIds, setSelectedLogIds] = useState<string[]>([]);
@@ -111,9 +116,11 @@ export default function VideoPage() {
 
     const model = effectiveConfig.videoModel || effectiveConfig.model;
     const modelDefinition = selectedVideoModel(effectiveConfig, model);
-    const generationMode = normalizeVideoGenerationMode(effectiveConfig.videoMode, supportedVideoModes(modelDefinition), references.length);
+    const modelModes = supportedVideoModes(modelDefinition);
+    const generationMode = normalizeVideoGenerationMode(effectiveConfig.videoMode, modelModes, references.length);
     const imageReferenceLimit = videoImageReferenceLimit(modelDefinition, generationMode);
     const canAddReference = imageReferenceLimit > references.length;
+    const supportsMotionReferences = modelModes.includes("multiref");
     const canGenerate = Boolean(prompt.trim());
 
     useEffect(() => {
@@ -208,15 +215,17 @@ export default function VideoPage() {
         const batchStartedAt = performance.now();
         setStartedAt(batchStartedAt);
         try {
-            const task = await createVideoGenerationTask(snapshot.config, snapshot.text, snapshot.references);
-            const log = buildLog({ prompt: snapshot.text, model, config: snapshot.config, references: snapshot.references, durationMs: 0, status: "pending", task });
+            const task = await createVideoGenerationTask(snapshot.config, snapshot.text, snapshot.references, { videos: snapshot.videoReferences });
+            const log = buildLog({ prompt: snapshot.text, model, config: snapshot.config, references: snapshot.references, videoReferences: snapshot.videoReferences, durationMs: 0, status: "pending", task });
             await saveLog(log, false);
             void pollGenerationLog(log, snapshot.config, agentTaskId);
         } catch (error) {
             const errorMessage = error instanceof Error ? error.message : t("workbench.generationFailed");
             setResults([{ id: nanoid(), status: "failed", error: errorMessage }]);
             if (agentTaskId) updateAgentTask(agentTaskId, { status: "failed", successCount: 0, failCount: 1, error: errorMessage });
-            await saveLog(buildLog({ prompt: snapshot.text, model, config: snapshot.config, references: snapshot.references, durationMs: performance.now() - batchStartedAt, status: "failed", error: errorMessage }));
+            await saveLog(
+                buildLog({ prompt: snapshot.text, model, config: snapshot.config, references: snapshot.references, videoReferences: snapshot.videoReferences, durationMs: performance.now() - batchStartedAt, status: "failed", error: errorMessage }),
+            );
             message.error(errorMessage);
             setRunning(false);
         }
@@ -255,7 +264,15 @@ export default function VideoPage() {
             openConfigDialog(true);
             return null;
         }
-        return { text, config: buildVideoConfig(effectiveConfig, model), references: [...references] };
+        const requestConfig = buildVideoConfig(effectiveConfig, model);
+        if (videoReferences.length) {
+            if (!supportsMotionReferences) {
+                message.error(t("depthMotion.unsupportedModel"));
+                return null;
+            }
+            requestConfig.videoMode = "multiref";
+        }
+        return { text, config: requestConfig, references: [...references], videoReferences: [...videoReferences] };
     };
 
     const retryResult = () => {
@@ -279,6 +296,32 @@ export default function VideoPage() {
         message.success(t("common.addedToAssets"));
     };
 
+    const addDepthMotionReference = async (result: { blob: Blob; width: number; height: number; durationMs: number }, sourceName: string) => {
+        if (!supportsMotionReferences) throw new Error(t("depthMotion.unsupportedModel"));
+        const stored = await uploadMediaFile(result.blob, "depth-motion");
+        const name = `${sourceName.replace(/\.[^.]+$/, "")}-depth.mp4`;
+        setVideoReferences((value) =>
+            [
+                ...value,
+                {
+                    id: nanoid(),
+                    name,
+                    type: stored.mimeType || "video/mp4",
+                    url: stored.url,
+                    storageKey: stored.storageKey,
+                    bytes: stored.bytes,
+                    width: result.width,
+                    height: result.height,
+                    durationMs: result.durationMs,
+                    role: "motion_reference" as const,
+                },
+            ].slice(-3),
+        );
+        updateConfig("videoMode", "multiref");
+        setDepthMotionOpen(false);
+        message.success(t("depthMotion.added"));
+    };
+
     const insertPickedAsset = async (payload: InsertAssetPayload) => {
         if (payload.kind === "text") {
             setPrompt(payload.content);
@@ -289,6 +332,20 @@ export default function VideoPage() {
             }
             const stored = await uploadImage(payload.dataUrl);
             setReferences((value) => [...value, { id: nanoid(), name: payload.title, type: stored.mimeType, dataUrl: stored.url, storageKey: stored.storageKey }].slice(0, imageReferenceLimit));
+        } else if (payload.kind === "video") {
+            if (!supportsMotionReferences) {
+                message.warning(t("depthMotion.unsupportedModel"));
+                setAssetPickerOpen(false);
+                return;
+            }
+            if (videoReferences.length >= 3) {
+                message.warning(t("videoWorkbench.videoReferenceLimit"));
+                setAssetPickerOpen(false);
+                return;
+            }
+            const url = await resolveMediaUrl(payload.storageKey, payload.url);
+            setVideoReferences((value) => [...value, { id: nanoid(), name: payload.title, type: "video/mp4", url, storageKey: payload.storageKey, width: payload.width, height: payload.height, role: "motion_reference" as const }].slice(0, 3));
+            updateConfig("videoMode", "multiref");
         }
         setAssetPickerOpen(false);
     };
@@ -296,6 +353,7 @@ export default function VideoPage() {
     const createSession = () => {
         setPrompt("");
         setReferences([]);
+        setVideoReferences([]);
         setResults([]);
         setElapsedMs(0);
         setStartedAt(0);
@@ -396,6 +454,7 @@ export default function VideoPage() {
         setLogsOpen(false);
         setPrompt(log.prompt);
         setReferences(log.references || []);
+        setVideoReferences(log.videoReferences || []);
         if (log.config.videoModel || log.model) updateConfig("videoModel", log.config.videoModel || log.model);
         if (log.config.size) updateConfig("size", log.config.size);
         if (log.config.vquality) updateConfig("vquality", log.config.vquality);
@@ -499,6 +558,43 @@ export default function VideoPage() {
                                 </div>
                             </div>
 
+                            <div className="min-w-0">
+                                <div className="mb-2 flex items-center justify-between gap-3">
+                                    <div>
+                                        <span className="text-base font-semibold">{t("videoWorkbench.videoReferences")}</span>
+                                        <p className="mt-0.5 text-xs text-stone-500 dark:text-stone-400">{t("depthMotion.referenceHint")}</p>
+                                    </div>
+                                    <Button
+                                        size="small"
+                                        icon={<ScanLine className="size-3.5" />}
+                                        disabled={!supportsMotionReferences || videoReferences.length >= 3}
+                                        title={!supportsMotionReferences ? t("depthMotion.unsupportedModel") : undefined}
+                                        onClick={() => setDepthMotionOpen(true)}
+                                    >
+                                        {t("depthMotion.convertAction")}
+                                    </Button>
+                                </div>
+                                <div className="flex min-h-24 w-full min-w-0 max-w-full gap-2 overflow-x-auto rounded-lg border border-dashed border-stone-300 p-2 dark:border-stone-700">
+                                    {videoReferences.map((item) => (
+                                        <div key={item.id} className="group relative h-20 w-32 shrink-0 overflow-hidden rounded-md border border-stone-200 bg-black dark:border-stone-800">
+                                            <video src={item.url} muted preload="metadata" className="size-full object-cover" />
+                                            <span className="absolute bottom-1 left-1 rounded bg-black/70 px-1.5 py-0.5 text-[10px] font-medium text-white">{t("depthMotion.motionReference")}</span>
+                                            <button
+                                                type="button"
+                                                className="absolute right-1 top-1 hidden size-6 items-center justify-center rounded bg-black/70 text-white group-hover:flex"
+                                                onClick={() => setVideoReferences((value) => value.filter((reference) => reference.id !== item.id))}
+                                                aria-label={t("videoWorkbench.removeVideo")}
+                                            >
+                                                <Trash2 className="size-3.5" />
+                                            </button>
+                                        </div>
+                                    ))}
+                                    {!videoReferences.length ? (
+                                        <div className="flex min-w-full items-center justify-center px-4 text-center text-sm text-stone-500">{supportsMotionReferences ? t("depthMotion.empty") : t("depthMotion.unsupportedModel")}</div>
+                                    ) : null}
+                                </div>
+                            </div>
+
                             <div className="flex items-center justify-between rounded-lg border border-stone-200 bg-stone-50 px-3 py-2 text-sm dark:border-stone-800 dark:bg-stone-900 sm:hidden">
                                 <span className="truncate text-stone-500 dark:text-stone-400">
                                     {modelOptionLabel(effectiveConfig, model)} · {videoResolutionLabel(effectiveConfig.vquality)} · {videoSizeLabel(effectiveConfig.size)} · {normalizeVideoSeconds(effectiveConfig.videoSeconds)}s ·{" "}
@@ -515,7 +611,15 @@ export default function VideoPage() {
                         </div>
 
                         <div className="mt-auto pt-6">
-                            <Button type={running ? "default" : "primary"} danger={running} size="large" block icon={running ? <Square className="size-4" /> : <Sparkles className="size-4" />} disabled={!running && !canGenerate} onClick={running ? stopGeneration : () => void generate()}>
+                            <Button
+                                type={running ? "default" : "primary"}
+                                danger={running}
+                                size="large"
+                                block
+                                icon={running ? <Square className="size-4" /> : <Sparkles className="size-4" />}
+                                disabled={!running && !canGenerate}
+                                onClick={running ? stopGeneration : () => void generate()}
+                            >
                                 {t(running ? "workbench.stop" : "workbench.generate")}
                             </Button>
                         </div>
@@ -579,6 +683,7 @@ export default function VideoPage() {
             </Drawer>
             <PromptSelectDialog open={promptDialogOpen} onOpenChange={setPromptDialogOpen} onSelect={setPrompt} />
             <AssetPickerModal open={assetPickerOpen} defaultTab="my-assets" onInsert={(payload) => void insertPickedAsset(payload)} onClose={() => setAssetPickerOpen(false)} />
+            <DepthMotionDialog open={depthMotionOpen} onCancel={() => setDepthMotionOpen(false)} onComplete={addDepthMotionReference} />
             <Modal title={t("workbench.deleteLogs")} open={deleteConfirmOpen} onCancel={() => setDeleteConfirmOpen(false)} onOk={deleteSelectedLogs} okText={t("common.delete")} okButtonProps={{ danger: true }} cancelText={t("common.cancel")}>
                 {t("workbench.deleteLogsConfirm", { count: selectedLogIds.length })}
             </Modal>
@@ -767,6 +872,12 @@ async function normalizeLog(log: Partial<GenerationLog>): Promise<GenerationLog>
             dataUrl: await resolveImageUrl(item.storageKey, item.dataUrl),
         })),
     );
+    const videoReferences = await Promise.all(
+        (log.videoReferences || []).map(async (item) => ({
+            ...item,
+            url: await resolveMediaUrl(item.storageKey, item.url),
+        })),
+    );
     const config = normalizeLogConfig(log);
     const status = isLegacyTimedOutManagedLog(log) ? "pending" : log.status || "success";
     return {
@@ -778,6 +889,7 @@ async function normalizeLog(log: Partial<GenerationLog>): Promise<GenerationLog>
         model: log.model || config.videoModel || "",
         config,
         references,
+        videoReferences,
         durationMs: log.durationMs || 0,
         size: log.size || config.size || "",
         resolution: normalizeResolution(log.resolution || config.vquality || ""),
@@ -793,6 +905,7 @@ function serializeLog(log: GenerationLog): GenerationLog {
     return {
         ...log,
         references: log.references.map((item) => ({ ...item, dataUrl: item.storageKey ? "" : item.dataUrl })),
+        videoReferences: log.videoReferences.map((item) => ({ ...item, url: item.storageKey ? "" : item.url })),
         video: log.video?.storageKey ? { ...log.video, url: "" } : log.video,
     };
 }
@@ -836,6 +949,7 @@ function buildLog({
     model,
     config,
     references,
+    videoReferences,
     durationMs,
     status,
     task,
@@ -846,6 +960,7 @@ function buildLog({
     model: string;
     config: AiConfig;
     references: ReferenceImage[];
+    videoReferences: ReferenceVideo[];
     durationMs: number;
     status: GenerationLog["status"];
     task?: VideoGenerationTask;
@@ -874,6 +989,7 @@ function buildLog({
         model,
         config: logConfig,
         references,
+        videoReferences,
         durationMs,
         size: logConfig.size,
         resolution: logConfig.vquality,
