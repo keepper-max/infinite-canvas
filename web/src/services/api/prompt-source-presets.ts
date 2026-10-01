@@ -44,6 +44,18 @@ export const DEFAULT_PROMPT_SOURCES: PromptSource[] = [
     registrySource("youmind-nano-banana-pro", "YouMind Nano Banana Pro", "覆盖人物、商品、海报、信息图和多种风格的 Nano Banana Pro 提示词。", "https://github.com/YouMind-OpenLab/awesome-nano-banana-pro-prompts"),
 ];
 
+export const BUNDLED_CUSTOM_PROMPT_SOURCES: PromptSource[] = [
+    {
+        id: "shoushou-drama-extension-pack",
+        name: "守守漫剧扩展包",
+        description: "用于漫剧角色、分镜、连续性、对白与失败修复的守守画布提示词集合。",
+        url: "/shoushou-drama-prompts.json",
+        homepage: "",
+        enabled: true,
+        builtIn: false,
+    },
+];
+
 function registrySource(id: string, name: string, description: string, homepage: string): PromptSource {
     return { id, name, description, url: `${PROMPT_REGISTRY_SOURCE_BASE}/${id}.json`, homepage, enabled: true, builtIn: true };
 }
