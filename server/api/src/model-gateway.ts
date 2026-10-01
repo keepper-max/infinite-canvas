@@ -188,8 +188,15 @@ export class ModelGateway {
     );
   }
 
+  async refreshVolcengineArkCatalog() {
+    return this.replaceRunningHubCatalog(
+      "volcengine_ark",
+      volcengineArkCatalogItems(),
+    );
+  }
+
   private async replaceRunningHubCatalog(
-    providerId: "runninghub" | "runninghub_global",
+    providerId: "runninghub" | "runninghub_global" | "volcengine_ark",
     candidates: Array<Record<string, unknown>>,
     capability?: Capability,
   ) {
@@ -401,7 +408,9 @@ export class ModelGateway {
       providerId: row.provider_id,
       upstreamParameters,
       providerMetadata:
-        ["runninghub", "runninghub_global"].includes(row.provider_id) &&
+        ["runninghub", "runninghub_global", "volcengine_ark"].includes(
+          row.provider_id,
+        ) &&
         isRecord(row.catalog_metadata)
           ? row.catalog_metadata
           : undefined,
@@ -414,6 +423,45 @@ export function runningHubModelProfile(
 ): CatalogCapabilityProfile | null {
   const capability = runningHubCapability(candidate);
   if (!capability) return null;
+  if (candidate.category === "Volcengine Ark" && capability === "video")
+    return {
+      capability,
+      modes: ["t2v", "i2v", "flf2v", "multiref"],
+      acceptedParameters: [
+        "duration",
+        "resolution",
+        "aspectRatio",
+        "generateAudio",
+        "watermark",
+        "firstFrame",
+        "lastFrame",
+        "references",
+      ],
+      requiredParametersByMode: {
+        i2v: ["firstFrame"],
+        flf2v: ["firstFrame", "lastFrame"],
+        multiref: ["references"],
+      },
+      limits: {
+        maxImages: 30,
+        maxVideos: 10,
+        maxAudios: 10,
+        maxPromptChars: 20_000,
+        durations: [5, 10],
+        resolutions: ["480p", "720p", "1080p"],
+        aspectRatios: ["adaptive", "16:9", "4:3", "1:1", "3:4", "9:16", "21:9"],
+        parameterSchema: runningHubParameters(candidate.params).flatMap((item) =>
+          ["IMAGE", "VIDEO", "AUDIO"].includes(item.sourceType) ||
+          isPromptField(item.upstreamKey)
+            ? []
+            : [item.publicDefinition],
+        ),
+      },
+      parameterMap: {
+        aspectRatio: "ratio",
+        generateAudio: "generate_audio",
+      },
+    };
   const params = runningHubParameters(candidate.params);
   const promptField = findRunningHubPromptField(params);
   const scalar = params.filter(
@@ -1016,6 +1064,152 @@ const RUNNINGHUB_GLOBAL_MODELS: Array<Record<string, unknown>> = [
 
 export function runningHubGlobalCatalogItems() {
   return RUNNINGHUB_GLOBAL_MODELS;
+}
+
+const VOLCENGINE_ARK_TEXT_PARAMS = [
+  {
+    fieldKey: "prompt",
+    type: "STRING",
+    required: true,
+    maxLength: 120_000,
+  },
+  {
+    fieldKey: "temperature",
+    type: "FLOAT",
+    defaultValue: 0.6,
+    min: 0,
+    max: 2,
+    step: 0.1,
+  },
+  {
+    fieldKey: "max_tokens",
+    type: "INT",
+    defaultValue: 4096,
+    min: 1,
+    max: 32_768,
+    step: 1,
+  },
+  {
+    fieldKey: "top_p",
+    type: "FLOAT",
+    defaultValue: 1,
+    min: 0,
+    max: 1,
+    step: 0.01,
+  },
+] satisfies Array<Record<string, unknown>>;
+
+const VOLCENGINE_ARK_IMAGE_PARAMS = [
+  {
+    fieldKey: "prompt",
+    type: "STRING",
+    required: true,
+    maxLength: 20_000,
+  },
+  {
+    fieldKey: "size",
+    type: "STRING",
+    description: "生成尺寸",
+  },
+  {
+    fieldKey: "sequential_image_generation",
+    type: "LIST",
+    defaultValue: "disabled",
+    options: ["disabled", "auto"],
+  },
+  {
+    fieldKey: "watermark",
+    type: "BOOLEAN",
+    defaultValue: false,
+  },
+  {
+    fieldKey: "image",
+    type: "IMAGE",
+    multipleInputs: true,
+    maxInputNum: 10,
+  },
+] satisfies Array<Record<string, unknown>>;
+
+const VOLCENGINE_ARK_VIDEO_PARAMS = [
+  {
+    fieldKey: "prompt",
+    type: "STRING",
+    required: true,
+    maxLength: 20_000,
+  },
+  {
+    fieldKey: "duration",
+    type: "INT",
+    defaultValue: 5,
+    options: [5, 10],
+  },
+  {
+    fieldKey: "resolution",
+    type: "LIST",
+    defaultValue: "720p",
+    options: ["480p", "720p", "1080p"],
+  },
+  {
+    fieldKey: "ratio",
+    type: "LIST",
+    defaultValue: "adaptive",
+    options: ["adaptive", "16:9", "4:3", "1:1", "3:4", "9:16", "21:9"],
+  },
+  {
+    fieldKey: "generate_audio",
+    type: "BOOLEAN",
+    defaultValue: true,
+  },
+  {
+    fieldKey: "watermark",
+    type: "BOOLEAN",
+    defaultValue: false,
+  },
+  {
+    fieldKey: "references",
+    type: "IMAGE",
+    multipleInputs: true,
+    maxInputNum: 30,
+  },
+  {
+    fieldKey: "video_references",
+    type: "VIDEO",
+    multipleInputs: true,
+    maxInputNum: 10,
+  },
+  {
+    fieldKey: "audio_references",
+    type: "AUDIO",
+    multipleInputs: true,
+    maxInputNum: 10,
+  },
+] satisfies Array<Record<string, unknown>>;
+
+const VOLCENGINE_ARK_MODEL_ROWS: Array<
+  readonly [string, string, "text" | "image" | "video", Array<Record<string, unknown>>]
+> = [
+  ["doubao-seed-2-1-pro-260915", "豆包 Seed 2.1 Pro", "text", VOLCENGINE_ARK_TEXT_PARAMS],
+  ["doubao-seed-2-1-lite-260915", "豆包 Seed 2.1 Lite", "text", VOLCENGINE_ARK_TEXT_PARAMS],
+  ["deepseek-v4-1-flash-260910", "DeepSeek V4.1 Flash", "text", VOLCENGINE_ARK_TEXT_PARAMS],
+  ["deepseek-v4-pro-ga-260813", "DeepSeek V4 Pro", "text", VOLCENGINE_ARK_TEXT_PARAMS],
+  ["glm-5-3-flash-260828", "GLM 5.3 Flash", "text", VOLCENGINE_ARK_TEXT_PARAMS],
+  ["doubao-seedream-4-0-20260415", "豆包 Seedream 4.0", "image", VOLCENGINE_ARK_IMAGE_PARAMS],
+  ["doubao-seedream-5-0-flash-260915", "豆包 Seedream 5.0 Flash", "image", VOLCENGINE_ARK_IMAGE_PARAMS],
+  ["doubao-seedream-5-0-pro-260628", "豆包 Seedream 5.0 Pro", "image", VOLCENGINE_ARK_IMAGE_PARAMS],
+  ["doubao-seedance-2-5-260628", "豆包 Seedance 2.5", "video", VOLCENGINE_ARK_VIDEO_PARAMS],
+];
+
+const VOLCENGINE_ARK_MODELS: Array<Record<string, unknown>> =
+  VOLCENGINE_ARK_MODEL_ROWS.map(([endpoint, displayName, outputType, params]) => ({
+  endpoint,
+  display_name: displayName,
+  output_type: outputType,
+  category: "Volcengine Ark",
+  params,
+}));
+
+export function volcengineArkCatalogItems() {
+  return VOLCENGINE_ARK_MODELS;
 }
 
 export function runningHubGlobalTextCatalogItems(payload: unknown) {

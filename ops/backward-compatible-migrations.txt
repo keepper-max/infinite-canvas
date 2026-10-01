@@ -12,3 +12,4 @@
 0036_channel_attribution.sql
 0037_generation_job_credit_reservation.sql
 0038_settle_token360_billing_id_mismatches.sql
+0039_volcengine_ark_provider.sql

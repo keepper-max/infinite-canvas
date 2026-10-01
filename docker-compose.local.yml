@@ -34,6 +34,9 @@ services:
       ALIPAY_PUBLIC_KEY_PEM: ${ALIPAY_PUBLIC_KEY_PEM:-}
       ALIPAY_SELLER_ID: ${ALIPAY_SELLER_ID:-}
       ALIPAY_ORDER_TIMEOUT_MINUTES: ${ALIPAY_ORDER_TIMEOUT_MINUTES:-}
+      VOLCENGINE_ARK_API_KEY: ${VOLCENGINE_ARK_API_KEY:-}
+      VOLCENGINE_ARK_API_BASE_URL: ${VOLCENGINE_ARK_API_BASE_URL:-https://ark.cn-beijing.volces.com/api/v3}
+      VOLCENGINE_ARK_CATALOG_URL: ${VOLCENGINE_ARK_CATALOG_URL:-https://ark.cn-beijing.volces.com/api/v3/models}
     depends_on:
       db:
         condition: service_healthy

@@ -2342,6 +2342,7 @@ const managedProviderId = z.enum([
   "token360",
   "runninghub",
   "runninghub_global",
+  "volcengine_ark",
 ]);
 const managedProviderInput = z
   .object({ providerId: managedProviderId })

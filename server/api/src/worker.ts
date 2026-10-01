@@ -13,6 +13,7 @@ import {
   type GenerationProvider,
 } from "./provider.js";
 import { RunningHubProvider } from "./runninghub-provider.js";
+import { VolcengineArkProvider } from "./volcengine-ark-provider.js";
 import { ProviderRouter } from "./provider-router.js";
 import {
   isStalledQueueJobError,
@@ -67,6 +68,7 @@ await gateway
       error instanceof Error ? error.message : "unknown error",
     ),
   );
+await gateway.refreshVolcengineArkCatalog();
 const runningHubProvider = new RunningHubProvider(
   config.runningHub,
   config.jobs.submitTimeoutMs,
@@ -87,6 +89,14 @@ const provider = new ProviderRouter(
       "runninghub_global",
       new RunningHubProvider(
         config.runningHubGlobal,
+        config.jobs.submitTimeoutMs,
+        storage,
+      ),
+    ],
+    [
+      "volcengine_ark",
+      new VolcengineArkProvider(
+        config.volcengineArk,
         config.jobs.submitTimeoutMs,
         storage,
       ),

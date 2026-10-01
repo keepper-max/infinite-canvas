@@ -86,7 +86,7 @@ export default function AdminPage() {
     const { user } = useAuth();
     const { section = "overview", subsection } = useParams();
     const active = sections.some((item) => item.key === section) ? (section as Section) : "overview";
-    const modelProvider: AdminProvider["id"] = subsection === "runninghub-global" ? "runninghub_global" : subsection === "runninghub" ? "runninghub" : "token360";
+    const modelProvider: AdminProvider["id"] = subsection === "runninghub-global" ? "runninghub_global" : subsection === "runninghub" ? "runninghub" : subsection === "volcengine-ark" ? "volcengine_ark" : "token360";
     if (!user.isAdmin) return <AdminForbidden />;
     return (
         <div className="flex h-dvh overflow-hidden bg-stone-950 text-stone-100">
@@ -119,11 +119,12 @@ export default function AdminPage() {
                                                 ["token360", "Token360"],
                                                 ["runninghub", "海马云 · 中国区"],
                                                 ["runninghub_global", "海马云 · 国际区"],
+                                                ["volcengine_ark", "火山方舟"],
                                             ] as const
                                         ).map(([key, label]) => (
                                             <Link
                                                 key={key}
-                                                to={`/admin/models/${key === "runninghub_global" ? "runninghub-global" : key}`}
+                                                to={`/admin/models/${key.replaceAll("_", "-")}`}
                                                 className={`block rounded-md px-3 py-2 text-xs transition ${modelProvider === key ? "bg-white/10 text-white" : "text-stone-500 hover:text-white"}`}
                                             >
                                                 {label}
@@ -2219,6 +2220,7 @@ function formatJobDuration(createdAt: string, finishedAt?: string) {
     return formatDuration(Math.max(0, dayjs(finishedAt).diff(dayjs(createdAt), "second", true)));
 }
 function providerLabel(value?: string) {
+    if (value === "volcengine_ark") return "火山方舟";
     if (value === "runninghub_global") return "海马云 · 国际区";
     if (value === "runninghub") return "海马云 · 中国区";
     return value === "token360" ? "Token360" : value || "—";

@@ -3,6 +3,7 @@ import type { Pool, PoolClient } from "pg";
 import type { ProviderConfig } from "./config.js";
 import type { CreditService } from "./credit-service.js";
 import { DomainError } from "./domain.js";
+import { volcengineArkAmount } from "./volcengine-ark-pricing.js";
 
 const TERMINAL_JOB_STATUSES = ["completed", "failed", "cancelled", "billing_pending"];
 const RECONCILE_DELAYS_SECONDS = [30, 120, 300, 900];
@@ -96,9 +97,9 @@ export class BillingService {
     );
     const job = result.rows[0];
     if (!job) return { status: "missing" };
-    if (!isRunningHubProvider(job.provider))
+    if (!isDirectMeteredProvider(job.provider))
       return { status: String(job.billing_status || "pending") };
-    return this.settleRunningHub(job);
+    return this.settleDirectProvider(job);
   }
 
   async runDue(limit = 20) {
@@ -136,7 +137,8 @@ export class BillingService {
         return { status: String(existing.rows[0].billing_status) };
       throw new DomainError("BILLING_JOB_NOT_FOUND", "找不到可对账任务", 404);
     }
-    if (isRunningHubProvider(job.provider)) return this.settleRunningHub(job);
+    if (isDirectMeteredProvider(job.provider))
+      return this.settleDirectProvider(job);
     if (job.provider !== "token360") {
       await this.finishUnavailable(jobId, "外部渠道无法进行 Token360 对账");
       return { status: "unavailable" };
@@ -274,15 +276,33 @@ export class BillingService {
     );
   }
 
-  private async settleRunningHub(job: Record<string, unknown>) {
+  private async settleDirectProvider(job: Record<string, unknown>) {
     const usage = asRecord(job.billing_meter_usage);
-    const providerPaidAmount =
-      decimalValue(usage.third_party_consume_money) ||
-      decimalValue(usage.consume_money);
+    const compiled = asRecord(job.compiled_request);
+    const providerPaidAmount = job.provider === "volcengine_ark"
+      ? volcengineArkAmount({
+          upstreamModel: stringValue(compiled.upstreamModel) || "",
+          capability: String(job.capability || ""),
+          usage,
+          parameters: asRecord(job.parameters),
+          inputSnapshot: asRecord(job.input_snapshot),
+          createdAt: job.created_at instanceof Date
+            ? job.created_at
+            : stringValue(job.created_at),
+        })
+      : decimalValue(usage.third_party_consume_money) ||
+        decimalValue(usage.consume_money);
     const ruleSnapshot = billingRuleSnapshot(job.billing_rule_snapshot);
-    const originalAmount = runningHubOriginalAmount(ruleSnapshot, providerPaidAmount);
-    const normalizedUsage =
-      providerPaidAmount !== null && originalAmount !== providerPaidAmount
+    const originalAmount = isRunningHubProvider(job.provider)
+      ? runningHubOriginalAmount(ruleSnapshot, providerPaidAmount)
+      : providerPaidAmount;
+    const normalizedUsage = job.provider === "volcengine_ark" && providerPaidAmount !== null
+      ? {
+          ...usage,
+          third_party_consume_money: providerPaidAmount,
+          billing_amount_source: "volcengine_official_list_price_2026-10-01",
+        }
+      : providerPaidAmount !== null && originalAmount !== providerPaidAmount
         ? {
             ...usage,
             provider_paid_amount: providerPaidAmount,
@@ -307,7 +327,9 @@ export class BillingService {
     ) {
       await this.finishUnavailable(
         String(job.id),
-        "海马云终态未返回可记录的实际用量",
+        job.provider === "volcengine_ark"
+          ? "火山方舟终态未返回可计算的实际用量"
+          : "海马云终态未返回可记录的实际用量",
       );
       return { status: "unavailable" };
     }
@@ -327,15 +349,15 @@ export class BillingService {
     await this.pool.query(
       `insert into generation_usage(job_id,project_id,user_id,billing_request_id,provider,model_id,capability,status,billed,credit_status,
         prompt_tokens,completion_tokens,total_tokens,audio_duration_seconds,video_duration_seconds,requested_seconds,
-        amount_final,total_amount,currency,provider_request_id,usage,reconciled_at,updated_at)
-       values($1,$2,$3,$4,$5,$6,$7,'settled',$8,'pending',$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,now(),now())
+        amount_final,total_amount,currency,provider_request_id,usage,generated_images,reconciled_at,updated_at)
+       values($1,$2,$3,$4,$5,$6,$7,'settled',$8,'pending',$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,now(),now())
        on conflict(job_id) do update set billing_request_id=excluded.billing_request_id,status=excluded.status,
         credit_status=case when generation_usage.credit_status in ('charged','free','historical','payment_required') then generation_usage.credit_status else 'pending' end,
         billed=excluded.billed,prompt_tokens=excluded.prompt_tokens,completion_tokens=excluded.completion_tokens,
         total_tokens=excluded.total_tokens,audio_duration_seconds=excluded.audio_duration_seconds,
         video_duration_seconds=excluded.video_duration_seconds,requested_seconds=excluded.requested_seconds,
         amount_final=excluded.amount_final,total_amount=excluded.total_amount,currency=excluded.currency,provider_request_id=excluded.provider_request_id,
-        usage=excluded.usage,reconciled_at=now(),updated_at=now()`,
+        usage=excluded.usage,generated_images=excluded.generated_images,reconciled_at=now(),updated_at=now()`,
       [
         job.id,
         job.project_id,
@@ -356,6 +378,7 @@ export class BillingService {
         currency,
         providerRequestId,
         JSON.stringify(normalizedUsage),
+        integerValue(usage.generated_images),
       ],
     );
     await this.pool.query(
@@ -381,6 +404,9 @@ function asRecord(value: unknown): Record<string, unknown> {
 }
 function isRunningHubProvider(value: unknown) {
   return value === "runninghub" || value === "runninghub_global";
+}
+function isDirectMeteredProvider(value: unknown) {
+  return isRunningHubProvider(value) || value === "volcengine_ark";
 }
 export function runningHubOriginalAmount(snapshot: unknown, providerPaidAmount: string | null) {
   const rule = billingRuleSnapshot(snapshot);

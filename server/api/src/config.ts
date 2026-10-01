@@ -10,6 +10,7 @@ export type ApiConfig = {
   provider: ProviderConfig;
   runningHub: RunningHubConfig;
   runningHubGlobal: RunningHubConfig;
+  volcengineArk: ProviderConfig;
   operations: OperationsConfig;
   payments: PaymentConfig;
   assetTrashRetentionDays: number;
@@ -184,6 +185,16 @@ export function readConfig(env: NodeJS.ProcessEnv = process.env): ApiConfig {
       env.RH_GLOBAL_LLM_BASE_URL || "https://llm.runninghub.ai/v1"
     ).replace(/\/+$/, ""),
   };
+  const volcengineArk = {
+    baseUrl: (
+      env.VOLCENGINE_ARK_API_BASE_URL ||
+      "https://ark.cn-beijing.volces.com/api/v3"
+    ).replace(/\/+$/, ""),
+    apiKey: env.VOLCENGINE_ARK_API_KEY?.trim() || "",
+    catalogUrl:
+      env.VOLCENGINE_ARK_CATALOG_URL?.trim() ||
+      "https://ark.cn-beijing.volces.com/api/v3/models",
+  };
   const operations = {
     adminEmails: (env.ADMIN_EMAILS || "")
       .split(",")
@@ -228,6 +239,7 @@ export function readConfig(env: NodeJS.ProcessEnv = process.env): ApiConfig {
     provider,
     runningHub,
     runningHubGlobal,
+    volcengineArk,
     operations,
     payments,
     assetTrashRetentionDays,

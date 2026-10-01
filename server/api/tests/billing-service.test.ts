@@ -435,3 +435,57 @@ test("RunningHub global LLM usage preserves USD pricing for credit conversion", 
   assert.equal(insert?.values?.[16], "USD");
   assert.equal(insert?.values?.[17], "chatcmpl-rh-1");
 });
+
+test("火山方舟按官方刊例结算实际用量并写入人民币成本", async () => {
+  const calls: Array<{ sql: string; values?: unknown[] }> = [];
+  const pool = {
+    async query(sql: string, values?: unknown[]) {
+      calls.push({ sql, values });
+      if (sql.startsWith("select * from generation_jobs"))
+        return {
+          rows: [
+            {
+              id: "job-ark-text-1",
+              project_id: "project-1",
+              created_by: "user-1",
+              provider: "volcengine_ark",
+              model_id: "volcengine_ark.text.doubao-seed-2-1-pro-260915",
+              capability: "text",
+              billing_status: "pending",
+              compiled_request: { upstreamModel: "doubao-seed-2-1-pro-260915" },
+              input_snapshot: {},
+              parameters: {},
+              billing_meter_usage: {
+                provider_request_id: "chatcmpl-ark-1",
+                prompt_tokens: 1000,
+                completion_tokens: 500,
+                total_tokens: 1500,
+              },
+            },
+          ],
+          rowCount: 1,
+        };
+      return { rows: [], rowCount: 1 };
+    },
+  };
+  const result = await new BillingService(
+    pool as never,
+    config,
+  ).finalizeProviderUsage("job-ark-text-1");
+  assert.deepEqual(result, {
+    status: "settled",
+    requestId: "volcengine_ark:chatcmpl-ark-1",
+  });
+  const insert = calls.find(({ sql }) =>
+    sql.includes("insert into generation_usage"),
+  );
+  assert.equal(insert?.values?.[7], true);
+  assert.equal(insert?.values?.[14], "0.021");
+  assert.equal(insert?.values?.[15], "0.021");
+  assert.equal(insert?.values?.[16], "CNY");
+  assert.equal(insert?.values?.[17], "chatcmpl-ark-1");
+  assert.equal(
+    JSON.parse(String(insert?.values?.[18])).billing_amount_source,
+    "volcengine_official_list_price_2026-10-01",
+  );
+});
