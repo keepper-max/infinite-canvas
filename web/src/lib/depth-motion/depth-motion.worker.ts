@@ -83,7 +83,7 @@ async function ensurePipeline(requestId: number) {
         }
     }
 
-    throw lastError instanceof Error ? lastError : new Error("深度模型加载失败");
+    throw lastError instanceof Error ? lastError : new Error("深度模型加载失败，请检查网络后重试");
 }
 
 function workerPostMessage(message: unknown, transfer: Transferable[]) {
