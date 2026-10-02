@@ -220,9 +220,15 @@ export default function AuthPage({ mode }: { mode: AuthMode }) {
                     </Link>
                 </p>
             </section>
-            <a className="absolute bottom-4 text-xs text-stone-500 transition-colors hover:text-stone-300" href="https://beian.miit.gov.cn/" target="_blank" rel="noreferrer">
-                辽ICP备2026022425号-1
-            </a>
+            <footer className="absolute bottom-4 flex flex-wrap items-center justify-center gap-x-4 gap-y-2 px-4 text-xs text-stone-500">
+                <a className="transition-colors hover:text-stone-300" href="https://beian.miit.gov.cn/" target="_blank" rel="noreferrer">
+                    辽ICP备2026022425号-1
+                </a>
+                <a className="inline-flex items-center gap-1.5 transition-colors hover:text-stone-300" href="https://beian.mps.gov.cn/#/query/webSearch?code=21021102001990" target="_blank" rel="noreferrer">
+                    <img className="size-4 shrink-0" src="/beian-police.png" alt="" aria-hidden="true" />
+                    <span>辽公网安备21021102001990号</span>
+                </a>
+            </footer>
         </main>
     );
 }
