@@ -39,6 +39,9 @@ export function CanvasTopBar({
     onSave,
     canSave,
     onLogoutRequest,
+    mobile = false,
+    mobilePanelOpen = false,
+    onToggleMobilePanel,
 }: {
     title: string;
     titleDraft: string;
@@ -68,6 +71,9 @@ export function CanvasTopBar({
     onSave: () => void;
     canSave: boolean;
     onLogoutRequest: () => void;
+    mobile?: boolean;
+    mobilePanelOpen?: boolean;
+    onToggleMobilePanel?: () => void;
 }) {
     const colorTheme = useThemeStore((state) => state.theme);
     const { t } = useTranslation();
@@ -86,6 +92,57 @@ export function CanvasTopBar({
         return () => document.removeEventListener("pointerdown", close, true);
     }, [isTitleEditing, onFinishTitleEditing]);
 
+    const menuItems = [
+        { key: "home", icon: <Home className="size-4" />, label: t("canvas.home"), onClick: onHome },
+        { key: "projects", icon: <Images className="size-4" />, label: t("canvas.projects"), onClick: onProjects },
+        { type: "divider" as const },
+        { key: "new", icon: <Plus className="size-4" />, label: t("canvas.create"), onClick: onCreateProject },
+        ...(canDeleteProject ? [{ key: "delete", danger: true, icon: <Trash2 className="size-4" />, label: t("canvas.deleteCurrent"), onClick: onDeleteProject }] : []),
+        { type: "divider" as const },
+        { key: "import", icon: <Upload className="size-4" />, label: t("canvas.importAsset"), onClick: onImportImage },
+        { key: "export", icon: <Download className="size-4" />, label: t("canvas.exportCurrent"), onClick: onExportProject },
+        { type: "divider" as const },
+        { key: "undo", disabled: !canUndo, icon: <Undo2 className="size-4" />, label: <MenuLabel text={t("canvas.undo")} shortcut="⌘ Z" />, onClick: onUndo },
+        { key: "redo", disabled: !canRedo, icon: <Redo2 className="size-4" />, label: <MenuLabel text={t("canvas.redo")} shortcut="⌘ ⇧ Z / ⌘ Y" />, onClick: onRedo },
+    ];
+
+    if (mobile) {
+        return (
+            <div className="pointer-events-none absolute inset-x-0 top-0 z-[80] flex h-14 items-center justify-between gap-2 px-3 pt-[env(safe-area-inset-top)]">
+                <div className="pointer-events-auto flex min-w-0 items-center gap-1">
+                    <button
+                        type="button"
+                        onClick={onToggleMobilePanel}
+                        aria-label={mobilePanelOpen ? "关闭画布工具" : "打开画布工具"}
+                        className="grid size-10 place-items-center rounded-xl transition active:bg-black/10 dark:active:bg-white/10"
+                        style={{ color: theme.node.text }}
+                    >
+                        {mobilePanelOpen ? <PanelLeftClose className="size-5" /> : <PanelLeftOpen className="size-5" />}
+                    </button>
+                    <Dropdown trigger={["click"]} menu={{ items: menuItems }}>
+                        <button type="button" className="grid size-10 place-items-center rounded-xl transition active:bg-black/10 dark:active:bg-white/10" style={{ color: theme.node.text }} aria-label={t("canvas.openMenu")}>
+                            <Menu className="size-5" />
+                        </button>
+                    </Dropdown>
+                    <span className="max-w-[42vw] truncate px-1 text-sm font-semibold">{title}</span>
+                </div>
+                <div className="pointer-events-auto flex items-center gap-1">
+                    <CanvasSyncIndicator status={syncStatus} onClick={onSyncClick} compact />
+                    <button
+                        type="button"
+                        className="grid size-10 place-items-center rounded-xl transition active:bg-black/10 disabled:opacity-35 dark:active:bg-white/10"
+                        style={{ color: theme.node.text }}
+                        disabled={!canSave || syncStatus === "loading" || syncStatus === "saving" || syncStatus === "conflict"}
+                        onClick={onSave}
+                        aria-label="保存画布"
+                    >
+                        <Save className="size-4.5" />
+                    </button>
+                </div>
+            </div>
+        );
+    }
+
     return (
         <>
             <div className="pointer-events-none absolute left-0 right-0 top-0 z-50 flex h-16 items-center justify-between pl-1 pr-4">
@@ -101,24 +158,7 @@ export function CanvasTopBar({
                             {sidePanelOpen ? <PanelLeftClose className="size-4" /> : <PanelLeftOpen className="size-4" />}
                         </button>
                     </Tooltip>
-                    <Dropdown
-                        trigger={["click"]}
-                        menu={{
-                            items: [
-                                { key: "home", icon: <Home className="size-4" />, label: t("canvas.home"), onClick: onHome },
-                                { key: "projects", icon: <Images className="size-4" />, label: t("canvas.projects"), onClick: onProjects },
-                                { type: "divider" },
-                                { key: "new", icon: <Plus className="size-4" />, label: t("canvas.create"), onClick: onCreateProject },
-                                ...(canDeleteProject ? [{ key: "delete", danger: true, icon: <Trash2 className="size-4" />, label: t("canvas.deleteCurrent"), onClick: onDeleteProject }] : []),
-                                { type: "divider" },
-                                { key: "import", icon: <Upload className="size-4" />, label: t("canvas.importAsset"), onClick: onImportImage },
-                                { key: "export", icon: <Download className="size-4" />, label: t("canvas.exportCurrent"), onClick: onExportProject },
-                                { type: "divider" },
-                                { key: "undo", disabled: !canUndo, icon: <Undo2 className="size-4" />, label: <MenuLabel text={t("canvas.undo")} shortcut="⌘ Z" />, onClick: onUndo },
-                                { key: "redo", disabled: !canRedo, icon: <Redo2 className="size-4" />, label: <MenuLabel text={t("canvas.redo")} shortcut="⌘ ⇧ Z / ⌘ Y" />, onClick: onRedo },
-                            ],
-                        }}
-                    >
+                    <Dropdown trigger={["click"]} menu={{ items: menuItems }}>
                         <button type="button" className="grid size-7 place-items-center rounded-full transition hover:bg-black/5 dark:hover:bg-white/10" style={{ color: theme.node.text }} aria-label={t("canvas.openMenu")}>
                             <Menu className="size-4" />
                         </button>
@@ -206,14 +246,14 @@ export function CanvasTopBar({
     );
 }
 
-function CanvasSyncIndicator({ status, onClick }: { status: CanvasSyncStatus; onClick: () => void }) {
+function CanvasSyncIndicator({ status, onClick, compact = false }: { status: CanvasSyncStatus; onClick: () => void; compact?: boolean }) {
     const labels: Record<CanvasSyncStatus, string> = { loading: "正在读取", saving: "正在保存", synced: "已同步", dirty: "未保存", unsynced: "未同步", conflict: "版本冲突" };
     const color = status === "synced" ? "#16a34a" : status === "unsynced" || status === "conflict" ? "#dc2626" : "#d97706";
     const Icon = status === "synced" ? Cloud : status === "unsynced" || status === "conflict" ? CloudOff : LoaderCircle;
     return (
         <button type="button" className="flex h-8 items-center gap-1.5 text-xs transition hover:opacity-75" style={{ color }} title={labels[status]} onClick={onClick}>
             <Icon className={`size-3.5 ${status === "loading" || status === "saving" ? "animate-spin" : ""}`} />
-            <span>{labels[status]}</span>
+            {compact ? null : <span>{labels[status]}</span>}
         </button>
     );
 }

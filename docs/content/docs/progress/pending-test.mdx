@@ -5,6 +5,8 @@ description: Implemented changes that still need manual verification
 
 # Pending Tests
 
+- 画布移动端轻编辑：在 iOS Safari、Android Chrome 及平板浏览器上使用宽度不超过 900px 的触控设备，验证单指平移、双指缩放、节点轻触选择、底部常用操作、画布工具抽屉、文字/图片/视频节点编辑、上传、下载和生成；不得出现节点拖动、缩放手柄、连线端口或 Agent 侧栏挤压画布。移动端定位和缩放后切回桌面，桌面节点位置、缩放视口、侧栏和 Agent 展开状态必须恢复原值；桌面鼠标拖动、滚轮缩放、框选、连线、节点尺寸调整、小地图及快捷键均保持原行为。另验证窄屏鼠标设备不会误入触控模式、横竖屏切换、刘海安全区和长标题不遮挡保存按钮。
+
 - 守守玄幻高燃打斗扩展包：设置中的提示词来源应出现同名自定义来源，首次刷新得到 6 条提示词并保留原始 `shoushou-xh-*` ID；应能搜索并使用玄幻打斗导演总控、双向攻防节拍编译、兵器与法术碰撞因果链、大招尺度与空间证明、高燃打斗运镜选择、打斗收尾与续接状态。该来源可独立启停、刷新、编辑和删除，删除并刷新页面后不应重新出现；加载失败时应保留上次成功缓存，其他来源仍可正常浏览和刷新。
 
 - Local depth motion reference: on the production Video Studio and Shoushou Canvas, select a model with multimodal-reference support and convert a sub-10-second MP4/MOV/WebM clip on a GTX 1060 6 GB-class discrete GPU, a recent integrated GPU, and an environment without WebGPU. The content security policy must allow WebAssembly compilation, the discrete GPU path should use WebGPU, unsupported environments should fall back to WASM, and the UI should remain responsive with frame progress. The output should be a silent 480p MP4 that follows the source frame rate. Video Studio should add it as a Motion reference; Canvas should create a depth-video node, replace the original reference edge, and synchronize generation duration to the source (showing a notice when the model only supports discrete duration presets). Only the converted depth video may enter generation requests. Cover variable-frame-rate sources, cancellation, clips over 10 seconds, model download failure, missing H.264 support, multiple connected videos, unsupported generation models, and restored history without disrupting other generation flows.
