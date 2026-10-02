@@ -54,6 +54,15 @@ export const BUNDLED_CUSTOM_PROMPT_SOURCES: PromptSource[] = [
         enabled: true,
         builtIn: false,
     },
+    {
+        id: "shoushou-xuanhuan-combat-extension-pack",
+        name: "守守玄幻高燃打斗扩展包",
+        description: "用于玄幻打斗导演、攻防节拍、碰撞因果、大招尺度、运镜与续接的提示词集合。",
+        url: "/shoushou-xuanhuan-combat-prompts.json",
+        homepage: "",
+        enabled: true,
+        builtIn: false,
+    },
 ];
 
 function registrySource(id: string, name: string, description: string, homepage: string): PromptSource {
