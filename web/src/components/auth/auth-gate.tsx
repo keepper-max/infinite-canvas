@@ -98,7 +98,10 @@ export function AuthGate({ children }: { children: ReactNode }) {
     }, [session]);
 
     if (state === "loading" || (state === "ready" && !shellReady)) return <FullScreenStatus text="正在进入工作台…" />;
-    if (state === "signed-out") return <Navigate to={`/login?next=${encodeURIComponent(location.pathname + location.search)}`} replace />;
+    if (state === "signed-out") {
+        const target = location.pathname === "/" && !location.search ? "/login" : `/login?next=${encodeURIComponent(location.pathname + location.search)}`;
+        return <Navigate to={target} replace />;
+    }
     if (state === "error" || !session) return <FullScreenStatus text="账号服务暂时不可用，请稍后刷新页面。" />;
 
     const logout = async () => {
