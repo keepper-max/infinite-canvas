@@ -199,6 +199,41 @@ export class CreditService {
     });
   }
 
+  async closeTerminalWithoutCharge(jobId: string) {
+    return transaction(this.pool, async (client) => {
+      const owner = await client.query(
+        "select created_by from generation_jobs where id=$1",
+        [jobId],
+      );
+      if (!owner.rows[0]) return false;
+      await lockCreditUser(client, String(owner.rows[0].created_by));
+      const result = await client.query(
+        "select * from generation_jobs where id=$1 for update",
+        [jobId],
+      );
+      const job = result.rows[0];
+      if (
+        !job ||
+        !["failed", "cancelled"].includes(String(job.status)) ||
+        BigInt(String(job.credits_due || 0)) > 0n
+      )
+        return false;
+      const reserved = BigInt(String(job.credits_reserved || 0));
+      if (reserved > 0n)
+        await client.query(
+          `update credit_accounts set reserved=greatest(0,reserved-$2::bigint),updated_at=now()
+           where user_id=$1`,
+          [job.created_by, reserved.toString()],
+        );
+      await client.query(
+        `update generation_jobs set credits_reserved=0,credits_due=0,credit_delivery_status='released',updated_at=now()
+         where id=$1`,
+        [jobId],
+      );
+      return reserved > 0n || String(job.credit_delivery_status) !== "released";
+    });
+  }
+
   async pricing(client: Queryable = this.pool): Promise<CreditPricing> {
     const result = await client.query(
       "select value from platform_settings where key='credit_pricing'",

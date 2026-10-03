@@ -724,7 +724,7 @@ export class JobExecutor {
     if (final)
       await this.billing?.finalizeProviderUsage(jobId).catch(() => undefined);
     if (final && !row.provider_job_id)
-      await this.credits?.releaseReservation(jobId).catch(() => undefined);
+      await this.credits?.closeTerminalWithoutCharge(jobId).catch(() => undefined);
     await this.event(
       row,
       final ? "job.failed" : "job.retrying",
@@ -747,7 +747,7 @@ export class JobExecutor {
       ?.finalizeProviderUsage(String(row.id))
       .catch(() => undefined);
     if (!row.provider_job_id)
-      await this.credits?.releaseReservation(String(row.id)).catch(() => undefined);
+      await this.credits?.closeTerminalWithoutCharge(String(row.id)).catch(() => undefined);
     await this.event(
       row,
       "job.cancelled",

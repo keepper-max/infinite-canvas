@@ -14,3 +14,4 @@
 0038_settle_token360_billing_id_mismatches.sql
 0039_volcengine_ark_provider.sql
 0040_text_context_compaction.sql
+0041_release_terminal_no_bill_reservations.sql

@@ -253,6 +253,7 @@ export class BillingService {
       dateValue(job.finished_at) ||
       new Date();
     if (Date.now() - started.getTime() >= MAX_RECONCILE_AGE_MS) {
+      await this.credits?.closeTerminalWithoutCharge(String(job.id));
       await this.pool.query(
         "update generation_jobs set billing_status='not_billed',billing_error='24 小时内未查询到账单',billing_next_check_at=null,updated_at=now() where id=$1",
         [job.id],
@@ -390,6 +391,7 @@ export class BillingService {
   }
 
   private async finishUnavailable(jobId: string, message: string) {
+    await this.credits?.closeTerminalWithoutCharge(jobId);
     await this.pool.query(
       "update generation_jobs set billing_status='unavailable',billing_error=$2,billing_next_check_at=null,updated_at=now() where id=$1",
       [jobId, message],

@@ -174,6 +174,7 @@ test("billing response without a finalized amount remains pending", async () => 
 
 test("billing reconciliation stops after 24 hours without a bill", async () => {
   const calls: Array<{ sql: string; values?: unknown[] }> = [];
+  const released: string[] = [];
   const pool = {
     async query(sql: string, values?: unknown[]) {
       calls.push({ sql, values });
@@ -196,15 +197,41 @@ test("billing reconciliation stops after 24 hours without a bill", async () => {
   const originalFetch = globalThis.fetch;
   globalThis.fetch = async () => new Response(null, { status: 404 });
   try {
-    const result = await new BillingService(pool as never, config).reconcileJob(
-      "job-3",
-      true,
-    );
+    const result = await new BillingService(pool as never, config, {
+      async closeTerminalWithoutCharge(jobId: string) {
+        released.push(jobId);
+        return true;
+      },
+    } as never).reconcileJob("job-3", true);
     assert.deepEqual(result, { status: "not_billed" });
     assert.match(calls.at(-1)?.sql || "", /billing_status='not_billed'/);
+    assert.deepEqual(released, ["job-3"]);
   } finally {
     globalThis.fetch = originalFetch;
   }
+});
+
+test("failed direct-provider jobs release reservations before closing unavailable billing", async () => {
+  const events: string[] = [];
+  const pool = {
+    async query(sql: string) {
+      if (sql.includes("select * from generation_jobs"))
+        return {
+          rows: [{ id: "job-direct-failed", provider: "runninghub", status: "failed", capability: "image", billing_meter_usage: {}, compiled_request: {}, parameters: {} }],
+          rowCount: 1,
+        };
+      if (sql.includes("billing_status='unavailable'")) events.push("unavailable");
+      return { rows: [], rowCount: 1 };
+    },
+  };
+  const result = await new BillingService(pool as never, config, {
+    async closeTerminalWithoutCharge(jobId: string) {
+      events.push(`release:${jobId}`);
+      return true;
+    },
+  } as never).finalizeProviderUsage("job-direct-failed");
+  assert.deepEqual(result, { status: "unavailable" });
+  assert.deepEqual(events, ["release:job-direct-failed", "unavailable"]);
 });
 
 test("settled mismatch records are excluded from automatic reconciliation", async () => {
