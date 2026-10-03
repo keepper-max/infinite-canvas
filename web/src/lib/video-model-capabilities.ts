@@ -61,6 +61,13 @@ export function videoParameterValue(config: AiConfig, model: ChannelModel | unde
     const matchedOption = options.find((option) => option.toLowerCase() === normalized.toLowerCase());
     if (normalized && !options.length) return normalized;
     if (matchedOption !== undefined) return matchedOption;
+    if (key === "duration" && normalized) {
+        const requested = Number(normalized);
+        const supported = options.map(Number).filter((value) => Number.isFinite(value) && value >= 0);
+        if (Number.isFinite(requested) && supported.length) {
+            return String(supported.reduce((nearest, value) => (Math.abs(value - requested) < Math.abs(nearest - requested) ? value : nearest)));
+        }
+    }
     if (definition?.defaultValue !== undefined && definition.defaultValue !== null) return String(definition.defaultValue);
     return options[0] || fallback;
 }

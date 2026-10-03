@@ -5,7 +5,7 @@ import { Button } from "antd";
 
 import { VideoSettingsPanel, videoModeLabel, videoResolutionLabel, videoSecondsLabel, videoSizeLabel, type VideoSettingKey } from "@/components/video-settings-panel";
 import { canvasThemes } from "@/lib/canvas-theme";
-import { isSeedanceVideoModel, selectedVideoModel } from "@/lib/video-model-capabilities";
+import { isSeedanceVideoModel, selectedVideoModel, videoParameterValue } from "@/lib/video-model-capabilities";
 import { useThemeStore } from "@/stores/use-theme-store";
 import type { AiConfig } from "@/stores/use-config-store";
 
@@ -23,7 +23,9 @@ export function CanvasVideoSettingsPopover({ config, onConfigChange, buttonClass
     const panelRef = useRef<HTMLDivElement>(null);
     const [open, setOpen] = useState(false);
     const [buttonRect, setButtonRect] = useState<DOMRect | null>(null);
-    const extensionRatio = forceAdaptiveRatio && isSeedanceVideoModel(selectedVideoModel(config));
+    const model = selectedVideoModel(config);
+    const extensionRatio = forceAdaptiveRatio && isSeedanceVideoModel(model);
+    const effectiveDuration = videoParameterValue(config, model, "duration", config.videoSeconds || "6");
 
     useEffect(() => {
         if (!open) return;
@@ -60,7 +62,7 @@ export function CanvasVideoSettingsPopover({ config, onConfigChange, buttonClass
                     onClick={() => setOpen((current) => !current)}
                 >
                     <span className="truncate">
-                        {videoResolutionLabel(config.vquality)} · {videoSizeLabel(extensionRatio ? "adaptive" : config.size)} · {videoSecondsLabel(config.videoSeconds)} · {videoModeLabel(config.videoMode)}
+                        {videoResolutionLabel(config.vquality)} · {videoSizeLabel(extensionRatio ? "adaptive" : config.size)} · {videoSecondsLabel(effectiveDuration)} · {videoModeLabel(config.videoMode)}
                     </span>
                 </Button>
             </span>
