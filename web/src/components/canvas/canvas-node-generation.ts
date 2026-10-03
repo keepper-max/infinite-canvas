@@ -39,10 +39,10 @@ export type NodeGenerationInput = NodeGenerationResourceInput | NodeGenerationGr
 
 export function buildNodeGenerationContext(nodeId: string, nodes: CanvasNodeData[], connections: CanvasConnection[], prompt: string): NodeGenerationContext {
     const inputs = buildNodeGenerationInputs(nodeId, nodes, connections);
-    const roleByNodeId = generationRoleByNodeId(nodeId, nodes, connections);
+    const connectionByNodeId = generationConnectionByNodeId(nodeId, nodes, connections);
     const sourceNode = nodes.find((node) => node.id === nodeId);
     if (sourceNode?.type === CanvasNodeType.Config && Boolean(sourceNode.metadata?.composerContent?.trim())) {
-        return buildComposerGenerationContext(inputs, prompt, roleByNodeId);
+        return buildComposerGenerationContext(inputs, prompt, connectionByNodeId);
     }
 
     const resourceInputs = flattenGenerationInputs(inputs);
@@ -50,10 +50,10 @@ export function buildNodeGenerationContext(nodeId: string, nodes: CanvasNodeData
     const upstreamText = resourceInputs.flatMap((input) => (input.text ? [textBlock(generationLabel("text", textIndex++), input.text)] : [])).join("\n\n");
     const referenceImages = resourceInputs.flatMap((input): ReferenceImage[] => {
         if (!input.image) return [];
-        const role = imageReferenceRole(roleByNodeId.get(input.nodeId));
+        const role = imageReferenceRole(connectionByNodeId.get(input.nodeId)?.role);
         return [{ ...input.image, ...(role ? { role } : {}) }];
     });
-    const referenceVideos = videoReferences(resourceInputs, roleByNodeId);
+    const referenceVideos = videoReferences(resourceInputs, connectionByNodeId, referenceImages.length > 0);
     const referenceAudios = resourceInputs.map((input) => input.audio).filter((audio): audio is ReferenceAudio => Boolean(audio));
 
     return {
@@ -68,7 +68,7 @@ export function buildNodeGenerationContext(nodeId: string, nodes: CanvasNodeData
     };
 }
 
-function buildComposerGenerationContext(inputs: NodeGenerationInput[], prompt: string, roleByNodeId: Map<string, CanvasConnection["role"]>): NodeGenerationContext {
+function buildComposerGenerationContext(inputs: NodeGenerationInput[], prompt: string, connectionByNodeId: Map<string, CanvasConnection>): NodeGenerationContext {
     const inputByNodeId = new Map(inputs.map((input) => [input.nodeId, input]));
     const selectedInputs: NodeGenerationResourceInput[] = [];
     const labelByNodeId = new Map<string, string>();
@@ -103,10 +103,10 @@ function buildComposerGenerationContext(inputs: NodeGenerationInput[], prompt: s
     if (textBlocks.length) nextPrompt = `${nextPrompt.trim()}\n\n${textBlocks.join("\n\n")}`;
     const referenceImages = selectedInputs.flatMap((input): ReferenceImage[] => {
         if (!input.image) return [];
-        const role = imageReferenceRole(roleByNodeId.get(input.nodeId));
+        const role = imageReferenceRole(connectionByNodeId.get(input.nodeId)?.role);
         return [{ ...input.image, ...(role ? { role } : {}) }];
     });
-    const referenceVideos = videoReferences(selectedInputs, roleByNodeId);
+    const referenceVideos = videoReferences(selectedInputs, connectionByNodeId, referenceImages.length > 0);
     const referenceAudios = selectedInputs.map((input) => input.audio).filter((audio): audio is ReferenceAudio => Boolean(audio));
 
     if (!hasToken) {
@@ -134,20 +134,27 @@ function buildComposerGenerationContext(inputs: NodeGenerationInput[], prompt: s
     };
 }
 
-function generationRoleByNodeId(nodeId: string, nodes: CanvasNodeData[], connections: CanvasConnection[]) {
+function generationConnectionByNodeId(nodeId: string, nodes: CanvasNodeData[], connections: CanvasConnection[]) {
     const configTarget = connections.find((connection) => connection.fromNodeId === nodeId && nodes.find((node) => node.id === connection.toNodeId)?.type === CanvasNodeType.Config)?.toNodeId;
     const targetId = configTarget || nodeId;
-    return new Map(connections.filter((connection) => connection.toNodeId === targetId).map((connection) => [connection.fromNodeId, connection.role]));
+    return new Map(connections.filter((connection) => connection.toNodeId === targetId).map((connection) => [connection.fromNodeId, connection]));
 }
 
 export function hasVideoInputReference(nodeId: string, nodes: CanvasNodeData[], connections: CanvasConnection[]) {
-    return [...generationRoleByNodeId(nodeId, nodes, connections).values()].some((role) => role === "video_input");
+    const inputs = flattenGenerationInputs(buildNodeGenerationInputs(nodeId, nodes, connections));
+    const hasImageReference = inputs.some((input) => Boolean(input.image));
+    return [...generationConnectionByNodeId(nodeId, nodes, connections).values()].some((connection) => isVideoExtensionReference(connection, hasImageReference));
 }
 
-function videoReferences(inputs: NodeGenerationResourceInput[], roleByNodeId: Map<string, CanvasConnection["role"]>): ReferenceVideo[] {
+export function isVideoExtensionReference(connection: CanvasConnection | undefined, hasImageReference: boolean) {
+    if (connection?.role !== "video_input") return false;
+    return connection.metadata?.videoPurposeSelected === true || !hasImageReference;
+}
+
+function videoReferences(inputs: NodeGenerationResourceInput[], connectionByNodeId: Map<string, CanvasConnection>, hasImageReference: boolean): ReferenceVideo[] {
     return inputs.flatMap((input) => {
         if (!input.video) return [];
-        return [{ ...input.video, role: roleByNodeId.get(input.nodeId) === "video_input" ? "video_input" : "motion_reference" }];
+        return [{ ...input.video, role: isVideoExtensionReference(connectionByNodeId.get(input.nodeId), hasImageReference) ? "video_input" : "motion_reference" }];
     });
 }
 

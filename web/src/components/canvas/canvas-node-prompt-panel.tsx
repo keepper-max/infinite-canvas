@@ -14,7 +14,7 @@ import { CanvasPromptChipInput } from "./canvas-prompt-chip-input";
 import { CanvasVideoSettingsPopover } from "./canvas-video-settings-popover";
 import type { VideoSettingKey } from "@/components/video-settings-panel";
 import { CanvasTextSettingsPopover } from "./canvas-text-settings-popover";
-import { CanvasNodeType, type CanvasGenerationMode, type CanvasNodeData } from "@/types/canvas";
+import { CanvasNodeType, type CanvasConnection, type CanvasGenerationMode, type CanvasNodeData } from "@/types/canvas";
 import type { CanvasResourceReference } from "@/lib/canvas/canvas-resource-references";
 import { CanvasNodeReferenceBar } from "./canvas-node-reference-bar";
 import { selectedVideoModel, supportedVideoModes } from "@/lib/video-model-capabilities";
@@ -31,7 +31,9 @@ type CanvasNodePromptPanelProps = {
     mentionReferences?: CanvasResourceReference[];
     nodes: CanvasNodeData[];
     connectedNodes?: CanvasNodeData[];
+    connections?: CanvasConnection[];
     onDisconnectReference?: (fromNodeId: string, toNodeId: string) => void;
+    onVideoPurposeChange?: (fromNodeId: string, toNodeId: string, role: "motion" | "video_input") => void;
     onStartReferenceSelection?: (nodeId: string) => void;
     onImageSettingsOpenChange?: (open: boolean) => void;
     modeOverride?: CanvasNodeGenerationMode; // Plugin nodes set their generation type through useBuiltinPanel.mode.
@@ -49,7 +51,9 @@ export function CanvasNodePromptPanel({
     onStop,
     mentionReferences = [],
     connectedNodes = [],
+    connections = [],
     onDisconnectReference,
+    onVideoPurposeChange,
     onStartReferenceSelection,
     onImageSettingsOpenChange,
     modeOverride,
@@ -102,7 +106,7 @@ export function CanvasNodePromptPanel({
             onPointerDown={(event) => event.stopPropagation()}
             onWheel={(event) => event.stopPropagation()}
         >
-            <CanvasNodeReferenceBar nodeId={node.id} nodes={nodes} connectedNodes={connectedNodes} onDisconnect={onDisconnectReference} onStartSelection={onStartReferenceSelection} />
+            <CanvasNodeReferenceBar nodeId={node.id} nodes={nodes} connectedNodes={connectedNodes} connections={connections} allowVideoPurpose={mode === "video"} onDisconnect={onDisconnectReference} onStartSelection={onStartReferenceSelection} onVideoPurposeChange={onVideoPurposeChange} />
             <CanvasPromptChipInput
                 value={prompt}
                 references={mentionReferences}
@@ -210,7 +214,10 @@ export function CanvasNodePromptPanel({
                         nodeId={node.id}
                         nodes={nodes}
                         connectedNodes={connectedNodes}
+                        connections={connections}
+                        allowVideoPurpose={mode === "video"}
                         onDisconnect={onDisconnectReference}
+                        onVideoPurposeChange={onVideoPurposeChange}
                         onStartSelection={(nodeId) => {
                             setExpanded(false);
                             onStartReferenceSelection?.(nodeId);

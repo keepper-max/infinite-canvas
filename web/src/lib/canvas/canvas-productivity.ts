@@ -164,7 +164,7 @@ export function inferConnectionRole(source: CanvasNodeData, target: CanvasNodeDa
     const resourceType = inferConnectionResourceType(source);
     if (target.type === CanvasNodeType.Video || target.workflowKind === "video.seedance") {
         if (resourceType === "audio") return "audio_input";
-        if (resourceType === "video") return "video_input";
+        if (resourceType === "video") return "motion";
         if (source.workflowKind === "frame.last") return "last_frame";
         if (source.workflowKind === "character.turnaround") return "identity";
         if (["scene.candidate", "scene.panorama"].includes(source.workflowKind || "")) return "environment";
@@ -180,7 +180,8 @@ export function inferConnectionRole(source: CanvasNodeData, target: CanvasNodeDa
 }
 
 export function isConnectionRoleCompatible(connection: Pick<CanvasConnection, "resourceType" | "role">) {
-    if (connection.role === "first_frame" || connection.role === "last_frame" || connection.role === "identity" || connection.role === "environment" || connection.role === "composition" || connection.role === "motion" || connection.role === "mask")
+    if (connection.role === "motion") return connection.resourceType === "image" || connection.resourceType === "video";
+    if (connection.role === "first_frame" || connection.role === "last_frame" || connection.role === "identity" || connection.role === "environment" || connection.role === "composition" || connection.role === "mask")
         return connection.resourceType === "image";
     if (connection.role === "video_input") return connection.resourceType === "video";
     if (connection.role === "audio_input") return connection.resourceType === "audio";

@@ -856,6 +856,8 @@ export default {
             title: "References",
             select: "Select references from canvas",
             disconnect: "Disconnect reference",
+            motionReference: "Motion reference",
+            videoExtension: "Extend video",
             empty: "No content",
             selecting: "Adding references",
             cancelSelecting: "Cancel adding reference",

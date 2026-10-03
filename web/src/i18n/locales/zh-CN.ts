@@ -831,6 +831,8 @@ export default {
             title: "参考内容",
             select: "从画布选择参考节点",
             disconnect: "断开参考连接",
+            motionReference: "动作参考",
+            videoExtension: "视频延长",
             empty: "暂无内容",
             selecting: "正在添加参考",
             cancelSelecting: "取消添加参考",

@@ -1380,9 +1380,17 @@ function InfiniteCanvasPage({ projectId }: { projectId: string }) {
                 message.warning(t("canvas.productivity.invalidConnectionRole"));
                 return;
             }
-            setConnections((prev) => prev.map((item) => (item.id === connectionId ? { ...item, resourceType, role } : item)));
+            setConnections((prev) => prev.map((item) => (item.id === connectionId ? { ...item, resourceType, role, metadata: resourceType === "video" && (role === "motion" || role === "video_input") ? { ...item.metadata, videoPurposeSelected: true } : item.metadata } : item)));
         },
         [message, t],
+    );
+
+    const updateVideoReferencePurpose = useCallback(
+        (fromNodeId: string, toNodeId: string, role: "motion" | "video_input") => {
+            const connection = connectionsRef.current.find((item) => item.fromNodeId === fromNodeId && item.toNodeId === toNodeId);
+            if (connection) updateConnectionRole(connection.id, role);
+        },
+        [updateConnectionRole],
     );
 
     const reconnectConnection = useCallback(
@@ -3875,11 +3883,13 @@ function InfiniteCanvasPage({ projectId }: { projectId: string }) {
                     isRunning={runningNodeId === panelNode.id}
                     mentionReferences={mentionReferencesByNodeId.get(panelNode.id) || EMPTY_REFERENCES}
                     connectedNodes={connectedNodesByNodeId.get(panelNode.id) || []}
+                    connections={connections}
                     onPromptChange={handleNodePromptChange}
                     onConfigChange={handleConfigNodeChange}
                     onGenerate={handleGenerateNode}
                     onStop={confirmStopGeneration}
                     onDisconnectReference={disconnectNodeReference}
+                    onVideoPurposeChange={updateVideoReferencePurpose}
                     onStartReferenceSelection={startNodeReferenceSelection}
                     onConvertDepthReference={(targetNode, sourceNode) => void openDepthMotionForReference(targetNode, sourceNode)}
                     modeOverride={getNodeDefinition(panelNode.type)?.useBuiltinPanel?.mode}
@@ -3905,6 +3915,7 @@ function InfiniteCanvasPage({ projectId }: { projectId: string }) {
             renderPluginPanel,
             runningNodeId,
             startNodeReferenceSelection,
+            updateVideoReferencePurpose,
         ],
     );
 
