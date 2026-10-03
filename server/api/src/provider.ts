@@ -572,6 +572,18 @@ export function providerUserMessage(value: string, fallback: string) {
   const message = value.toLowerCase();
   if (isReferenceDownloadTimeout(value)) return "参考素材下载超时，请重试";
   if (
+    message.includes("image exceeds") &&
+    message.includes("maximum allowed total pixels")
+  )
+    return "参考图片像素超过模型上限，系统已支持自动缩小，请重新提交任务";
+  if (message.includes("video pixel count"))
+    return "参考视频像素低于模型最低要求，请提高视频分辨率后重试";
+  if (
+    message.includes("input video") &&
+    message.includes("real person")
+  )
+    return "参考视频可能包含真人，模型已拒绝该请求，请改用已授权的虚拟人物或非真人素材";
+  if (
     message.includes("copyright") &&
     (message.includes("audio") || message.includes("music"))
   )
@@ -582,11 +594,27 @@ export function providerUserMessage(value: string, fallback: string) {
     return "当前生成模式与多参考参数不匹配";
   if (message.includes("first_frame") || message.includes("last_frame"))
     return "首帧或尾帧参数不符合模型要求";
+  if (message.includes("parameter") && message.includes("content["))
+    return "参考素材参数不符合模型要求，请检查素材规格后重试";
   if (message.includes("content") && message.includes("policy"))
     return "生成内容未通过模型安全检查";
-  return sanitizeProviderDetail(value)
+  if (message.includes("request was rejected"))
+    return "模型拒绝了当前请求，请检查提示词和参考素材后重试";
+  const localized = sanitizeProviderDetail(value)
     .replace(/\b(?:Token\s*360|Running\s*Hub|RH|Volcengine|Volcano\s*Engine|Ark)\b/gi, "模型服务")
-    .replace(/(?:海马云|火山(?:引擎|方舟)?|豆包云|字节跳动)/g, "模型服务") || fallback;
+    .replace(/(?:海马云|火山(?:引擎|方舟)?|豆包云|字节跳动)/g, "模型服务");
+  if (!localized) return fallback;
+  if (isPredominantlyEnglish(localized))
+    return isPredominantlyEnglish(fallback)
+      ? "生成失败，请检查参数和参考素材后重试"
+      : fallback;
+  return localized;
+}
+
+function isPredominantlyEnglish(value: string) {
+  const englishLetters = value.match(/[a-z]/gi)?.length || 0;
+  const chineseCharacters = value.match(/[\u3400-\u9fff]/g)?.length || 0;
+  return englishLetters > chineseCharacters * 2;
 }
 
 export function isReferenceDownloadTimeout(value: string) {

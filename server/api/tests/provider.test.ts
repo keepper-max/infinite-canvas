@@ -11,11 +11,35 @@ import {
 test("provider errors returned to users hide supplier branding", () => {
   assert.equal(
     providerUserMessage("RunningHub request rejected by 海马云", "生成失败"),
-    "模型服务 request rejected by 模型服务",
+    "生成失败",
   );
   assert.equal(
     providerUserMessage("Token360 upstream failed", "生成失败"),
-    "模型服务 upstream failed",
+    "生成失败",
+  );
+});
+
+test("provider errors translate common reference failures into Chinese", () => {
+  assert.equal(
+    providerUserMessage(
+      "image data 5 failed: Image exceeds the maximum allowed total pixels",
+      "生成失败",
+    ),
+    "参考图片像素超过模型上限，系统已支持自动缩小，请重新提交任务",
+  );
+  assert.equal(
+    providerUserMessage(
+      "The parameter `content[2]` is not valid: video pixel count must be greater than or equal to 407696",
+      "生成失败",
+    ),
+    "参考视频像素低于模型最低要求，请提高视频分辨率后重试",
+  );
+  assert.equal(
+    providerUserMessage(
+      "The request was rejected because the input video may contain a real person.",
+      "生成失败",
+    ),
+    "参考视频可能包含真人，模型已拒绝该请求，请改用已授权的虚拟人物或非真人素材",
   );
 });
 
@@ -553,7 +577,7 @@ test("video provider explains visual copyright rejection", async () => {
   }
 });
 
-test("video provider returns a sanitized concrete upstream failure", async () => {
+test("video provider returns a localized safe upstream failure", async () => {
   const originalFetch = globalThis.fetch;
   globalThis.fetch = async () =>
     Response.json({
@@ -578,9 +602,8 @@ test("video provider returns a sanitized concrete upstream failure", async () =>
       (error: unknown) =>
         error instanceof ProviderError &&
         error.code === "PROVIDER_REJECTED" &&
-        error.message.includes("Current dimensions: 6336x9504") &&
-        error.message.includes("[URL]") &&
-        error.message.includes("[REDACTED]") &&
+        error.message ===
+          "参考图片像素超过模型上限，系统已支持自动缩小，请重新提交任务" &&
         !error.message.includes("private.invalid") &&
         !error.message.includes("sk-secret"),
     );

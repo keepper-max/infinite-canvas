@@ -211,6 +211,154 @@ test("billing reconciliation stops after 24 hours without a bill", async () => {
   }
 });
 
+test("failed Token360 jobs with a provider job id wait for manual review", async () => {
+  const calls: Array<{ sql: string; values?: unknown[] }> = [];
+  const released: string[] = [];
+  const pool = {
+    async query(sql: string, values?: unknown[]) {
+      calls.push({ sql, values });
+      if (sql.startsWith("select * from generation_jobs"))
+        return {
+          rows: [
+            {
+              id: "job-manual-review",
+              provider: "token360",
+              status: "failed",
+              provider_job_id: "provider-job-1",
+              billing_trace_id: "job-manual-review",
+            },
+          ],
+          rowCount: 1,
+        };
+      return { rows: [], rowCount: 1 };
+    },
+  };
+  const result = await new BillingService(pool as never, config, {
+    async closeTerminalWithoutCharge(jobId: string) {
+      released.push(jobId);
+      return true;
+    },
+  } as never).finalizeProviderUsage("job-manual-review");
+  assert.deepEqual(result, { status: "mismatch" });
+  assert.match(calls.at(-1)?.sql || "", /billing_status='mismatch'/);
+  assert.deepEqual(released, []);
+});
+
+test("manual review remains pending without a provider bill", async () => {
+  const calls: Array<{ sql: string; values?: unknown[] }> = [];
+  const released: string[] = [];
+  const pool = {
+    async query(sql: string, values?: unknown[]) {
+      calls.push({ sql, values });
+      if (sql.includes("returning *"))
+        return {
+          rows: [
+            {
+              id: "job-manual-confirmed",
+              provider: "token360",
+              status: "failed",
+              provider_job_id: "provider-job-2",
+              billing_trace_id: "job-manual-confirmed",
+              billing_attempt_count: 9,
+            },
+          ],
+          rowCount: 1,
+        };
+      return { rows: [], rowCount: 1 };
+    },
+  };
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async () => new Response(null, { status: 404 });
+  try {
+    const result = await new BillingService(pool as never, config, {
+      async closeTerminalWithoutCharge(jobId: string) {
+        released.push(jobId);
+        return true;
+      },
+    } as never).reconcileJob("job-manual-confirmed", true);
+    assert.deepEqual(result, { status: "mismatch" });
+    assert.match(calls.at(-1)?.sql || "", /billing_status='mismatch'/);
+    assert.deepEqual(released, []);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("failed Token360 jobs without a provider job id wait one hour", async () => {
+  const calls: Array<{ sql: string; values?: unknown[] }> = [];
+  const released: string[] = [];
+  const pool = {
+    async query(sql: string, values?: unknown[]) {
+      calls.push({ sql, values });
+      if (sql.startsWith("select * from generation_jobs"))
+        return {
+          rows: [
+            {
+              id: "job-no-provider-id",
+              provider: "token360",
+              status: "failed",
+              billing_trace_id: "job-no-provider-id",
+              finished_at: new Date(),
+            },
+          ],
+          rowCount: 1,
+        };
+      return { rows: [], rowCount: 1 };
+    },
+  };
+  const result = await new BillingService(pool as never, config, {
+    async closeTerminalWithoutCharge(jobId: string) {
+      released.push(jobId);
+      return true;
+    },
+  } as never).finalizeProviderUsage("job-no-provider-id");
+  assert.equal(result.status, "pending");
+  assert.ok(Number(result.retryAfterSeconds) > 3_590);
+  assert.ok(Number(result.retryAfterSeconds) <= 3_600);
+  assert.match(calls.at(-1)?.sql || "", /billing_status='pending'/);
+  assert.deepEqual(released, []);
+});
+
+test("failed Token360 jobs without a provider job id release after one hour", async () => {
+  const calls: Array<{ sql: string; values?: unknown[] }> = [];
+  const released: string[] = [];
+  const pool = {
+    async query(sql: string, values?: unknown[]) {
+      calls.push({ sql, values });
+      if (sql.includes("returning *"))
+        return {
+          rows: [
+            {
+              id: "job-no-provider-id-expired",
+              provider: "token360",
+              status: "failed",
+              billing_trace_id: "job-no-provider-id-expired",
+              finished_at: new Date(Date.now() - 60 * 60 * 1_000 - 1),
+              billing_attempt_count: 1,
+            },
+          ],
+          rowCount: 1,
+        };
+      return { rows: [], rowCount: 1 };
+    },
+  };
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async () => new Response(null, { status: 404 });
+  try {
+    const result = await new BillingService(pool as never, config, {
+      async closeTerminalWithoutCharge(jobId: string) {
+        released.push(jobId);
+        return true;
+      },
+    } as never).reconcileJob("job-no-provider-id-expired");
+    assert.deepEqual(result, { status: "not_billed" });
+    assert.match(calls.at(-1)?.sql || "", /billing_status='not_billed'/);
+    assert.deepEqual(released, ["job-no-provider-id-expired"]);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
 test("failed direct-provider jobs release reservations before closing unavailable billing", async () => {
   const events: string[] = [];
   const pool = {

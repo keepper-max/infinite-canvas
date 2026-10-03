@@ -723,7 +723,7 @@ export class JobExecutor {
     );
     if (final)
       await this.billing?.finalizeProviderUsage(jobId).catch(() => undefined);
-    if (final && !row.provider_job_id)
+    if (final && !row.provider_job_id && !this.billing)
       await this.credits?.closeTerminalWithoutCharge(jobId).catch(() => undefined);
     await this.event(
       row,

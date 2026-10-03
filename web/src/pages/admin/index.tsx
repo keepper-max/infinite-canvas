@@ -2,7 +2,7 @@ import { ArrowLeft, Boxes, CircleDollarSign, ClipboardList, CreditCard, LayoutDa
 import { Button, DatePicker, Drawer, Empty, Input, InputNumber, Modal, Select, Space, Spin, Switch, Table, Tag, Tooltip, message } from "antd";
 import dayjs, { type Dayjs } from "dayjs";
 import { useCallback, useEffect, useState } from "react";
-import { Link, useParams } from "react-router-dom";
+import { Link, useParams, useSearchParams } from "react-router-dom";
 
 import { useAuth } from "@/components/auth/auth-context";
 import ChannelManagement from "./channels";
@@ -376,8 +376,14 @@ function Overview() {
                     <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-6">
                         <OperationalSignal label="有效登录用户" value={formatCount(data.userActivity.activeSessionUsers)} note="当前未过期会话" />
                         <OperationalSignal label="运行中任务" value={formatCount(data.activeJobs)} note="生成队列实时值" tone={data.activeJobs > 10 ? "warning" : "normal"} />
-                        <OperationalSignal label="区间失败" value={formatCount(data.jobActivity.failedInRange)} note="需要排查失败原因" tone={data.jobActivity.failedInRange ? "danger" : "normal"} />
-                        <OperationalSignal label="待对账" value={formatCount(data.alerts.pendingBillingJobs)} note="供应商账单处理中" tone={data.alerts.pendingBillingJobs ? "warning" : "normal"} />
+                        <Link
+                            to={`/admin/jobs?status=failed&createdFrom=${encodeURIComponent(dateFrom)}&createdTo=${encodeURIComponent(dateTo)}`}
+                            className="block rounded-xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-500"
+                            title="查看所选周期的失败任务"
+                        >
+                            <OperationalSignal label="生成失败" value={formatCount(data.jobActivity.failedInRange)} note={`${rangeLabel}失败任务 · 点击查看`} tone={data.jobActivity.failedInRange ? "danger" : "normal"} interactive />
+                        </Link>
+                        <OperationalSignal label="待对账" value={formatCount(data.alerts.pendingBillingJobs)} note="成功任务账单处理中" tone={data.alerts.pendingBillingJobs ? "warning" : "normal"} />
                         <OperationalSignal label="待扣积分" value={formatCount(data.alerts.pendingCreditCharges)} note="计费尚未最终入账" tone={data.alerts.pendingCreditCharges ? "warning" : "normal"} />
                         <OperationalSignal label="平均生成耗时" value={formatDuration(data.jobActivity.avgCompletionSecondsInRange)} note={`${rangeLabel}成功任务`} />
                     </div>
@@ -1216,47 +1222,65 @@ function UsageBreakdownGrid({ breakdowns, compact = false }: { breakdowns: Usage
 }
 
 function JobsPanel() {
+    const [searchParams, setSearchParams] = useSearchParams();
     const [items, setItems] = useState<AdminJob[]>([]);
     const [total, setTotal] = useState(0);
     const [page, setPage] = useState(1);
-    const [status, setStatus] = useState<string>();
-    const [q, setQ] = useState("");
+    const status = searchParams.get("status") || undefined;
+    const q = searchParams.get("q") || "";
+    const createdFrom = searchParams.get("createdFrom") || undefined;
+    const createdTo = searchParams.get("createdTo") || undefined;
     const [loading, setLoading] = useState(true);
+    const updateSearch = (key: string, value?: string) => {
+        const next = new URLSearchParams(searchParams);
+        if (value) next.set(key, value);
+        else next.delete(key);
+        setPage(1);
+        setSearchParams(next, { replace: true });
+    };
+    const clearRange = () => {
+        const next = new URLSearchParams(searchParams);
+        next.delete("createdFrom");
+        next.delete("createdTo");
+        setPage(1);
+        setSearchParams(next, { replace: true });
+    };
     const load = useCallback(() => {
         setLoading(true);
-        getAdminJobs({ page, pageSize: 20, status, q })
+        getAdminJobs({ page, pageSize: 20, status, q, createdFrom, createdTo })
             .then((data) => {
                 setItems(data.items);
                 setTotal(data.total);
             })
             .catch((error) => message.error(error.message))
             .finally(() => setLoading(false));
-    }, [page, q, status]);
+    }, [createdFrom, createdTo, page, q, status]);
     useEffect(load, [load]);
     return (
         <Panel
             title="全局生成任务"
-            note="对账异常不会改写生成状态"
+            note={createdFrom && createdTo ? `已筛选 ${createdFrom} 至 ${createdTo}；对账异常不会改写生成状态` : "对账异常不会改写生成状态"}
             actions={
                 <Space>
                     <Input.Search
                         allowClear
                         placeholder="任务 / 对账标识 / 资源 ID"
+                        defaultValue={q}
                         onSearch={(value) => {
-                            setPage(1);
-                            setQ(value);
+                            updateSearch("q", value);
                         }}
                     />
                     <Select
                         allowClear
                         className="w-32"
                         placeholder="生成状态"
+                        value={status}
                         options={["completed", "payment_required", "billing_pending", "failed", "cancelled", "running"].map((value) => ({ value, label: jobStatusLabel(value) }))}
                         onChange={(value) => {
-                            setPage(1);
-                            setStatus(value);
+                            updateSearch("status", value);
                         }}
                     />
+                    {createdFrom && createdTo ? <Button onClick={clearRange}>清除周期</Button> : null}
                 </Space>
             }
         >
@@ -1308,7 +1332,7 @@ function JobsPanel() {
                                     load();
                                 }}
                             >
-                                重新对账
+                                {item.billingStatus === "mismatch" ? "人工核验" : "重新对账"}
                             </Button>
                         ),
                     },
@@ -2175,7 +2199,7 @@ function Metric({ label, value, note }: { label: string; value: string; note?: s
         </div>
     );
 }
-function OperationalSignal({ label, value, note, tone = "normal" }: { label: string; value: string; note: string; tone?: "normal" | "warning" | "danger" }) {
+function OperationalSignal({ label, value, note, tone = "normal", interactive = false }: { label: string; value: string; note: string; tone?: "normal" | "warning" | "danger"; interactive?: boolean }) {
     const toneClass =
         tone === "danger"
             ? "border-red-500/30 bg-red-500/[0.06] text-red-500"
@@ -2183,7 +2207,7 @@ function OperationalSignal({ label, value, note, tone = "normal" }: { label: str
               ? "border-amber-500/30 bg-amber-500/[0.06] text-amber-500"
               : "border-stone-200 bg-stone-50 text-stone-950 dark:border-white/10 dark:bg-white/[0.025] dark:text-stone-100";
     return (
-        <div className={`rounded-xl border p-4 ${toneClass}`}>
+        <div className={`rounded-xl border p-4 ${interactive ? "transition hover:-translate-y-0.5 hover:shadow-md" : ""} ${toneClass}`}>
             <p className="text-xs opacity-75">{label}</p>
             <p className="mt-2 font-mono text-2xl font-semibold tracking-tight">{value}</p>
             <p className="mt-2 text-[11px] opacity-70">{note}</p>
@@ -2243,7 +2267,7 @@ function billingStatusLabel(value: string) {
         pending: "待对账",
         reconciling: "对账中",
         settled: "已对账",
-        mismatch: "账单标识待确认",
+        mismatch: "待人工核验",
         not_billed: "未出账",
         failed: "对账失败",
         unavailable: "不可对账",

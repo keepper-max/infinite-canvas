@@ -8,6 +8,7 @@ import { volcengineArkAmount } from "./volcengine-ark-pricing.js";
 const TERMINAL_JOB_STATUSES = ["completed", "failed", "cancelled", "billing_pending"];
 const RECONCILE_DELAYS_SECONDS = [30, 120, 300, 900];
 const MAX_RECONCILE_AGE_MS = 24 * 60 * 60 * 1_000;
+const FAILED_WITHOUT_PROVIDER_REVIEW_MS = 60 * 60 * 1_000;
 
 export type BillingRuleSnapshot = {
   ruleId: string;
@@ -97,6 +98,10 @@ export class BillingService {
     );
     const job = result.rows[0];
     if (!job) return { status: "missing" };
+    if (job.provider === "token360" && job.status === "failed") {
+      if (job.provider_job_id) return this.finishManualReview(jobId);
+      return this.reviewFailedWithoutProviderJob(job);
+    }
     if (!isDirectMeteredProvider(job.provider))
       return { status: String(job.billing_status || "pending") };
     return this.settleDirectProvider(job);
@@ -153,7 +158,12 @@ export class BillingService {
           },
         },
       );
-      if (response.status === 404) return this.reschedule(job);
+      if (response.status === 404)
+        return isManualReviewJob(job)
+          ? this.finishManualReview(jobId)
+          : isFailedWithoutProviderJob(job)
+            ? this.reviewFailedWithoutProviderJob(job)
+            : this.reschedule(job);
       if (!response.ok) {
         await this.markFailed(jobId, `账单接口返回 HTTP ${response.status}`);
         return { status: "failed" };
@@ -175,7 +185,11 @@ export class BillingService {
         !currency ||
         (amountFinal === null && totalAmount === null)
       ) {
-        return this.reschedule(job);
+        return isManualReviewJob(job)
+          ? this.finishManualReview(jobId)
+          : isFailedWithoutProviderJob(job)
+            ? this.reviewFailedWithoutProviderJob(job)
+            : this.reschedule(job);
       }
       await this.pool.query(
         `insert into generation_usage(job_id,project_id,user_id,billing_request_id,provider,model_id,capability,status,billed,credit_status,
@@ -268,6 +282,37 @@ export class BillingService {
       [job.id, delay],
     );
     return { status: "pending", retryAfterSeconds: delay };
+  }
+
+  private async finishManualReview(jobId: string) {
+    await this.pool.query(
+      "update generation_jobs set billing_status='mismatch',billing_error='生成失败且存在供应商任务号，等待人工核验',billing_next_check_at=null,updated_at=now() where id=$1",
+      [jobId],
+    );
+    return { status: "mismatch" };
+  }
+
+  private async reviewFailedWithoutProviderJob(job: Record<string, unknown>) {
+    const finishedAt =
+      dateValue(job.finished_at) || dateValue(job.updated_at) || new Date();
+    const remainingMs =
+      finishedAt.getTime() + FAILED_WITHOUT_PROVIDER_REVIEW_MS - Date.now();
+    if (remainingMs > 0) {
+      const retryAfterSeconds = Math.max(1, Math.ceil(remainingMs / 1_000));
+      await this.pool.query(
+        `update generation_jobs set billing_status='pending',
+          billing_error='生成失败且未创建供应商任务，1 小时后确认账单',
+          billing_next_check_at=now()+($2::text||' seconds')::interval,updated_at=now() where id=$1`,
+        [job.id, retryAfterSeconds],
+      );
+      return { status: "pending", retryAfterSeconds };
+    }
+    await this.credits?.closeTerminalWithoutCharge(String(job.id));
+    await this.pool.query(
+      "update generation_jobs set billing_status='not_billed',billing_error='生成失败且 1 小时内未发现供应商任务或账单',billing_next_check_at=null,updated_at=now() where id=$1",
+      [job.id],
+    );
+    return { status: "not_billed" };
   }
 
   private async markFailed(jobId: string, message: string) {
@@ -409,6 +454,20 @@ function isRunningHubProvider(value: unknown) {
 }
 function isDirectMeteredProvider(value: unknown) {
   return isRunningHubProvider(value) || value === "volcengine_ark";
+}
+function isManualReviewJob(job: Record<string, unknown>) {
+  return (
+    job.provider === "token360" &&
+    job.status === "failed" &&
+    Boolean(job.provider_job_id)
+  );
+}
+function isFailedWithoutProviderJob(job: Record<string, unknown>) {
+  return (
+    job.provider === "token360" &&
+    job.status === "failed" &&
+    !job.provider_job_id
+  );
 }
 export function runningHubOriginalAmount(snapshot: unknown, providerPaidAmount: string | null) {
   const rule = billingRuleSnapshot(snapshot);

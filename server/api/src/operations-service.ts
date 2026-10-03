@@ -5,6 +5,7 @@ import type { OperationsConfig } from "./config.js";
 import type { BillingService } from "./billing-service.js";
 import type { CreditGrantInput, CreditService } from "./credit-service.js";
 import { DomainError } from "./domain.js";
+import { providerUserMessage } from "./provider.js";
 import type { PaymentService } from "./payment-service.js";
 import type {
   PaymentOrderInput,
@@ -1970,7 +1971,7 @@ function serializeAdminJob(row: Record<string, unknown>) {
     error: row.user_error_code
       ? {
           code: row.user_error_code,
-          message: sanitizeError(row.user_error_message) || "任务失败",
+          message: adminJobErrorMessage(row),
           details: sanitizeError(
             JSON.stringify(row.provider_error_sanitized || {}),
           ),
@@ -1985,6 +1986,21 @@ function serializeAdminJob(row: Record<string, unknown>) {
     updatedAt: iso(row.updated_at),
     finishedAt: iso(row.finished_at),
   };
+}
+
+function adminJobErrorMessage(row: Record<string, unknown>) {
+  const details = row.provider_error_sanitized;
+  const upstreamMessage =
+    details &&
+    typeof details === "object" &&
+    "upstreamMessage" in details &&
+    typeof details.upstreamMessage === "string"
+      ? details.upstreamMessage
+      : "";
+  return providerUserMessage(
+    upstreamMessage || sanitizeError(row.user_error_message),
+    "生成失败",
+  );
 }
 
 function adminUsageFilters(query: AdminListQuery, alias: string) {
