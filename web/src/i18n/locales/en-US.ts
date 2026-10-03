@@ -936,6 +936,7 @@ export default {
         openMenu: "Open navigation menu",
         menu: "Navigation menu",
         navigation: "Navigation",
+        mobileNavigation: { canvas: "Canvas", image: "Image", video: "Video", text: "Text" },
         scrollLeft: "Scroll to earlier tools",
         scrollRight: "Scroll to more tools",
         openAgent: "Open Agent",

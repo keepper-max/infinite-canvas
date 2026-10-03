@@ -897,6 +897,7 @@ export default {
         openMenu: "打开导航菜单",
         menu: "导航菜单",
         navigation: "导航",
+        mobileNavigation: { canvas: "画布", image: "生图", video: "视频", text: "文本" },
         scrollLeft: "向左查看更多功能",
         scrollRight: "向右查看更多功能",
         openAgent: "打开 Agent",

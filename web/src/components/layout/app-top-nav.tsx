@@ -44,6 +44,7 @@ export function AppTopNav({ canvasProject, canvasVisible, onCanvasPointerEnter, 
     const togglePanel = useAgentStore((state) => state.togglePanel);
     const panelOpen = useAgentStore((state) => state.panelOpen);
     const visibleNavigationTools = navigationTools.filter((tool) => tool.slug !== "operations" || user.isAdmin);
+    const mobileNavigationTools = visibleNavigationTools.filter((tool) => ["canvas", "image", "video", "text"].includes(tool.slug));
     const slug = pathname.split("/").filter(Boolean)[0];
     const activeToolSlug = visibleNavigationTools.some((tool) => tool.slug === slug) ? (slug as NavigationToolSlug) : undefined;
 
@@ -122,16 +123,42 @@ export function AppTopNav({ canvasProject, canvasVisible, onCanvasPointerEnter, 
                 onPointerEnter={canvasProject ? onCanvasPointerEnter : undefined}
                 onPointerLeave={canvasProject ? onCanvasPointerLeave : undefined}
             >
-                <div className="mx-auto flex h-full max-w-7xl items-stretch justify-between gap-5 px-6">
+                <div className="mx-auto flex h-full max-w-7xl items-stretch justify-between gap-1 px-2 md:gap-5 md:px-6">
                     <div className="flex min-w-0 flex-1 items-center">
                         <Link to="/" className="flex h-full shrink-0 items-center gap-2 text-sm font-semibold leading-none tracking-tight text-stone-950 transition hover:text-stone-600 dark:text-stone-100 dark:hover:text-stone-300">
                             <img src="/shoushou-logo.png" alt="" className="size-7 shrink-0 rounded-md bg-black object-contain" />
-                            <span className="text-base font-medium">{t("meta.title")}</span>
+                            <span className="hidden text-base font-medium md:inline">{t("meta.title")}</span>
                         </Link>
+
+                        <nav className="hide-scrollbar ml-1 flex h-14 min-w-0 flex-1 items-stretch overflow-x-auto md:hidden" aria-label={t("topNav.navigation")}>
+                            {mobileNavigationTools.map((tool) => {
+                                const Icon = tool.icon;
+                                const active = tool.slug === activeToolSlug;
+                                const loading = tool.slug === loadingToolSlug;
+                                return (
+                                    <Link
+                                        key={tool.slug}
+                                        to={`/${tool.slug}`}
+                                        className={cn(
+                                            "relative flex min-w-12 shrink-0 flex-col items-center justify-center gap-0.5 px-1.5 text-[10px] leading-none transition after:absolute after:inset-x-1.5 after:bottom-0 after:h-px",
+                                            active ? "font-medium text-stone-950 after:bg-stone-950 dark:text-stone-100 dark:after:bg-stone-100" : "text-stone-500 after:bg-transparent dark:text-stone-400",
+                                        )}
+                                        aria-busy={loading}
+                                        aria-current={active ? "page" : undefined}
+                                        onClick={() => {
+                                            if (!active) startNavigation(tool.slug);
+                                        }}
+                                    >
+                                        {loading ? <LoaderCircle className="size-4 animate-spin" /> : <Icon className="size-4" />}
+                                        <span className="max-w-14 truncate">{t(`topNav.mobileNavigation.${tool.slug}`)}</span>
+                                    </Link>
+                                );
+                            })}
+                        </nav>
 
                         <button
                             type="button"
-                            className="ml-3 inline-flex size-8 shrink-0 items-center justify-center text-stone-600 transition hover:text-stone-950 md:hidden dark:text-stone-300 dark:hover:text-white"
+                            className="ml-1 inline-flex size-9 shrink-0 items-center justify-center text-stone-600 transition active:bg-black/5 md:hidden dark:text-stone-300 dark:active:bg-white/10"
                             onClick={() => setMobileNavOpen(true)}
                             aria-label={t("topNav.openMenu")}
                             title={t("topNav.menu")}
@@ -141,7 +168,13 @@ export function AppTopNav({ canvasProject, canvasVisible, onCanvasPointerEnter, 
 
                         <div className="ml-6 hidden min-w-0 flex-1 items-center md:flex">
                             {canScrollNavigationLeft ? (
-                                <button type="button" className="mr-1 inline-flex size-7 shrink-0 items-center justify-center rounded-full text-stone-500 transition hover:bg-stone-100 hover:text-stone-950 dark:hover:bg-white/10 dark:hover:text-white" onClick={() => scrollNavigation(-1)} aria-label={t("topNav.scrollLeft")} title={t("topNav.scrollLeft")}>
+                                <button
+                                    type="button"
+                                    className="mr-1 inline-flex size-7 shrink-0 items-center justify-center rounded-full text-stone-500 transition hover:bg-stone-100 hover:text-stone-950 dark:hover:bg-white/10 dark:hover:text-white"
+                                    onClick={() => scrollNavigation(-1)}
+                                    aria-label={t("topNav.scrollLeft")}
+                                    title={t("topNav.scrollLeft")}
+                                >
                                     <ChevronLeft className="size-4" />
                                 </button>
                             ) : null}
@@ -156,7 +189,9 @@ export function AppTopNav({ canvasProject, canvasVisible, onCanvasPointerEnter, 
                                             to={`/${tool.slug}`}
                                             className={cn(
                                                 "relative flex h-14 shrink-0 items-center gap-2 text-sm leading-6 transition after:absolute after:inset-x-0 after:bottom-0 after:h-px",
-                                                active ? "font-medium text-stone-950 after:bg-stone-950 dark:text-stone-100 dark:after:bg-stone-100" : "text-stone-500 after:bg-transparent hover:text-stone-950 dark:text-stone-400 dark:hover:text-stone-100",
+                                                active
+                                                    ? "font-medium text-stone-950 after:bg-stone-950 dark:text-stone-100 dark:after:bg-stone-100"
+                                                    : "text-stone-500 after:bg-transparent hover:text-stone-950 dark:text-stone-400 dark:hover:text-stone-100",
                                             )}
                                             aria-busy={loading}
                                             onPointerEnter={() => void preloadNavigationRoute(tool.slug).catch(() => undefined)}
@@ -172,14 +207,20 @@ export function AppTopNav({ canvasProject, canvasVisible, onCanvasPointerEnter, 
                                 })}
                             </nav>
                             {canScrollNavigationRight ? (
-                                <button type="button" className="ml-1 inline-flex size-7 shrink-0 items-center justify-center rounded-full text-stone-500 transition hover:bg-stone-100 hover:text-stone-950 dark:hover:bg-white/10 dark:hover:text-white" onClick={() => scrollNavigation(1)} aria-label={t("topNav.scrollRight")} title={t("topNav.scrollRight")}>
+                                <button
+                                    type="button"
+                                    className="ml-1 inline-flex size-7 shrink-0 items-center justify-center rounded-full text-stone-500 transition hover:bg-stone-100 hover:text-stone-950 dark:hover:bg-white/10 dark:hover:text-white"
+                                    onClick={() => scrollNavigation(1)}
+                                    aria-label={t("topNav.scrollRight")}
+                                    title={t("topNav.scrollRight")}
+                                >
                                     <ChevronRight className="size-4" />
                                 </button>
                             ) : null}
                         </div>
                     </div>
 
-                    <div className="my-auto flex h-9 shrink-0 items-center justify-end gap-2 justify-self-end whitespace-nowrap border-l border-stone-200 pl-2 dark:border-stone-800">
+                    <div className="my-auto hidden h-9 shrink-0 items-center justify-end gap-2 justify-self-end whitespace-nowrap border-l border-stone-200 pl-2 md:flex dark:border-stone-800">
                         <Tooltip title={t("feedback.title")}>
                             <Button
                                 type="text"
@@ -198,7 +239,11 @@ export function AppTopNav({ canvasProject, canvasVisible, onCanvasPointerEnter, 
                         </Tooltip>
                         {user.isAdmin ? (
                             <Tooltip title="管理后台">
-                                <Link to="/admin" className="inline-flex size-8 shrink-0 items-center justify-center rounded-full text-stone-500 transition hover:bg-stone-100 hover:text-stone-950 dark:hover:bg-white/10 dark:hover:text-white" aria-label="管理后台">
+                                <Link
+                                    to="/admin"
+                                    className="inline-flex size-8 shrink-0 items-center justify-center rounded-full text-stone-500 transition hover:bg-stone-100 hover:text-stone-950 dark:hover:bg-white/10 dark:hover:text-white"
+                                    aria-label="管理后台"
+                                >
                                     <ShieldCheck className="size-4" />
                                 </Link>
                             </Tooltip>
@@ -213,7 +258,17 @@ export function AppTopNav({ canvasProject, canvasVisible, onCanvasPointerEnter, 
                 </div>
             </header>
 
-            <MobileNavDrawer open={mobileNavOpen} activeToolSlug={activeToolSlug} showOperations={user.isAdmin} onClose={() => setMobileNavOpen(false)} />
+            <MobileNavDrawer
+                open={mobileNavOpen}
+                activeToolSlug={activeToolSlug}
+                showOperations={user.isAdmin}
+                feedbackUnread={feedbackUnread}
+                onOpenFeedback={() => {
+                    setMobileNavOpen(false);
+                    setFeedbackOpen(true);
+                }}
+                onClose={() => setMobileNavOpen(false)}
+            />
             <AppConfigModal />
             <FeedbackModal open={feedbackOpen} onClose={() => setFeedbackOpen(false)} onUnreadChange={setFeedbackUnread} />
         </>
