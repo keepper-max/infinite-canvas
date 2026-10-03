@@ -6,7 +6,18 @@ import { useNavigate } from "react-router-dom";
 import { ModelPicker } from "@/components/model-picker";
 import { cn } from "@/lib/utils";
 import { cancelManagedJob, retryManagedJob } from "@/services/api/jobs";
-import { createTextConversation, deleteTextConversation, generateTextMessage, listTextConversations, listTextMessages, updateTextConversation, type TextConversation, type TextMessage, type TextWorkbenchMode } from "@/services/api/text-workbench";
+import {
+    createTextConversation,
+    deleteTextConversation,
+    generateTextMessage,
+    listTextConversations,
+    listTextMessages,
+    TEXT_WORKBENCH_INPUT_LIMIT_CHARS,
+    updateTextConversation,
+    type TextConversation,
+    type TextMessage,
+    type TextWorkbenchMode,
+} from "@/services/api/text-workbench";
 import { modelOptionLabel, normalizeModelOptionValue, useEffectiveConfig } from "@/stores/use-config-store";
 import { useAssetStore } from "@/stores/use-asset-store";
 
@@ -36,6 +47,11 @@ export default function TextWorkbenchPage() {
     const activeConversation = conversations.find((item) => item.id === activeId);
     const activeMode = MODES.find((item) => item.id === mode) || MODES[0];
     const pendingMessage = messages.findLast((item) => item.role === "assistant" && item.status === "pending");
+    const inputChars = input.length;
+    const contextLimitChars = activeConversation?.contextLimitChars || 120_000;
+    const projectedContextChars = (activeConversation?.contextChars || 0) + inputChars;
+    const contextNeedsCompression = projectedContextChars >= (activeConversation?.contextCompressionThresholdChars || 90_000);
+    const contextAtLimit = projectedContextChars >= contextLimitChars;
 
     const refreshConversations = useCallback(async () => {
         const items = await listTextConversations();
@@ -81,9 +97,15 @@ export default function TextWorkbenchPage() {
 
     useEffect(() => {
         if (!activeId || !messages.some((item) => item.status === "pending")) return;
-        const timer = window.setInterval(() => void refreshMessages(activeId), 1_800);
+        const timer = window.setInterval(
+            () =>
+                void refreshMessages(activeId).then((items) => {
+                    if (!items.some((item) => item.status === "pending")) return refreshConversations();
+                }),
+            1_800,
+        );
         return () => window.clearInterval(timer);
-    }, [activeId, messages, refreshMessages]);
+    }, [activeId, messages, refreshConversations, refreshMessages]);
 
     useEffect(() => {
         feedRef.current?.scrollTo({ top: feedRef.current.scrollHeight, behavior: "smooth" });
@@ -297,6 +319,14 @@ export default function TextWorkbenchPage() {
 
                     <footer className="shrink-0 px-4 pb-5 sm:px-8">
                         <div className="mx-auto max-w-3xl rounded-2xl border border-black/15 bg-white p-2 shadow-[0_18px_60px_rgba(0,0,0,0.09)] focus-within:border-black/30 dark:border-white/15 dark:bg-[#1c1c19] dark:focus-within:border-white/30">
+                            {activeConversation?.compressedMessageCount ? (
+                                <div className="mx-2 mb-1 rounded-lg bg-emerald-500/10 px-3 py-2 text-xs leading-5 text-emerald-700 dark:text-emerald-300">
+                                    已自动压缩 {activeConversation.compressedMessageCount} 条早期消息，原始记录仍完整保留。当前上下文 {formatChars(projectedContextChars)} / {formatChars(contextLimitChars)}
+                                    {contextNeedsCompression ? "，发送后将继续压缩较早内容" : ""}。
+                                </div>
+                            ) : contextNeedsCompression ? (
+                                <div className="mx-2 mb-1 rounded-lg bg-amber-500/10 px-3 py-2 text-xs leading-5 text-amber-700 dark:text-amber-300">上下文接近上限，发送后将自动压缩较早内容；原始消息不会被删除。</div>
+                            ) : null}
                             <Input.TextArea
                                 value={input}
                                 onChange={(event) => setInput(event.target.value)}
@@ -307,12 +337,15 @@ export default function TextWorkbenchPage() {
                                     }
                                 }}
                                 autoSize={{ minRows: 2, maxRows: 8 }}
+                                maxLength={TEXT_WORKBENCH_INPUT_LIMIT_CHARS}
                                 variant="borderless"
                                 placeholder={activeMode.starter}
                                 className="!resize-none !px-3 !py-2 !text-[15px]"
                             />
                             <div className="flex items-center justify-between gap-3 px-2 pb-1">
-                                <span className="text-[11px] text-stone-400">Enter 发送 · Shift + Enter 换行</span>
+                                <span className={cn("min-w-0 flex-1 text-[11px] leading-4", contextAtLimit ? "text-red-600 dark:text-red-400" : contextNeedsCompression ? "text-amber-600 dark:text-amber-400" : "text-stone-400")}>
+                                    Enter 发送 · Shift + Enter 换行 · 输入 {formatChars(inputChars)} / {formatChars(TEXT_WORKBENCH_INPUT_LIMIT_CHARS)} · 上下文 {formatChars(projectedContextChars)} / {formatChars(contextLimitChars)}
+                                </span>
                                 {pendingMessage ? (
                                     <Button danger type="text" icon={<Square className="size-3.5" />} onClick={() => void stop()}>
                                         停止
@@ -351,6 +384,10 @@ export default function TextWorkbenchPage() {
             </div>
         </main>
     );
+}
+
+function formatChars(value: number) {
+    return Math.max(0, Math.round(value)).toLocaleString("zh-CN") + " 字符";
 }
 
 function MessageBlock({ item, modelLabel, onCopy, onSave, onHandoff, onRetry }: { item: TextMessage; modelLabel: string; onCopy: () => void; onSave: () => void; onHandoff: (path: "/image" | "/video" | "/canvas") => void; onRetry?: () => Promise<void> }) {

@@ -50,6 +50,17 @@ const PRIVATE_OPERATION_DISCLOSURE_PATTERNS = [
 const PRIVATE_OPERATION_SAFE_REPLY =
   "我是守守画布的 AI 创作助手，可以协助你完成文本创作、提示词设计、剧本和分镜等工作。请告诉我你想创作什么。";
 
+export const TEXT_WORKBENCH_INPUT_LIMIT_CHARS = 100_000;
+export const TEXT_WORKBENCH_CONTEXT_LIMIT_CHARS = 120_000;
+export const TEXT_WORKBENCH_COMPRESSION_TRIGGER_CHARS = 90_000;
+const TEXT_WORKBENCH_RECENT_TARGET_CHARS = 60_000;
+const TEXT_WORKBENCH_RECENT_MIN_MESSAGES = 2;
+const TEXT_WORKBENCH_RECENT_MAX_MESSAGES = 30;
+const TEXT_WORKBENCH_SUMMARY_LIMIT_CHARS = 24_000;
+const TEXT_WORKBENCH_SUMMARY_MESSAGE_CHARS = 2_000;
+
+type ContextMessage = { id?: string; role: string; content: string };
+
 export class TextWorkbenchService {
   constructor(
     private readonly pool: Pool,
@@ -62,7 +73,8 @@ export class TextWorkbenchService {
       `select c.*,
         (select content from text_messages where conversation_id=c.id order by created_at desc limit 1) as preview,
         (select role from text_messages where conversation_id=c.id order by created_at desc limit 1) as preview_role,
-        (select count(*)::int from text_messages where conversation_id=c.id) as message_count
+        (select count(*)::int from text_messages where conversation_id=c.id) as message_count,
+        (select coalesce(sum(char_length(content)),0)::int from text_messages where conversation_id=c.id and status='completed' and context_compacted_at is null) as context_recent_chars
        from text_conversations c
        where c.project_id=$1 and c.created_by=$2 and c.archived_at is null
        order by c.updated_at desc`,
@@ -188,13 +200,28 @@ export class TextWorkbenchService {
       client.release();
     }
 
-    const history = await this.pool.query(
-      "select role,content from text_messages where conversation_id=$1 and status='completed' order by created_at desc limit 30",
-      [conversationId],
-    );
+    let context: ReturnType<typeof rollTextWorkbenchContext>;
+    try {
+      context = await this.prepareContext(conversationId);
+    } catch (error) {
+      console.warn(
+        "[text-workbench] context compaction failed; using recent messages",
+        error instanceof Error ? error.message : "unknown error",
+      );
+      const history = await this.pool.query(
+        "select role,content from text_messages where conversation_id=$1 and status='completed' order by created_at desc,id desc limit 30",
+        [conversationId],
+      );
+      context = {
+        summary: "",
+        compactedMessages: [],
+        recentMessages: history.rows.reverse(),
+      };
+    }
     const prompt = compileTextWorkbenchPrompt(
       input.mode,
-      history.rows.reverse(),
+      context.recentMessages,
+      context.summary,
     );
     try {
       const job = await this.jobs.create(
@@ -255,6 +282,64 @@ export class TextWorkbenchService {
     return conversation;
   }
 
+  private async prepareContext(conversationId: string) {
+    const client = await this.pool.connect();
+    try {
+      await client.query("begin");
+      const conversationResult = await client.query(
+        "select * from text_conversations where id=$1 for update",
+        [conversationId],
+      );
+      const conversation = conversationResult.rows[0];
+      if (!conversation)
+        throw new DomainError(
+          "TEXT_CONVERSATION_NOT_FOUND",
+          "找不到该对话",
+          404,
+        );
+      const history = await client.query(
+        "select id,role,content from text_messages where conversation_id=$1 and status='completed' and context_compacted_at is null order by created_at asc,id asc",
+        [conversationId],
+      );
+      const rolled = rollTextWorkbenchContext(
+        String(conversation.context_summary || ""),
+        history.rows,
+      );
+      if (rolled.compactedMessages.length) {
+        const compactedIds = rolled.compactedMessages.flatMap((message) =>
+          message.id ? [message.id] : [],
+        );
+        await client.query(
+          "update text_messages set context_compacted_at=now(),updated_at=now() where conversation_id=$1 and id=any($2::uuid[])",
+          [conversationId, compactedIds],
+        );
+        await client.query(
+          `update text_conversations set context_summary=$2,
+            context_summary_source_chars=context_summary_source_chars+$3,
+            context_summary_message_count=context_summary_message_count+$4,
+            context_compacted_at=now(),updated_at=now()
+           where id=$1`,
+          [
+            conversationId,
+            rolled.summary,
+            rolled.compactedMessages.reduce(
+              (total, message) => total + message.content.length,
+              0,
+            ),
+            rolled.compactedMessages.length,
+          ],
+        );
+      }
+      await client.query("commit");
+      return rolled;
+    } catch (error) {
+      await client.query("rollback").catch(() => undefined);
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+
   private async reconcileMessages(conversationId: string) {
     const result = await this.pool.query(
       `select m.id,j.status,j.user_error_message,
@@ -284,18 +369,117 @@ export class TextWorkbenchService {
 export function compileTextWorkbenchPrompt(
   mode: TextWorkbenchMode,
   messages: Array<{ role: string; content: string }>,
+  summary = "",
 ) {
-  const transcript = messages
-    .map((message) => {
-      const content =
-        message.role === "assistant"
-          ? sanitizeTextWorkbenchOutput(message.content)
-          : message.content;
-      return `${message.role === "assistant" ? "助手" : "用户"}：${content}`;
-    })
-    .join("\n\n");
-  const prefix = `${PLATFORM_OPERATION_POLICY}\n\n${MODE_INSTRUCTIONS[mode]}\n\n以下是对话记录，请直接继续回应最后一条用户消息：\n\n`;
-  return `${prefix}${transcript.slice(-(120_000 - prefix.length))}`;
+  const prefix = `${PLATFORM_OPERATION_POLICY}\n\n${MODE_INSTRUCTIONS[mode]}\n\n`;
+  const blocks = messages.map(formatContextMessage);
+  const latest = blocks.at(-1) || "";
+  const available = TEXT_WORKBENCH_CONTEXT_LIMIT_CHARS - prefix.length;
+  const summaryHeader = "以下是较早对话的压缩记忆：\n";
+  const recentHeader =
+    "\n\n以下是近期对话原文，请直接继续回应最后一条用户消息：\n\n";
+  const maximumSummaryChars = Math.max(
+    0,
+    available - recentHeader.length - latest.length - summaryHeader.length,
+  );
+  const fittedSummary =
+    maximumSummaryChars > 0 ? summary.slice(-maximumSummaryChars) : "";
+  const heading = fittedSummary
+    ? `${summaryHeader}${fittedSummary}${recentHeader}`
+    : recentHeader.trimStart();
+  let remaining = available - heading.length;
+  const selected: string[] = [];
+  for (let index = blocks.length - 1; index >= 0; index -= 1) {
+    const block = blocks[index]!;
+    const separatorChars = selected.length ? 2 : 0;
+    if (block.length + separatorChars > remaining) {
+      if (!selected.length && remaining > 0)
+        selected.unshift(block.slice(-remaining));
+      break;
+    }
+    selected.unshift(block);
+    remaining -= block.length + separatorChars;
+  }
+  return `${prefix}${heading}${selected.join("\n\n")}`.slice(
+    0,
+    TEXT_WORKBENCH_CONTEXT_LIMIT_CHARS,
+  );
+}
+
+export function rollTextWorkbenchContext(
+  existingSummary: string,
+  messages: ContextMessage[],
+) {
+  const recentChars = messages.reduce(
+    (total, message) => total + message.content.length,
+    0,
+  );
+  if (
+    existingSummary.length + recentChars <=
+      TEXT_WORKBENCH_COMPRESSION_TRIGGER_CHARS &&
+    messages.length <= TEXT_WORKBENCH_RECENT_MAX_MESSAGES
+  )
+    return {
+      summary: existingSummary,
+      compactedMessages: [] as ContextMessage[],
+      recentMessages: messages,
+    };
+
+  let keepFrom = messages.length;
+  let keptChars = 0;
+  while (keepFrom > 0) {
+    const candidate = messages[keepFrom - 1]!;
+    const keptCount = messages.length - keepFrom;
+    if (
+      keptCount >= TEXT_WORKBENCH_RECENT_MIN_MESSAGES &&
+      (keptCount >= TEXT_WORKBENCH_RECENT_MAX_MESSAGES ||
+        keptChars + candidate.content.length >
+          TEXT_WORKBENCH_RECENT_TARGET_CHARS)
+    )
+      break;
+    keepFrom -= 1;
+    keptChars += candidate.content.length;
+  }
+  const compactedMessages = messages.slice(0, keepFrom);
+  if (!compactedMessages.length)
+    return {
+      summary: existingSummary,
+      compactedMessages,
+      recentMessages: messages,
+    };
+  const additions = compactedMessages.map((message) =>
+    compactContextMessage(message),
+  );
+  return {
+    summary: limitRollingSummary(
+      [existingSummary.trim(), ...additions].filter(Boolean).join("\n"),
+    ),
+    compactedMessages,
+    recentMessages: messages.slice(keepFrom),
+  };
+}
+
+function formatContextMessage(message: { role: string; content: string }) {
+  const content =
+    message.role === "assistant"
+      ? sanitizeTextWorkbenchOutput(message.content)
+      : message.content;
+  return `${message.role === "assistant" ? "助手" : "用户"}：${content}`;
+}
+
+function compactContextMessage(message: ContextMessage) {
+  const formatted = formatContextMessage(message).replace(/\s+/g, " ").trim();
+  if (formatted.length <= TEXT_WORKBENCH_SUMMARY_MESSAGE_CHARS)
+    return formatted;
+  const tailChars = 600;
+  return `${formatted.slice(0, TEXT_WORKBENCH_SUMMARY_MESSAGE_CHARS - tailChars - 8)}……[中段压缩]……${formatted.slice(-tailChars)}`;
+}
+
+function limitRollingSummary(summary: string) {
+  if (summary.length <= TEXT_WORKBENCH_SUMMARY_LIMIT_CHARS) return summary;
+  const earliestChars = 8_000;
+  const marker = "\n……[部分较早上下文已进一步压缩]……\n";
+  return `${summary.slice(0, earliestChars)}${marker}${summary.slice(-(TEXT_WORKBENCH_SUMMARY_LIMIT_CHARS - earliestChars - marker.length))}`;
 }
 
 export function sanitizeTextWorkbenchOutput(content: string) {
@@ -338,6 +522,8 @@ function titleFrom(content: string) {
 }
 
 function serializeConversation(row: Record<string, any>) {
+  const contextSummaryChars = String(row.context_summary || "").length;
+  const contextRecentChars = Number(row.context_recent_chars || 0);
   return {
     id: row.id,
     projectId: row.project_id,
@@ -349,6 +535,13 @@ function serializeConversation(row: Record<string, any>) {
         ? sanitizeTextWorkbenchOutput(String(row.preview || ""))
         : row.preview || "",
     messageCount: Number(row.message_count || 0),
+    contextChars: contextSummaryChars + contextRecentChars,
+    contextSourceChars:
+      Number(row.context_summary_source_chars || 0) + contextRecentChars,
+    contextLimitChars: TEXT_WORKBENCH_CONTEXT_LIMIT_CHARS,
+    contextCompressionThresholdChars: TEXT_WORKBENCH_COMPRESSION_TRIGGER_CHARS,
+    compressedMessageCount: Number(row.context_summary_message_count || 0),
+    contextCompactedAt: row.context_compacted_at?.toISOString(),
     createdAt: row.created_at.toISOString(),
     updatedAt: row.updated_at.toISOString(),
   };

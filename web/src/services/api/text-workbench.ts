@@ -2,6 +2,7 @@ import { normalizeManagedModelId, type ManagedJob } from "./jobs";
 import { getCurrentSession, platformRequest } from "./platform";
 
 export type TextWorkbenchMode = "chat" | "prompt" | "script" | "storyboard" | "seedance";
+export const TEXT_WORKBENCH_INPUT_LIMIT_CHARS = 100_000;
 export type TextConversation = {
     id: string;
     projectId: string;
@@ -10,6 +11,12 @@ export type TextConversation = {
     modelId: string;
     preview: string;
     messageCount: number;
+    contextChars: number;
+    contextSourceChars: number;
+    contextLimitChars: number;
+    contextCompressionThresholdChars: number;
+    compressedMessageCount: number;
+    contextCompactedAt?: string;
     createdAt: string;
     updatedAt: string;
 };

@@ -58,7 +58,10 @@ import {
   teamProjectSchema,
 } from "./operations-contract.js";
 import type { OperationsServicePort } from "./operations-service.js";
-import type { TextWorkbenchService } from "./text-workbench-service.js";
+import {
+  TEXT_WORKBENCH_INPUT_LIMIT_CHARS,
+  type TextWorkbenchService,
+} from "./text-workbench-service.js";
 import {
   archiveVirtualPortraitSchema,
   createVirtualPortraitSchema,
@@ -2421,7 +2424,7 @@ const textConversationUpdateInput = textConversationCreateInput
   });
 const textMessageGenerateInput = z
   .object({
-    content: z.string().trim().min(1).max(100_000),
+    content: z.string().trim().min(1).max(TEXT_WORKBENCH_INPUT_LIMIT_CHARS),
     modelId: z.string().trim().min(1).max(200),
     mode: textWorkbenchMode.default("chat"),
     reasoningEffort: z
