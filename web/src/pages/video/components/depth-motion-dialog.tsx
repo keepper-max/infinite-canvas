@@ -3,7 +3,7 @@ import { Alert, Button, Modal, Progress } from "antd";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 
-import { DEPTH_VIDEO_MAX_SECONDS, DEPTH_VIDEO_RESOLUTION, formatFrameRate, generateDepthVideo, inspectDepthVideoSource, type DepthVideoProgress, type DepthVideoResult, type DepthVideoSourceMetadata } from "@/lib/depth-motion/generate-depth-video";
+import { formatFrameRate, generateDepthVideo, inspectDepthVideoSource, type DepthVideoProgress, type DepthVideoResult, type DepthVideoSourceMetadata } from "@/lib/depth-motion/generate-depth-video";
 import { formatBytes } from "@/lib/image-utils";
 
 type DepthMotionDialogProps = {
@@ -111,8 +111,8 @@ export function DepthMotionDialog({ open, sourceFile = null, onCancel, onComplet
         >
             <div className="space-y-4 pt-2">
                 <div className="grid gap-3 sm:grid-cols-3">
-                    <Spec icon={<Gauge className="size-4" />} label={t("depthMotion.outputLabel")} value={`${DEPTH_VIDEO_RESOLUTION}p · ${sourceMetadata ? `${formatFrameRate(sourceMetadata.frameRate)}fps` : t("depthMotion.followSourceFps")}`} />
-                    <Spec icon={<HardDrive className="size-4" />} label={t("depthMotion.limitLabel")} value={t("depthMotion.limitValue", { seconds: DEPTH_VIDEO_MAX_SECONDS })} />
+                    <Spec icon={<Gauge className="size-4" />} label={t("depthMotion.outputLabel")} value={`${t("depthMotion.adaptiveResolution")} · ${sourceMetadata ? `${formatFrameRate(sourceMetadata.frameRate)}fps` : t("depthMotion.followSourceFps")}`} />
+                    <Spec icon={<HardDrive className="size-4" />} label={t("depthMotion.limitLabel")} value={t("depthMotion.limitValue")} />
                     <Spec icon={<ShieldCheck className="size-4" />} label={t("depthMotion.runtimeLabel")} value={hasWebGpu ? t("depthMotion.webGpuReady") : t("depthMotion.wasmFallback")} accent={hasWebGpu} />
                 </div>
 

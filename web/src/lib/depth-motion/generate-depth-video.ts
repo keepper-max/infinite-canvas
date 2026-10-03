@@ -1,7 +1,7 @@
 import { ALL_FORMATS, BlobSource, BufferTarget, CanvasSource, Input, Mp4OutputFormat, Output, Quality, canEncodeVideo } from "mediabunny";
 
-export const DEPTH_VIDEO_MAX_SECONDS = 10;
 export const DEPTH_VIDEO_RESOLUTION = 480;
+export const DEPTH_VIDEO_MIN_PIXELS = 407_696;
 const DEPTH_VIDEO_MAX_LONG_EDGE = 854;
 
 export type DepthVideoProgress = {
@@ -146,9 +146,8 @@ export async function generateDepthVideo(file: File, options: { signal?: AbortSi
     try {
         await waitForVideoMetadata(video, signal);
         if (!Number.isFinite(video.duration) || video.duration <= 0) throw new Error("无法读取视频时长，请更换 MP4、MOV 或 WebM 文件");
-        if (video.duration > DEPTH_VIDEO_MAX_SECONDS + 0.05) throw new Error(`当前仅支持 ${DEPTH_VIDEO_MAX_SECONDS} 秒以内的视频，请先裁剪后再转换`);
 
-        const { width, height } = fitVideoSize(video.videoWidth, video.videoHeight, DEPTH_VIDEO_RESOLUTION, DEPTH_VIDEO_MAX_LONG_EDGE);
+        const { width, height } = fitVideoSize(video.videoWidth, video.videoHeight, DEPTH_VIDEO_RESOLUTION, DEPTH_VIDEO_MAX_LONG_EDGE, DEPTH_VIDEO_MIN_PIXELS);
         const quality = new Quality({ bitrate: 6_000_000, bitrateMode: "variable" });
         if (!(await canEncodeVideo("avc", { width, height, frameRate, quality }))) throw new Error(`当前浏览器无法按源视频的 ${formatFrameRate(frameRate)}fps 编码 MP4，请使用最新版 Chrome 或 Edge`);
 
@@ -204,13 +203,25 @@ export function formatFrameRate(frameRate: number) {
     return Number.isInteger(frameRate) ? String(frameRate) : frameRate.toFixed(2).replace(/0+$/, "").replace(/\.$/, "");
 }
 
-function fitVideoSize(sourceWidth: number, sourceHeight: number, shortEdge: number, maxLongEdge: number) {
+function fitVideoSize(sourceWidth: number, sourceHeight: number, shortEdge: number, maxLongEdge: number, minPixels: number) {
     const scale = Math.min(1, shortEdge / Math.min(sourceWidth, sourceHeight), maxLongEdge / Math.max(sourceWidth, sourceHeight));
-    return { width: even(Math.max(2, Math.round(sourceWidth * scale))), height: even(Math.max(2, Math.round(sourceHeight * scale))) };
+    let width = even(Math.max(2, Math.round(sourceWidth * scale)));
+    let height = even(Math.max(2, Math.round(sourceHeight * scale)));
+    if (width * height < minPixels) {
+        const minimumScale = Math.sqrt(minPixels / (width * height));
+        width = evenCeil(width * minimumScale);
+        height = evenCeil(height * minimumScale);
+    }
+    return { width, height };
 }
 
 function even(value: number) {
     return value % 2 === 0 ? value : value - 1;
+}
+
+function evenCeil(value: number) {
+    const rounded = Math.ceil(value);
+    return rounded % 2 === 0 ? rounded : rounded + 1;
 }
 
 function drawDepth(context: CanvasRenderingContext2D, sourceContext: CanvasRenderingContext2D, source: HTMLCanvasElement, depth: Uint8Array, depthWidth: number, depthHeight: number, outputWidth: number, outputHeight: number) {
