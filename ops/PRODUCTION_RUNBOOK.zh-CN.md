@@ -7,6 +7,43 @@
 - `ADMIN_EMAILS` 只填写明确授权的账号；生产环境必须启用 HTTPS、`COOKIE_SECURE=true` 并填写准确的 `TRUSTED_ORIGINS`。
 - 限流、日志保留大小/份数、磁盘告警阈值尚未擅自设默认值；上线前由负责人确认后再启用。
 
+## 0. 生产拓扑与部署入口
+
+- `shoumiren.online` 指向 ECS；ECS 只承担公网 Nginx、HTTPS 和反向代理，不运行应用容器。
+- Web、API、Worker、PostgreSQL、Redis 和 MinIO 运行在物理服务器 `shoumiren`。
+- 物理服务器通过独立反向隧道，把 SSH 管理入口绑定到 ECS 回环地址 `127.0.0.1:19222`；该端口不得监听 ECS 公网地址。
+- 发布必须使用 ECS 非 root 账号 `deploy-gateway` 作为跳板，再进入物理服务器 `adminsun`；禁止根据域名解析或历史物理服务器公网 IP 直接判断部署目标。
+- `ops/deploy-via-ecs.ps1` 会核对本地 `main`、`origin/main`、两台主机指纹、物理服务器主机名、生产容器工作目录和公网健康状态，再调用现有生产发布脚本。
+
+物理服务器安装独立管理隧道：
+
+```sh
+sudo install -o root -g root -m 0644 ops/systemd/shoumiren-deploy-tunnel.service /etc/systemd/system/shoumiren-deploy-tunnel.service
+sudo systemctl daemon-reload
+sudo systemctl enable --now shoumiren-deploy-tunnel.service
+```
+
+确认 ECS 只在回环地址监听管理端口：
+
+```sh
+ss -lnt | grep '127.0.0.1:19222'
+```
+
+Windows 发布入口示例；健康检查等待秒数必须由负责人明确填写，不在脚本中设置猜测默认值：
+
+```powershell
+.\ops\deploy-via-ecs.ps1 `
+  -IdentityFile H:\CodexStorage\shoumiren_deploy_ed25519 `
+  -EcsKnownHostsFile H:\CodexStorage\ssh\production-ecs-known-hosts `
+  -PhysicalKnownHostsFile H:\CodexStorage\ssh\production-physical-known-hosts `
+  -PublicUrl https://shoumiren.online `
+  -HealthTimeoutSeconds 300
+```
+
+首次配置、隧道重启或排查发布入口时，在相同参数后增加 `-PreflightOnly`；该模式只验证 Git、主机身份、生产容器和公网健康，不创建发布包、不备份数据库、不切换服务。
+
+如果管理隧道不可用，只重启 `shoumiren-deploy-tunnel.service`；不要重启网站、API、数据库、素材隧道或删除任何发布目录。紧急回滚仍在物理服务器当前发布目录使用第 5 节命令。
+
 ## 1. 只读预检
 
 1. 确认当前目录、Git 提交、工作区状态和 `docker compose ps`。

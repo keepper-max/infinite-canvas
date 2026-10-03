@@ -610,3 +610,15 @@
 - 已将移动端画布视口与桌面持久化视口隔离；切换设备模式时取消未完成的定位动画，并恢复桌面缩放、侧栏与 Agent 展开状态。
 - Web 类型检查和生产构建通过；在 390×844 粗指针/无 hover 模拟设备完成工具抽屉、节点操作栏与编辑面板检查，并验证移动端定位节点后桌面缩放从 14% 精确恢复为 14%。构建仅保留既有动态导入与大分块警告。
 - 本轮未 commit、push、部署，也未修改数据库、服务端接口或生产配置。
+
+# 2026-10-03 生产部署通道固化
+
+- 已复盘移动端版本部署：代码与生产发布均成功，但部署入口依赖临时人工反向隧道，且 ECS/物理服务器角色曾被混淆。
+- 已确认真实拓扑、现有持久媒体隧道和发布回滚脚本；开始新增独立管理隧道、非 root 跳板账号和一键 Git Bundle 发布入口。
+- 实施顺序为：备份 → 并行建立新链路 → 只读验证 → 收紧权限 → 移除 ECS root 临时授权；现有网站和素材隧道保持不变。
+- ECS 已创建无 sudo 的 `deploy-gateway`，其部署公钥只允许转发到回环地址 `127.0.0.1:19222`；变更前 root 公钥已备份到 `/root/codex-deploy-gateway-backup-20261003T044608Z`。
+- 已新增独立管理隧道 unit、Git Bundle 远端安装器、Windows 一键发布脚本和生产拓扑文档；下一步需通过一次临时通道把持久 unit 安装到物理服务器。
+- 物理服务器已安装并启用 `shoumiren-deploy-tunnel.service`；ECS `127.0.0.1:19222` 仅回环监听，公网端口探测关闭，手动重启后通道自动恢复。
+- 物理服务器部署 key 已限制为仅接受回环来源，变更前备份为 `/home/adminsun/.ssh/authorized_keys.before-deploy-restriction-20261003T045108Z`；ECS root 临时 key 已移除，备份为 `/root/.ssh/authorized_keys.before-codex-removal-20261003T045133Z`。
+- 验证通过：非 root 跳板账号禁止 shell、禁止非授权转发，持久 unit 本地/线上 SHA-256 一致，PowerShell 解析通过，远端 `sh -n` 通过，`git diff --check` 通过；Web/API/就绪/画布公网检查均为 200。
+- 本轮未 commit 或 push；无关未跟踪文件 `web/startup-intro-preview.html` 保持不变。内部运维改动不涉及用户功能，`todo`/`pending-test` 无需迁移。
