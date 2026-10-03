@@ -118,7 +118,7 @@ try {
 
     if ($PreflightOnly) {
         foreach ($path in @('/healthz', '/api/health/live', '/api/health/ready', '/canvas/project')) {
-            $status = (Invoke-Native curl.exe -L -sS --max-time 20 -o NUL -w '%{http_code}' "$PublicUrl$path" | Out-String).Trim()
+            $status = (Invoke-Native -Command curl.exe -Arguments @('-L', '-sS', '--max-time', '20', '-o', 'NUL', '-w', '%{http_code}', "$PublicUrl$path") | Out-String).Trim()
             if ($status -ne '200') {
                 throw "External health check failed: $path returned $status"
             }
@@ -134,7 +134,7 @@ try {
     Invoke-Native ssh.exe -F $sshConfig shoumiren-production "sh $remoteHelper $remoteBundle $targetSha $PublicUrl $HealthTimeoutSeconds"
 
     foreach ($path in @('/healthz', '/api/health/live', '/api/health/ready', '/canvas/project')) {
-        $status = (Invoke-Native curl.exe -L -sS --max-time 20 -o NUL -w '%{http_code}' "$PublicUrl$path" | Out-String).Trim()
+        $status = (Invoke-Native -Command curl.exe -Arguments @('-L', '-sS', '--max-time', '20', '-o', 'NUL', '-w', '%{http_code}', "$PublicUrl$path") | Out-String).Trim()
         if ($status -ne '200') {
             throw "External health check failed: $path returned $status"
         }
