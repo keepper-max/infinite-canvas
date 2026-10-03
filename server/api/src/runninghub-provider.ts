@@ -1,6 +1,7 @@
 import type { RunningHubConfig } from "./config.js";
 import type { CompiledGenerationRequest } from "./model-gateway.js";
 import type { ObjectStorage } from "./object-storage.js";
+import { constrainReferenceImage } from "./reference-image.js";
 import {
   ProviderError,
   isReferenceDownloadTimeout,
@@ -297,6 +298,21 @@ export class RunningHubProvider
         { errorName: error instanceof Error ? error.name : "UnknownError" },
       );
     }
+    const sourceBytes = new Uint8Array(await blob.arrayBuffer());
+    const declaredMimeType = referenceMimeType(reference);
+    const sourceMimeType =
+      blob.type && blob.type !== "application/octet-stream"
+        ? blob.type
+        : declaredMimeType || "application/octet-stream";
+    const prepared = await constrainReferenceImage(
+      sourceBytes,
+      sourceMimeType,
+    );
+    const preparedBody = prepared.bytes.buffer.slice(
+      prepared.bytes.byteOffset,
+      prepared.bytes.byteOffset + prepared.bytes.byteLength,
+    ) as ArrayBuffer;
+    blob = new Blob([preparedBody], { type: prepared.mimeType });
     const form = new FormData();
     form.append("file", blob, `reference.${extensionFor(blob.type)}`);
     const payload = await this.request("/media/upload/binary", {
