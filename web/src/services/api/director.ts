@@ -7,5 +7,5 @@ export async function getDirectorSettings(signal?: AbortSignal) {
 }
 
 export async function getPendingDirectorJob(signal?: AbortSignal) {
-    return (await platformRequest<{ job: { id: string; status: string } | null }>("/api/director/pending-job", { signal })).job;
+    return (await platformRequest<{ job: { id: string; status: string; idea: string; profile: string } | null }>("/api/director/pending-job", { signal })).job;
 }

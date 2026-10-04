@@ -50,6 +50,7 @@ const LAST_HANDLED_DIRECTOR_JOB_KEY = "shoushou.director.last-handled-job.v1";
 type PendingDirectorJob = {
     jobId: string;
     profile: DirectorWorkflowProfile | "auto";
+    idea?: string;
 };
 
 function readPendingDirectorJob(): PendingDirectorJob | null {
@@ -64,7 +65,7 @@ function readPendingDirectorJob(): PendingDirectorJob | null {
 
 function savePendingDirectorJob(value: PendingDirectorJob | null) {
     try {
-        if (value) localStorage.setItem(PENDING_DIRECTOR_JOB_KEY, JSON.stringify(value));
+        if (value) localStorage.setItem(PENDING_DIRECTOR_JOB_KEY, JSON.stringify({ jobId: value.jobId, profile: value.profile }));
         else localStorage.removeItem(PENDING_DIRECTOR_JOB_KEY);
     } catch {
         // Browser storage can be unavailable in private or restricted contexts.
@@ -132,17 +133,16 @@ export default function DirectorWorkbenchPage() {
     }, [message]);
 
     useEffect(() => {
-        if (pendingJob) {
-            setRecoveringPendingJob(false);
-            return;
-        }
         const controller = new AbortController();
         void getPendingDirectorJob(controller.signal)
             .then((job) => {
                 if (!job || job.id === readLastHandledDirectorJobId()) return;
-                const recovered = { jobId: job.id, profile: "auto" as const };
+                const recoveredProfile = PROFILE_OPTIONS.some((item) => item.value === job.profile) ? (job.profile as PendingDirectorJob["profile"]) : pendingJob?.jobId === job.id ? pendingJob.profile : "auto";
+                const recovered = { jobId: job.id, profile: recoveredProfile, idea: job.idea };
                 savePendingDirectorJob(recovered);
                 setPendingJob(recovered);
+                if (job.idea) setIdea(job.idea);
+                setProfile(recoveredProfile);
             })
             .catch((error) => {
                 if (!controller.signal.aborted) message.error(error instanceof Error ? error.message : "未完成任务检查失败");
@@ -163,12 +163,13 @@ export default function DirectorWorkbenchPage() {
     const waitForPlan = async (pending: PendingDirectorJob, signal: AbortSignal) => {
         const completed = await waitForManagedJob(pending.jobId, signal, (job) => {
             if (job.status === "billing_pending") {
-                setPlanningStage("上一笔规划已经生成，正在核对费用；当前只是在恢复这笔任务，没有重复提交。可以离开本页，稍后回来会自动恢复。");
+                setPlanningStage("上一笔规划已经生成，费用仍在核对中；任务已保留且没有重复提交，可以稍后点击“继续检查规划”。");
                 return;
             }
             if (["pending", "queued"].includes(job.status)) setPlanningStage("导演任务正在排队");
             else setPlanningStage("导演模型正在生成规划");
-        });
+        }, { pauseOnBillingPending: true });
+        if (completed.status === "billing_pending") return;
         const text = String(completed.artifacts?.find((artifact) => artifact.text)?.text || "").trim();
         if (!text) throw new Error("导演模型没有返回规划结果");
         const parsed = parseDirectorPlan(text);
@@ -201,10 +202,10 @@ export default function DirectorWorkbenchPage() {
     };
 
     useEffect(() => {
-        if (!pendingJob || resumedPendingJobRef.current) return;
+        if (recoveringPendingJob || !pendingJob || resumedPendingJobRef.current) return;
         resumedPendingJobRef.current = true;
         void resumePlan(pendingJob);
-    }, [pendingJob]);
+    }, [pendingJob, recoveringPendingJob]);
 
     const createPlan = async () => {
         if (pendingJob) {
@@ -224,11 +225,11 @@ export default function DirectorWorkbenchPage() {
                     capability: "text",
                     mode: "chat",
                     prompt: directorSystemPrompt(input, profile),
-                    trace: { workflowKind: "director.workflow", skillId: "seedance-director-workflow", skillVersion: "1" },
+                    trace: { workflowKind: "director.workflow", skillId: "seedance-director-workflow", skillVersion: "1", inputSnapshot: { idea: input, profile } },
                 },
                 { signal: controller.signal },
             );
-            const pending = { jobId: job.id, profile };
+            const pending = { jobId: job.id, profile, idea: input };
             savePendingDirectorJob(pending);
             resumedPendingJobRef.current = true;
             setPendingJob(pending);
@@ -308,7 +309,7 @@ export default function DirectorWorkbenchPage() {
                                 onClick={() => void createPlan()}
                             >
                                 {planning
-                                    ? planningStage.includes("核对费用")
+                                    ? planningStage.includes("核对")
                                         ? "正在核费"
                                         : "正在规划"
                                     : recoveringPendingJob
@@ -320,7 +321,7 @@ export default function DirectorWorkbenchPage() {
                         </div>
 
                         {planningStage ? (
-                            <div className={`mt-3 rounded-xl border px-3 py-2 text-xs leading-5 ${planningStage.includes("核对费用") ? "border-amber-500/30 bg-amber-500/10 text-amber-200" : "border-stone-700 bg-stone-900/60 text-stone-400"}`}>
+                            <div className={`mt-3 rounded-xl border px-3 py-2 text-xs leading-5 ${planningStage.includes("核对") ? "border-amber-500/30 bg-amber-500/10 text-amber-200" : "border-stone-700 bg-stone-900/60 text-stone-400"}`}>
                                 {planningStage}
                             </div>
                         ) : null}

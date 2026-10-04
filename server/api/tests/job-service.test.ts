@@ -346,7 +346,7 @@ test("recent director planning can be recovered for its creator", async () => {
         assert.match(sql, /created_at>=now\(\)-interval '24 hours'/);
         queryValues = values;
         return {
-          rows: [{ id: "director-job-1", status: "completed" }],
+          rows: [{ id: "director-job-1", status: "completed", idea: "雨夜重逢", profile: "short" }],
           rowCount: 1,
         };
       },
@@ -364,6 +364,8 @@ test("recent director planning can be recovered for its creator", async () => {
   assert.deepEqual(await service.pendingDirectorJob("user-1"), {
     id: "director-job-1",
     status: "completed",
+    idea: "雨夜重逢",
+    profile: "short",
   });
   assert.deepEqual(queryValues, ["user-1"]);
 });

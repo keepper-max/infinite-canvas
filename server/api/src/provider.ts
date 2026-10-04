@@ -98,10 +98,11 @@ export class Token360Provider implements GenerationProvider {
           "模型没有返回文本结果",
           false,
         );
+      const responseId = readId(payload);
       return {
-        billingTraceId: readBillingTrace(response, correlationId),
+        billingTraceId: readBillingTrace(response, responseId, correlationId),
         status: "completed",
-        usage: readUsage(payload),
+        usage: readUsage(payload, responseId),
         artifacts: [
           { kind: "text", mimeType: "text/plain; charset=utf-8", text },
         ],
@@ -139,11 +140,12 @@ export class Token360Provider implements GenerationProvider {
           "模型没有返回图片结果",
           false,
         );
+      const responseId = readId(payload);
       return {
-        billingTraceId: readBillingTrace(response, correlationId),
+        billingTraceId: readBillingTrace(response, responseId, correlationId),
         status: "completed",
         artifacts: [...artifacts, ...base64],
-        usage: readUsage(payload),
+        usage: readUsage(payload, responseId),
       };
     }
     if (request.capability === "audio") {
@@ -158,7 +160,7 @@ export class Token360Provider implements GenerationProvider {
         correlationHeaders,
       );
       return {
-        billingTraceId: readBillingTrace(response, correlationId),
+        billingTraceId: readBillingTrace(response, undefined, correlationId),
         status: "completed",
         artifacts: [
           {
@@ -180,13 +182,14 @@ export class Token360Provider implements GenerationProvider {
       "POST",
       correlationHeaders,
     );
-    const billingTraceId = readBillingTrace(response, correlationId);
+    const responseId = readId(payload);
+    const billingTraceId = readBillingTrace(response, responseId, correlationId);
     const directUrls = uniqueMediaUrls(readUrls(payload));
     if (directUrls.length)
       return {
         billingTraceId,
         status: "completed",
-        usage: readUsage(payload),
+        usage: readUsage(payload, responseId),
         artifacts: directUrls.map((url) => ({
           kind: "video",
           mimeType: "video/mp4",
@@ -216,7 +219,7 @@ export class Token360Provider implements GenerationProvider {
       billingTraceId,
       status,
       progress: readProgress(payload),
-      usage: readUsage(payload),
+      usage: readUsage(payload, responseId),
     };
   }
 
@@ -461,18 +464,22 @@ export class Token360Provider implements GenerationProvider {
   }
 }
 
-function readBillingTrace(response: Response, fallback?: string) {
-  return (
-    response.headers.get("x-oneapi-request-id") ||
-    response.headers.get("x-trace-id") ||
-    response.headers.get("x-request-id") ||
-    fallback
-  );
+function readBillingTrace(response: Response, responseId?: string, fallback?: string) {
+  const billingId = response.headers.get("x-oneapi-request-id");
+  const traceId = response.headers.get("x-trace-id");
+  const requestId = response.headers.get("x-request-id");
+  return billingId ||
+    (traceId && traceId !== fallback ? traceId : undefined) ||
+    (requestId && requestId !== fallback ? requestId : undefined) ||
+    responseId || traceId || requestId || fallback;
 }
 
-function readUsage(value: unknown) {
+function readUsage(value: unknown, providerRequestId?: string) {
   const usage = asRecord(unwrap(value).usage || asRecord(value).usage);
-  return Object.keys(usage).length ? usage : undefined;
+  if (!Object.keys(usage).length && !providerRequestId) return undefined;
+  return providerRequestId && !usage.provider_request_id
+    ? { ...usage, provider_request_id: providerRequestId }
+    : usage;
 }
 
 function compileVideoBody(request: CompiledGenerationRequest) {

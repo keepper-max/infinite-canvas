@@ -242,7 +242,10 @@ export class JobService {
 
   async pendingDirectorJob(userId: string) {
     const result = await this.pool.query(
-      `select id,status from generation_jobs
+      `select id,status,
+         input_snapshot->'trace'->'inputSnapshot'->>'idea' idea,
+         input_snapshot->'trace'->'inputSnapshot'->>'profile' profile
+       from generation_jobs
        where created_by=$1
          and input_snapshot->'trace'->>'workflowKind'='director.workflow'
          and status not in ('failed','cancelled','payment_required')
@@ -251,7 +254,12 @@ export class JobService {
       [userId],
     );
     return result.rows[0]
-      ? { id: String(result.rows[0].id), status: String(result.rows[0].status) }
+      ? {
+          id: String(result.rows[0].id),
+          status: String(result.rows[0].status),
+          idea: String(result.rows[0].idea || ""),
+          profile: String(result.rows[0].profile || "auto"),
+        }
       : null;
   }
 
