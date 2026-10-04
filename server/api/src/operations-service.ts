@@ -10,6 +10,7 @@ import type { PaymentService } from "./payment-service.js";
 import type {
   PaymentOrderInput,
   PaymentPlanInput,
+  ManualBillingResolutionInput,
   ProviderBillingRuleInput,
   SmsRequestInput,
   SmsVerifyInput,
@@ -182,6 +183,12 @@ export interface OperationsServicePort {
   reconcileUsage(
     userId: string,
     jobId: string,
+    requestId: string,
+  ): Promise<unknown>;
+  resolveManualBilling(
+    userId: string,
+    jobId: string,
+    input: ManualBillingResolutionInput,
     requestId: string,
   ): Promise<unknown>;
   auditAdminAccess(
@@ -1586,6 +1593,27 @@ export class OperationsService implements OperationsServicePort {
       "generation_job",
       jobId,
       { result },
+      requestId,
+    );
+    return result;
+  }
+
+  async resolveManualBilling(
+    userId: string,
+    jobId: string,
+    input: ManualBillingResolutionInput,
+    requestId: string,
+  ) {
+    await this.requireAdmin(userId);
+    if (!this.billing)
+      throw new DomainError("BILLING_UNAVAILABLE", "账单服务未配置", 503, true);
+    const result = await this.billing.resolveManualReview(jobId, input);
+    await this.auditDirect(
+      userId,
+      "billing.manual_resolve",
+      "generation_job",
+      jobId,
+      { resolution: input.resolution, note: input.note, result },
       requestId,
     );
     return result;

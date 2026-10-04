@@ -1,5 +1,5 @@
 import { ArrowLeft, Boxes, CircleDollarSign, ClipboardList, CreditCard, LayoutDashboard, MessageSquareText, ReceiptText, Share2, ShieldCheck, Users } from "lucide-react";
-import { Button, DatePicker, Drawer, Empty, Input, InputNumber, Modal, Select, Space, Spin, Switch, Table, Tag, Tooltip, message } from "antd";
+import { Alert, Button, DatePicker, Drawer, Empty, Input, InputNumber, Modal, Radio, Select, Space, Spin, Switch, Table, Tag, Tooltip, message } from "antd";
 import dayjs, { type Dayjs } from "dayjs";
 import { useCallback, useEffect, useState } from "react";
 import { Link, useParams, useSearchParams } from "react-router-dom";
@@ -31,6 +31,7 @@ import {
     grantAdminUserCredits,
     issueAdminActivationCode,
     reconcileAdminJob,
+    resolveAdminJobBilling,
     replyAdminFeedback,
     revokeAdminUserSessions,
     setAdminUserRole,
@@ -50,6 +51,7 @@ import {
     type AdminAuditLog,
     type UserFeedback,
     type AdminJob,
+    type ManualBillingResolution,
     type AdminModel,
     type DirectorSettings,
     type AdminOverview,
@@ -1235,6 +1237,11 @@ function JobsPanel() {
     const createdTo = searchParams.get("createdTo") || undefined;
     const [loading, setLoading] = useState(true);
     const [reconcilingId, setReconcilingId] = useState<string>();
+    const [reviewingJob, setReviewingJob] = useState<AdminJob>();
+    const [reviewResolution, setReviewResolution] = useState<ManualBillingResolution["resolution"]>("not_billed");
+    const [reviewAmount, setReviewAmount] = useState("");
+    const [reviewCurrency, setReviewCurrency] = useState<"CNY" | "USD">("CNY");
+    const [reviewNote, setReviewNote] = useState("");
     const updateSearch = (key: string, value?: string) => {
         const next = new URLSearchParams(searchParams);
         if (value) next.set(key, value);
@@ -1260,7 +1267,61 @@ function JobsPanel() {
             .finally(() => setLoading(false));
     }, [createdFrom, createdTo, page, q, status]);
     useEffect(load, [load]);
+    const closeReview = () => {
+        if (reconcilingId) return;
+        setReviewingJob(undefined);
+        setReviewResolution("not_billed");
+        setReviewAmount("");
+        setReviewCurrency("CNY");
+        setReviewNote("");
+    };
+    const submitManualReview = () => {
+        if (!reviewingJob || reconcilingId) return;
+        const note = reviewNote.trim();
+        if (note.length < 2) {
+            message.warning("请填写至少 2 个字的核验备注");
+            return;
+        }
+        if (reviewResolution === "billed" && (!reviewAmount || Number(reviewAmount) <= 0)) {
+            message.warning("请输入大于 0 的供应商实际扣费金额");
+            return;
+        }
+        const input: ManualBillingResolution = reviewResolution === "not_billed"
+            ? { resolution: "not_billed", note }
+            : { resolution: "billed", amount: reviewAmount, currency: reviewCurrency, note };
+        Modal.confirm({
+            title: reviewResolution === "not_billed" ? "确认供应商未扣费？" : "确认按实际金额结算？",
+            content: reviewResolution === "not_billed"
+                ? "确认后将解除该任务的冻结积分，并标记为未出账。此操作会写入审计日志。"
+                : `确认后将按 ${reviewAmount} ${reviewCurrency} 换算并扣除积分，生成任务仍保持失败。此操作会写入审计日志。`,
+            okText: reviewResolution === "not_billed" ? "确认未扣费并释放" : "确认扣费并结算",
+            cancelText: "返回检查",
+            okButtonProps: reviewResolution === "billed" ? { danger: true } : undefined,
+            onOk: async () => {
+                setReconcilingId(reviewingJob.id);
+                try {
+                    const result = await resolveAdminJobBilling(reviewingJob.id, input);
+                    setItems((current) => current.map((job) => (job.id === reviewingJob.id
+                        ? { ...job, billingStatus: result.status, billingError: undefined }
+                        : job)));
+                    setReviewingJob(undefined);
+                    if (result.status === "not_billed") message.success("已确认未扣费，冻结积分已释放");
+                    else message.success(`已完成结算${result.points ? `，扣除 ${result.points} 积分` : ""}`);
+                    setReviewResolution("not_billed");
+                    setReviewAmount("");
+                    setReviewCurrency("CNY");
+                    setReviewNote("");
+                } catch (error) {
+                    message.error(error instanceof Error ? error.message : "人工核验处理失败");
+                    throw error;
+                } finally {
+                    setReconcilingId(undefined);
+                }
+            },
+        });
+    };
     return (
+        <>
         <Panel
             title="全局生成任务"
             note={createdFrom && createdTo ? `已筛选 ${createdFrom} 至 ${createdTo}；对账异常不会改写生成状态` : "对账异常不会改写生成状态"}
@@ -1329,10 +1390,14 @@ function JobsPanel() {
                         render: (_, item) => (
                             <Button
                                 size="small"
-                                disabled={!item.billingTraceId}
+                                disabled={item.billingStatus === "mismatch" ? !item.providerJobId : !item.billingTraceId}
                                 loading={reconcilingId === item.id}
                                 onClick={async () => {
                                     if (reconcilingId) return;
+                                    if (item.billingStatus === "mismatch") {
+                                        setReviewingJob(item);
+                                        return;
+                                    }
                                     setReconcilingId(item.id);
                                     try {
                                         const result = await reconcileAdminJob(item.id);
@@ -1346,13 +1411,69 @@ function JobsPanel() {
                                     }
                                 }}
                             >
-                                {reconcilingId === item.id ? "核验中" : item.billingStatus === "mismatch" ? "人工核验" : "重新对账"}
+                                {reconcilingId === item.id ? "处理中" : item.billingStatus === "mismatch" ? "人工核验" : "重新对账"}
                             </Button>
                         ),
                     },
                 ]}
             />
         </Panel>
+        <Modal
+            open={Boolean(reviewingJob)}
+            title="人工核验供应商扣费"
+            okText="继续确认"
+            cancelText="暂不处理"
+            confirmLoading={Boolean(reconcilingId)}
+            maskClosable={!reconcilingId}
+            closable={!reconcilingId}
+            onCancel={closeReview}
+            onOk={submitManualReview}
+        >
+            <div className="space-y-4 py-2">
+                <Alert
+                    type="warning"
+                    showIcon
+                    message="请先在供应商后台核对任务号与实际账单"
+                    description={`任务 ${reviewingJob?.id || "—"}；供应商任务号 ${reviewingJob?.providerJobId || "—"}`}
+                />
+                <Radio.Group
+                    className="flex flex-col gap-3"
+                    value={reviewResolution}
+                    onChange={(event) => setReviewResolution(event.target.value)}
+                >
+                    <Radio value="not_billed">确认未扣费，释放冻结积分</Radio>
+                    <Radio value="billed">确认已扣费，按实际金额结算积分</Radio>
+                </Radio.Group>
+                {reviewResolution === "billed" ? (
+                    <Space.Compact className="w-full">
+                        <InputNumber
+                            className="w-full"
+                            stringMode
+                            min="0.00000001"
+                            precision={8}
+                            placeholder="供应商实际扣费金额"
+                            value={reviewAmount || null}
+                            onChange={(value) => setReviewAmount(value === null ? "" : String(value))}
+                        />
+                        <Select
+                            className="w-28"
+                            value={reviewCurrency}
+                            options={[{ value: "CNY", label: "CNY" }, { value: "USD", label: "USD" }]}
+                            onChange={setReviewCurrency}
+                        />
+                    </Space.Compact>
+                ) : null}
+                <Input.TextArea
+                    rows={3}
+                    maxLength={500}
+                    showCount
+                    placeholder="必填：记录核验依据，例如供应商后台查询时间、账单结果"
+                    value={reviewNote}
+                    onChange={(event) => setReviewNote(event.target.value)}
+                />
+            </div>
+        </Modal>
+        </>
     );
 }
 

@@ -3,6 +3,7 @@ import type { Pool, PoolClient } from "pg";
 import type { ProviderConfig } from "./config.js";
 import type { CreditService } from "./credit-service.js";
 import { DomainError } from "./domain.js";
+import type { ManualBillingResolutionInput } from "./operations-contract.js";
 import { volcengineArkAmount } from "./volcengine-ark-pricing.js";
 
 const TERMINAL_JOB_STATUSES = ["completed", "failed", "cancelled", "billing_pending"];
@@ -89,6 +90,162 @@ export class BillingService {
        where id=$1`,
       [jobId, JSON.stringify(usage)],
     );
+  }
+
+  async resolveManualReview(
+    jobId: string,
+    input: ManualBillingResolutionInput,
+  ) {
+    const claimed = await this.pool.query(
+      `update generation_jobs set billing_status='reconciling',billing_error=null,billing_last_checked_at=now(),updated_at=now()
+       where id=$1 and status='failed' and provider='token360' and provider_job_id is not null
+         and billing_status='mismatch'
+       returning *`,
+      [jobId],
+    );
+    const job = claimed.rows[0];
+    if (!job) {
+      const existing = await this.pool.query(
+        "select status,billing_status,provider_job_id from generation_jobs where id=$1",
+        [jobId],
+      );
+      if (!existing.rows[0])
+        throw new DomainError("BILLING_JOB_NOT_FOUND", "找不到该任务", 404);
+      throw new DomainError(
+        "MANUAL_BILLING_REVIEW_INVALID",
+        "该任务已处理或不符合人工核验条件，请刷新后重试",
+        409,
+      );
+    }
+
+    try {
+      const existingUsage = (
+        await this.pool.query(
+          "select credit_status,credit_points from generation_usage where job_id=$1",
+          [jobId],
+        )
+      ).rows[0];
+      if (
+        existingUsage &&
+        ["charged", "free", "historical"].includes(
+          String(existingUsage.credit_status),
+        )
+      ) {
+        await this.pool.query(
+          `update generation_jobs set billing_status='settled',billing_error=null,
+           billing_next_check_at=null,billing_last_checked_at=now(),updated_at=now() where id=$1`,
+          [jobId],
+        );
+        return {
+          status: "settled",
+          points: String(existingUsage.credit_points || "0"),
+          recovered: true,
+        };
+      }
+      if (input.resolution === "not_billed") {
+        if (!this.credits)
+          throw new DomainError("CREDITS_DISABLED", "积分服务尚未启用", 503);
+        if (BigInt(String(job.credits_due || 0)) > 0n)
+          throw new DomainError(
+            "MANUAL_BILLING_HAS_CREDIT_DEBT",
+            "该任务存在待补积分，不能标记为未扣费",
+            409,
+          );
+        const released = await this.credits.closeTerminalWithoutCharge(jobId);
+        if (!released && BigInt(String(job.credits_reserved || 0)) > 0n)
+          throw new DomainError(
+            "MANUAL_BILLING_RELEASE_FAILED",
+            "冻结积分释放失败，请刷新任务状态后重试",
+            409,
+          );
+        await this.pool.query(
+          `update generation_usage set status='manual_not_billed',billed=false,credit_status='unavailable',
+           amount_base=null,amount_final=null,total_amount=null,wallet_amount=null,voucher_amount=null,price=null,
+           currency=null,usage=usage||$2::jsonb,reconciled_at=now(),updated_at=now()
+           where job_id=$1 and credit_status not in ('charged','free','historical')`,
+          [
+            jobId,
+            JSON.stringify({
+              manual_review: true,
+              manual_review_resolution: "not_billed",
+              manual_review_note: input.note,
+            }),
+          ],
+        );
+        await this.pool.query(
+          `update generation_jobs set billing_status='not_billed',billing_error=null,
+           billing_next_check_at=null,billing_last_checked_at=now(),updated_at=now() where id=$1`,
+          [jobId],
+        );
+        return { status: "not_billed", released };
+      }
+
+      if (!this.credits)
+        throw new DomainError("CREDITS_DISABLED", "积分服务尚未启用", 503);
+      const billingRequestId = `manual:${jobId}`;
+      const providerRequestId = String(job.provider_job_id);
+      await this.pool.query(
+        `insert into generation_usage(job_id,project_id,user_id,billing_request_id,provider,model_id,capability,status,billed,credit_status,
+          amount_final,total_amount,currency,provider_request_id,usage,reconciled_at,updated_at)
+         values($1,$2,$3,$4,$5,$6,$7,'manual_confirmed',true,'manual_settling',$8,$8,$9,$10,$11::jsonb,now(),now())
+         on conflict(job_id) do update set billing_request_id=excluded.billing_request_id,status=excluded.status,billed=true,
+          credit_status=case when generation_usage.credit_status in ('charged','free','historical') then generation_usage.credit_status else 'manual_settling' end,
+          amount_final=excluded.amount_final,total_amount=excluded.total_amount,currency=excluded.currency,
+          provider_request_id=excluded.provider_request_id,usage=excluded.usage,reconciled_at=now(),updated_at=now()`,
+        [
+          job.id,
+          job.project_id,
+          job.created_by,
+          billingRequestId,
+          job.provider,
+          job.model_id,
+          job.capability,
+          input.amount,
+          input.currency,
+          providerRequestId,
+          JSON.stringify({
+            manual_review: true,
+            manual_review_note: input.note,
+            provider_job_id: providerRequestId,
+          }),
+        ],
+      );
+      const settlement = await this.credits.settleUsage(jobId, {
+        rejectInsufficient: true,
+      });
+      if (!["charged", "free"].includes(String(settlement.status)))
+        throw new DomainError(
+          "MANUAL_BILLING_SETTLEMENT_FAILED",
+          settlement.status === "pending_rate"
+            ? "尚未配置 USD/CNY 结算汇率，无法完成扣费"
+            : "积分结算未完成，请检查计费配置后重试",
+          409,
+        );
+      await this.pool.query(
+        `update generation_jobs set billing_status='settled',billing_error=null,
+         billing_next_check_at=null,billing_last_checked_at=now(),updated_at=now() where id=$1`,
+        [jobId],
+      );
+      return {
+        status: "settled",
+        points: String(settlement.points || "0"),
+        amount: input.amount,
+        currency: input.currency,
+      };
+    } catch (error) {
+      await this.pool.query(
+        `update generation_usage set credit_status='manual_review',updated_at=now()
+         where job_id=$1 and credit_status in ('manual_settling','pending','pending_rate','pending_currency','unsupported_currency','unavailable')`,
+        [jobId],
+      );
+      await this.pool.query(
+        `update generation_jobs set billing_status='mismatch',
+         billing_error='生成失败且存在供应商任务号，等待人工核验',billing_next_check_at=null,updated_at=now()
+         where id=$1 and billing_status='reconciling'`,
+        [jobId],
+      );
+      throw error;
+    }
   }
 
   async finalizeProviderUsage(jobId: string) {

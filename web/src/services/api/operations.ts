@@ -377,6 +377,15 @@ export function getAdminJobs(input: Record<string, string | number | boolean | u
 export function reconcileAdminJob(jobId: string) {
     return platformRequest<{ status: string; requestId?: string }>(`/api/admin/jobs/${encodeURIComponent(jobId)}/reconcile`, { method: "POST" });
 }
+export type ManualBillingResolution =
+    | { resolution: "not_billed"; note: string }
+    | { resolution: "billed"; amount: string; currency: "CNY" | "USD"; note: string };
+export function resolveAdminJobBilling(jobId: string, input: ManualBillingResolution) {
+    return platformRequest<{ status: string; released?: boolean; points?: string; amount?: string; currency?: string }>(
+        `/api/admin/jobs/${encodeURIComponent(jobId)}/billing-resolution`,
+        { method: "POST", body: JSON.stringify(input) },
+    );
+}
 export function getAdminAuditLogs(input: Record<string, string | number | boolean | undefined> = {}, signal?: AbortSignal) {
     return platformRequest<PageResult<AdminAuditLog>>(`/api/admin/audit-logs${adminQuery(input)}`, { signal });
 }

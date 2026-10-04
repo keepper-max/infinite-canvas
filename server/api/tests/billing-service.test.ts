@@ -324,6 +324,152 @@ test("manual review remains pending without a provider bill", async () => {
   }
 });
 
+test("manual review can confirm no provider charge and release frozen credits", async () => {
+  const calls: Array<{ sql: string; values?: unknown[] }> = [];
+  const released: string[] = [];
+  const job = {
+    id: "job-manual-no-charge",
+    project_id: "project-1",
+    created_by: "user-1",
+    provider: "token360",
+    provider_job_id: "provider-job-3",
+    model_id: "video.seedance-2-5",
+    capability: "video",
+    status: "failed",
+    billing_status: "mismatch",
+    credits_reserved: "3000",
+    credits_due: "0",
+  };
+  const pool = {
+    async query(sql: string, values?: unknown[]) {
+      calls.push({ sql, values });
+      if (sql.includes("billing_status='reconciling'") && sql.includes("returning *"))
+        return { rows: [job], rowCount: 1 };
+      return { rows: [], rowCount: 1 };
+    },
+  };
+  const result = await new BillingService(pool as never, config, {
+    async closeTerminalWithoutCharge(jobId: string) {
+      released.push(jobId);
+      return true;
+    },
+  } as never).resolveManualReview("job-manual-no-charge", {
+    resolution: "not_billed",
+    note: "供应商后台确认没有账单",
+  });
+  assert.deepEqual(result, { status: "not_billed", released: true });
+  assert.deepEqual(released, ["job-manual-no-charge"]);
+  assert.equal(
+    calls.some(({ sql }) => sql.includes("billing_status='not_billed'")),
+    true,
+  );
+  assert.equal(
+    calls.some(({ sql }) => sql.includes("status='manual_not_billed'")),
+    true,
+  );
+});
+
+test("manual review can record an actual provider charge and settle credits", async () => {
+  const calls: Array<{ sql: string; values?: unknown[] }> = [];
+  const settled: Array<{ jobId: string; rejectInsufficient?: boolean }> = [];
+  const job = {
+    id: "job-manual-billed",
+    project_id: "project-1",
+    created_by: "user-1",
+    provider: "token360",
+    provider_job_id: "provider-job-4",
+    model_id: "video.seedance-2-5",
+    capability: "video",
+    status: "failed",
+    billing_status: "mismatch",
+  };
+  const pool = {
+    async query(sql: string, values?: unknown[]) {
+      calls.push({ sql, values });
+      if (sql.includes("billing_status='reconciling'") && sql.includes("returning *"))
+        return { rows: [job], rowCount: 1 };
+      return { rows: [], rowCount: 1 };
+    },
+  };
+  const result = await new BillingService(pool as never, config, {
+    async settleUsage(jobId: string, options?: { rejectInsufficient?: boolean }) {
+      settled.push({ jobId, ...options });
+      return { status: "charged", points: "87" };
+    },
+  } as never).resolveManualReview("job-manual-billed", {
+    resolution: "billed",
+    amount: "0.10",
+    currency: "USD",
+    note: "供应商账单中心已显示扣费",
+  });
+  assert.deepEqual(result, {
+    status: "settled",
+    points: "87",
+    amount: "0.10",
+    currency: "USD",
+  });
+  assert.deepEqual(settled, [
+    { jobId: "job-manual-billed", rejectInsufficient: true },
+  ]);
+  const insert = calls.find(({ sql }) => sql.includes("insert into generation_usage"));
+  assert.ok(insert?.values);
+  assert.equal(insert.values[7], "0.10");
+  assert.equal(insert.values[8], "USD");
+  assert.equal(insert.values[9], "provider-job-4");
+  assert.equal(
+    calls.some(({ sql }) => sql.includes("billing_status='settled'")),
+    true,
+  );
+});
+
+test("failed manual settlement restores the task to manual review", async () => {
+  const calls: Array<{ sql: string; values?: unknown[] }> = [];
+  const pool = {
+    async query(sql: string, values?: unknown[]) {
+      calls.push({ sql, values });
+      if (sql.includes("billing_status='reconciling'") && sql.includes("returning *"))
+        return {
+          rows: [{
+            id: "job-manual-retry",
+            project_id: "project-1",
+            created_by: "user-1",
+            provider: "token360",
+            provider_job_id: "provider-job-5",
+            model_id: "video.seedance-2-5",
+            capability: "video",
+            status: "failed",
+            billing_status: "mismatch",
+          }],
+          rowCount: 1,
+        };
+      return { rows: [], rowCount: 1 };
+    },
+  };
+  await assert.rejects(
+    () => new BillingService(pool as never, config, {
+      async settleUsage() {
+        throw new Error("not enough credits");
+      },
+    } as never).resolveManualReview("job-manual-retry", {
+      resolution: "billed",
+      amount: "1",
+      currency: "CNY",
+      note: "人工确认账单",
+    }),
+    /not enough credits/,
+  );
+  assert.equal(
+    calls.some(({ sql }) =>
+      sql.includes("billing_status='mismatch'") &&
+      sql.includes("billing_status='reconciling'")),
+    true,
+  );
+  assert.equal(
+    calls.some(({ sql }) => sql.includes("credit_status='manual_review'")),
+    true,
+  );
+});
+
 test("failed Token360 jobs without a provider job id wait one hour", async () => {
   const calls: Array<{ sql: string; values?: unknown[] }> = [];
   const released: string[] = [];

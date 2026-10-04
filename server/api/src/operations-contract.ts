@@ -41,6 +41,25 @@ export const providerBillingRuleInputSchema = z
     note: z.string().trim().max(200),
   })
   .strict();
+export const manualBillingResolutionSchema = z.discriminatedUnion("resolution", [
+  z
+    .object({
+      resolution: z.literal("not_billed"),
+      note: z.string().trim().min(2, "请填写核验备注").max(500),
+    })
+    .strict(),
+  z
+    .object({
+      resolution: z.literal("billed"),
+      amount: z
+        .string()
+        .trim()
+        .regex(/^(?:0*[1-9]\d*)(?:\.\d{1,8})?$|^0*\.\d*[1-9]\d*$/, "请输入大于 0 的实际扣费金额"),
+      currency: z.enum(["CNY", "USD"]),
+      note: z.string().trim().min(2, "请填写核验备注").max(500),
+    })
+    .strict(),
+]);
 export const teamCreateSchema = z
   .object({ name: z.string().trim().min(1).max(100) })
   .strict();
@@ -59,5 +78,6 @@ export type SmsVerifyInput = z.infer<typeof smsVerifySchema>;
 export type PaymentOrderInput = z.infer<typeof paymentOrderSchema>;
 export type PaymentPlanInput = z.infer<typeof paymentPlanInputSchema>;
 export type ProviderBillingRuleInput = z.infer<typeof providerBillingRuleInputSchema>;
+export type ManualBillingResolutionInput = z.infer<typeof manualBillingResolutionSchema>;
 export type TeamCreateInput = z.infer<typeof teamCreateSchema>;
 export type TeamMemberInput = z.infer<typeof teamMemberSchema>;

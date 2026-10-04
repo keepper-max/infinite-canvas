@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
+  manualBillingResolutionSchema,
   paymentOrderSchema,
   paymentPlanInputSchema,
   smsRequestSchema,
@@ -31,6 +32,20 @@ test("operations contracts accept normalized interface payloads", () => {
     paymentPlanInputSchema.parse({ name: "  1000 积分套餐  ", credits: 1000, priceCents: 990, enabled: false }),
     { name: "1000 积分套餐", credits: 1000, priceCents: 990, enabled: false },
   );
+  assert.deepEqual(
+    manualBillingResolutionSchema.parse({
+      resolution: "billed",
+      amount: "0.16780292",
+      currency: "USD",
+      note: "供应商后台已确认",
+    }),
+    {
+      resolution: "billed",
+      amount: "0.16780292",
+      currency: "USD",
+      note: "供应商后台已确认",
+    },
+  );
 });
 
 test("operations contracts reject ambiguous or unsafe payloads", () => {
@@ -55,6 +70,20 @@ test("operations contracts reject ambiguous or unsafe payloads", () => {
       planId: "creator",
       provider: "alipay",
       idempotencyKey: "order-key-001",
+    }),
+  );
+  assert.throws(() =>
+    manualBillingResolutionSchema.parse({
+      resolution: "not_billed",
+      note: "",
+    }),
+  );
+  assert.throws(() =>
+    manualBillingResolutionSchema.parse({
+      resolution: "billed",
+      amount: "0",
+      currency: "USD",
+      note: "人工核验",
     }),
   );
 });

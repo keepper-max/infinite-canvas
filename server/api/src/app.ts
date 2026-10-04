@@ -50,6 +50,7 @@ import type { ModelGateway } from "./model-gateway.js";
 import {
   paymentOrderSchema,
   paymentPlanInputSchema,
+  manualBillingResolutionSchema,
   providerBillingRuleInputSchema,
   smsRequestSchema,
   smsVerifySchema,
@@ -1359,6 +1360,21 @@ export function createApp(
         await requireOperationsService(operationsService).reconcileUsage(
           user.id,
           uuidParam.parse(context.req.param("jobId")),
+          context.get("requestId"),
+        ),
+      ),
+    );
+  });
+
+  app.post("/api/admin/jobs/:jobId/billing-resolution", async (context) => {
+    const user = await requireUser(context.req.raw, repository, config);
+    return context.json(
+      success(
+        context,
+        await requireOperationsService(operationsService).resolveManualBilling(
+          user.id,
+          uuidParam.parse(context.req.param("jobId")),
+          manualBillingResolutionSchema.parse(await readJson(context.req.raw)),
           context.get("requestId"),
         ),
       ),

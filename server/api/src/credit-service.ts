@@ -522,7 +522,10 @@ export class CreditService {
     };
   }
 
-  async settleUsage(jobId: string) {
+  async settleUsage(
+    jobId: string,
+    options: { rejectInsufficient?: boolean } = {},
+  ) {
     const outcome = await transaction(this.pool, async (client) => {
       const preview = await client.query(
         "select user_id from generation_usage where job_id=$1",
@@ -625,6 +628,12 @@ export class CreditService {
       const jobReservation = BigInt(String(job.credits_reserved || 0));
       const otherReservations = reserved > jobReservation ? reserved - jobReservation : 0n;
       if (balance - otherReservations < points) {
+        if (options.rejectInsufficient)
+          throw new DomainError(
+            "INSUFFICIENT_CREDITS",
+            `实际扣费需 ${points.toString()} 积分，账户余额不足；请先补充积分或核对金额`,
+            409,
+          );
         await client.query(
           `update credit_accounts set reserved=greatest(0,reserved-$2::bigint)+$3::bigint,updated_at=now()
            where id=$1`,
