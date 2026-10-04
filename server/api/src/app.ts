@@ -1681,6 +1681,15 @@ export function createApp(
     );
   });
 
+  app.get("/api/director/pending-job", async (context) => {
+    const user = await requireUser(context.req.raw, repository, config);
+    return context.json(
+      success(context, {
+        job: await requireJobService(jobService).pendingDirectorJob(user.id),
+      }),
+    );
+  });
+
   app.post("/api/projects/:projectId/jobs", async (context) => {
     const user = await requireUser(context.req.raw, repository, config);
     const input = createJobSchema.parse(await readJson(context.req.raw));

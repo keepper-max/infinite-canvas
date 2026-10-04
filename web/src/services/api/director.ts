@@ -5,3 +5,7 @@ export type DirectorSettings = { enabled: boolean; modelId: string | null; model
 export async function getDirectorSettings(signal?: AbortSignal) {
     return (await platformRequest<{ settings: DirectorSettings }>("/api/director/settings", { signal })).settings;
 }
+
+export async function getPendingDirectorJob(signal?: AbortSignal) {
+    return (await platformRequest<{ job: { id: string; status: string } | null }>("/api/director/pending-job", { signal })).job;
+}

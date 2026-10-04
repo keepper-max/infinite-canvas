@@ -1,12 +1,12 @@
 import { App, Button, Input, Select, Tag } from "antd";
 import { ArrowRight, CheckCircle2, Clapperboard, Film, LoaderCircle, Sparkles, Workflow } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 
 import { registerDramaNodes } from "@/components/canvas/nodes/drama-nodes";
 import { createCanvasDraft, getCanvas, saveCanvas } from "@/services/api/canvas";
 import { createManagedJob, waitForManagedJob } from "@/services/api/jobs";
-import { getDirectorSettings, type DirectorSettings } from "@/services/api/director";
+import { getDirectorSettings, getPendingDirectorJob, type DirectorSettings } from "@/services/api/director";
 import { listProjects, type ProjectSummary } from "@/services/api/platform";
 import { buildDirectorWorkflow, directorSystemPrompt, directorWorkflowNodeKeys, directorWorkflowOrigin, parseDirectorPlan, type DirectorWorkflowPlan, type DirectorWorkflowProfile } from "@/lib/drama/director-workflow";
 import { modelOptionLabel, useEffectiveConfig } from "@/stores/use-config-store";
@@ -44,6 +44,49 @@ const NODE_NAMES: Record<string, string> = {
     output: "成片输出",
 };
 
+const PENDING_DIRECTOR_JOB_KEY = "shoushou.director.pending-job.v1";
+const LAST_HANDLED_DIRECTOR_JOB_KEY = "shoushou.director.last-handled-job.v1";
+
+type PendingDirectorJob = {
+    jobId: string;
+    profile: DirectorWorkflowProfile | "auto";
+};
+
+function readPendingDirectorJob(): PendingDirectorJob | null {
+    try {
+        const value = JSON.parse(localStorage.getItem(PENDING_DIRECTOR_JOB_KEY) || "null") as Partial<PendingDirectorJob> | null;
+        if (!value?.jobId || !PROFILE_OPTIONS.some((item) => item.value === value.profile)) return null;
+        return { jobId: value.jobId, profile: value.profile! };
+    } catch {
+        return null;
+    }
+}
+
+function savePendingDirectorJob(value: PendingDirectorJob | null) {
+    try {
+        if (value) localStorage.setItem(PENDING_DIRECTOR_JOB_KEY, JSON.stringify(value));
+        else localStorage.removeItem(PENDING_DIRECTOR_JOB_KEY);
+    } catch {
+        // Browser storage can be unavailable in private or restricted contexts.
+    }
+}
+
+function readLastHandledDirectorJobId() {
+    try {
+        return localStorage.getItem(LAST_HANDLED_DIRECTOR_JOB_KEY) || "";
+    } catch {
+        return "";
+    }
+}
+
+function saveLastHandledDirectorJobId(jobId: string) {
+    try {
+        localStorage.setItem(LAST_HANDLED_DIRECTOR_JOB_KEY, jobId);
+    } catch {
+        // Browser storage can be unavailable in private or restricted contexts.
+    }
+}
+
 export default function DirectorWorkbenchPage() {
     const { message } = App.useApp();
     const navigate = useNavigate();
@@ -56,7 +99,12 @@ export default function DirectorWorkbenchPage() {
     const [projects, setProjects] = useState<ProjectSummary[]>([]);
     const [projectId, setProjectId] = useState("");
     const [planning, setPlanning] = useState(false);
+    const [planningStage, setPlanningStage] = useState("");
+    const [pendingJob, setPendingJob] = useState<PendingDirectorJob | null>(() => readPendingDirectorJob());
+    const [recoveringPendingJob, setRecoveringPendingJob] = useState(true);
     const [transferring, setTransferring] = useState(false);
+    const planningControllerRef = useRef<AbortController | null>(null);
+    const resumedPendingJobRef = useRef(false);
     const selectedProfile = PROFILE_OPTIONS.find((item) => item.value === profile) || PROFILE_OPTIONS[0];
     const nodeKeys = useMemo(() => (plan ? directorWorkflowNodeKeys(plan.profile) : []), [plan]);
 
@@ -83,28 +131,114 @@ export default function DirectorWorkbenchPage() {
         return () => controller.abort();
     }, [message]);
 
-    const createPlan = async () => {
-        const input = idea.trim();
-        if (!input) return message.warning("请先描述你想制作的漫剧");
-        setPlanning(true);
-        try {
-            const job = await createManagedJob({
-                model,
-                capability: "text",
-                mode: "chat",
-                prompt: directorSystemPrompt(input, profile),
-                trace: { workflowKind: "director.workflow", skillId: "seedance-director-workflow", skillVersion: "1" },
+    useEffect(() => {
+        if (pendingJob) {
+            setRecoveringPendingJob(false);
+            return;
+        }
+        const controller = new AbortController();
+        void getPendingDirectorJob(controller.signal)
+            .then((job) => {
+                if (!job || job.id === readLastHandledDirectorJobId()) return;
+                const recovered = { jobId: job.id, profile: "auto" as const };
+                savePendingDirectorJob(recovered);
+                setPendingJob(recovered);
+            })
+            .catch((error) => {
+                if (!controller.signal.aborted) message.error(error instanceof Error ? error.message : "未完成任务检查失败");
+            })
+            .finally(() => {
+                if (!controller.signal.aborted) setRecoveringPendingJob(false);
             });
-            const completed = await waitForManagedJob(job.id);
-            const text = String(completed.artifacts?.find((artifact) => artifact.text)?.text || "").trim();
-            if (!text) throw new Error("导演模型没有返回规划结果");
-            const parsed = parseDirectorPlan(text);
-            setPlan(profile === "auto" ? parsed : { ...parsed, profile });
-            message.success("工作流方案已生成，请确认后转移到画布");
+        return () => controller.abort();
+    }, [message]);
+
+    useEffect(
+        () => () => {
+            planningControllerRef.current?.abort();
+        },
+        [],
+    );
+
+    const waitForPlan = async (pending: PendingDirectorJob, signal: AbortSignal) => {
+        const completed = await waitForManagedJob(pending.jobId, signal, (job) => {
+            if (job.status === "billing_pending") {
+                setPlanningStage("规划已经生成，正在核对费用。可以离开本页，稍后回来会自动恢复，请勿重复提交。");
+                return;
+            }
+            if (["pending", "queued"].includes(job.status)) setPlanningStage("导演任务正在排队");
+            else setPlanningStage("导演模型正在生成规划");
+        });
+        const text = String(completed.artifacts?.find((artifact) => artifact.text)?.text || "").trim();
+        if (!text) throw new Error("导演模型没有返回规划结果");
+        const parsed = parseDirectorPlan(text);
+        setPlan(pending.profile === "auto" ? parsed : { ...parsed, profile: pending.profile });
+        saveLastHandledDirectorJobId(pending.jobId);
+        savePendingDirectorJob(null);
+        setPendingJob(null);
+        setPlanningStage("");
+        message.success("工作流方案已生成，请确认后转移到画布");
+    };
+
+    const resumePlan = async (pending: PendingDirectorJob) => {
+        planningControllerRef.current?.abort();
+        const controller = new AbortController();
+        planningControllerRef.current = controller;
+        setPlanning(true);
+        setPlanningStage("正在恢复上次的导演任务");
+        try {
+            await waitForPlan(pending, controller.signal);
         } catch (error) {
+            if (controller.signal.aborted) return;
+            savePendingDirectorJob(null);
+            setPendingJob(null);
+            setPlanningStage("");
             message.error(error instanceof Error ? error.message : "导演规划失败");
         } finally {
-            setPlanning(false);
+            if (planningControllerRef.current === controller) planningControllerRef.current = null;
+            if (!controller.signal.aborted) setPlanning(false);
+        }
+    };
+
+    useEffect(() => {
+        if (!pendingJob || resumedPendingJobRef.current) return;
+        resumedPendingJobRef.current = true;
+        void resumePlan(pendingJob);
+    }, [pendingJob]);
+
+    const createPlan = async () => {
+        if (pendingJob) return resumePlan(pendingJob);
+        const input = idea.trim();
+        if (!input) return message.warning("请先描述你想制作的漫剧");
+        const controller = new AbortController();
+        planningControllerRef.current = controller;
+        setPlanning(true);
+        setPlanningStage("正在提交导演任务");
+        try {
+            const job = await createManagedJob(
+                {
+                    model,
+                    capability: "text",
+                    mode: "chat",
+                    prompt: directorSystemPrompt(input, profile),
+                    trace: { workflowKind: "director.workflow", skillId: "seedance-director-workflow", skillVersion: "1" },
+                },
+                { signal: controller.signal },
+            );
+            const pending = { jobId: job.id, profile };
+            savePendingDirectorJob(pending);
+            resumedPendingJobRef.current = true;
+            setPendingJob(pending);
+            await waitForPlan(pending, controller.signal);
+        } catch (error) {
+            if (controller.signal.aborted) return;
+            savePendingDirectorJob(null);
+            setPendingJob(null);
+            setPlanningStage("");
+            message.error(error instanceof Error ? error.message : "导演规划失败");
+        } finally {
+            if (planningControllerRef.current === controller) planningControllerRef.current = null;
+            if (!controller.signal.aborted) setPlanning(false);
         }
     };
 
@@ -166,12 +300,26 @@ export default function DirectorWorkbenchPage() {
                                 type="primary"
                                 size="large"
                                 icon={planning ? <LoaderCircle className="size-4 animate-spin" /> : <Sparkles className="size-4" />}
-                                disabled={planning || !idea.trim() || !directorSettings?.enabled}
+                                disabled={planning || recoveringPendingJob || (!pendingJob && !idea.trim()) || !directorSettings?.enabled}
                                 onClick={() => void createPlan()}
                             >
-                                {planning ? "正在规划" : "生成工作流"}
+                                {planning
+                                    ? planningStage.includes("核对费用")
+                                        ? "正在核费"
+                                        : "正在规划"
+                                    : recoveringPendingJob
+                                      ? "检查未完成任务"
+                                      : pendingJob
+                                        ? "继续检查规划"
+                                        : "生成工作流"}
                             </Button>
                         </div>
+
+                        {planningStage ? (
+                            <div className={`mt-3 rounded-xl border px-3 py-2 text-xs leading-5 ${planningStage.includes("核对费用") ? "border-amber-500/30 bg-amber-500/10 text-amber-200" : "border-stone-700 bg-stone-900/60 text-stone-400"}`}>
+                                {planningStage}
+                            </div>
+                        ) : null}
 
                         <div className="mt-auto flex items-center gap-2 pt-10 text-xs text-stone-500">
                             <CheckCircle2 className={`size-4 ${directorSettings?.enabled ? "text-emerald-400" : "text-stone-600"}`} />

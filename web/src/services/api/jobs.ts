@@ -97,12 +97,13 @@ export async function retryManagedJob(jobId: string) {
     return (await platformRequest<{ job: ManagedJob }>(`/api/jobs/${encodeURIComponent(jobId)}/retry`, { method: "POST" })).job;
 }
 
-export async function waitForManagedJob(jobId: string, signal?: AbortSignal) {
+export async function waitForManagedJob(jobId: string, signal?: AbortSignal, onUpdate?: (job: ManagedJob) => void) {
     const unbindCancellation = cancelManagedJobOnAbort(jobId, signal);
     try {
         for (;;) {
             if (signal?.aborted) throw new DOMException("Aborted", "AbortError");
             const job = await getManagedJob(jobId, signal);
+            onUpdate?.(job);
             if (job.status === "completed") return job;
             if (job.status === "payment_required") throw new Error(job.error?.message || "积分不足，充值后系统将自动交付本次生成结果");
             if (job.status === "failed" || job.status === "cancelled") throw new Error(job.error?.message || (job.status === "cancelled" ? "任务已取消" : "生成失败"));

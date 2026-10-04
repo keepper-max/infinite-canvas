@@ -240,6 +240,21 @@ export class JobService {
     };
   }
 
+  async pendingDirectorJob(userId: string) {
+    const result = await this.pool.query(
+      `select id,status from generation_jobs
+       where created_by=$1
+         and input_snapshot->'trace'->>'workflowKind'='director.workflow'
+         and status not in ('failed','cancelled','payment_required')
+         and created_at>=now()-interval '24 hours'
+       order by created_at desc limit 1`,
+      [userId],
+    );
+    return result.rows[0]
+      ? { id: String(result.rows[0].id), status: String(result.rows[0].status) }
+      : null;
+  }
+
   async list(projectId: string, userId: string) {
     await assertProjectAccess(this.pool, projectId, userId);
     const result = await this.pool.query(

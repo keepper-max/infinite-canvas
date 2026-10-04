@@ -335,6 +335,39 @@ test("disabled director rejects new planning jobs", async () => {
   );
 });
 
+test("recent director planning can be recovered for its creator", async () => {
+  let queryValues: unknown[] | undefined;
+  const service = new JobService(
+    {
+      async query(sql: string, values?: unknown[]) {
+        assert.match(sql, /input_snapshot->'trace'->>'workflowKind'='director\.workflow'/);
+        assert.match(sql, /created_by=\$1/);
+        assert.match(sql, /status not in \('failed','cancelled','payment_required'\)/);
+        assert.match(sql, /created_at>=now\(\)-interval '24 hours'/);
+        queryValues = values;
+        return {
+          rows: [{ id: "director-job-1", status: "completed" }],
+          rowCount: 1,
+        };
+      },
+    } as never,
+    {
+      async add() {},
+      async remove() {
+        return true;
+      },
+    },
+    {} as never,
+    {} as never,
+  );
+
+  assert.deepEqual(await service.pendingDirectorJob("user-1"), {
+    id: "director-job-1",
+    status: "completed",
+  });
+  assert.deepEqual(queryValues, ["user-1"]);
+});
+
 test("Token360 virtual portrait references keep their provider asset IDs", async () => {
   const pool = {
     async query(sql: string, values?: unknown[]) {
