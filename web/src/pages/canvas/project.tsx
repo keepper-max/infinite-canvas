@@ -4601,6 +4601,8 @@ function InfiniteCanvasPage({ projectId }: { projectId: string }) {
                         open={Boolean(cameraMotionSourceNode)}
                         sourceImageNodeId={cameraMotionSourceNode.id}
                         imageUrl={cameraMotionSourceNode.metadata.content}
+                        storageKey={cameraMotionSourceNode.metadata.storageKey}
+                        assetVersionId={cameraMotionSourceNode.metadata.assetVersionId}
                         initialValue={cameraMotionNode?.metadata?.cameraMotion}
                         onClose={() => setCameraMotionSourceNodeId(null)}
                         onConfirm={saveCameraMotion}

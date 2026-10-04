@@ -92,10 +92,8 @@ export function drawCameraMotionGuide(context: CanvasRenderingContext2D, width: 
     });
 }
 
-export async function exportCameraMotionGuide(imageUrl: string, paths: CameraMotionPath[], width: number, height: number) {
-    const response = await fetch(imageUrl);
-    if (!response.ok) throw new Error("原图读取失败，请刷新素材后重试");
-    const bitmap = await createImageBitmap(await response.blob());
+export async function exportCameraMotionGuide(image: Blob, paths: CameraMotionPath[], width: number, height: number) {
+    const bitmap = await createImageBitmap(image);
     const canvas = document.createElement("canvas");
     canvas.width = width;
     canvas.height = height;

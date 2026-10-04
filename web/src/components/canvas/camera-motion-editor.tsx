@@ -6,7 +6,9 @@ import { nanoid } from "nanoid";
 import { useImageEditorViewport } from "@/components/canvas/use-image-editor-viewport";
 import { CAMERA_MOTION_ACTIONS, CAMERA_MOTION_COLORS, createCameraMotionState, drawCameraMotionGuide, exportCameraMotionGuide, smoothMotionPoints } from "@/lib/canvas/camera-motion";
 import { canvasThemes } from "@/lib/canvas-theme";
-import { readImageMeta } from "@/lib/image-utils";
+import { getCloudAssetDownloadUrls } from "@/services/api/assets";
+import { getImageBlob } from "@/services/image-storage";
+import { withLocalProxy } from "@/stores/use-config-store";
 import { useThemeStore } from "@/stores/use-theme-store";
 import type { CameraMotionEditorResult, CameraMotionPath, CameraMotionPoint, CameraMotionState } from "@/types/camera-motion";
 
@@ -14,12 +16,14 @@ type Props = {
     open: boolean;
     sourceImageNodeId: string;
     imageUrl: string;
+    storageKey?: string;
+    assetVersionId?: string;
     initialValue?: CameraMotionState;
     onClose: () => void;
     onConfirm: (result: CameraMotionEditorResult) => void | Promise<void>;
 };
 
-export function CameraMotionEditor({ open, sourceImageNodeId, imageUrl, initialValue, onClose, onConfirm }: Props) {
+export function CameraMotionEditor({ open, sourceImageNodeId, imageUrl, storageKey, assetVersionId, initialValue, onClose, onConfirm }: Props) {
     const { message } = App.useApp();
     const theme = canvasThemes[useThemeStore((state) => state.theme)];
     const overlayRef = useRef<HTMLCanvasElement>(null);
@@ -27,6 +31,8 @@ export function CameraMotionEditor({ open, sourceImageNodeId, imageUrl, initialV
     const historyRef = useRef<CameraMotionPath[][]>([]);
     const redoRef = useRef<CameraMotionPath[][]>([]);
     const [image, setImage] = useState<{ width: number; height: number } | null>(null);
+    const [imageBlob, setImageBlob] = useState<Blob | null>(null);
+    const [resolvedImageUrl, setResolvedImageUrl] = useState("");
     const [paths, setPaths] = useState<CameraMotionPath[]>([]);
     const [selectedPathId, setSelectedPathId] = useState<string | null>(null);
     const [historyVersion, setHistoryVersion] = useState(0);
@@ -44,10 +50,30 @@ export function CameraMotionEditor({ open, sourceImageNodeId, imageUrl, initialV
         historyRef.current = [];
         redoRef.current = [];
         setHistoryVersion((value) => value + 1);
-        void readImageMeta(imageUrl)
-            .then(setImage)
-            .catch(() => message.error("原图读取失败，请刷新素材后重试"));
-    }, [imageUrl, initialValue, message, open, sourceImageNodeId]);
+        setImage(null);
+        setImageBlob(null);
+        setResolvedImageUrl("");
+        let active = true;
+        let objectUrl = "";
+        void readCameraMotionSource(imageUrl, storageKey, assetVersionId)
+            .then(async (blob) => {
+                const bitmap = await createImageBitmap(blob);
+                const size = { width: bitmap.width, height: bitmap.height };
+                bitmap.close();
+                if (!active) return;
+                objectUrl = URL.createObjectURL(blob);
+                setImageBlob(blob);
+                setResolvedImageUrl(objectUrl);
+                setImage(size);
+            })
+            .catch(() => {
+                if (active) message.error("原图读取失败，请刷新素材后重试");
+            });
+        return () => {
+            active = false;
+            if (objectUrl) URL.revokeObjectURL(objectUrl);
+        };
+    }, [assetVersionId, imageUrl, initialValue, message, open, sourceImageNodeId, storageKey]);
 
     useEffect(() => {
         const canvas = overlayRef.current;
@@ -190,31 +216,29 @@ export function CameraMotionEditor({ open, sourceImageNodeId, imageUrl, initialV
     };
 
     const exportGuide = async () => {
-        if (!image || !paths.length) return;
+        if (!image || !imageBlob || !paths.length) return;
         try {
-            downloadBlob(await exportCameraMotionGuide(imageUrl, paths, image.width, image.height), "camera-motion-guide.png");
+            downloadBlob(await exportCameraMotionGuide(imageBlob, paths, image.width, image.height), "camera-motion-guide.png");
         } catch (error) {
             message.error(error instanceof Error ? error.message : "引导图导出失败");
         }
     };
 
     const exportOriginal = async () => {
+        if (!imageBlob) return;
         try {
-            const response = await fetch(imageUrl);
-            if (!response.ok) throw new Error("原图读取失败");
-            const blob = await response.blob();
-            downloadBlob(blob, `camera-motion-original.${blob.type.includes("jpeg") ? "jpg" : blob.type.includes("webp") ? "webp" : "png"}`);
+            downloadBlob(imageBlob, `camera-motion-original.${imageBlob.type.includes("jpeg") ? "jpg" : imageBlob.type.includes("webp") ? "webp" : "png"}`);
         } catch (error) {
             message.error(error instanceof Error ? error.message : "原图导出失败");
         }
     };
 
     const submit = async (generate: boolean) => {
-        if (!image || !paths.some((path) => path.points.length > 1)) return message.warning("请先在画面上绘制至少一条运镜轨迹");
+        if (!image || !imageBlob || !paths.some((path) => path.points.length > 1)) return message.warning("请先在画面上绘制至少一条运镜轨迹");
         setSaving(generate ? "generate" : "save");
         try {
             const motion = createCameraMotionState(sourceImageNodeId, paths);
-            const guideBlob = await exportCameraMotionGuide(imageUrl, paths, image.width, image.height);
+            const guideBlob = await exportCameraMotionGuide(imageBlob, paths, image.width, image.height);
             await onConfirm({ motion, guideBlob, generate });
         } catch (error) {
             message.error(error instanceof Error ? error.message : "运镜轨迹保存失败");
@@ -264,7 +288,7 @@ export function CameraMotionEditor({ open, sourceImageNodeId, imageUrl, initialV
                             <div ref={viewport.stageRef} className="absolute isolate overflow-hidden rounded-lg select-none" style={viewport.stageStyle}>
                                 {image ? (
                                     <div className="absolute left-0 top-0" style={viewport.mediaStyle}>
-                                        <img src={imageUrl} alt="运镜参考" className="absolute inset-0 h-full w-full object-contain" draggable={false} />
+                                        <img src={resolvedImageUrl} alt="运镜参考" className="absolute inset-0 h-full w-full object-contain" draggable={false} />
                                         <canvas
                                             ref={overlayRef}
                                             width={image.width}
@@ -381,6 +405,24 @@ export function CameraMotionEditor({ open, sourceImageNodeId, imageUrl, initialV
             </div>
         </Modal>
     );
+}
+
+async function readCameraMotionSource(imageUrl: string, storageKey?: string, assetVersionId?: string) {
+    if (storageKey) {
+        const local = await getImageBlob(storageKey);
+        if (local) return local;
+    }
+    if (assetVersionId) {
+        const download = (await getCloudAssetDownloadUrls([assetVersionId]))[assetVersionId];
+        if (download?.url) return fetchImageBlob(download.url);
+    }
+    return fetchImageBlob(withLocalProxy(imageUrl));
+}
+
+async function fetchImageBlob(url: string) {
+    const response = await fetch(url);
+    if (!response.ok) throw new Error(`原图读取失败（${response.status}）`);
+    return response.blob();
 }
 
 function IconButton({ title, disabled, onClick, children }: { title: string; disabled?: boolean; onClick: () => void; children: ReactNode }) {
