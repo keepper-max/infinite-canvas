@@ -580,6 +580,8 @@ export default {
         },
         assetPicker: { title: "选择资产", insert: "插入", search: "搜索资产", empty: "没有资产" },
         imageTools: {
+            cameraMotion: "运镜",
+            cameraMotionTitle: "绘制镜头运动轨迹并生成视频",
             copyPrompt: "复制提示词",
             copyPromptTitle: "复制生成该图片的提示词",
             reversePrompt: "反推提示词",

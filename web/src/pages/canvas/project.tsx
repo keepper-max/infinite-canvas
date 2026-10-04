@@ -10,7 +10,7 @@ import { requestAudioGeneration, storeGeneratedAudio } from "@/services/api/audi
 import { createVideoGenerationTask, storeGeneratedVideo, waitForVideoGenerationTask } from "@/services/api/video";
 import { abortForManualJobCancellation, getManagedJob, retryManagedJob, subscribeProjectJobEvents, type ManagedJobEvent } from "@/services/api/jobs";
 import { createCanvasDraft, type CanvasDraft } from "@/services/api/canvas";
-import { invalidateCloudAssetDownloadUrls } from "@/services/api/assets";
+import { currentVersion, getCloudAssetDownloadUrl, invalidateCloudAssetDownloadUrls, uploadCloudAsset } from "@/services/api/assets";
 import { useDownloadMedia } from "@/hooks/use-download-media";
 import { defaultConfig, useConfigStore, useEffectiveConfig, withLocalProxy } from "@/stores/use-config-store";
 import { uploadImage } from "@/services/image-storage";
@@ -31,6 +31,7 @@ import { CanvasConfigComposer } from "@/components/canvas/canvas-config-composer
 import { CanvasConfigNodePanel } from "@/components/canvas/canvas-config-node-panel";
 import { CanvasNodeContextMenu } from "@/components/canvas/canvas-context-menu";
 import { CanvasNodeAngleDialog, type CanvasImageAngleParams } from "@/components/canvas/canvas-node-angle-dialog";
+import { CameraMotionEditor } from "@/components/canvas/camera-motion-editor";
 import { CanvasNodeCropDialog, type CanvasImageCropRect } from "@/components/canvas/canvas-node-crop-dialog";
 import { CanvasNodeMaskEditDialog, type CanvasImageMaskEditPayload } from "@/components/canvas/canvas-node-mask-edit-dialog";
 import { CanvasNodeSplitDialog, type CanvasImageSplitParams } from "@/components/canvas/canvas-node-split-dialog";
@@ -94,6 +95,8 @@ import {
 import { getNodeDefinition, isBuiltinNodeType as isBuiltinType, useNodeRegistryVersion } from "@/lib/canvas/node-registry";
 import { registerBuiltinNodes } from "@/components/canvas/nodes/builtin-nodes";
 import { registerDramaNodes } from "@/components/canvas/nodes/drama-nodes";
+import { registerCameraMotionNode } from "@/components/canvas/nodes/camera-motion-node";
+import { CAMERA_MOTION_NODE_TYPE } from "@/lib/canvas/camera-motion";
 import { buildNodeContext } from "@/lib/canvas/plugin-node-context";
 import { buildDramaTemplate } from "@/lib/drama/drama-template";
 import { downstreamDramaNodeIds, dramaExecutionOrder } from "@/lib/drama/drama-runtime";
@@ -131,6 +134,7 @@ import {
     type SelectionBox,
     type ViewportTransform,
 } from "@/types/canvas";
+import type { CameraMotionEditorResult } from "@/types/camera-motion";
 import type { ReferenceImage } from "@/types/image";
 import type { ReferenceAudio, ReferenceVideo } from "@/types/media";
 import { selectedVideoModel, updateVideoModelParameter, videoParameter } from "@/lib/video-model-capabilities";
@@ -139,6 +143,7 @@ import type { DepthVideoResult } from "@/lib/depth-motion/generate-depth-video";
 // Register built-in nodes in the shared registry once when the module loads.
 registerBuiltinNodes();
 registerDramaNodes();
+registerCameraMotionNode();
 
 type CanvasClipboard = {
     nodes: CanvasNodeData[];
@@ -338,6 +343,7 @@ function InfiniteCanvasPage({ projectId }: { projectId: string }) {
     const [upscaleNodeId, setUpscaleNodeId] = useState<string | null>(null);
     const [superResolveNodeId, setSuperResolveNodeId] = useState<string | null>(null);
     const [angleNodeId, setAngleNodeId] = useState<string | null>(null);
+    const [cameraMotionSourceNodeId, setCameraMotionSourceNodeId] = useState<string | null>(null);
     const [previewNodeId, setPreviewNodeId] = useState<string | null>(null);
     const [previewImageId, setPreviewImageId] = useState<string | null>(null);
     const [titleEditing, setTitleEditing] = useState(false);
@@ -1059,6 +1065,8 @@ function InfiniteCanvasPage({ projectId }: { projectId: string }) {
     const upscaleNode = upscaleNodeId ? nodeById.get(upscaleNodeId) || null : null;
     const superResolveNode = superResolveNodeId ? nodeById.get(superResolveNodeId) || null : null;
     const angleNode = angleNodeId ? nodeById.get(angleNodeId) || null : null;
+    const cameraMotionSourceNode = cameraMotionSourceNodeId ? nodeById.get(cameraMotionSourceNodeId) || null : null;
+    const cameraMotionNode = cameraMotionSourceNodeId ? nodes.find((node) => node.type === CAMERA_MOTION_NODE_TYPE && node.metadata?.cameraMotion?.sourceImageNodeId === cameraMotionSourceNodeId) || null : null;
     const contextMenuNode = contextMenu?.type === "node" ? nodeById.get(contextMenu.nodeId) || null : null;
     const previewNode = previewNodeId ? nodeById.get(previewNodeId) || null : null;
     const previewContent = previewImageId ? previewNode?.metadata?.images?.find((image) => image.id === previewImageId)?.content : previewNode?.metadata?.content;
@@ -1296,6 +1304,7 @@ function InfiniteCanvasPage({ projectId }: { projectId: string }) {
             setCropNodeId((current) => (current && allIds.has(current) ? null : current));
             setMaskEditNodeId((current) => (current && allIds.has(current) ? null : current));
             setAngleNodeId((current) => (current && allIds.has(current) ? null : current));
+            setCameraMotionSourceNodeId((current) => (current && allIds.has(current) ? null : current));
             setPreviewNodeId((current) => (current && allIds.has(current) ? null : current));
             setRunningNodeId((current) => (current && allIds.has(current) ? null : current));
             setReferencePickerNodeId((current) => (current && allIds.has(current) ? null : current));
@@ -1380,7 +1389,11 @@ function InfiniteCanvasPage({ projectId }: { projectId: string }) {
                 message.warning(t("canvas.productivity.invalidConnectionRole"));
                 return;
             }
-            setConnections((prev) => prev.map((item) => (item.id === connectionId ? { ...item, resourceType, role, metadata: resourceType === "video" && (role === "motion" || role === "video_input") ? { ...item.metadata, videoPurposeSelected: true } : item.metadata } : item)));
+            setConnections((prev) =>
+                prev.map((item) =>
+                    item.id === connectionId ? { ...item, resourceType, role, metadata: resourceType === "video" && (role === "motion" || role === "video_input") ? { ...item.metadata, videoPurposeSelected: true } : item.metadata } : item,
+                ),
+            );
         },
         [message, t],
     );
@@ -2780,6 +2793,155 @@ function InfiniteCanvasPage({ projectId }: { projectId: string }) {
         [effectiveConfig, finishGenerationRequest, openConfigDialog, projectId, startGenerationRequest, t],
     );
 
+    const saveCameraMotion = useCallback(
+        async (result: CameraMotionEditorResult) => {
+            const sourceNode = nodesRef.current.find((node) => node.id === result.motion.sourceImageNodeId);
+            if (!sourceNode?.metadata?.content) throw new Error("原图片节点已不存在，请重新选择图片");
+            const existingMotionNode = nodesRef.current.find((node) => node.type === CAMERA_MOTION_NODE_TYPE && node.metadata?.cameraMotion?.sourceImageNodeId === sourceNode.id);
+            const previousVersionId = existingMotionNode?.metadata?.assetVersionId;
+            const file = new File([result.guideBlob], `camera-motion-${sourceNode.id}.png`, { type: "image/png" });
+            const asset = await uploadCloudAsset(projectId, file, {
+                assetId: existingMotionNode?.metadata?.assetId,
+                kind: "image",
+                source: "edit",
+                parentVersionIds: previousVersionId ? [previousVersionId] : [],
+                provenance: { purpose: "camera-motion-guide", sourceImageNodeId: sourceNode.id, schemaVersion: result.motion.schemaVersion },
+            });
+            const version = currentVersion(asset);
+            if (!version) throw new Error("运镜引导图上传失败，请稍后重试");
+            const guideUrl = await getCloudAssetDownloadUrl(version.id);
+            const guideSize = fitNodeSize(sourceNode.metadata.naturalWidth || sourceNode.width, sourceNode.metadata.naturalHeight || sourceNode.height, 360, 280);
+            const motionNode: CanvasNodeData = existingMotionNode
+                ? {
+                      ...existingMotionNode,
+                      ...guideSize,
+                      metadata: {
+                          ...existingMotionNode.metadata,
+                          content: guideUrl,
+                          storageKey: version.storageKey,
+                          assetId: asset.id,
+                          assetVersionId: version.id,
+                          mimeType: version.mimeType,
+                          bytes: version.bytes,
+                          naturalWidth: version.width || sourceNode.metadata.naturalWidth,
+                          naturalHeight: version.height || sourceNode.metadata.naturalHeight,
+                          status: NODE_STATUS_SUCCESS,
+                          cameraMotion: result.motion,
+                      },
+                  }
+                : {
+                      ...createCanvasNode(
+                          CAMERA_MOTION_NODE_TYPE,
+                          { x: sourceNode.position.x + sourceNode.width + 96 + guideSize.width / 2, y: sourceNode.position.y + sourceNode.height / 2 },
+                          {
+                              content: guideUrl,
+                              storageKey: version.storageKey,
+                              assetId: asset.id,
+                              assetVersionId: version.id,
+                              mimeType: version.mimeType,
+                              bytes: version.bytes,
+                              naturalWidth: version.width || sourceNode.metadata.naturalWidth,
+                              naturalHeight: version.height || sourceNode.metadata.naturalHeight,
+                              status: NODE_STATUS_SUCCESS,
+                              cameraMotion: result.motion,
+                          },
+                      ),
+                      ...guideSize,
+                  };
+
+            const currentNodes = nodesRef.current;
+            const currentConnections = connectionsRef.current;
+            let nextNodes: CanvasNodeData[] = existingMotionNode ? currentNodes.map((node) => (node.id === motionNode.id ? motionNode : node)) : [...currentNodes, motionNode];
+            let nextConnections: CanvasConnection[] = currentConnections.some((connection) => connection.fromNodeId === sourceNode.id && connection.toNodeId === motionNode.id)
+                ? currentConnections
+                : [...currentConnections, { id: nanoid(), fromNodeId: sourceNode.id, toNodeId: motionNode.id, resourceType: "image", role: "identity", order: 0 }];
+            let videoNode: CanvasNodeData | null = null;
+            let generationConfigMissing = false;
+
+            if (result.generate) {
+                const selectedVideoModel = /seedance[-_.]?2[-_.]?5/i.test(effectiveConfig.videoModel) ? effectiveConfig.videoModel : defaultConfig.videoModel;
+                videoNode = createCanvasNode(
+                    CanvasNodeType.Video,
+                    { x: motionNode.position.x + motionNode.width + 96 + NODE_DEFAULT_SIZE[CanvasNodeType.Video].width / 2, y: motionNode.position.y + motionNode.height / 2 },
+                    {
+                        prompt: result.motion.prompt,
+                        status: NODE_STATUS_LOADING,
+                        model: selectedVideoModel,
+                        size: effectiveConfig.size,
+                        seconds: effectiveConfig.videoSeconds,
+                        vquality: effectiveConfig.vquality,
+                        generateAudio: effectiveConfig.videoGenerateAudio,
+                        watermark: effectiveConfig.videoWatermark,
+                        videoMode: "multiref",
+                        videoBitrateMode: effectiveConfig.videoBitrateMode,
+                        videoOutputFormat: effectiveConfig.videoOutputFormat,
+                        videoModelParameters: effectiveConfig.videoModelParameters,
+                        references: [sourceNode.metadata.storageKey || sourceNode.metadata.content, version.storageKey],
+                    },
+                );
+                const generationConfig = buildGenerationConfig(effectiveConfig, videoNode, "video");
+                if (!isAiConfigReady(generationConfig, generationConfig.model)) {
+                    videoNode = null;
+                    generationConfigMissing = true;
+                    openConfigDialog(true);
+                } else {
+                    nextNodes = [...nextNodes, videoNode];
+                    nextConnections = [
+                        ...nextConnections,
+                        { id: nanoid(), fromNodeId: sourceNode.id, toNodeId: videoNode.id, resourceType: "image", role: "identity", order: 0 },
+                        { id: nanoid(), fromNodeId: motionNode.id, toNodeId: videoNode.id, resourceType: "image", role: "composition", order: 1 },
+                    ];
+                }
+            }
+
+            setNodes(nextNodes);
+            setConnections(nextConnections);
+            setSelectedNodeIds(new Set([videoNode?.id || motionNode.id]));
+            setSelectedConnectionId(null);
+            setCameraMotionSourceNodeId(null);
+
+            const saved = await canvasPersistence.saveDraftNow(createCanvasDraft(nextNodes, nextConnections, mobileMode ? desktopViewportRef.current : viewportRef.current, { backgroundMode, showImageInfo }));
+            if (!saved) {
+                if (videoNode) setNodes((current) => current.map((node) => (node.id === videoNode!.id ? { ...node, metadata: { ...node.metadata, status: NODE_STATUS_ERROR, errorDetails: "画布保存失败，未提交视频生成" } } : node)));
+                throw new Error("画布保存失败，轨迹已保留在当前页面但未提交视频生成");
+            }
+            if (!videoNode) {
+                if (generationConfigMissing) message.warning("运镜轨迹已保存；请先配置 Seedance 2.5 后再生成视频");
+                else message.success("运镜轨迹已保存");
+                return;
+            }
+
+            const targetVideoNode = videoNode;
+            const generationConfig = buildGenerationConfig(effectiveConfig, targetVideoNode, "video");
+            const originalReference = sourceNodeReferenceImages(sourceNode).map((image) => ({ ...image, role: "identity" as const }));
+            const guideReference: ReferenceImage = {
+                id: motionNode.id,
+                name: `${motionNode.title}.png`,
+                type: version.mimeType || "image/png",
+                dataUrl: guideUrl,
+                storageKey: version.storageKey,
+                assetId: asset.id,
+                assetVersionId: version.id,
+                role: "composition",
+            };
+            const controller = startGenerationRequest(targetVideoNode.id, motionNode.id, targetVideoNode.id);
+            setRunningNodeId(targetVideoNode.id);
+            message.success("运镜轨迹已保存，视频任务已开始");
+            void completeVideoNodeTask(targetVideoNode.id, generationConfig, result.motion.prompt, [...originalReference, guideReference], controller.signal, targetVideoNode.metadata, [], [], targetVideoNode.id)
+                .catch((error) => {
+                    if (isGenerationCanceled(error)) return;
+                    const errorDetails = error instanceof Error ? error.message : t("canvas.projectPage.generationFailed");
+                    message.error(errorDetails);
+                    setNodes((current) => current.map((node) => (node.id === targetVideoNode.id ? { ...node, metadata: { ...node.metadata, status: NODE_STATUS_ERROR, errorDetails } } : node)));
+                })
+                .finally(() => {
+                    finishGenerationRequest(targetVideoNode.id, controller);
+                    setRunningNodeId((current) => (current === targetVideoNode.id ? null : current));
+                });
+        },
+        [backgroundMode, canvasPersistence.saveDraftNow, completeVideoNodeTask, effectiveConfig, finishGenerationRequest, isAiConfigReady, message, mobileMode, openConfigDialog, projectId, showImageInfo, startGenerationRequest, t],
+    );
+
     const handleFontSizeChange = useCallback((nodeId: string, fontSize: number) => {
         setNodes((prev) => prev.map((node) => (node.id === nodeId ? { ...node, metadata: { ...node.metadata, fontSize } } : node)));
     }, []);
@@ -4156,6 +4318,7 @@ function InfiniteCanvasPage({ projectId }: { projectId: string }) {
                     onUpload={(node) => handleUploadRequest(node.id)}
                     onDownload={downloadNodeImage}
                     onSaveAsset={(node) => void saveNodeAsset(node)}
+                    onCameraMotion={(node) => setCameraMotionSourceNodeId(node.id)}
                     onMaskEdit={(node) => setMaskEditNodeId(node.id)}
                     onCrop={(node) => setCropNodeId(node.id)}
                     onSplit={(node) => setSplitNodeId(node.id)}
@@ -4432,6 +4595,17 @@ function InfiniteCanvasPage({ projectId }: { projectId: string }) {
                 </Modal>
 
                 {angleNode?.metadata?.content ? <CanvasNodeAngleDialog dataUrl={angleNode.metadata.content} open={Boolean(angleNode)} onClose={() => setAngleNodeId(null)} onConfirm={(params) => void generateAngleNode(angleNode!, params)} /> : null}
+
+                {cameraMotionSourceNode?.metadata?.content ? (
+                    <CameraMotionEditor
+                        open={Boolean(cameraMotionSourceNode)}
+                        sourceImageNodeId={cameraMotionSourceNode.id}
+                        imageUrl={cameraMotionSourceNode.metadata.content}
+                        initialValue={cameraMotionNode?.metadata?.cameraMotion}
+                        onClose={() => setCameraMotionSourceNodeId(null)}
+                        onConfirm={saveCameraMotion}
+                    />
+                ) : null}
 
                 <Modal
                     title={t("canvas.projectPage.imageDetails")}

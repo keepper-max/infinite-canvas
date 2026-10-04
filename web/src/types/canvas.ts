@@ -1,4 +1,5 @@
 import type { DramaNodeState } from "@/types/drama";
+import type { CameraMotionState } from "@/types/camera-motion";
 
 export type Position = {
     x: number;
@@ -104,6 +105,7 @@ export type CanvasNodeMetadata = {
     groupId?: string;
     interactive?: boolean; // Plugin node interaction/move state; see CanvasNodeDefinition.interactionToggle.
     drama?: DramaNodeState;
+    cameraMotion?: CameraMotionState;
 };
 
 export type CanvasNodeData = {

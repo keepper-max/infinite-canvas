@@ -603,6 +603,8 @@ export default {
         },
         assetPicker: { title: "Select assets", insert: "Insert", search: "Search assets", empty: "No assets" },
         imageTools: {
+            cameraMotion: "Camera motion",
+            cameraMotionTitle: "Draw a camera path and generate video",
             copyPrompt: "Copy prompt",
             copyPromptTitle: "Copy the prompt used to generate this image",
             reversePrompt: "Reverse prompt",

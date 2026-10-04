@@ -201,11 +201,11 @@ async function createManagedVideoTask(config: AiConfig, model: string, prompt: s
     const projectId = options?.projectId || (await getCurrentSession(options?.signal)).workspace.projectId;
     const images = await Promise.all(
         references.map(async (image) => {
-            if (image.virtualPortraitId) return { virtualPortraitId: image.virtualPortraitId, mimeType: image.type };
-            if (image.assetVersionId) return { assetVersionId: image.assetVersionId, mimeType: image.type };
+            if (image.virtualPortraitId) return { virtualPortraitId: image.virtualPortraitId, mimeType: image.type, sourceRole: image.role };
+            if (image.assetVersionId) return { assetVersionId: image.assetVersionId, mimeType: image.type, sourceRole: image.role };
             const dataUrl = await imageToDataUrl(image);
             const file = dataUrlToFile({ ...image, dataUrl });
-            return stageManagedReference(projectId, file, "image", image.name, image.storageKey, options?.signal);
+            return { ...(await stageManagedReference(projectId, file, "image", image.name, image.storageKey, options?.signal)), sourceRole: image.role };
         }),
     );
     const videos = await Promise.all(
@@ -228,7 +228,7 @@ async function createManagedVideoTask(config: AiConfig, model: string, prompt: s
     const mappedReferences =
         generationMode === "multiref"
             ? [
-                  ...images.map((reference) => ({ role: "identity_reference" as const, ...reference })),
+                  ...images.map(({ sourceRole, ...reference }) => ({ role: managedImageReferenceRole(sourceRole), ...reference })),
                   ...videos.map((reference) => ({ ...reference, role: reference.role === "video_input" ? ("video_input" as const) : ("motion_reference" as const) })),
                   ...audios.map((reference) => ({ role: "audio_reference" as const, ...reference })),
               ]
@@ -236,9 +236,9 @@ async function createManagedVideoTask(config: AiConfig, model: string, prompt: s
               ? []
               : generationMode === "i2v"
                 ? firstImage
-                    ? [{ role: "first_frame" as const, ...firstImage }]
+                    ? [{ role: "first_frame" as const, ...stripManagedSourceRole(firstImage) }]
                     : []
-                : [...(firstImage ? [{ role: "first_frame" as const, ...firstImage }] : []), ...(lastImage ? [{ role: "last_frame" as const, ...lastImage }] : [])];
+                : [...(firstImage ? [{ role: "first_frame" as const, ...stripManagedSourceRole(firstImage) }] : []), ...(lastImage ? [{ role: "last_frame" as const, ...stripManagedSourceRole(lastImage) }] : [])];
     const parameters = videoParameterPayload(config, modelDefinition);
     if (isSeedanceVideoModel(modelDefinition) && mappedReferences.some((reference) => reference.role === "video_input")) parameters.aspectRatio = "adaptive";
     try {
@@ -257,6 +257,17 @@ async function createManagedVideoTask(config: AiConfig, model: string, prompt: s
     } catch (error) {
         throw new Error(readAxiosError(error, apiText("videoTaskCreateFailed")));
     }
+}
+
+function managedImageReferenceRole(role: ReferenceImage["role"]) {
+    if (role === "environment") return "environment_reference" as const;
+    if (role === "composition" || role === "motion") return "composition_reference" as const;
+    return "identity_reference" as const;
+}
+
+function stripManagedSourceRole<T extends { sourceRole?: unknown }>(reference: T) {
+    const { sourceRole: _sourceRole, ...rest } = reference;
+    return rest;
 }
 
 async function stageManagedReference(projectId: string, file: File, kind: "image" | "video" | "audio", name: string, storageKey?: string, signal?: AbortSignal) {
