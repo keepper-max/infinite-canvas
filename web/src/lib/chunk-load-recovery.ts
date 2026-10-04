@@ -8,12 +8,7 @@ export function isChunkLoadFailure(value: unknown) {
 
 export function installChunkLoadRecovery() {
     window.addEventListener("vite:preloadError", (event) => {
-        const payload = (event as Event & { payload?: unknown }).payload;
-        if (!isChunkLoadFailure(payload)) return;
-
-        const message = payload instanceof Error ? payload.message : String(payload || "");
-        const asset = message.match(/(?:https?:\/\/[^\s]+)?\/assets\/[^\s?#]+\.js/i)?.[0];
-        const recoveryKey = `${RECOVERY_KEY_PREFIX}${asset || message.slice(0, 200)}`;
+        const recoveryKey = `${RECOVERY_KEY_PREFIX}${import.meta.url}`;
 
         try {
             if (sessionStorage.getItem(recoveryKey)) return;
