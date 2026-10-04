@@ -263,6 +263,34 @@ export class JobService {
       : null;
   }
 
+  async directorHistory(userId: string) {
+    const result = await this.pool.query(
+      `select j.*,
+         j.input_snapshot->'trace'->'inputSnapshot'->>'idea' idea,
+         j.input_snapshot->'trace'->'inputSnapshot'->>'profile' profile
+       from generation_jobs j
+       join projects p on p.id=j.project_id and p.deleted_at is null
+       where j.created_by=$1
+         and j.input_snapshot->'trace'->>'workflowKind'='director.workflow'
+       order by j.created_at desc
+       limit 200`,
+      [userId],
+    );
+    return result.rows.map((row) => {
+      const job = serializeJob(row);
+      return {
+        id: String(job.id),
+        status: String(job.status),
+        idea: String(row.idea || ""),
+        profile: String(row.profile || "auto"),
+        retryable: Boolean(job.retryable),
+        error: job.error,
+        createdAt: job.createdAt,
+        updatedAt: job.updatedAt,
+      };
+    });
+  }
+
   async list(projectId: string, userId: string) {
     await assertProjectAccess(this.pool, projectId, userId);
     const result = await this.pool.query(

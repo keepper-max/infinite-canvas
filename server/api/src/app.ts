@@ -1690,6 +1690,15 @@ export function createApp(
     );
   });
 
+  app.get("/api/director/history", async (context) => {
+    const user = await requireUser(context.req.raw, repository, config);
+    return context.json(
+      success(context, {
+        jobs: await requireJobService(jobService).directorHistory(user.id),
+      }),
+    );
+  });
+
   app.post("/api/projects/:projectId/jobs", async (context) => {
     const user = await requireUser(context.req.raw, repository, config);
     const input = createJobSchema.parse(await readJson(context.req.raw));

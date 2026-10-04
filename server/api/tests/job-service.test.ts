@@ -370,6 +370,56 @@ test("recent director planning can be recovered for its creator", async () => {
   assert.deepEqual(queryValues, ["user-1"]);
 });
 
+test("director history lists only the creator's durable planning jobs", async () => {
+  let queryValues: unknown[] | undefined;
+  const now = new Date("2026-10-04T12:00:00.000Z");
+  const service = new JobService(
+    {
+      async query(sql: string, values?: unknown[]) {
+        assert.match(sql, /j\.created_by=\$1/);
+        assert.match(sql, /workflowKind'='director\.workflow'/);
+        assert.match(sql, /p\.deleted_at is null/);
+        assert.match(sql, /limit 200/);
+        queryValues = values;
+        return {
+          rows: [
+            {
+              id: "director-job-1",
+              status: "failed",
+              idea: "雨夜重逢",
+              profile: "short",
+              retryable: true,
+              user_error_code: "PROVIDER_ERROR",
+              user_error_message: "生成服务暂时不可用",
+              output_asset_version_ids: [],
+              created_at: now,
+              updated_at: now,
+            },
+          ],
+          rowCount: 1,
+        };
+      },
+    } as never,
+    { async add() {}, async remove() { return true; } },
+    {} as never,
+    {} as never,
+  );
+
+  assert.deepEqual(await service.directorHistory("user-1"), [
+    {
+      id: "director-job-1",
+      status: "failed",
+      idea: "雨夜重逢",
+      profile: "short",
+      retryable: true,
+      error: { code: "PROVIDER_ERROR", message: "生成服务暂时不可用", retryable: true },
+      createdAt: now.toISOString(),
+      updatedAt: now.toISOString(),
+    },
+  ]);
+  assert.deepEqual(queryValues, ["user-1"]);
+});
+
 test("Token360 virtual portrait references keep their provider asset IDs", async () => {
   const pool = {
     async query(sql: string, values?: unknown[]) {

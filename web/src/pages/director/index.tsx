@@ -1,12 +1,12 @@
-import { App, Button, Input, Select, Tag } from "antd";
-import { ArrowRight, CheckCircle2, Clapperboard, Film, LoaderCircle, Sparkles, Workflow } from "lucide-react";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { App, Button, Drawer, Input, Select, Tag } from "antd";
+import { ArrowRight, CheckCircle2, Clapperboard, Film, History, LoaderCircle, PanelLeftClose, PanelLeftOpen, Plus, RefreshCw, RotateCcw, Sparkles, Workflow } from "lucide-react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 
 import { registerDramaNodes } from "@/components/canvas/nodes/drama-nodes";
 import { createCanvasDraft, getCanvas, saveCanvas } from "@/services/api/canvas";
-import { createManagedJob, waitForManagedJob } from "@/services/api/jobs";
-import { getDirectorSettings, getPendingDirectorJob, type DirectorSettings } from "@/services/api/director";
+import { createManagedJob, getManagedJob, retryManagedJob, waitForManagedJob } from "@/services/api/jobs";
+import { getDirectorSettings, getPendingDirectorJob, listDirectorHistory, type DirectorHistoryJob, type DirectorSettings } from "@/services/api/director";
 import { listProjects, type ProjectSummary } from "@/services/api/platform";
 import { buildDirectorWorkflow, directorSystemPrompt, directorWorkflowNodeKeys, directorWorkflowOrigin, parseDirectorPlan, type DirectorWorkflowPlan, type DirectorWorkflowProfile } from "@/lib/drama/director-workflow";
 import { modelOptionLabel, useEffectiveConfig } from "@/stores/use-config-store";
@@ -104,10 +104,32 @@ export default function DirectorWorkbenchPage() {
     const [pendingJob, setPendingJob] = useState<PendingDirectorJob | null>(() => readPendingDirectorJob());
     const [recoveringPendingJob, setRecoveringPendingJob] = useState(true);
     const [transferring, setTransferring] = useState(false);
+    const [history, setHistory] = useState<DirectorHistoryJob[]>([]);
+    const [historyLoading, setHistoryLoading] = useState(true);
+    const [historyOpen, setHistoryOpen] = useState(false);
+    const [historyCollapsed, setHistoryCollapsed] = useState(false);
+    const [selectedHistoryJobId, setSelectedHistoryJobId] = useState("");
     const planningControllerRef = useRef<AbortController | null>(null);
     const resumedPendingJobRef = useRef(false);
     const selectedProfile = PROFILE_OPTIONS.find((item) => item.value === profile) || PROFILE_OPTIONS[0];
     const nodeKeys = useMemo(() => (plan ? directorWorkflowNodeKeys(plan.profile) : []), [plan]);
+
+    const loadHistory = useCallback(async (signal?: AbortSignal) => {
+        setHistoryLoading(true);
+        try {
+            setHistory(await listDirectorHistory(signal));
+        } catch (error) {
+            if (!signal?.aborted) message.error(error instanceof Error ? error.message : "生成记录加载失败");
+        } finally {
+            if (!signal?.aborted) setHistoryLoading(false);
+        }
+    }, [message]);
+
+    useEffect(() => {
+        const controller = new AbortController();
+        void loadHistory(controller.signal);
+        return () => controller.abort();
+    }, [loadHistory]);
 
     useEffect(() => {
         let live = true;
@@ -178,6 +200,8 @@ export default function DirectorWorkbenchPage() {
         savePendingDirectorJob(null);
         setPendingJob(null);
         setPlanningStage("");
+        setSelectedHistoryJobId(pending.jobId);
+        await loadHistory();
         message.success("工作流方案已生成，请确认后转移到画布");
     };
 
@@ -194,6 +218,7 @@ export default function DirectorWorkbenchPage() {
             savePendingDirectorJob(null);
             setPendingJob(null);
             setPlanningStage("");
+            await loadHistory();
             message.error(error instanceof Error ? error.message : "导演规划失败");
         } finally {
             if (planningControllerRef.current === controller) planningControllerRef.current = null;
@@ -206,6 +231,73 @@ export default function DirectorWorkbenchPage() {
         resumedPendingJobRef.current = true;
         void resumePlan(pendingJob);
     }, [pendingJob, recoveringPendingJob]);
+
+    const openHistoryJob = async (item: DirectorHistoryJob) => {
+        if (planning) return;
+        if (pendingJob && pendingJob.jobId !== item.id) return message.info("请先完成当前待恢复的导演任务");
+        const recoveredProfile = PROFILE_OPTIONS.some((option) => option.value === item.profile) ? (item.profile as PendingDirectorJob["profile"]) : "auto";
+        setSelectedHistoryJobId(item.id);
+        setIdea(item.idea);
+        setProfile(recoveredProfile);
+        setHistoryOpen(false);
+        if (["pending", "queued", "submitting", "retrying", "running", "downloading", "persisting", "billing_pending"].includes(item.status)) {
+            const pending = { jobId: item.id, profile: recoveredProfile, idea: item.idea };
+            savePendingDirectorJob(pending);
+            resumedPendingJobRef.current = true;
+            setPendingJob(pending);
+            return resumePlan(pending);
+        }
+        setPlan(null);
+        if (item.status !== "completed") {
+            message.info(item.error?.message || (item.status === "cancelled" ? "这次规划已取消" : "这次规划尚未交付"));
+            return;
+        }
+        setHistoryLoading(true);
+        try {
+            const job = await getManagedJob(item.id);
+            const text = String(job.artifacts?.find((artifact) => artifact.text)?.text || "").trim();
+            if (!text) throw new Error("这条记录缺少可恢复的导演方案");
+            const parsed = parseDirectorPlan(text);
+            setPlan(recoveredProfile === "auto" ? parsed : { ...parsed, profile: recoveredProfile });
+        } catch (error) {
+            message.error(error instanceof Error ? error.message : "导演方案恢复失败");
+        } finally {
+            setHistoryLoading(false);
+        }
+    };
+
+    const retryHistoryJob = async (item: DirectorHistoryJob) => {
+        if (planning || pendingJob) return;
+        const recoveredProfile = PROFILE_OPTIONS.some((option) => option.value === item.profile) ? (item.profile as PendingDirectorJob["profile"]) : "auto";
+        setPlanning(true);
+        setPlanningStage("正在重新提交失败的导演任务");
+        try {
+            const job = await retryManagedJob(item.id);
+            const pending = { jobId: job.id, profile: recoveredProfile, idea: item.idea };
+            savePendingDirectorJob(pending);
+            resumedPendingJobRef.current = true;
+            setPendingJob(pending);
+            setIdea(item.idea);
+            setProfile(recoveredProfile);
+            await waitForPlan(pending, new AbortController().signal);
+        } catch (error) {
+            setPlanningStage("");
+            await loadHistory();
+            message.error(error instanceof Error ? error.message : "导演任务重试失败");
+        } finally {
+            setPlanning(false);
+        }
+    };
+
+    const startNewPlan = () => {
+        if (pendingJob) return message.info("请先完成当前待恢复的导演任务");
+        setSelectedHistoryJobId("");
+        setIdea("");
+        setProfile("auto");
+        setPlan(null);
+        setPlanningStage("");
+        setHistoryOpen(false);
+    };
 
     const createPlan = async () => {
         if (pendingJob) {
@@ -264,7 +356,27 @@ export default function DirectorWorkbenchPage() {
 
     return (
         <main className="h-full overflow-y-auto bg-[#f4f1ea] text-stone-950 dark:bg-[#11100f] dark:text-stone-100">
-            <div className="mx-auto grid min-h-full max-w-[1480px] gap-5 px-4 py-6 lg:grid-cols-[0.92fr_1.08fr] lg:px-8 lg:py-8">
+            <div className="mx-auto max-w-[1780px] px-4 pt-4 xl:hidden">
+                <Button icon={<History className="size-4" />} onClick={() => setHistoryOpen(true)}>生成记录</Button>
+            </div>
+            <div className={`mx-auto grid min-h-full max-w-[1780px] gap-5 px-4 py-6 lg:grid-cols-[0.92fr_1.08fr] lg:px-8 lg:py-8 ${historyCollapsed ? "xl:grid-cols-[52px_minmax(0,.92fr)_minmax(0,1.08fr)]" : "xl:grid-cols-[260px_minmax(0,.92fr)_minmax(0,1.08fr)]"}`}>
+                <aside className="hidden min-h-[620px] xl:block">
+                    {historyCollapsed ? (
+                        <Button className="!h-12 !w-12" icon={<PanelLeftOpen className="size-4" />} aria-label="展开生成记录" onClick={() => setHistoryCollapsed(false)} />
+                    ) : (
+                        <DirectorHistoryPanel
+                            items={history}
+                            loading={historyLoading}
+                            selectedId={selectedHistoryJobId || pendingJob?.jobId || ""}
+                            disabled={planning || Boolean(pendingJob)}
+                            onSelect={(item) => void openHistoryJob(item)}
+                            onRetry={(item) => void retryHistoryJob(item)}
+                            onRefresh={() => void loadHistory()}
+                            onNew={startNewPlan}
+                            onCollapse={() => setHistoryCollapsed(true)}
+                        />
+                    )}
+                </aside>
                 <section className="relative overflow-hidden rounded-[28px] border border-stone-300/70 bg-[#171513] p-6 text-stone-100 shadow-[0_28px_80px_rgba(62,45,27,.16)] dark:border-stone-800 lg:p-9">
                     <div className="pointer-events-none absolute -right-24 -top-24 size-72 rounded-full bg-amber-400/10 blur-3xl" />
                     <div className="relative flex h-full min-h-[620px] flex-col">
@@ -286,7 +398,11 @@ export default function DirectorWorkbenchPage() {
                         <label className="mt-10 block text-xs font-medium tracking-wide text-stone-400">你想制作什么</label>
                         <Input.TextArea
                             value={idea}
-                            onChange={(event) => setIdea(event.target.value)}
+                            onChange={(event) => {
+                                setIdea(event.target.value);
+                                setPlan(null);
+                                setSelectedHistoryJobId("");
+                            }}
                             disabled={Boolean(pendingJob) || planning || recoveringPendingJob}
                             autoSize={{ minRows: 8, maxRows: 16 }}
                             maxLength={12_000}
@@ -298,7 +414,11 @@ export default function DirectorWorkbenchPage() {
                         <div className="mt-5 grid gap-3 sm:grid-cols-[1fr_auto] sm:items-end">
                             <label className="block">
                                 <span className="mb-2 block text-xs font-medium tracking-wide text-stone-400">工作流规模</span>
-                                <Select className="w-full" value={profile} disabled={Boolean(pendingJob) || planning || recoveringPendingJob} options={PROFILE_OPTIONS.map(({ value, label }) => ({ value, label }))} onChange={setProfile} />
+                                <Select className="w-full" value={profile} disabled={Boolean(pendingJob) || planning || recoveringPendingJob} options={PROFILE_OPTIONS.map(({ value, label }) => ({ value, label }))} onChange={(value) => {
+                                    setProfile(value);
+                                    setPlan(null);
+                                    setSelectedHistoryJobId("");
+                                }} />
                                 <span className="mt-2 block text-xs text-stone-500">{selectedProfile.description}</span>
                             </label>
                             <Button
@@ -405,8 +525,84 @@ export default function DirectorWorkbenchPage() {
                     )}
                 </section>
             </div>
+            <Drawer title="生成记录" placement="left" width={320} open={historyOpen} onClose={() => setHistoryOpen(false)}>
+                <DirectorHistoryPanel
+                    items={history}
+                    loading={historyLoading}
+                    selectedId={selectedHistoryJobId || pendingJob?.jobId || ""}
+                    disabled={planning || Boolean(pendingJob)}
+                    onSelect={(item) => void openHistoryJob(item)}
+                    onRetry={(item) => void retryHistoryJob(item)}
+                    onRefresh={() => void loadHistory()}
+                    onNew={startNewPlan}
+                />
+            </Drawer>
         </main>
     );
+}
+
+function DirectorHistoryPanel({ items, loading, selectedId, disabled, onSelect, onRetry, onRefresh, onNew, onCollapse }: {
+    items: DirectorHistoryJob[];
+    loading: boolean;
+    selectedId: string;
+    disabled: boolean;
+    onSelect: (item: DirectorHistoryJob) => void;
+    onRetry: (item: DirectorHistoryJob) => void;
+    onRefresh: () => void;
+    onNew: () => void;
+    onCollapse?: () => void;
+}) {
+    return (
+        <div className="flex h-full min-h-[620px] flex-col rounded-[24px] border border-stone-300/70 bg-white/70 p-3 dark:border-stone-800 dark:bg-stone-950/60">
+            <div className="flex items-center justify-between gap-2 px-1 pb-3">
+                <div>
+                    <p className="text-sm font-semibold">生成记录</p>
+                    <p className="mt-0.5 text-[11px] text-stone-500">打开记录不会重复扣费</p>
+                </div>
+                <div className="flex items-center gap-1">
+                    <Button type="text" size="small" icon={<RefreshCw className={`size-4 ${loading ? "animate-spin" : ""}`} />} aria-label="刷新记录" onClick={onRefresh} />
+                    {onCollapse ? <Button type="text" size="small" icon={<PanelLeftClose className="size-4" />} aria-label="收起生成记录" onClick={onCollapse} /> : null}
+                </div>
+            </div>
+            <Button className="mb-3" icon={<Plus className="size-4" />} disabled={disabled} onClick={onNew}>新建导演方案</Button>
+            <div className="min-h-0 flex-1 space-y-2 overflow-y-auto pr-1">
+                {!items.length && !loading ? <p className="px-2 py-8 text-center text-xs text-stone-400">还没有生成记录</p> : null}
+                {items.map((item) => {
+                    const status = directorHistoryStatus(item.status);
+                    return (
+                        <div key={item.id} className={`rounded-xl border p-3 transition ${selectedId === item.id ? "border-amber-400/70 bg-amber-50/70 dark:bg-amber-950/20" : "border-stone-200 bg-white/60 hover:border-stone-300 dark:border-stone-800 dark:bg-stone-900/50 dark:hover:border-stone-700"}`}>
+                            <button type="button" className="block w-full text-left disabled:cursor-not-allowed disabled:opacity-60" disabled={disabled && selectedId !== item.id} onClick={() => onSelect(item)}>
+                                <span className="line-clamp-2 text-sm font-medium leading-5">{item.idea.trim() || "未命名导演方案"}</span>
+                                <span className="mt-2 flex items-center justify-between gap-2 text-[11px]">
+                                    <span className={status.className}>{status.label}</span>
+                                    <span className="text-stone-400">{formatDirectorHistoryTime(item.createdAt)}</span>
+                                </span>
+                                {item.error?.message ? <span className="mt-2 line-clamp-2 block text-[11px] leading-4 text-red-500">{item.error.message}</span> : null}
+                            </button>
+                            {item.status === "failed" && item.retryable ? (
+                                <Button className="mt-2 !px-0" type="link" size="small" icon={<RotateCcw className="size-3" />} disabled={disabled} onClick={() => onRetry(item)}>重试</Button>
+                            ) : null}
+                        </div>
+                    );
+                })}
+            </div>
+        </div>
+    );
+}
+
+function directorHistoryStatus(status: string) {
+    if (status === "completed") return { label: "已完成", className: "text-emerald-600 dark:text-emerald-400" };
+    if (status === "failed") return { label: "生成失败", className: "text-red-600 dark:text-red-400" };
+    if (status === "cancelled") return { label: "已取消", className: "text-stone-500" };
+    if (status === "payment_required") return { label: "待补积分", className: "text-amber-600 dark:text-amber-400" };
+    if (status === "billing_pending") return { label: "费用核对中", className: "text-amber-600 dark:text-amber-400" };
+    return { label: "生成中", className: "text-sky-600 dark:text-sky-400" };
+}
+
+function formatDirectorHistoryTime(value: string) {
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return "";
+    return new Intl.DateTimeFormat("zh-CN", { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit", hour12: false }).format(date);
 }
 
 function PreviewBlock({ title, content }: { title: string; content: string }) {
