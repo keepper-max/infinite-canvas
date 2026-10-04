@@ -5,7 +5,7 @@ import { useNavigate } from "react-router-dom";
 
 import { registerDramaNodes } from "@/components/canvas/nodes/drama-nodes";
 import { createCanvasDraft, getCanvas, saveCanvas } from "@/services/api/canvas";
-import { createManagedJob, getManagedJob, retryManagedJob, waitForManagedJob } from "@/services/api/jobs";
+import { createManagedJob, getManagedJob, retryManagedJob, subscribeProjectJobEvents, waitForManagedJob } from "@/services/api/jobs";
 import { getDirectorSettings, getPendingDirectorJob, listDirectorHistory, type DirectorHistoryJob, type DirectorSettings } from "@/services/api/director";
 import { listProjects, type ProjectSummary } from "@/services/api/platform";
 import { buildDirectorWorkflow, directorSystemPrompt, directorWorkflowNodeKeys, directorWorkflowOrigin, parseDirectorPlan, type DirectorWorkflowPlan, type DirectorWorkflowProfile } from "@/lib/drama/director-workflow";
@@ -110,6 +110,7 @@ export default function DirectorWorkbenchPage() {
     const [historyCollapsed, setHistoryCollapsed] = useState(false);
     const [selectedHistoryJobId, setSelectedHistoryJobId] = useState("");
     const planningControllerRef = useRef<AbortController | null>(null);
+    const billingWatchCleanupRef = useRef<(() => void) | null>(null);
     const resumedPendingJobRef = useRef(false);
     const selectedProfile = PROFILE_OPTIONS.find((item) => item.value === profile) || PROFILE_OPTIONS[0];
     const nodeKeys = useMemo(() => (plan ? directorWorkflowNodeKeys(plan.profile) : []), [plan]);
@@ -178,9 +179,30 @@ export default function DirectorWorkbenchPage() {
     useEffect(
         () => () => {
             planningControllerRef.current?.abort();
+            billingWatchCleanupRef.current?.();
         },
         [],
     );
+
+    const watchBillingCompletion = (pending: PendingDirectorJob, projectId: string) => {
+        billingWatchCleanupRef.current?.();
+        let resumed = false;
+        const resumeOnce = () => {
+            if (resumed) return;
+            resumed = true;
+            billingWatchCleanupRef.current?.();
+            billingWatchCleanupRef.current = null;
+            void resumePlan(pending);
+        };
+        billingWatchCleanupRef.current = subscribeProjectJobEvents(projectId, (event) => {
+            if (event.jobId === pending.jobId && event.status !== "billing_pending") resumeOnce();
+        });
+        void getManagedJob(pending.jobId)
+            .then((job) => {
+                if (job.status !== "billing_pending") resumeOnce();
+            })
+            .catch(() => undefined);
+    };
 
     const waitForPlan = async (pending: PendingDirectorJob, signal: AbortSignal) => {
         const completed = await waitForManagedJob(pending.jobId, signal, (job) => {
@@ -191,7 +213,12 @@ export default function DirectorWorkbenchPage() {
             if (["pending", "queued"].includes(job.status)) setPlanningStage("导演任务正在排队");
             else setPlanningStage("导演模型正在生成规划");
         }, { pauseOnBillingPending: true });
-        if (completed.status === "billing_pending") return;
+        if (completed.status === "billing_pending") {
+            watchBillingCompletion(pending, completed.projectId);
+            return;
+        }
+        billingWatchCleanupRef.current?.();
+        billingWatchCleanupRef.current = null;
         const text = String(completed.artifacts?.find((artifact) => artifact.text)?.text || "").trim();
         if (!text) throw new Error("导演模型没有返回规划结果");
         const parsed = parseDirectorPlan(text);
