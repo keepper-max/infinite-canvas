@@ -63,6 +63,15 @@ export const BUNDLED_CUSTOM_PROMPT_SOURCES: PromptSource[] = [
         enabled: true,
         builtIn: false,
     },
+    {
+        id: "shoushou-production-management-extension-pack",
+        name: "守守制作管理扩展包",
+        description: "用于漫剧资产台账、跨集连续性、视频接续、剧本诊断与分镜质检的提示词集合。",
+        url: "/shoushou-production-management-prompts.json",
+        homepage: "",
+        enabled: true,
+        builtIn: false,
+    },
 ];
 
 function registrySource(id: string, name: string, description: string, homepage: string): PromptSource {
