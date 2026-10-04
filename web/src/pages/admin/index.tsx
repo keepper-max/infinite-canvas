@@ -1234,6 +1234,7 @@ function JobsPanel() {
     const createdFrom = searchParams.get("createdFrom") || undefined;
     const createdTo = searchParams.get("createdTo") || undefined;
     const [loading, setLoading] = useState(true);
+    const [reconcilingId, setReconcilingId] = useState<string>();
     const updateSearch = (key: string, value?: string) => {
         const next = new URLSearchParams(searchParams);
         if (value) next.set(key, value);
@@ -1329,13 +1330,23 @@ function JobsPanel() {
                             <Button
                                 size="small"
                                 disabled={!item.billingTraceId}
+                                loading={reconcilingId === item.id}
                                 onClick={async () => {
-                                    const result = await reconcileAdminJob(item.id);
-                                    message.success(`对账状态：${billingStatusLabel(result.status)}`);
-                                    load();
+                                    if (reconcilingId) return;
+                                    setReconcilingId(item.id);
+                                    try {
+                                        const result = await reconcileAdminJob(item.id);
+                                        setItems((current) => current.map((job) => (job.id === item.id ? { ...job, billingStatus: result.status } : job)));
+                                        if (result.status === "mismatch") message.warning("供应商暂未返回账单，任务继续保留为待人工核验，冻结积分不变");
+                                        else message.success(`对账状态：${billingStatusLabel(result.status)}`);
+                                    } catch (error) {
+                                        message.error(error instanceof Error ? error.message : "人工核验失败");
+                                    } finally {
+                                        setReconcilingId(undefined);
+                                    }
                                 }}
                             >
-                                {item.billingStatus === "mismatch" ? "人工核验" : "重新对账"}
+                                {reconcilingId === item.id ? "核验中" : item.billingStatus === "mismatch" ? "人工核验" : "重新对账"}
                             </Button>
                         ),
                     },
