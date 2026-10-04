@@ -158,17 +158,18 @@ export class BillingService {
           },
         },
       );
-      if (response.status === 404)
+      if (!response.ok && response.status !== 404) {
+        await this.markFailed(jobId, `账单接口返回 HTTP ${response.status}`);
+        return { status: "failed" };
+      }
+      const envelope =
+        response.status === 404 ? {} : asRecord(await response.json());
+      if (response.status === 404 || integerValue(envelope.code) === 404)
         return isManualReviewJob(job)
           ? this.finishManualReview(jobId)
           : isFailedWithoutProviderJob(job)
             ? this.reviewFailedWithoutProviderJob(job)
             : this.reschedule(job);
-      if (!response.ok) {
-        await this.markFailed(jobId, `账单接口返回 HTTP ${response.status}`);
-        return { status: "failed" };
-      }
-      const envelope = asRecord(await response.json());
       const data = asRecord(envelope.data || envelope);
       const requestId =
         stringValue(data.request_id) || String(job.billing_trace_id);

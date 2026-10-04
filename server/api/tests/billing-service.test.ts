@@ -125,6 +125,46 @@ test("billing 404 schedules the documented first 30 second retry", async () => {
   }
 });
 
+test("billing application-level 404 remains pending", async () => {
+  const calls: Array<{ sql: string; values?: unknown[] }> = [];
+  const pool = {
+    async query(sql: string, values?: unknown[]) {
+      calls.push({ sql, values });
+      if (sql.includes("returning *"))
+        return {
+          rows: [
+            {
+              id: "job-app-404",
+              provider: "token360",
+              billing_trace_id: "job-app-404",
+              billing_started_at: new Date(),
+              billing_attempt_count: 1,
+            },
+          ],
+          rowCount: 1,
+        };
+      return { rows: [], rowCount: 1 };
+    },
+  };
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async () =>
+    Response.json({
+      code: 404,
+      data: null,
+      msg: "No record for this request id",
+    });
+  try {
+    const result = await new BillingService(pool as never, config).reconcileJob(
+      "job-app-404",
+      true,
+    );
+    assert.deepEqual(result, { status: "pending", retryAfterSeconds: 30 });
+    assert.equal(calls.at(-1)?.values?.[1], 30);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
 test("billing response without a finalized amount remains pending", async () => {
   const calls: Array<{ sql: string; values?: unknown[] }> = [];
   const pool = {

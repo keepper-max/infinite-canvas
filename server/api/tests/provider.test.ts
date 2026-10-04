@@ -194,6 +194,45 @@ test("provider sends local job id as trace headers and preserves upstream trace"
   }
 });
 
+test("provider prefers the Token360 billing request header", async () => {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async () =>
+    Response.json(
+      {
+        choices: [{ message: { content: "done" } }],
+        usage: { total_tokens: 7 },
+      },
+      {
+        headers: {
+          "X-Oneapi-Request-Id": "token360-billing-request-1",
+          "X-Trace-ID": "upstream-trace-1",
+        },
+      },
+    );
+  try {
+    const provider = new Token360Provider(
+      {
+        baseUrl: "https://example.invalid",
+        apiKey: "test-only",
+        catalogUrl: "https://example.invalid/models",
+      },
+      0,
+    );
+    const result = await provider.create(
+      {
+        capability: "text",
+        upstreamModel: "gpt-test",
+        prompt: "test",
+        upstreamParameters: {},
+      } as never,
+      "local-job-id",
+    );
+    assert.equal(result.billingTraceId, "token360-billing-request-1");
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
 test("provider preserves the billing trace from a rejected initial response", async () => {
   const originalFetch = globalThis.fetch;
   globalThis.fetch = async () =>

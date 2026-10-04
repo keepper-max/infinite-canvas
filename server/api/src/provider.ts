@@ -463,6 +463,7 @@ export class Token360Provider implements GenerationProvider {
 
 function readBillingTrace(response: Response, fallback?: string) {
   return (
+    response.headers.get("x-oneapi-request-id") ||
     response.headers.get("x-trace-id") ||
     response.headers.get("x-request-id") ||
     fallback

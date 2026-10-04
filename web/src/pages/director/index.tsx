@@ -163,7 +163,7 @@ export default function DirectorWorkbenchPage() {
     const waitForPlan = async (pending: PendingDirectorJob, signal: AbortSignal) => {
         const completed = await waitForManagedJob(pending.jobId, signal, (job) => {
             if (job.status === "billing_pending") {
-                setPlanningStage("规划已经生成，正在核对费用。可以离开本页，稍后回来会自动恢复，请勿重复提交。");
+                setPlanningStage("上一笔规划已经生成，正在核对费用；当前只是在恢复这笔任务，没有重复提交。可以离开本页，稍后回来会自动恢复。");
                 return;
             }
             if (["pending", "queued"].includes(job.status)) setPlanningStage("导演任务正在排队");
@@ -207,7 +207,10 @@ export default function DirectorWorkbenchPage() {
     }, [pendingJob]);
 
     const createPlan = async () => {
-        if (pendingJob) return resumePlan(pendingJob);
+        if (pendingJob) {
+            message.info("正在恢复上一笔导演任务，本次不会重复提交当前输入");
+            return resumePlan(pendingJob);
+        }
         const input = idea.trim();
         if (!input) return message.warning("请先描述你想制作的漫剧");
         const controller = new AbortController();
@@ -283,6 +286,7 @@ export default function DirectorWorkbenchPage() {
                         <Input.TextArea
                             value={idea}
                             onChange={(event) => setIdea(event.target.value)}
+                            disabled={Boolean(pendingJob) || planning || recoveringPendingJob}
                             autoSize={{ minRows: 8, maxRows: 16 }}
                             maxLength={12_000}
                             showCount
@@ -293,7 +297,7 @@ export default function DirectorWorkbenchPage() {
                         <div className="mt-5 grid gap-3 sm:grid-cols-[1fr_auto] sm:items-end">
                             <label className="block">
                                 <span className="mb-2 block text-xs font-medium tracking-wide text-stone-400">工作流规模</span>
-                                <Select className="w-full" value={profile} options={PROFILE_OPTIONS.map(({ value, label }) => ({ value, label }))} onChange={setProfile} />
+                                <Select className="w-full" value={profile} disabled={Boolean(pendingJob) || planning || recoveringPendingJob} options={PROFILE_OPTIONS.map(({ value, label }) => ({ value, label }))} onChange={setProfile} />
                                 <span className="mt-2 block text-xs text-stone-500">{selectedProfile.description}</span>
                             </label>
                             <Button
