@@ -16,6 +16,7 @@ export const routeModules = {
     auth: cached(() => import("@/pages/auth")),
     canvas: cached(() => import("@/pages/canvas")),
     canvasProject: cached(() => import("@/pages/canvas/project")),
+    director: cached(() => import("@/pages/director")),
     config: cached(() => import("@/pages/config")),
     credits: cached(() => import("@/pages/credits")),
     home: cached(() => import("@/pages/home")),

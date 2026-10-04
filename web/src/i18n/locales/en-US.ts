@@ -925,6 +925,7 @@ export default {
     },
     navigation: {
         canvas: "My Canvases",
+        director: "AI Drama Director",
         image: "Image Studio",
         video: "Video Studio",
         text: "AI Text Studio",

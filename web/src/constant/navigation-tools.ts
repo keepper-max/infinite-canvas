@@ -1,9 +1,13 @@
-import { Coins, FileText, Gauge, ImagePlus, Images, Maximize2, MessageSquareText, Settings2, Video } from "lucide-react";
+import { Clapperboard, Coins, FileText, Gauge, ImagePlus, Images, Maximize2, MessageSquareText, Settings2, Video } from "lucide-react";
 
 export const navigationTools = [
     {
         slug: "canvas",
         icon: Maximize2,
+    },
+    {
+        slug: "director",
+        icon: Clapperboard,
     },
     {
         slug: "image",

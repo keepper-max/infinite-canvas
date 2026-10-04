@@ -1,0 +1,250 @@
+import { App, Button, Input, Select, Tag } from "antd";
+import { ArrowRight, CheckCircle2, Clapperboard, Film, LoaderCircle, Sparkles, Workflow } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
+import { useNavigate } from "react-router-dom";
+
+import { registerDramaNodes } from "@/components/canvas/nodes/drama-nodes";
+import { createCanvasDraft, getCanvas, saveCanvas } from "@/services/api/canvas";
+import { createManagedJob, waitForManagedJob } from "@/services/api/jobs";
+import { listProjects, type ProjectSummary } from "@/services/api/platform";
+import { buildDirectorWorkflow, directorSystemPrompt, directorWorkflowNodeKeys, directorWorkflowOrigin, parseDirectorPlan, type DirectorWorkflowPlan, type DirectorWorkflowProfile } from "@/lib/drama/director-workflow";
+import { modelOptionLabel, useEffectiveConfig } from "@/stores/use-config-store";
+
+registerDramaNodes();
+
+const PROFILE_OPTIONS = [
+    { value: "auto", label: "由导演判断", description: "根据故事复杂度选择最精简的工作流" },
+    { value: "short", label: "快速短片", description: "故事、分镜、导演提示词和视频" },
+    { value: "standard", label: "标准漫剧", description: "包含角色、场景、分镜、声音和成片" },
+    { value: "full", label: "完整制作", description: "增加道具、尾帧、配乐等完整生产节点" },
+] as const;
+
+const NODE_NAMES: Record<string, string> = {
+    story: "故事创意",
+    writer: "AI 编剧",
+    breakdown: "剧本拆解",
+    character: "角色设定",
+    turnaround: "角色三视图",
+    scene: "场景候选",
+    panorama: "全景环境",
+    prop: "关键道具",
+    composition: "3D 构图",
+    storyboard: "分镜表",
+    optimize: "提示词优化",
+    firstFrame: "首帧",
+    lastFrame: "尾帧",
+    skill: "Seedance 漫剧 Skill",
+    video: "Seedance 视频",
+    voice: "角色配音",
+    sfx: "镜头音效",
+    music: "背景音乐",
+    subtitles: "字幕轨",
+    timeline: "成片时间线",
+    output: "成片输出",
+};
+
+export default function DirectorWorkbenchPage() {
+    const { message } = App.useApp();
+    const navigate = useNavigate();
+    const config = useEffectiveConfig();
+    const model = config.textModel || config.model;
+    const [idea, setIdea] = useState("");
+    const [profile, setProfile] = useState<DirectorWorkflowProfile | "auto">("auto");
+    const [plan, setPlan] = useState<DirectorWorkflowPlan | null>(null);
+    const [projects, setProjects] = useState<ProjectSummary[]>([]);
+    const [projectId, setProjectId] = useState("");
+    const [planning, setPlanning] = useState(false);
+    const [transferring, setTransferring] = useState(false);
+    const selectedProfile = PROFILE_OPTIONS.find((item) => item.value === profile) || PROFILE_OPTIONS[0];
+    const nodeKeys = useMemo(() => (plan ? directorWorkflowNodeKeys(plan.profile) : []), [plan]);
+
+    useEffect(() => {
+        let live = true;
+        void listProjects()
+            .then((items) => {
+                if (!live) return;
+                const editable = items.filter((item) => item.role === "owner");
+                setProjects(editable);
+                setProjectId((current) => current || editable.find((item) => item.isDefault)?.projectId || editable[0]?.projectId || "");
+            })
+            .catch((error) => message.error(error instanceof Error ? error.message : "画布列表加载失败"));
+        return () => {
+            live = false;
+        };
+    }, [message]);
+
+    const createPlan = async () => {
+        const input = idea.trim();
+        if (!input) return message.warning("请先描述你想制作的漫剧");
+        setPlanning(true);
+        try {
+            const job = await createManagedJob({
+                model,
+                capability: "text",
+                mode: "chat",
+                prompt: directorSystemPrompt(input, profile),
+                trace: { workflowKind: "director.workflow", skillId: "seedance-director-workflow", skillVersion: "1" },
+            });
+            const completed = await waitForManagedJob(job.id);
+            const text = String(completed.artifacts?.find((artifact) => artifact.text)?.text || "").trim();
+            if (!text) throw new Error("导演模型没有返回规划结果");
+            const parsed = parseDirectorPlan(text);
+            setPlan(profile === "auto" ? parsed : { ...parsed, profile });
+            message.success("工作流方案已生成，请确认后转移到画布");
+        } catch (error) {
+            message.error(error instanceof Error ? error.message : "导演规划失败");
+        } finally {
+            setPlanning(false);
+        }
+    };
+
+    const transfer = async () => {
+        if (!plan || !projectId) return;
+        setTransferring(true);
+        try {
+            const canvas = await getCanvas(projectId);
+            const created = buildDirectorWorkflow(plan, directorWorkflowOrigin(canvas.nodes));
+            const saved = await saveCanvas(projectId, createCanvasDraft([...canvas.nodes, ...created.nodes], [...canvas.edges, ...created.connections], canvas.viewport, canvas.settings), canvas.revision);
+            message.success(`已向画布添加 ${created.nodes.length} 个节点`);
+            navigate(`/canvas/${saved.projectId}`);
+        } catch (error) {
+            message.error(error instanceof Error ? error.message : "转移到画布失败");
+        } finally {
+            setTransferring(false);
+        }
+    };
+
+    return (
+        <main className="h-full overflow-y-auto bg-[#f4f1ea] text-stone-950 dark:bg-[#11100f] dark:text-stone-100">
+            <div className="mx-auto grid min-h-full max-w-[1480px] gap-5 px-4 py-6 lg:grid-cols-[0.92fr_1.08fr] lg:px-8 lg:py-8">
+                <section className="relative overflow-hidden rounded-[28px] border border-stone-300/70 bg-[#171513] p-6 text-stone-100 shadow-[0_28px_80px_rgba(62,45,27,.16)] dark:border-stone-800 lg:p-9">
+                    <div className="pointer-events-none absolute -right-24 -top-24 size-72 rounded-full bg-amber-400/10 blur-3xl" />
+                    <div className="relative flex h-full min-h-[620px] flex-col">
+                        <div className="flex items-center gap-3">
+                            <span className="grid size-11 place-items-center rounded-2xl border border-amber-300/30 bg-amber-300/10 text-amber-200">
+                                <Clapperboard className="size-5" />
+                            </span>
+                            <div>
+                                <p className="text-xs tracking-[.22em] text-amber-200/70">SHOUSHOU DIRECTOR</p>
+                                <h1 className="mt-1 text-2xl font-semibold tracking-tight">AI 漫剧导演台</h1>
+                            </div>
+                        </div>
+
+                        <div className="mt-10 max-w-xl">
+                            <h2 className="text-[clamp(2rem,5vw,4.5rem)] font-semibold leading-[.98] tracking-[-.055em]">从一个想法，搭出一条能执行的制作线。</h2>
+                            <p className="mt-5 max-w-lg text-sm leading-7 text-stone-400">导演台只负责规划和搭建，不会自动启动收费生成。确认后，它会把现有漫剧节点、创作要求和连线一次性放进你的画布。</p>
+                        </div>
+
+                        <label className="mt-10 block text-xs font-medium tracking-wide text-stone-400">你想制作什么</label>
+                        <Input.TextArea
+                            value={idea}
+                            onChange={(event) => setIdea(event.target.value)}
+                            autoSize={{ minRows: 8, maxRows: 16 }}
+                            maxLength={12_000}
+                            showCount
+                            placeholder="例如：一名失去记忆的女剑客，在雨夜客栈认出追杀自己的旧部。需要三段连续镜头，重点表现试探、认出和拔剑前的停顿……"
+                            className="director-idea-input mt-2 !border-stone-700 !bg-stone-950/50 !text-base !leading-7 !text-stone-100 placeholder:!text-stone-600"
+                        />
+
+                        <div className="mt-5 grid gap-3 sm:grid-cols-[1fr_auto] sm:items-end">
+                            <label className="block">
+                                <span className="mb-2 block text-xs font-medium tracking-wide text-stone-400">工作流规模</span>
+                                <Select className="w-full" value={profile} options={PROFILE_OPTIONS.map(({ value, label }) => ({ value, label }))} onChange={setProfile} />
+                                <span className="mt-2 block text-xs text-stone-500">{selectedProfile.description}</span>
+                            </label>
+                            <Button type="primary" size="large" icon={planning ? <LoaderCircle className="size-4 animate-spin" /> : <Sparkles className="size-4" />} disabled={planning || !idea.trim()} onClick={() => void createPlan()}>
+                                {planning ? "正在规划" : "生成工作流"}
+                            </Button>
+                        </div>
+
+                        <div className="mt-auto flex items-center gap-2 pt-10 text-xs text-stone-500">
+                            <CheckCircle2 className="size-4 text-emerald-400" />
+                            使用当前默认文字模型：{modelOptionLabel(config, model)}
+                        </div>
+                    </div>
+                </section>
+
+                <section className="rounded-[28px] border border-stone-300/70 bg-white/75 p-5 backdrop-blur dark:border-stone-800 dark:bg-stone-950/60 lg:p-8">
+                    <div className="flex items-center justify-between gap-4">
+                        <div>
+                            <div className="flex items-center gap-2 text-sm font-semibold">
+                                <Workflow className="size-4 text-amber-600" />
+                                构建预览
+                            </div>
+                            <p className="mt-1 text-xs text-stone-500">先确认节点和缺失素材，再写入目标画布。</p>
+                        </div>
+                        {plan ? <Tag color="gold">{plan.profile === "short" ? "快速短片" : plan.profile === "full" ? "完整制作" : "标准漫剧"}</Tag> : null}
+                    </div>
+
+                    {!plan ? (
+                        <div className="grid min-h-[560px] place-items-center">
+                            <div className="max-w-sm text-center">
+                                <span className="mx-auto grid size-16 place-items-center rounded-full border border-dashed border-stone-300 text-stone-400 dark:border-stone-700">
+                                    <Film className="size-7" />
+                                </span>
+                                <h3 className="mt-5 text-lg font-medium">等待导演方案</h3>
+                                <p className="mt-2 text-sm leading-6 text-stone-500">输入创意后，系统会生成故事任务、所需节点、节点内容和连接关系。</p>
+                            </div>
+                        </div>
+                    ) : (
+                        <div className="mt-7 space-y-7">
+                            <div>
+                                <p className="text-2xl font-semibold tracking-tight">{plan.title}</p>
+                                <p className="mt-2 text-sm leading-6 text-stone-500">{plan.synopsis}</p>
+                            </div>
+
+                            <div>
+                                <p className="mb-3 text-xs font-semibold tracking-[.16em] text-stone-400">将创建 {nodeKeys.length} 个节点</p>
+                                <div className="flex flex-wrap items-center gap-2">
+                                    {nodeKeys.map((key, index) => (
+                                        <div key={key} className="flex items-center gap-2">
+                                            <span className="rounded-lg border border-stone-200 bg-stone-50 px-2.5 py-1.5 text-xs dark:border-stone-800 dark:bg-stone-900">{NODE_NAMES[key] || key}</span>
+                                            {index < nodeKeys.length - 1 ? <ArrowRight className="size-3 text-stone-300 dark:text-stone-700" /> : null}
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
+
+                            <PreviewBlock title="故事目标" content={plan.story} />
+                            <PreviewBlock title="分镜与接续" content={plan.storyboard} />
+                            <PreviewBlock title="Seedance 导演要求" content={plan.seedance} />
+
+                            {plan.missingMaterials.length ? (
+                                <div className="rounded-2xl border border-amber-300/60 bg-amber-50 p-4 dark:border-amber-900/70 dark:bg-amber-950/20">
+                                    <p className="text-sm font-medium text-amber-900 dark:text-amber-200">需要补充的素材</p>
+                                    <ul className="mt-2 space-y-1 text-sm leading-6 text-amber-800/80 dark:text-amber-300/80">
+                                        {plan.missingMaterials.map((item) => (
+                                            <li key={item}>· {item}</li>
+                                        ))}
+                                    </ul>
+                                </div>
+                            ) : null}
+
+                            <div className="border-t border-stone-200 pt-5 dark:border-stone-800">
+                                <div className="grid gap-3 sm:grid-cols-[1fr_auto] sm:items-end">
+                                    <label>
+                                        <span className="mb-2 block text-xs font-medium text-stone-500">目标画布</span>
+                                        <Select className="w-full" value={projectId || undefined} placeholder="选择画布" options={projects.map((project) => ({ value: project.projectId, label: project.projectTitle }))} onChange={setProjectId} />
+                                    </label>
+                                    <Button type="primary" size="large" loading={transferring} disabled={!projectId} icon={<Workflow className="size-4" />} onClick={() => void transfer()}>
+                                        转移到画布
+                                    </Button>
+                                </div>
+                                <p className="mt-3 text-xs text-stone-400">只追加节点和连线，不覆盖画布原有内容；转移后不会自动执行生成任务。</p>
+                            </div>
+                        </div>
+                    )}
+                </section>
+            </div>
+        </main>
+    );
+}
+
+function PreviewBlock({ title, content }: { title: string; content: string }) {
+    return (
+        <div>
+            <p className="mb-2 text-xs font-semibold tracking-[.16em] text-stone-400">{title}</p>
+            <p className="whitespace-pre-wrap rounded-2xl border border-stone-200 bg-stone-50/70 p-4 text-sm leading-7 text-stone-700 dark:border-stone-800 dark:bg-stone-900/70 dark:text-stone-300">{content}</p>
+        </div>
+    );
+}

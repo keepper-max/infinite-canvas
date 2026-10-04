@@ -93,4 +93,6 @@ export type DramaNodeState = {
     compositionStatus?: "pending" | "queued" | "preparing" | "rendering" | "uploading" | "retrying" | "cancel_requested" | "cancelled" | "failed" | "completed";
     compositionProgress?: number;
     audioClips?: Array<{ assetId?: string; assetVersionId: string; startMs: number; role: "dialogue" | "sound_effect" | "music" }>;
+    directorBuildId?: string;
+    directorWorkflowVersion?: number;
 };

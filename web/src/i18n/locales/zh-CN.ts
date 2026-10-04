@@ -886,6 +886,7 @@ export default {
     },
     navigation: {
         canvas: "我的画布",
+        director: "AI 漫剧导演台",
         image: "生图工作台",
         video: "视频创作台",
         text: "AI 文本工作台",
