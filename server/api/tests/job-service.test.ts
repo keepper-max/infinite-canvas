@@ -218,6 +218,123 @@ test("job ID and billing trace use distinct SQL parameters", async () => {
   assert.equal(insertValues[18], insertValues[0]);
 });
 
+test("director jobs use the administrator selected text model", async () => {
+  let compiledModel = "";
+  let insertedModel = "";
+  const jobRow = {
+    id: "",
+    project_id: "project-1",
+    node_key: null,
+    model_id: "text.director",
+    capability: "text",
+    mode: "chat",
+    status: "pending",
+    progress: 0,
+    max_attempts: 1,
+  };
+  const query = async (sql: string, values?: unknown[]) => {
+    if (sql.includes("director_settings"))
+      return {
+        rows: [
+          {
+            enabled: "true",
+            model_id: "text.director",
+            display_name: "导演模型",
+          },
+        ],
+        rowCount: 1,
+      };
+    if (sql.includes("from project_members"))
+      return { rows: [{ role: "owner" }], rowCount: 1 };
+    if (sql.startsWith("select * from generation_jobs"))
+      return { rows: [], rowCount: 0 };
+    if (sql.startsWith("insert into generation_jobs")) {
+      jobRow.id = String(values?.[0]);
+      insertedModel = String(values?.[5]);
+      return { rows: [jobRow], rowCount: 1 };
+    }
+    return { rows: [], rowCount: 1 };
+  };
+  const client = { query, release() {} };
+  const service = new JobService(
+    {
+      query,
+      async connect() {
+        return client;
+      },
+    } as never,
+    {
+      async add() {},
+      async remove() {
+        return true;
+      },
+    },
+    {
+      async compile(input: GenerationInput) {
+        compiledModel = input.modelId;
+        return {
+          ...input,
+          providerId: "token360",
+          upstreamModel: input.modelId,
+          upstreamParameters: {},
+        };
+      },
+    } as never,
+    {} as never,
+  );
+
+  await service.create("project-1", "user-1", {
+    modelId: "text.user-default",
+    capability: "text",
+    mode: "chat",
+    prompt: "规划漫剧",
+    parameters: {},
+    nodeRevision: 0,
+    trace: { workflowKind: "director.workflow" },
+    idempotencyKey: "director-model-override",
+  });
+
+  assert.equal(compiledModel, "text.director");
+  assert.equal(insertedModel, "text.director");
+});
+
+test("disabled director rejects new planning jobs", async () => {
+  const service = new JobService(
+    {
+      async query(sql: string) {
+        assert.match(sql, /director_settings/);
+        return {
+          rows: [{ enabled: "false", model_id: null, display_name: null }],
+          rowCount: 1,
+        };
+      },
+    } as never,
+    {
+      async add() {},
+      async remove() {
+        return true;
+      },
+    },
+    {} as never,
+    {} as never,
+  );
+
+  await assert.rejects(
+    () =>
+      service.create("project-1", "user-1", {
+        modelId: "text.user-default",
+        capability: "text",
+        mode: "chat",
+        prompt: "规划漫剧",
+        parameters: {},
+        nodeRevision: 0,
+        trace: { workflowKind: "director.workflow" },
+        idempotencyKey: "director-disabled-job",
+      }),
+    (error: any) => error?.code === "DIRECTOR_DISABLED",
+  );
+});
+
 test("Token360 virtual portrait references keep their provider asset IDs", async () => {
   const pool = {
     async query(sql: string, values?: unknown[]) {

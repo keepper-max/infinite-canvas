@@ -6,6 +6,7 @@ import { useNavigate } from "react-router-dom";
 import { registerDramaNodes } from "@/components/canvas/nodes/drama-nodes";
 import { createCanvasDraft, getCanvas, saveCanvas } from "@/services/api/canvas";
 import { createManagedJob, waitForManagedJob } from "@/services/api/jobs";
+import { getDirectorSettings, type DirectorSettings } from "@/services/api/director";
 import { listProjects, type ProjectSummary } from "@/services/api/platform";
 import { buildDirectorWorkflow, directorSystemPrompt, directorWorkflowNodeKeys, directorWorkflowOrigin, parseDirectorPlan, type DirectorWorkflowPlan, type DirectorWorkflowProfile } from "@/lib/drama/director-workflow";
 import { modelOptionLabel, useEffectiveConfig } from "@/stores/use-config-store";
@@ -47,7 +48,8 @@ export default function DirectorWorkbenchPage() {
     const { message } = App.useApp();
     const navigate = useNavigate();
     const config = useEffectiveConfig();
-    const model = config.textModel || config.model;
+    const [directorSettings, setDirectorSettings] = useState<DirectorSettings>();
+    const model = directorSettings?.modelId || config.textModel || config.model;
     const [idea, setIdea] = useState("");
     const [profile, setProfile] = useState<DirectorWorkflowProfile | "auto">("auto");
     const [plan, setPlan] = useState<DirectorWorkflowPlan | null>(null);
@@ -71,6 +73,14 @@ export default function DirectorWorkbenchPage() {
         return () => {
             live = false;
         };
+    }, [message]);
+
+    useEffect(() => {
+        const controller = new AbortController();
+        void getDirectorSettings(controller.signal)
+            .then(setDirectorSettings)
+            .catch((error) => message.error(error instanceof Error ? error.message : "导演台设置加载失败"));
+        return () => controller.abort();
     }, [message]);
 
     const createPlan = async () => {
@@ -152,14 +162,20 @@ export default function DirectorWorkbenchPage() {
                                 <Select className="w-full" value={profile} options={PROFILE_OPTIONS.map(({ value, label }) => ({ value, label }))} onChange={setProfile} />
                                 <span className="mt-2 block text-xs text-stone-500">{selectedProfile.description}</span>
                             </label>
-                            <Button type="primary" size="large" icon={planning ? <LoaderCircle className="size-4 animate-spin" /> : <Sparkles className="size-4" />} disabled={planning || !idea.trim()} onClick={() => void createPlan()}>
+                            <Button
+                                type="primary"
+                                size="large"
+                                icon={planning ? <LoaderCircle className="size-4 animate-spin" /> : <Sparkles className="size-4" />}
+                                disabled={planning || !idea.trim() || !directorSettings?.enabled}
+                                onClick={() => void createPlan()}
+                            >
                                 {planning ? "正在规划" : "生成工作流"}
                             </Button>
                         </div>
 
                         <div className="mt-auto flex items-center gap-2 pt-10 text-xs text-stone-500">
-                            <CheckCircle2 className="size-4 text-emerald-400" />
-                            使用当前默认文字模型：{modelOptionLabel(config, model)}
+                            <CheckCircle2 className={`size-4 ${directorSettings?.enabled ? "text-emerald-400" : "text-stone-600"}`} />
+                            {!directorSettings ? "正在读取导演台设置" : directorSettings.enabled ? `导演台文字模型：${directorSettings.modelDisplayName || modelOptionLabel(config, model)}` : "导演台已由管理员停用"}
                         </div>
                     </div>
                 </section>

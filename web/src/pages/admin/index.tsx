@@ -14,6 +14,7 @@ import {
     getAdminAssetDownload,
     getAdminJobs,
     getAdminModels,
+    getAdminDirectorSettings,
     getAdminProviders,
     getAdminPaymentOrders,
     getAdminPaymentPlans,
@@ -35,6 +36,7 @@ import {
     setAdminUserRole,
     setAdminUserStatus,
     setAdminModelEnabled,
+    setAdminDirectorSettings,
     setAdminFeedbackStatus,
     setAdminCreditPricing,
     setAdminCreditGuard,
@@ -49,6 +51,7 @@ import {
     type UserFeedback,
     type AdminJob,
     type AdminModel,
+    type DirectorSettings,
     type AdminOverview,
     type PaymentOrder,
     type BillingPlan,
@@ -1556,14 +1559,19 @@ function BillingRulesPanel() {
 
 function ModelsPanel({ provider }: { provider: AdminProvider["id"] }) {
     const [items, setItems] = useState<AdminModel[]>();
+    const [allModels, setAllModels] = useState<AdminModel[]>();
     const [providers, setProviders] = useState<AdminProviders>();
+    const [directorSettings, setDirectorSettings] = useState<DirectorSettings>();
     const [updatingModelId, setUpdatingModelId] = useState<string>();
+    const [savingDirector, setSavingDirector] = useState(false);
     const load = useCallback(() => {
         const controller = new AbortController();
-        Promise.all([getAdminModels(provider, controller.signal), getAdminProviders(controller.signal)])
-            .then(([models, providerState]) => {
+        Promise.all([getAdminModels(provider, controller.signal), getAdminModels(undefined, controller.signal), getAdminProviders(controller.signal), getAdminDirectorSettings(controller.signal)])
+            .then(([models, modelsAcrossProviders, providerState, nextDirectorSettings]) => {
                 setItems(models);
+                setAllModels(modelsAcrossProviders);
                 setProviders(providerState);
+                setDirectorSettings(nextDirectorSettings);
             })
             .catch((error) => message.error(error.message));
         return controller;
@@ -1573,10 +1581,25 @@ function ModelsPanel({ provider }: { provider: AdminProvider["id"] }) {
         const controller = load();
         return () => controller.abort();
     }, [load]);
-    if (!items || !providers) return <Loading />;
+    if (!items || !allModels || !providers || !directorSettings) return <Loading />;
     const current = providers.providers.find((item) => item.id === provider);
     const linkedToChina = provider === "runninghub_global" && current?.configured === true && providers.activeProviderId === "runninghub";
     const active = providers.activeProviderId === provider || linkedToChina;
+    const directorModelOptions = allModels
+        .filter((item) => item.capability === "text" && item.configurable && item.enabled && item.healthy && providers.providers.some((providerItem) => providerItem.id === item.providerId && providerItem.configured))
+        .map((item) => ({ value: item.id, label: `${providers.providers.find((providerItem) => providerItem.id === item.providerId)?.displayName || item.providerId} · ${item.displayName}` }));
+    const updateDirectorSettings = async (next: Pick<DirectorSettings, "enabled" | "modelId">) => {
+        setSavingDirector(true);
+        try {
+            const saved = await setAdminDirectorSettings(next);
+            setDirectorSettings(saved);
+            message.success("导演台设置已更新，新任务立即生效");
+        } catch (error) {
+            message.error(error instanceof Error ? error.message : "导演台设置更新失败");
+        } finally {
+            setSavingDirector(false);
+        }
+    };
     return (
         <Panel
             title={`${current?.displayName || provider} 模型`}
@@ -1595,6 +1618,25 @@ function ModelsPanel({ provider }: { provider: AdminProvider["id"] }) {
                 </Button>
             }
         >
+            <div className="mb-5 grid gap-4 rounded-xl border border-stone-200 bg-stone-50 p-4 dark:border-white/10 dark:bg-white/[0.03] lg:grid-cols-[1fr_minmax(280px,520px)] lg:items-center">
+                <div>
+                    <div className="flex items-center gap-3">
+                        <b>AI 漫剧导演台</b>
+                        <Switch size="small" checked={directorSettings.enabled} loading={savingDirector} onChange={(enabled) => void updateDirectorSettings({ enabled, modelId: directorSettings.modelId })} />
+                    </div>
+                    <p className="mt-1 text-xs text-stone-500">统一控制导演台是否开放以及规划工作流时使用的文字模型。</p>
+                </div>
+                <label>
+                    <span className="mb-1.5 block text-xs text-stone-500">导演台文字模型</span>
+                    <Select
+                        className="w-full"
+                        value={directorSettings.modelId || "__default__"}
+                        disabled={savingDirector}
+                        options={[{ value: "__default__", label: "跟随用户默认文字模型" }, ...directorModelOptions]}
+                        onChange={(value) => void updateDirectorSettings({ enabled: directorSettings.enabled, modelId: value === "__default__" ? null : value })}
+                    />
+                </label>
+            </div>
             <Table
                 rowKey="id"
                 pagination={false}

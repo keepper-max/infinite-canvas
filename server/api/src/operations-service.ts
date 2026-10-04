@@ -133,6 +133,12 @@ export interface OperationsServicePort {
   adminOverview(userId: string, range?: AdminOverviewRange): Promise<unknown>;
   adminFailures(userId: string): Promise<unknown>;
   adminModels(userId: string, providerId?: string): Promise<unknown>;
+  adminDirectorSettings(userId: string): Promise<unknown>;
+  setAdminDirectorSettings(
+    userId: string,
+    input: { enabled: boolean; modelId: string | null },
+    requestId: string,
+  ): Promise<unknown>;
   setModelEnabled(
     userId: string,
     modelId: string,
@@ -1083,6 +1089,63 @@ export class OperationsService implements OperationsServicePort {
       checkedAt: iso(row.checked_at),
       updatedAt: iso(row.updated_at),
     }));
+  }
+
+  async adminDirectorSettings(userId: string) {
+    await this.requireAdmin(userId);
+    const result = await this.pool.query(
+      `select coalesce(s.value->>'enabled','true') enabled,s.value->>'modelId' model_id,c.display_name
+       from (select value from platform_settings where key='director_settings') s
+       left join model_catalog c on c.id=s.value->>'modelId'`,
+    );
+    const row = result.rows[0];
+    return {
+      enabled: row ? row.enabled !== "false" : true,
+      modelId: row?.model_id || null,
+      modelDisplayName: row?.display_name || null,
+    };
+  }
+
+  async setAdminDirectorSettings(
+    userId: string,
+    input: { enabled: boolean; modelId: string | null },
+    requestId: string,
+  ) {
+    await this.requireAdmin(userId);
+    if (input.modelId) {
+      const model = await this.pool.query(
+        `select c.id,c.provider_id from model_catalog c join model_capabilities p on p.model_id=c.id
+         where c.id=$1 and c.capability='text' and c.enabled=true and c.healthy=true
+           and p.modes ? 'chat'`,
+        [input.modelId],
+      );
+      if (!model.rowCount)
+        throw new DomainError(
+          "DIRECTOR_MODEL_NOT_AVAILABLE",
+          "所选导演台文字模型当前不可用",
+          422,
+        );
+      if (!this.providerAvailability[model.rows[0].provider_id])
+        throw new DomainError(
+          "DIRECTOR_PROVIDER_NOT_CONFIGURED",
+          "所选导演台模型的供应商尚未配置 API Key",
+          422,
+        );
+    }
+    await this.pool.query(
+      `insert into platform_settings(key,value,updated_by) values('director_settings',$1,$2)
+       on conflict(key) do update set value=excluded.value,updated_by=excluded.updated_by,updated_at=now()`,
+      [{ enabled: input.enabled, modelId: input.modelId }, userId],
+    );
+    await this.auditDirect(
+      userId,
+      "director.settings.update",
+      "platform_setting",
+      "director_settings",
+      input,
+      requestId,
+    );
+    return this.adminDirectorSettings(userId);
   }
 
   async setModelEnabled(

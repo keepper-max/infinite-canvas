@@ -98,6 +98,7 @@ export type AdminOverview = {
 };
 export type AdminFailure = { id: string; kind: string; status: string; error: { code?: string; message: string; retryable: boolean }; updatedAt: string };
 export type AdminModel = { id: string; displayName: string; capability: string; providerId: string; enabled: boolean; configurable: boolean; healthy: boolean; discovered: boolean; checkedAt?: string };
+export type DirectorSettings = { enabled: boolean; modelId: string | null; modelDisplayName: string | null };
 export type AdminProvider = { id: "token360" | "runninghub" | "runninghub_global" | "volcengine_ark"; displayName: string; enabled: boolean; configured: boolean; updatedAt?: string };
 export type AdminProviders = { activeProviderId: AdminProvider["id"]; providers: AdminProvider[] };
 export type AdminUser = {
@@ -322,6 +323,12 @@ export function getAdminCreditPricing(signal?: AbortSignal) {
 }
 export function setAdminCreditPricing(usdCnyRate: string) {
     return platformRequest<CreditPricing>("/api/admin/credits/pricing", { method: "PATCH", body: JSON.stringify({ usdCnyRate }) });
+}
+export async function getAdminDirectorSettings(signal?: AbortSignal) {
+    return (await platformRequest<{ settings: DirectorSettings }>("/api/admin/director/settings", { signal })).settings;
+}
+export async function setAdminDirectorSettings(input: Pick<DirectorSettings, "enabled" | "modelId">) {
+    return (await platformRequest<{ settings: DirectorSettings }>("/api/admin/director/settings", { method: "PATCH", body: JSON.stringify(input) })).settings;
 }
 export function getAdminCreditGuard(signal?: AbortSignal) {
     return platformRequest<CreditGuardSettings>("/api/admin/credits/guard", { signal });

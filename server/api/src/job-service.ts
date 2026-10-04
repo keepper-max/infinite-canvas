@@ -46,6 +46,16 @@ export class JobService {
     input: CreateJobInput,
     retryOfJobId?: string,
   ) {
+    if (!retryOfJobId && input.trace?.workflowKind === "director.workflow") {
+      const settings = await this.directorSettings();
+      if (!settings.enabled)
+        throw new DomainError(
+          "DIRECTOR_DISABLED",
+          "AI 漫剧导演台已由管理员停用",
+          403,
+        );
+      if (settings.modelId) input = { ...input, modelId: settings.modelId };
+    }
     const fingerprint = createHash("sha256")
       .update(JSON.stringify({ ...input, idempotencyKey: undefined }))
       .digest("hex");
@@ -214,6 +224,20 @@ export class JobService {
       );
     }
     return serializeJob(job);
+  }
+
+  async directorSettings() {
+    const result = await this.pool.query(
+      `select coalesce(s.value->>'enabled','true') enabled,s.value->>'modelId' model_id,c.display_name
+       from (select value from platform_settings where key='director_settings') s
+       left join model_catalog c on c.id=s.value->>'modelId'`,
+    );
+    const row = result.rows[0];
+    return {
+      enabled: row ? row.enabled !== "false" : true,
+      modelId: row?.model_id || null,
+      modelDisplayName: row?.display_name || null,
+    };
   }
 
   async list(projectId: string, userId: string) {

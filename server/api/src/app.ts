@@ -1121,6 +1121,29 @@ export function createApp(
     );
   });
 
+  app.get("/api/admin/director/settings", async (context) => {
+    const user = await requireUser(context.req.raw, repository, config);
+    return context.json(
+      success(context, {
+        settings: await requireOperationsService(
+          operationsService,
+        ).adminDirectorSettings(user.id),
+      }),
+    );
+  });
+
+  app.patch("/api/admin/director/settings", async (context) => {
+    const user = await requireUser(context.req.raw, repository, config);
+    const input = directorSettingsInput.parse(await readJson(context.req.raw));
+    return context.json(
+      success(context, {
+        settings: await requireOperationsService(
+          operationsService,
+        ).setAdminDirectorSettings(user.id, input, context.get("requestId")),
+      }),
+    );
+  });
+
   app.get("/api/admin/providers", async (context) => {
     const user = await requireUser(context.req.raw, repository, config);
     return context.json(
@@ -1645,6 +1668,15 @@ export function createApp(
           context.req.param("projectId"),
           user.id,
         ),
+      }),
+    );
+  });
+
+  app.get("/api/director/settings", async (context) => {
+    await requireUser(context.req.raw, repository, config);
+    return context.json(
+      success(context, {
+        settings: await requireJobService(jobService).directorSettings(),
       }),
     );
   });
@@ -2351,6 +2383,12 @@ const managedProviderInput = z
   .object({ providerId: managedProviderId })
   .strict();
 const modelEnabledInput = z.object({ enabled: z.boolean() }).strict();
+const directorSettingsInput = z
+  .object({
+    enabled: z.boolean(),
+    modelId: z.string().trim().min(1).max(200).nullable(),
+  })
+  .strict();
 const paymentAccessInput = z
   .object({ publicRechargeEnabled: z.boolean() })
   .strict();
