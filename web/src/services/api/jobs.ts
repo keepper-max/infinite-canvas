@@ -131,7 +131,7 @@ export type ManagedJobEvent = {
     data?: { downloadedBytes?: number; totalBytes?: number };
 };
 
-export function subscribeProjectJobEvents(projectId: string, onEvent: (event: ManagedJobEvent) => void) {
+export function subscribeProjectJobEvents(projectId: string, onEvent: (event: ManagedJobEvent) => void, onOpen?: () => void) {
     const source = new EventSource(`/api/projects/${encodeURIComponent(projectId)}/events`, { withCredentials: true });
     const types = ["job.created", "job.queued", "job.started", "job.progress", "job.downloading", "job.persisting", "job.billing_pending", "job.payment_required", "job.completed", "job.failed", "job.retrying", "job.recovering", "job.cancel_requested", "job.cancelled"];
     const listener = (message: MessageEvent<string>) => {
@@ -141,8 +141,12 @@ export function subscribeProjectJobEvents(projectId: string, onEvent: (event: Ma
             /* Ignore malformed events; the next snapshot remains authoritative. */
         }
     };
+    if (onOpen) source.addEventListener("open", onOpen);
     types.forEach((type) => source.addEventListener(type, listener as EventListener));
-    return () => source.close();
+    return () => {
+        if (onOpen) source.removeEventListener("open", onOpen);
+        source.close();
+    };
 }
 
 export function normalizeManagedModelId(value: string) {

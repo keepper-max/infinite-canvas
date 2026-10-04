@@ -194,14 +194,20 @@ export default function DirectorWorkbenchPage() {
             billingWatchCleanupRef.current = null;
             void resumePlan(pending);
         };
-        billingWatchCleanupRef.current = subscribeProjectJobEvents(projectId, (event) => {
-            if (event.jobId === pending.jobId && event.status !== "billing_pending") resumeOnce();
-        });
-        void getManagedJob(pending.jobId)
-            .then((job) => {
-                if (job.status !== "billing_pending") resumeOnce();
-            })
-            .catch(() => undefined);
+        const verifyCurrentStatus = () => {
+            void getManagedJob(pending.jobId)
+                .then((job) => {
+                    if (job.status !== "billing_pending") resumeOnce();
+                })
+                .catch(() => undefined);
+        };
+        billingWatchCleanupRef.current = subscribeProjectJobEvents(
+            projectId,
+            (event) => {
+                if (event.jobId === pending.jobId && event.status !== "billing_pending") resumeOnce();
+            },
+            verifyCurrentStatus,
+        );
     };
 
     const waitForPlan = async (pending: PendingDirectorJob, signal: AbortSignal) => {
