@@ -21,6 +21,7 @@ import {
   type PlatformRepository,
   type ProjectSummary,
   type RegistrationContext,
+  type VerifiedIdentity,
   type Workspace,
 } from "./domain.js";
 import * as tables from "./db/schema.js";
@@ -70,6 +71,13 @@ export class PostgresPlatformRepository implements PlatformRepository {
   async createUserWithWorkspace(
     email: string,
     passwordHash: string,
+    registration: RegistrationContext = {},
+  ) {
+    return this.createIdentityUserWithWorkspace({ email, passwordHash }, registration);
+  }
+
+  async createIdentityUserWithWorkspace(
+    identity: VerifiedIdentity,
     registration: RegistrationContext = {},
   ) {
     try {
@@ -133,8 +141,11 @@ export class PostgresPlatformRepository implements PlatformRepository {
         const [user] = await tx
           .insert(tables.users)
           .values({
-            email,
-            passwordHash,
+            email: identity.email || null,
+            emailVerified: Boolean(identity.email && !identity.passwordHash),
+            phone: identity.phone || null,
+            phoneVerified: Boolean(identity.phone),
+            passwordHash: identity.passwordHash || null,
             ...attribution,
             sourceRegisteredAt: new Date(),
             registrationIp: registration.registrationIp || null,
@@ -142,6 +153,9 @@ export class PostgresPlatformRepository implements PlatformRepository {
           .returning({
             id: tables.users.id,
             email: tables.users.email,
+            phone: tables.users.phone,
+            emailVerified: tables.users.emailVerified,
+            phoneVerified: tables.users.phoneVerified,
             isAdmin: tables.users.isAdmin,
             accountStatus: tables.users.accountStatus,
           });
@@ -158,7 +172,7 @@ export class PostgresPlatformRepository implements PlatformRepository {
         if (registration.verificationCodeId) {
           const consumed = (await tx.execute(sql`
             update email_verification_codes set status='consumed',consumed_at=now()
-            where id=${registration.verificationCodeId} and email=${email} and purpose='register' and status='pending'
+            where id=${registration.verificationCodeId} and email=${identity.email} and purpose='register' and status='pending'
             returning id
           `)) as unknown as { rowCount: number };
           if (consumed.rowCount !== 1)
@@ -176,6 +190,8 @@ export class PostgresPlatformRepository implements PlatformRepository {
         };
       });
     } catch (error) {
+      if (isUniqueViolation(error) && identity.phone)
+        throw new DomainError("PHONE_ALREADY_REGISTERED", "手机号已注册", 409, false, { cause: error });
       if (isUniqueViolation(error))
         throw new DomainError(
           "EMAIL_ALREADY_REGISTERED",
@@ -193,6 +209,9 @@ export class PostgresPlatformRepository implements PlatformRepository {
       .select({
         id: tables.users.id,
         email: tables.users.email,
+        phone: tables.users.phone,
+        emailVerified: tables.users.emailVerified,
+        phoneVerified: tables.users.phoneVerified,
         passwordHash: tables.users.passwordHash,
         isAdmin: tables.users.isAdmin,
         accountStatus: tables.users.accountStatus,
@@ -203,6 +222,20 @@ export class PostgresPlatformRepository implements PlatformRepository {
     return user
       ? { ...normalizePlatformUser(user), passwordHash: user.passwordHash }
       : null;
+  }
+
+  async findUserByPhone(phone: string) {
+    const [user] = await this.db.select({
+      id: tables.users.id,
+      email: tables.users.email,
+      phone: tables.users.phone,
+      emailVerified: tables.users.emailVerified,
+      phoneVerified: tables.users.phoneVerified,
+      passwordHash: tables.users.passwordHash,
+      isAdmin: tables.users.isAdmin,
+      accountStatus: tables.users.accountStatus,
+    }).from(tables.users).where(eq(tables.users.phone, phone)).limit(1);
+    return user ? { ...normalizePlatformUser(user), passwordHash: user.passwordHash } : null;
   }
 
   async createSession(userId: string, tokenHash: string, expiresAt: Date) {
@@ -223,6 +256,9 @@ export class PostgresPlatformRepository implements PlatformRepository {
       .select({
         id: tables.users.id,
         email: tables.users.email,
+        phone: tables.users.phone,
+        emailVerified: tables.users.emailVerified,
+        phoneVerified: tables.users.phoneVerified,
         isAdmin: tables.users.isAdmin,
         accountStatus: tables.users.accountStatus,
       })
@@ -617,13 +653,19 @@ function validateRegistrationInvite(
 
 function normalizePlatformUser(user: {
   id: string;
-  email: string;
+  email: string | null;
+  phone?: string | null;
+  emailVerified?: boolean;
+  phoneVerified?: boolean;
   isAdmin: boolean;
   accountStatus: string;
 }) {
   return {
     id: user.id,
     email: user.email,
+    phone: user.phone || null,
+    emailVerified: Boolean(user.emailVerified),
+    phoneVerified: Boolean(user.phoneVerified),
     isAdmin: user.isAdmin,
     accountStatus:
       user.accountStatus === "disabled"

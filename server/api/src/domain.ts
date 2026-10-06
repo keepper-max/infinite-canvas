@@ -7,7 +7,10 @@ import type {
 
 export type PlatformUser = {
   id: string;
-  email: string;
+  email: string | null;
+  phone: string | null;
+  emailVerified?: boolean;
+  phoneVerified?: boolean;
   isAdmin: boolean;
   accountStatus: "active" | "disabled";
 };
@@ -27,6 +30,12 @@ export type RegistrationContext = {
   inviteCode?: string;
   registrationIp?: string | null;
   verificationCodeId?: string;
+};
+
+export type VerifiedIdentity = {
+  email?: string;
+  phone?: string;
+  passwordHash?: string | null;
 };
 
 export type ApiStatus =
@@ -60,7 +69,12 @@ export interface PlatformRepository {
   }>;
   findUserByEmail(
     email: string,
-  ): Promise<(PlatformUser & { passwordHash: string }) | null>;
+  ): Promise<(PlatformUser & { passwordHash: string | null }) | null>;
+  findUserByPhone?(phone: string): Promise<(PlatformUser & { passwordHash: string | null }) | null>;
+  createIdentityUserWithWorkspace?(
+    identity: VerifiedIdentity,
+    registration?: RegistrationContext,
+  ): Promise<{ user: PlatformUser; workspace: Workspace; verificationConsumed?: boolean }>;
   createSession(
     userId: string,
     tokenHash: string,

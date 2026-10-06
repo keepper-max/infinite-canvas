@@ -1,10 +1,10 @@
-import { App, Button, Form, Input } from "antd";
-import { ArrowRight, BadgeCheck, KeyRound, LockKeyhole, Mail } from "lucide-react";
+import { App, Button, Form, Input, Segmented } from "antd";
+import { ArrowRight, BadgeCheck, KeyRound, LockKeyhole, Mail, Smartphone } from "lucide-react";
 import { useEffect, useState } from "react";
 import { Link, Navigate, useNavigate } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 
-import { confirmPasswordReset, getAuthConfig, login, PlatformApiError, register, requestEmailVerification, requestPasswordReset, validateInviteCode } from "@/services/api/platform";
+import { confirmPasswordReset, getAuthConfig, loginWithCode, PlatformApiError, registerWithCode, requestPasswordReset, requestVerificationCode, validateInviteCode, type VerificationChannel } from "@/services/api/platform";
 import { useCanvasStore } from "@/stores/canvas/use-canvas-store";
 
 type AuthMode = "login" | "register" | "forgot-password";
@@ -21,6 +21,7 @@ export default function AuthPage({ mode }: { mode: AuthMode }) {
     const [inviteValidating, setInviteValidating] = useState(false);
     const [inviteValid, setInviteValid] = useState(false);
     const [authenticatedProjectId, setAuthenticatedProjectId] = useState<string | null>(null);
+    const [channel, setChannel] = useState<VerificationChannel>("phone");
     const hydrated = useCanvasStore((state) => state.hydrated);
     const [form] = Form.useForm();
 
@@ -33,10 +34,6 @@ export default function AuthPage({ mode }: { mode: AuthMode }) {
     useEffect(() => {
         setCountdown(0);
         form.resetFields();
-        if (mode === "login") {
-            setVerificationRequired(false);
-            return;
-        }
         if (mode === "forgot-password") {
             setVerificationRequired(true);
             return;
@@ -46,7 +43,8 @@ export default function AuthPage({ mode }: { mode: AuthMode }) {
         void getAuthConfig()
             .then((result) => {
                 if (active) {
-                    setVerificationRequired(result.emailVerificationRequired);
+                    setVerificationRequired(result.emailCodeEnabled || result.smsCodeEnabled);
+                    if (!result.smsCodeEnabled && result.emailCodeEnabled) setChannel("email");
                     setInviteMode(result.inviteMode);
                 }
             })
@@ -62,9 +60,10 @@ export default function AuthPage({ mode }: { mode: AuthMode }) {
 
     const sendCode = async () => {
         try {
-            const { email } = await form.validateFields(["email"]);
+            const field = mode === "forgot-password" ? "email" : "account";
+            const values = await form.validateFields([field]);
             setSendingCode(true);
-            const result = await (mode === "forgot-password" ? requestPasswordReset(email) : requestEmailVerification(email));
+            const result = mode === "forgot-password" ? await requestPasswordReset(values.email) : await requestVerificationCode(channel, values.account, mode);
             setCountdown(result.retryAfterSeconds);
             message.success(t("auth.codeSent"));
         } catch (error) {
@@ -94,16 +93,16 @@ export default function AuthPage({ mode }: { mode: AuthMode }) {
         }
     };
 
-    const submit = async (values: { email: string; password?: string; newPassword?: string; verificationCode?: string; inviteCode?: string }) => {
+    const submit = async (values: { email?: string; account?: string; newPassword?: string; verificationCode?: string; inviteCode?: string }) => {
         setSubmitting(true);
         try {
             if (mode === "forgot-password") {
-                await confirmPasswordReset(values.email, values.verificationCode || "", values.newPassword || "");
+                await confirmPasswordReset(values.email || "", values.verificationCode || "", values.newPassword || "");
                 message.success(t("auth.passwordReset"));
                 navigate("/login", { replace: true });
                 return;
             }
-            const session = await (mode === "register" ? register(values.email, values.password || "", values.verificationCode, values.inviteCode, deviceId) : login(values.email, values.password || ""));
+            const session = mode === "register" ? await registerWithCode(channel, values.account || "", values.verificationCode || "", values.inviteCode, deviceId) : await loginWithCode(channel, values.account || "", values.verificationCode || "");
             useCanvasStore.getState().ensureProjectShell(session.workspace);
             setAuthenticatedProjectId(session.workspace.projectId);
             message.success(t(mode === "register" ? "auth.registered" : "auth.loggedIn"));
@@ -128,12 +127,48 @@ export default function AuthPage({ mode }: { mode: AuthMode }) {
                 <h1 className="mt-10 text-3xl font-semibold tracking-tight">{t(mode === "register" ? "auth.registerTitle" : mode === "forgot-password" ? "auth.forgotPasswordTitle" : "auth.loginTitle")}</h1>
                 <p className="mt-3 text-sm leading-6 text-stone-400">{t(mode === "forgot-password" ? "auth.forgotPasswordHint" : "auth.directEntry")}</p>
 
-                <Form form={form} layout="vertical" requiredMark={false} className="mt-8" onFinish={(values) => void submit(values as { email: string; password?: string; newPassword?: string; verificationCode?: string; inviteCode?: string })}>
-                    <Form.Item name="email" label={<span className="text-stone-300">{t("auth.email")}</span>} rules={[{ required: true, type: "email", message: t("auth.emailInvalid") }]}>
-                        <Input size="large" prefix={<Mail className="size-4 text-stone-500" />} placeholder="you@example.com" autoComplete="email" />
-                    </Form.Item>
-                    {mode !== "login" && verificationRequired && (
-                        <Form.Item name="verificationCode" label={<span className="text-stone-300">{t("auth.verificationCode")}</span>} rules={[{ required: true, pattern: /^\d{6}$/, message: t("auth.codeInvalid") }]}>
+                <Form form={form} layout="vertical" requiredMark={false} className="mt-8" onFinish={(values) => void submit(values)}>
+                    {mode !== "forgot-password" ? (
+                        <Segmented
+                            block
+                            className="mb-6"
+                            value={channel}
+                            onChange={(value) => {
+                                setChannel(value as VerificationChannel);
+                                setCountdown(0);
+                                form.setFieldsValue({ account: "", verificationCode: "" });
+                            }}
+                            options={[
+                                { label: mode === "register" ? "手机号注册" : "手机号登录", value: "phone" },
+                                { label: mode === "register" ? "邮箱注册" : "邮箱登录", value: "email" },
+                            ]}
+                        />
+                    ) : null}
+                    {mode === "forgot-password" ? (
+                        <Form.Item name="email" label={<span className="text-stone-300">{t("auth.email")}</span>} rules={[{ required: true, type: "email", message: t("auth.emailInvalid") }]}>
+                            <Input size="large" prefix={<Mail className="size-4 text-stone-500" />} placeholder="you@example.com" autoComplete="email" />
+                        </Form.Item>
+                    ) : (
+                        <Form.Item
+                            name="account"
+                            label={<span className="text-stone-300">{channel === "phone" ? "手机号" : t("auth.email")}</span>}
+                            rules={channel === "phone" ? [{ required: true, pattern: /^(?:\+?86)?1[3-9]\d{9}$/, message: "请输入有效的中国大陆手机号" }] : [{ required: true, type: "email", message: t("auth.emailInvalid") }]}
+                        >
+                            <Input
+                                size="large"
+                                prefix={channel === "phone" ? <Smartphone className="size-4 text-stone-500" /> : <Mail className="size-4 text-stone-500" />}
+                                addonBefore={channel === "phone" ? "+86" : undefined}
+                                placeholder={channel === "phone" ? "请输入手机号" : "you@example.com"}
+                                autoComplete={channel === "phone" ? "tel" : "email"}
+                            />
+                        </Form.Item>
+                    )}
+                    {(mode !== "register" || verificationRequired) && (
+                        <Form.Item
+                            name="verificationCode"
+                            label={<span className="text-stone-300">{mode !== "forgot-password" && channel === "phone" ? "短信验证码" : t("auth.verificationCode")}</span>}
+                            rules={[{ required: true, pattern: /^\d{6}$/, message: t("auth.codeInvalid") }]}
+                        >
                             <Input
                                 size="large"
                                 prefix={<BadgeCheck className="size-4 text-stone-500" />}
@@ -186,17 +221,6 @@ export default function AuthPage({ mode }: { mode: AuthMode }) {
                                 <Input.Password size="large" prefix={<LockKeyhole className="size-4 text-stone-500" />} placeholder={t("auth.passwordPlaceholder")} autoComplete="new-password" />
                             </Form.Item>
                         </>
-                    ) : (
-                        <Form.Item name="password" label={<span className="text-stone-300">{t("auth.password")}</span>} rules={[{ required: true, min: mode === "register" ? 8 : 1, message: t("auth.passwordInvalid") }]}>
-                            <Input.Password size="large" prefix={<LockKeyhole className="size-4 text-stone-500" />} placeholder={t("auth.passwordPlaceholder")} autoComplete={mode === "register" ? "new-password" : "current-password"} />
-                        </Form.Item>
-                    )}
-                    {mode === "login" ? (
-                        <div className="-mt-3 mb-3 text-right text-sm">
-                            <Link className="text-stone-300 underline underline-offset-4" to="/forgot-password">
-                                {t("auth.forgotPassword")}
-                            </Link>
-                        </div>
                     ) : null}
                     <Button
                         htmlType="submit"

@@ -17,6 +17,7 @@ export type ApiConfig = {
   assetUnusedRetentionDays: number;
   assetStorageQuotaBytes: number;
   emailVerification?: EmailVerificationConfig;
+  smsVerification?: SmsVerificationConfig;
 };
 
 export type EmailVerificationConfig = {
@@ -29,6 +30,22 @@ export type EmailVerificationConfig = {
   codeTtlSeconds: number;
   resendCooldownSeconds: number;
   maxSendsPerHour: number;
+  maxSendsPerDay?: number;
+  maxSendsPerIpHour: number;
+  maxAttempts: number;
+};
+
+export type SmsVerificationConfig = {
+  enabled: boolean;
+  accessKeyId: string;
+  accessKeySecret: string;
+  signName: string;
+  templateCode: string;
+  hashSecret: string;
+  codeTtlSeconds: number;
+  resendCooldownSeconds: number;
+  maxSendsPerHour: number;
+  maxSendsPerDay: number;
   maxSendsPerIpHour: number;
   maxAttempts: number;
 };
@@ -224,6 +241,7 @@ export function readConfig(env: NodeJS.ProcessEnv = process.env): ApiConfig {
     "ASSET_STORAGE_QUOTA_BYTES",
   );
   const emailVerification = readEmailVerificationConfig(env);
+  const smsVerification = readSmsVerificationConfig(env);
   return {
     port,
     databaseUrl,
@@ -246,6 +264,7 @@ export function readConfig(env: NodeJS.ProcessEnv = process.env): ApiConfig {
     assetUnusedRetentionDays,
     assetStorageQuotaBytes,
     emailVerification,
+    smsVerification,
   };
 }
 
@@ -283,9 +302,16 @@ function readEmailVerificationConfig(
       20,
       "EMAIL_VERIFICATION_MAX_SENDS_PER_HOUR",
     ),
+    maxSendsPerDay: readInteger(
+      env.EMAIL_VERIFICATION_MAX_SENDS_PER_DAY || env.VERIFY_CODE_ACCOUNT_DAILY_LIMIT,
+      10,
+      1,
+      100,
+      "VERIFY_CODE_ACCOUNT_DAILY_LIMIT",
+    ),
     maxSendsPerIpHour: readInteger(
       env.EMAIL_VERIFICATION_MAX_SENDS_PER_IP_HOUR,
-      20,
+      30,
       1,
       100,
       "EMAIL_VERIFICATION_MAX_SENDS_PER_IP_HOUR",
@@ -308,6 +334,33 @@ function readEmailVerificationConfig(
     throw new Error(
       "Enabled email verification requires DirectMail credentials, an account name, and a hash secret of at least 32 characters",
     );
+  return config;
+}
+
+function readSmsVerificationConfig(env: NodeJS.ProcessEnv): SmsVerificationConfig {
+  const enabled = env.SMS_VERIFICATION_ENABLED === "true";
+  const config = {
+    enabled,
+    accessKeyId: env.ALIYUN_SMS_ACCESS_KEY_ID?.trim() || "",
+    accessKeySecret: env.ALIYUN_SMS_ACCESS_KEY_SECRET?.trim() || "",
+    signName: env.ALIYUN_SMS_SIGN_NAME?.trim() || "",
+    templateCode: env.ALIYUN_SMS_TEMPLATE_CODE?.trim() || "",
+    hashSecret:
+      env.VERIFICATION_CODE_SECRET?.trim() ||
+      env.EMAIL_VERIFICATION_HASH_SECRET?.trim() ||
+      "",
+    codeTtlSeconds: readInteger(env.VERIFY_CODE_EXPIRE_SECONDS, 300, 60, 1_800, "VERIFY_CODE_EXPIRE_SECONDS"),
+    resendCooldownSeconds: readInteger(env.VERIFY_CODE_RESEND_SECONDS, 60, 30, 600, "VERIFY_CODE_RESEND_SECONDS"),
+    maxSendsPerHour: readInteger(env.VERIFY_CODE_ACCOUNT_HOURLY_LIMIT, 5, 1, 20, "VERIFY_CODE_ACCOUNT_HOURLY_LIMIT"),
+    maxSendsPerDay: readInteger(env.VERIFY_CODE_ACCOUNT_DAILY_LIMIT, 10, 1, 100, "VERIFY_CODE_ACCOUNT_DAILY_LIMIT"),
+    maxSendsPerIpHour: readInteger(env.VERIFY_CODE_IP_HOURLY_LIMIT, 30, 1, 300, "VERIFY_CODE_IP_HOURLY_LIMIT"),
+    maxAttempts: readInteger(env.VERIFY_CODE_MAX_ATTEMPTS, 5, 1, 10, "VERIFY_CODE_MAX_ATTEMPTS"),
+  };
+  if (
+    enabled &&
+    (!config.accessKeyId || !config.accessKeySecret || !config.signName || !config.templateCode || config.hashSecret.length < 32)
+  )
+    throw new Error("Enabled SMS verification requires Aliyun credentials, sign/template, and a hash secret of at least 32 characters");
   return config;
 }
 

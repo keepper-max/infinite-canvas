@@ -24,6 +24,7 @@ import type {
   EmailVerificationServicePort,
   VerifiedEmailCode,
 } from "../src/email-verification-service.js";
+import type { SmsVerificationPurpose, SmsVerificationServicePort, VerifiedSmsCode } from "../src/sms-verification-service.js";
 
 const config: ApiConfig = {
   port: 3002,
@@ -63,6 +64,26 @@ function verificationConfig(): ApiConfig {
   };
 }
 
+function dualChannelConfig(): ApiConfig {
+  return {
+    ...verificationConfig(),
+    smsVerification: {
+      enabled: true,
+      accessKeyId: "test",
+      accessKeySecret: "test",
+      signName: "test",
+      templateCode: "SMS_TEST",
+      hashSecret: "test-secret-at-least-32-characters-long",
+      codeTtlSeconds: 300,
+      resendCooldownSeconds: 60,
+      maxSendsPerHour: 5,
+      maxSendsPerDay: 10,
+      maxSendsPerIpHour: 30,
+      maxAttempts: 5,
+    },
+  };
+}
+
 test("register creates one workspace and subsequent login reuses it", async () => {
   const repository = new MemoryRepository();
   const app = createApp(repository, config);
@@ -84,6 +105,37 @@ test("register creates one workspace and subsequent login reuses it", async () =
     registered.body.data.workspace.projectId,
   );
   assert.equal(repository.workspaces.size, 1);
+});
+
+test("phone verification registers and logs into the same user", async () => {
+  const repository = new MemoryRepository();
+  const sms = new MemorySmsVerificationService();
+  const app = createApp(repository, dualChannelConfig(), undefined, undefined, undefined, undefined, undefined, undefined, undefined, new MemoryEmailVerificationService(), undefined, sms);
+  const sent = await jsonRequest(app, "/api/auth/sms/send", { account: "13800138000", purpose: "register" });
+  assert.equal(sent.response.status, 200);
+  assert.equal(sms.requestedPhone, "+8613800138000");
+  const registered = await jsonRequest(app, "/api/auth/register/phone", { account: "13800138000", code: "123456" });
+  assert.equal(registered.response.status, 201);
+  assert.equal(registered.body.data.user.phone, "+8613800138000");
+  sms.consumed = false;
+  await jsonRequest(app, "/api/auth/sms/send", { account: "+8613800138000", purpose: "login" });
+  const loggedIn = await jsonRequest(app, "/api/auth/login/phone", { account: "13800138000", code: "123456" });
+  assert.equal(loggedIn.response.status, 200);
+  assert.equal(loggedIn.body.data.user.id, registered.body.data.user.id);
+});
+
+test("email verification registers and logs into the same user without a password", async () => {
+  const repository = new MemoryRepository();
+  const email = new MemoryEmailVerificationService();
+  const app = createApp(repository, dualChannelConfig(), undefined, undefined, undefined, undefined, undefined, undefined, undefined, email);
+  await jsonRequest(app, "/api/auth/email/send", { account: "code@example.com", purpose: "register" });
+  const registered = await jsonRequest(app, "/api/auth/register/email", { account: "code@example.com", code: "123456" });
+  assert.equal(registered.response.status, 201);
+  email.consumed = false;
+  await jsonRequest(app, "/api/auth/email/send", { account: "code@example.com", purpose: "login" });
+  const loggedIn = await jsonRequest(app, "/api/auth/login/email", { account: "code@example.com", code: "123456" });
+  assert.equal(loggedIn.response.status, 200);
+  assert.equal(loggedIn.body.data.user.id, registered.body.data.user.id);
 });
 
 test("duplicate email and wrong password return stable errors", async () => {
@@ -790,6 +842,17 @@ class MemoryEmailVerificationService implements EmailVerificationServicePort {
   }
 }
 
+class MemorySmsVerificationService implements SmsVerificationServicePort {
+  requestedPhone = "";
+  consumed = false;
+  async requestCode(phone: string, _requestIp: string, _purpose: SmsVerificationPurpose) { this.requestedPhone = phone; }
+  async verifyCode(phone: string, code: string, purpose: SmsVerificationPurpose): Promise<VerifiedSmsCode> {
+    if (code !== "123456") throw new DomainError("INVALID_VERIFICATION_CODE", "验证码错误或已失效", 422);
+    return { channel: "sms", purpose, account: phone, phone, fingerprint: "test" };
+  }
+  async consumeCode(_verification: VerifiedSmsCode) { if (this.consumed) return false; this.consumed = true; return true; }
+}
+
 class MemoryRepository implements PlatformRepository {
   users = new Map<string, PlatformUser & { passwordHash: string }>();
   sessions = new Map<string, { userId: string; expiresAt: Date }>();
@@ -813,6 +876,18 @@ class MemoryRepository implements PlatformRepository {
     return (
       [...this.users.values()].find((user) => user.email === email) || null
     );
+  }
+
+  async findUserByPhone(phone: string) {
+    return [...this.users.values()].find((user) => user.phone === phone) || null;
+  }
+
+  async createIdentityUserWithWorkspace(identity: { email?: string; phone?: string }) {
+    if ([...this.users.values()].some((user) => (identity.email && user.email === identity.email) || (identity.phone && user.phone === identity.phone)))
+      throw new DomainError(identity.phone ? "PHONE_ALREADY_REGISTERED" : "EMAIL_ALREADY_REGISTERED", identity.phone ? "手机号已注册" : "邮箱已注册", 409);
+    const user = { id: crypto.randomUUID(), email: identity.email || null, phone: identity.phone || null, passwordHash: null, isAdmin: false, accountStatus: "active" as const };
+    this.users.set(user.id, user as any);
+    return { user, workspace: this.workspaceFor(user.id) };
   }
 
   async createSession(userId: string, tokenHash: string, expiresAt: Date) {

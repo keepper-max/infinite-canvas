@@ -72,6 +72,7 @@ import type {
   EmailVerificationServicePort,
   VerifiedEmailCode,
 } from "./email-verification-service.js";
+import type { SmsVerificationServicePort } from "./sms-verification-service.js";
 
 type Variables = { requestId: string };
 type AppEnv = { Variables: Variables };
@@ -88,6 +89,7 @@ export function createApp(
   virtualPortraitService?: VirtualPortraitServicePort,
   emailVerificationService?: EmailVerificationServicePort,
   channelAttributionService?: ChannelAttributionService,
+  smsVerificationService?: SmsVerificationServicePort,
 ) {
   const app = new Hono<AppEnv>();
 
@@ -150,6 +152,8 @@ export function createApp(
     return context.json(
       success(context, {
         emailVerificationRequired: Boolean(config.emailVerification?.enabled),
+        emailCodeEnabled: Boolean(config.emailVerification?.enabled),
+        smsCodeEnabled: Boolean(config.smsVerification?.enabled),
         ...attribution,
       }),
     );
@@ -175,6 +179,98 @@ export function createApp(
         ),
       ),
     );
+  });
+
+  const beginVerifiedRegistration = async (request: Request, inviteCode?: string, deviceId?: string) => {
+    const registrationIp = clientIpOrNull(request);
+    const deviceHash = channelAttributionService?.deviceHash(deviceId);
+    if (channelAttributionService) {
+      await channelAttributionService.beginRegistration(registrationIp, deviceHash || null);
+      if (inviteCode) await channelAttributionService.validateInvite(inviteCode, registrationIp, deviceHash || null);
+    }
+    return { registrationIp, deviceHash };
+  };
+  const finishVerifiedRegistration = async (registrationIp: string | null, deviceHash?: string | null) => {
+    if (channelAttributionService)
+      await channelAttributionService.finishRegistration(registrationIp, deviceHash || null).catch((error) =>
+        console.warn("[platform-api] registration risk success event failed:", error instanceof Error ? error.message : "unknown error"),
+      );
+  };
+
+  app.post("/api/auth/email/send", async (context) => {
+    const input = verificationSendInput.extend({ account: emailSchema }).parse(await readJson(context.req.raw));
+    if (!config.emailVerification?.enabled || !emailVerificationService)
+      throw new DomainError("EMAIL_VERIFICATION_UNAVAILABLE", "邮箱验证暂时不可用", 503, true);
+    const email = normalizeEmail(input.account);
+    const existing = await repository.findUserByEmail(email);
+    if ((input.purpose === "register" && !existing) || (input.purpose === "login" && existing?.accountStatus !== "disabled"))
+      await emailVerificationService.requestCode(email, clientIp(context.req.raw), input.purpose);
+    return context.json(success(context, { accepted: true, retryAfterSeconds: config.emailVerification.resendCooldownSeconds }));
+  });
+
+  app.post("/api/auth/sms/send", async (context) => {
+    const input = verificationSendInput.extend({ account: phoneSchema }).parse(await readJson(context.req.raw));
+    if (!config.smsVerification?.enabled || !smsVerificationService)
+      throw new DomainError("SMS_VERIFICATION_UNAVAILABLE", "短信验证暂时不可用", 503, true);
+    const phone = normalizePhone(input.account);
+    const existing = await repository.findUserByPhone?.(phone);
+    if ((input.purpose === "register" && !existing) || (input.purpose === "login" && existing?.accountStatus !== "disabled"))
+      await smsVerificationService.requestCode(phone, clientIp(context.req.raw), input.purpose);
+    return context.json(success(context, { accepted: true, retryAfterSeconds: config.smsVerification.resendCooldownSeconds }));
+  });
+
+  app.post("/api/auth/register/email", async (context) => {
+    const input = verifiedRegisterInput.extend({ account: emailSchema }).parse(await readJson(context.req.raw));
+    if (!config.emailVerification?.enabled || !emailVerificationService || !repository.createIdentityUserWithWorkspace)
+      throw new DomainError("EMAIL_VERIFICATION_UNAVAILABLE", "邮箱验证暂时不可用", 503, true);
+    const email = normalizeEmail(input.account);
+    const verification = await emailVerificationService.verifyCode(email, input.code, "register");
+    const registration = await beginVerifiedRegistration(context.req.raw, input.inviteCode, input.deviceId);
+    const result = await repository.createIdentityUserWithWorkspace({ email }, { inviteCode: input.inviteCode, registrationIp: registration.registrationIp });
+    if (!(await emailVerificationService.consumeCode(verification))) throw invalidVerificationCode();
+    await finishVerifiedRegistration(registration.registrationIp, registration.deviceHash);
+    const expiresAt = await issueSession(context, repository, config, result.user.id);
+    return context.json(success(context, { ...result, user: publicUser(result.user, config), sessionExpiresAt: expiresAt.toISOString() }), 201);
+  });
+
+  app.post("/api/auth/register/phone", async (context) => {
+    const input = verifiedRegisterInput.extend({ account: phoneSchema }).parse(await readJson(context.req.raw));
+    if (!config.smsVerification?.enabled || !smsVerificationService || !repository.createIdentityUserWithWorkspace)
+      throw new DomainError("SMS_VERIFICATION_UNAVAILABLE", "短信验证暂时不可用", 503, true);
+    const phone = normalizePhone(input.account);
+    const verification = await smsVerificationService.verifyCode(phone, input.code, "register");
+    const registration = await beginVerifiedRegistration(context.req.raw, input.inviteCode, input.deviceId);
+    const result = await repository.createIdentityUserWithWorkspace({ phone }, { inviteCode: input.inviteCode, registrationIp: registration.registrationIp });
+    if (!(await smsVerificationService.consumeCode(verification))) throw invalidVerificationCode();
+    await finishVerifiedRegistration(registration.registrationIp, registration.deviceHash);
+    const expiresAt = await issueSession(context, repository, config, result.user.id);
+    return context.json(success(context, { ...result, user: publicUser(result.user, config), sessionExpiresAt: expiresAt.toISOString() }), 201);
+  });
+
+  app.post("/api/auth/login/email", async (context) => {
+    const input = verifiedLoginInput.extend({ account: emailSchema }).parse(await readJson(context.req.raw));
+    if (!config.emailVerification?.enabled || !emailVerificationService) throw new DomainError("EMAIL_VERIFICATION_UNAVAILABLE", "邮箱验证暂时不可用", 503, true);
+    const email = normalizeEmail(input.account);
+    const user = await repository.findUserByEmail(email);
+    if (!user || user.accountStatus === "disabled") throw new DomainError("INVALID_CREDENTIALS", "验证码错误或已失效", 401);
+    const verification = await emailVerificationService.verifyCode(email, input.code, "login");
+    if (!(await emailVerificationService.consumeCode(verification))) throw invalidVerificationCode();
+    const workspace = await repository.ensureDefaultWorkspace(user.id);
+    const expiresAt = await issueSession(context, repository, config, user.id);
+    return context.json(success(context, { user: publicUser(user, config), workspace, sessionExpiresAt: expiresAt.toISOString() }));
+  });
+
+  app.post("/api/auth/login/phone", async (context) => {
+    const input = verifiedLoginInput.extend({ account: phoneSchema }).parse(await readJson(context.req.raw));
+    if (!config.smsVerification?.enabled || !smsVerificationService || !repository.findUserByPhone) throw new DomainError("SMS_VERIFICATION_UNAVAILABLE", "短信验证暂时不可用", 503, true);
+    const phone = normalizePhone(input.account);
+    const user = await repository.findUserByPhone(phone);
+    if (!user || user.accountStatus === "disabled") throw new DomainError("INVALID_CREDENTIALS", "验证码错误或已失效", 401);
+    const verification = await smsVerificationService.verifyCode(phone, input.code, "login");
+    if (!(await smsVerificationService.consumeCode(verification))) throw invalidVerificationCode();
+    const workspace = await repository.ensureDefaultWorkspace(user.id);
+    const expiresAt = await issueSession(context, repository, config, user.id);
+    return context.json(success(context, { user: publicUser(user, config), workspace, sessionExpiresAt: expiresAt.toISOString() }));
   });
 
   app.post("/api/auth/email-verification/request", async (context) => {
@@ -244,7 +340,7 @@ export function createApp(
       {
         inviteCode: input.inviteCode,
         registrationIp,
-        verificationCodeId: verification?.id,
+        verificationCodeId: undefined,
       },
     );
     if (verification && !result.verificationConsumed)
@@ -284,7 +380,7 @@ export function createApp(
   app.post("/api/auth/login", async (context) => {
     const input = loginInput.parse(await readJson(context.req.raw));
     const user = await repository.findUserByEmail(normalizeEmail(input.email));
-    if (!user || !(await verifyPassword(user.passwordHash, input.password)))
+    if (!user || !user.passwordHash || !(await verifyPassword(user.passwordHash, input.password)))
       throw new DomainError("INVALID_CREDENTIALS", "邮箱或密码错误", 401);
     if (user.accountStatus === "disabled")
       throw new DomainError(
@@ -360,10 +456,12 @@ export function createApp(
   app.post("/api/auth/password/change", async (context) => {
     const sessionUser = await requireUser(context.req.raw, repository, config);
     const input = passwordChangeInput.parse(await readJson(context.req.raw));
+    if (!sessionUser.email)
+      throw new DomainError("PASSWORD_LOGIN_UNAVAILABLE", "该账号未设置邮箱密码", 422);
     const user = await repository.findUserByEmail(sessionUser.email);
     if (
       !user ||
-      !(await verifyPassword(user.passwordHash, input.currentPassword))
+      !user.passwordHash || !(await verifyPassword(user.passwordHash, input.currentPassword))
     )
       throw new DomainError("INVALID_CURRENT_PASSWORD", "当前密码不正确", 422);
     if (await verifyPassword(user.passwordHash, input.newPassword))
@@ -2286,6 +2384,17 @@ const emailSchema = z
   .trim()
   .email("请输入有效邮箱")
   .max(254, "邮箱过长");
+const phoneSchema = z
+  .string()
+  .trim()
+  .regex(/^(?:\+?86)?1[3-9]\d{9}$/, "请输入有效的中国大陆手机号");
+const verificationSendInput = z.object({ purpose: z.enum(["register", "login"]) });
+const verifiedRegisterInput = z.object({
+  code: z.string().trim().regex(/^\d{6}$/, "请输入 6 位验证码"),
+  inviteCode: z.string().trim().toUpperCase().max(40).optional(),
+  deviceId: z.string().trim().min(16).max(200).optional(),
+});
+const verifiedLoginInput = z.object({ code: z.string().trim().regex(/^\d{6}$/, "请输入 6 位验证码") });
 const passwordSchema = z
   .string()
   .min(passwordPolicy.minLength, `密码至少 ${passwordPolicy.minLength} 位`)
@@ -2605,19 +2714,29 @@ function apiError(context: Context<AppEnv>, error: DomainError) {
 }
 
 function publicUser(
-  user: PlatformUser & { passwordHash?: string },
+  user: PlatformUser & { passwordHash?: string | null },
   config: ApiConfig,
 ): PlatformUser {
   return {
     id: user.id,
     email: user.email,
+    phone: user.phone,
+    emailVerified: user.emailVerified,
+    phoneVerified: user.phoneVerified,
     isAdmin:
       Boolean(user.isAdmin) ||
       Boolean(
-        config.operations?.adminEmails.includes(user.email.toLowerCase()),
+        user.email && config.operations?.adminEmails.includes(user.email.toLowerCase()),
       ),
     accountStatus: user.accountStatus || "active",
   };
+}
+
+function normalizePhone(value: string) {
+  const digits = value.replace(/[\s-]/g, "").replace(/^\+?86/, "");
+  if (!/^1[3-9]\d{9}$/.test(digits))
+    throw new DomainError("INVALID_PHONE", "手机号格式不正确", 422);
+  return `+86${digits}`;
 }
 
 function isUnsafeMethod(method: string) {

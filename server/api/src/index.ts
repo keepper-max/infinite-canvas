@@ -1,4 +1,5 @@
 import { serve } from "@hono/node-server";
+import { Redis } from "ioredis";
 
 import { createApp } from "./app.js";
 import { PostgresAssetService } from "./asset-service.js";
@@ -24,6 +25,8 @@ import { CreditService } from "./credit-service.js";
 import { PaymentService } from "./payment-service.js";
 import { StorageQuotaService } from "./storage-quota-service.js";
 import { EmailVerificationService } from "./email-verification-service.js";
+import { SmsVerificationService } from "./sms-verification-service.js";
+import { VerificationCodeStore } from "./verification-code-store.js";
 
 const config = readConfig();
 const { db, pool } = createDatabase(config.databaseUrl);
@@ -110,8 +113,13 @@ const virtualPortraitService = new VirtualPortraitService(
   objectStorage,
   new Token360VirtualPortraitClient(config.provider),
 );
+const verificationRedis = new Redis(config.jobs.redisUrl, { maxRetriesPerRequest: 1, enableOfflineQueue: false });
+const verificationStore = new VerificationCodeStore(verificationRedis);
 const emailVerificationService = config.emailVerification?.enabled
-  ? new EmailVerificationService(pool, config.emailVerification)
+  ? new EmailVerificationService(verificationStore, config.emailVerification)
+  : undefined;
+const smsVerificationService = config.smsVerification?.enabled
+  ? new SmsVerificationService(verificationStore, config.smsVerification)
   : undefined;
 const channelAttributionService = new ChannelAttributionService(
   pool,
@@ -129,6 +137,7 @@ const app = createApp(
   virtualPortraitService,
   emailVerificationService,
   channelAttributionService,
+  smsVerificationService,
 );
 
 const server = serve({ fetch: app.fetch, port: config.port }, (info) => {
@@ -141,6 +150,7 @@ async function shutdown() {
   await jobQueue.connection.quit();
   await compositionQueue.queue.close();
   await compositionQueue.connection.quit();
+  await verificationRedis.quit();
   await pool.end();
 }
 

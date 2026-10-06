@@ -1,4 +1,4 @@
-export type PlatformUser = { id: string; email: string; isAdmin: boolean; accountStatus: "active" | "disabled" };
+export type PlatformUser = { id: string; email: string | null; phone: string | null; emailVerified?: boolean; phoneVerified?: boolean; isAdmin: boolean; accountStatus: "active" | "disabled" };
 
 export type Workspace = {
     projectId: string;
@@ -33,7 +33,18 @@ export function register(email: string, password: string, verificationCode?: str
 }
 
 export function getAuthConfig() {
-    return platformRequest<{ emailVerificationRequired: boolean; inviteMode: "required" | "optional" | "disabled" }>("/api/auth/config");
+    return platformRequest<{ emailVerificationRequired: boolean; emailCodeEnabled: boolean; smsCodeEnabled: boolean; inviteMode: "required" | "optional" | "disabled" }>("/api/auth/config");
+}
+
+export type VerificationChannel = "phone" | "email";
+export function requestVerificationCode(channel: VerificationChannel, account: string, purpose: "register" | "login") {
+    return platformRequest<{ accepted: true; retryAfterSeconds: number }>(`/api/auth/${channel === "phone" ? "sms" : "email"}/send`, { method: "POST", body: JSON.stringify({ account, purpose }) });
+}
+export function registerWithCode(channel: VerificationChannel, account: string, code: string, inviteCode?: string, deviceId?: string) {
+    return platformRequest<AuthSession>(`/api/auth/register/${channel}`, { method: "POST", body: JSON.stringify({ account, code, inviteCode: inviteCode || undefined, deviceId }) });
+}
+export function loginWithCode(channel: VerificationChannel, account: string, code: string) {
+    return platformRequest<AuthSession>(`/api/auth/login/${channel}`, { method: "POST", body: JSON.stringify({ account, code }) });
 }
 
 export function validateInviteCode(code: string, deviceId?: string) {

@@ -103,7 +103,10 @@ export type AdminProvider = { id: "token360" | "runninghub" | "runninghub_global
 export type AdminProviders = { activeProviderId: AdminProvider["id"]; providers: AdminProvider[] };
 export type AdminUser = {
     id: string;
-    email: string;
+    email?: string;
+    phone?: string;
+    emailVerified: boolean;
+    phoneVerified: boolean;
     isAdmin: boolean;
     status: "active" | "disabled";
     disabledReason?: string;

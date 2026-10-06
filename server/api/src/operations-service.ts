@@ -1246,7 +1246,7 @@ export class OperationsService implements OperationsServicePort {
     const values: unknown[] = [];
     if (query.q) {
       values.push(`%${query.q.toLowerCase()}%`);
-      filters.push(`lower(u.email) like $${values.length}`);
+      filters.push(`lower(coalesce(u.email,'')||' '||coalesce(u.phone,'')) like $${values.length}`);
     }
     if (query.status) {
       values.push(query.status);
@@ -1275,7 +1275,7 @@ export class OperationsService implements OperationsServicePort {
     );
     values.push(query.pageSize, (query.page - 1) * query.pageSize);
     const rows = await this.pool.query(
-      `select u.id,u.email,u.is_admin,u.account_status,u.disabled_reason,u.disabled_at,u.created_at,u.last_login_at,u.registration_ip,
+      `select u.id,u.email,u.phone,u.email_verified,u.phone_verified,u.is_admin,u.account_status,u.disabled_reason,u.disabled_at,u.created_at,u.last_login_at,u.registration_ip,
         u.invite_code_id,u.channel_id,u.campaign_id,u.batch_id,c.channel_name,ic.code invite_code,
         (select count(*)::int from projects p where p.owner_id=u.id and p.deleted_at is null) project_count,
         (select count(*)::int from generation_jobs j where j.created_by=u.id) job_count,
@@ -1299,7 +1299,7 @@ export class OperationsService implements OperationsServicePort {
   async adminUser(userId: string, targetUserId: string) {
     await this.requireAdmin(userId);
     const user = await this.pool.query(
-      `select u.id,u.email,u.is_admin,u.account_status,u.disabled_reason,u.disabled_at,u.created_at,u.last_login_at,u.registration_ip,
+      `select u.id,u.email,u.phone,u.email_verified,u.phone_verified,u.is_admin,u.account_status,u.disabled_reason,u.disabled_at,u.created_at,u.last_login_at,u.registration_ip,
         u.invite_code_id,u.channel_id,u.campaign_id,u.batch_id,c.channel_name,ic.code invite_code,
         (select count(*)::int from projects p where p.owner_id=u.id and p.deleted_at is null) project_count,
         (select count(*)::int from generation_jobs j where j.created_by=u.id) job_count,
@@ -1966,6 +1966,9 @@ function serializeAdminUser(row: Record<string, unknown>) {
   return {
     id: row.id,
     email: row.email,
+    phone: row.phone,
+    emailVerified: Boolean(row.email_verified),
+    phoneVerified: Boolean(row.phone_verified),
     isAdmin: Boolean(row.is_admin),
     status: row.account_status,
     disabledReason: row.disabled_reason,

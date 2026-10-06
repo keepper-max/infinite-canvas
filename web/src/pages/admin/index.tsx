@@ -478,7 +478,7 @@ function UsersPanel() {
                 <Space>
                     <Input.Search
                         allowClear
-                        placeholder="搜索邮箱"
+                        placeholder="搜索手机号或邮箱"
                         onSearch={(value) => {
                             setPage(1);
                             setQ(value);
@@ -544,7 +544,8 @@ function UsersPanel() {
                         dataIndex: "email",
                         render: (value, record) => (
                             <button className="text-left" onClick={() => setDetailId(record.id)}>
-                                <b className="block">{value}</b>
+                                <b className="block">{record.phone || value || "—"}</b>
+                                {record.phone && value ? <span className="block text-xs text-stone-400">{value}</span> : null}
                                 <small className="font-mono text-stone-400">{record.id.slice(0, 8)}</small>
                             </button>
                         ),
@@ -733,7 +734,8 @@ function UserDrawer({ userId, onClose, onChanged }: { userId?: string; onClose: 
                 ) : (
                     <div className="space-y-6">
                         <div className="rounded-2xl bg-stone-950 p-5 text-white">
-                            <p className="text-xl font-semibold">{detail.user.email}</p>
+                            <p className="text-xl font-semibold">{detail.user.phone || detail.user.email || "未命名账号"}</p>
+                            {detail.user.phone && detail.user.email ? <p className="mt-1 text-sm text-stone-300">{detail.user.email}</p> : null}
                             <p className="mt-1 font-mono text-xs text-stone-500">{detail.user.id}</p>
                             <div className="mt-5 flex flex-wrap gap-2">
                                 <StatusTag value={detail.user.status} />
@@ -745,6 +747,12 @@ function UserDrawer({ userId, onClose, onChanged }: { userId?: string; onClose: 
                             <Button onClick={() => void mutate("sessions")}>强制下线全部会话</Button>
                             <Button onClick={() => void mutate("admin")}>{detail.user.isAdmin ? "取消管理员" : "设为管理员"}</Button>
                         </Space>
+                        <Panel title="登录凭证">
+                            <div className="grid gap-3 sm:grid-cols-2">
+                                <Metric label="手机号" value={detail.user.phone ? `${detail.user.phone}${detail.user.phoneVerified ? " · 已验证" : " · 未验证"}` : "—"} />
+                                <Metric label="邮箱" value={detail.user.email ? `${detail.user.email}${detail.user.emailVerified ? " · 已验证" : " · 未验证"}` : "—"} />
+                            </div>
+                        </Panel>
                         <Panel title="注册来源" actions={<Button onClick={() => void openAttribution()}>修正归因</Button>}>
                             <div className="grid gap-3 sm:grid-cols-3">
                                 <Metric label="注册 IP" value={detail.user.registrationIp || "—"} />

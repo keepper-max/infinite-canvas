@@ -17,8 +17,13 @@ import {
 
 export const users = pgTable("users", {
   id: uuid("id").defaultRandom().primaryKey(),
-  email: text("email").notNull().unique(),
-  passwordHash: text("password_hash").notNull(),
+  phone: text("phone").unique(),
+  phoneVerified: boolean("phone_verified").default(false).notNull(),
+  email: text("email").unique(),
+  emailVerified: boolean("email_verified").default(false).notNull(),
+  passwordHash: text("password_hash"),
+  nickname: text("nickname"),
+  avatar: text("avatar"),
   isAdmin: boolean("is_admin").default(false).notNull(),
   accountStatus: text("account_status").default("active").notNull(),
   disabledReason: text("disabled_reason"),

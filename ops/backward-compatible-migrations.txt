@@ -15,3 +15,4 @@
 0039_volcengine_ark_provider.sql
 0040_text_context_compaction.sql
 0041_release_terminal_no_bill_reservations.sql
+0042_dual_channel_auth.sql
