@@ -2,14 +2,15 @@ import { getCurrentUser } from "@/lib/auth";
 import { creditAccounts, creditLedger } from "@/db/schema";
 import { desc, eq } from "drizzle-orm";
 import { db } from "@/lib/db";
+import { isActivationAdmin } from "@/lib/activation-codes";
+import { getAvailableCredits } from "@/lib/credit-account";
+import { paymentReady } from "@/lib/alipay";
+import { currentFxRate } from "@/lib/credit-pricing";
 
 export async function GET() {
   const user = await getCurrentUser();
   if (!user) return Response.json({ error: "未登录" }, { status: 401 });
-  await db
-    .insert(creditAccounts)
-    .values({ userId: user.id, balance: 1000 })
-    .onConflictDoNothing();
+  await getAvailableCredits(user.id);
   const [account] = await db
     .select()
     .from(creditAccounts)
@@ -24,8 +25,11 @@ export async function GET() {
   return Response.json({
     balance: account?.balance ?? 0,
     ledger,
-    provider: process.env.CREDITS_PROVIDER ?? "mock",
-    mock: true,
-    message: "积分账本已启用，Mock 任务不扣费",
-  });
+    paymentEnabled: paymentReady(),
+    operatorName: paymentReady() ? process.env.SERVICE_OPERATOR_NAME : null,
+    supportEmail: paymentReady() ? process.env.SERVICE_SUPPORT_EMAIL : null,
+    usdCnyRate: currentFxRate()?.toString() ?? null,
+    message: "真实供应商任务按实际账单扣分；Mock 任务不扣分",
+    isCodeAdmin: isActivationAdmin(user.id),
+  }, { headers: { "Cache-Control": "no-store" } });
 }

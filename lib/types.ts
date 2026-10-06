@@ -5,6 +5,7 @@ export const NODE_TYPES = [
   "panorama",
   "composition_3d",
   "keyframe",
+  "tailframe",
   "image_edit",
   "style_polish",
   "video",
@@ -45,4 +46,3 @@ export type Project = {
   nodeCount: number;
   status: "draft" | "processing" | "completed";
 };
-

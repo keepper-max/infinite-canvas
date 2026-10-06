@@ -1,6 +1,8 @@
 import {
+  boolean,
   integer,
   jsonb,
+  numeric,
   pgTable,
   primaryKey,
   text,
@@ -10,11 +12,45 @@ import {
 
 export const users = pgTable("users", {
   id: uuid("id").defaultRandom().primaryKey(),
-  email: text("email").notNull().unique(),
-  passwordHash: text("password_hash").notNull(),
+  phone: text("phone").unique(),
+  phoneVerified: boolean("phone_verified").default(false).notNull(),
+  email: text("email").unique(),
+  emailVerified: boolean("email_verified").default(false).notNull(),
+  passwordHash: text("password_hash"),
+  nickname: text("nickname"),
+  avatar: text("avatar"),
+  inviteCode: text("invite_code"),
+  sourceType: text("source_type").default("direct").notNull(),
+  schoolId: text("school_id"),
+  channelId: text("channel_id"),
+  status: text("status").default("active").notNull(),
   createdAt: timestamp("created_at", { withTimezone: true })
     .defaultNow()
     .notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true })
+    .defaultNow()
+    .notNull(),
+  lastLoginAt: timestamp("last_login_at", { withTimezone: true }),
+});
+
+export const inviteCodes = pgTable("invite_codes", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  code: text("code").notNull().unique(),
+  sourceType: text("source_type").default("social").notNull(),
+  schoolId: text("school_id"),
+  channelId: text("channel_id"),
+  enabled: boolean("enabled").default(true).notNull(),
+  maxUses: integer("max_uses"),
+  useCount: integer("use_count").default(0).notNull(),
+  expiresAt: timestamp("expires_at", { withTimezone: true }),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+});
+
+export const inviteCodeRedemptions = pgTable("invite_code_redemptions", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  inviteCodeId: uuid("invite_code_id").notNull().references(() => inviteCodes.id),
+  userId: uuid("user_id").notNull().unique().references(() => users.id, { onDelete: "cascade" }),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
 });
 
 export const sessions = pgTable("sessions", {
@@ -134,6 +170,13 @@ export const generationJobs = pgTable("generation_jobs", {
   status: text("status").default("pending").notNull(),
   progress: integer("progress").default(0).notNull(),
   errorReason: text("error_reason"),
+  billingTraceId: text("billing_trace_id"),
+  billingStatus: text("billing_status").default("not_applicable").notNull(),
+  billingAttempts: integer("billing_attempts").default(0).notNull(),
+  billedPoints: integer("billed_points"),
+  billedAmount: numeric("billed_amount", { precision: 20, scale: 8 }),
+  billedCurrency: text("billed_currency"),
+  billedFxRate: numeric("billed_fx_rate", { precision: 20, scale: 8 }),
   createdAt: timestamp("created_at", { withTimezone: true })
     .defaultNow()
     .notNull(),
@@ -264,6 +307,42 @@ export const creditAccounts = pgTable("credit_accounts", {
     .notNull(),
 });
 
+export const paymentOrders = pgTable("payment_orders", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  userId: uuid("user_id").notNull().references(() => users.id),
+  amountCents: integer("amount_cents").notNull(),
+  credits: integer("credits").notNull(),
+  status: text("status").default("pending").notNull(),
+  alipayTradeNo: text("alipay_trade_no").unique(),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  paidAt: timestamp("paid_at", { withTimezone: true }),
+});
+
+export const creditLots = pgTable("credit_lots", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  userId: uuid("user_id").notNull().references(() => users.id),
+  sourceType: text("source_type").notNull(),
+  sourceId: uuid("source_id").notNull(),
+  creditsTotal: integer("credits_total").notNull(),
+  creditsRemaining: integer("credits_remaining").notNull(),
+  expiresAt: timestamp("expires_at", { withTimezone: true }),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+});
+
+export const activationCodes = pgTable("activation_codes", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  codeHash: text("code_hash").notNull().unique(),
+  codeHint: text("code_hint").notNull(),
+  credits: integer("credits").notNull(),
+  expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+  createdBy: uuid("created_by").notNull().references(() => users.id),
+  redeemedBy: uuid("redeemed_by").references(() => users.id),
+  redeemedAt: timestamp("redeemed_at", { withTimezone: true }),
+  revokedAt: timestamp("revoked_at", { withTimezone: true }),
+  revokedBy: uuid("revoked_by").references(() => users.id),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+});
+
 export const creditLedger = pgTable("credit_ledger", {
   id: uuid("id").defaultRandom().primaryKey(),
   userId: uuid("user_id")
@@ -274,13 +353,23 @@ export const creditLedger = pgTable("credit_ledger", {
   jobId: uuid("job_id").references(() => generationJobs.id, {
     onDelete: "set null",
   }),
+  activationCodeId: uuid("activation_code_id").references(() => activationCodes.id),
+  paymentOrderId: uuid("payment_order_id").references(() => paymentOrders.id),
   createdAt: timestamp("created_at", { withTimezone: true })
     .defaultNow()
     .notNull(),
 });
 
+export const creditLotDebits = pgTable("credit_lot_debits", {
+  ledgerId: uuid("ledger_id").notNull().references(() => creditLedger.id),
+  lotId: uuid("lot_id").notNull().references(() => creditLots.id),
+  credits: integer("credits").notNull(),
+});
+
 export const schema = {
   users,
+  inviteCodes,
+  inviteCodeRedemptions,
   sessions,
   projects,
   projectMembers,
@@ -298,6 +387,10 @@ export const schema = {
   promptTemplates,
   modelConfigs,
   creditAccounts,
+  paymentOrders,
+  creditLots,
+  activationCodes,
   creditLedger,
+  creditLotDebits,
 };
 export type DbSchema = typeof schema;

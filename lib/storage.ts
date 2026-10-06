@@ -1,4 +1,6 @@
 import { CreateBucketCommand, DeleteObjectCommand, GetObjectCommand, HeadBucketCommand, PutObjectCommand, S3Client } from "@aws-sdk/client-s3";
+import { createReadStream } from "node:fs";
+import { stat } from "node:fs/promises";
 
 const globalForStorage = globalThis as unknown as { s3?: S3Client; bucketReady?: Promise<void> };
 const endpoint = process.env.S3_ENDPOINT ?? "http://localhost:9000";
@@ -17,5 +19,11 @@ async function ensureBucket() {
 }
 
 export async function putAsset(objectKey: string, body: Uint8Array, contentType: string) { await ensureBucket(); await client.send(new PutObjectCommand({ Bucket: bucket, Key: objectKey, Body: body, ContentType: contentType })); }
+export async function putAssetFile(objectKey: string, filePath: string, contentType: string) {
+  await ensureBucket();
+  const file = await stat(filePath);
+  await client.send(new PutObjectCommand({ Bucket: bucket, Key: objectKey, Body: createReadStream(filePath), ContentLength: file.size, ContentType: contentType }));
+  return file.size;
+}
 export async function deleteAsset(objectKey: string) { await client.send(new DeleteObjectCommand({ Bucket: bucket, Key: objectKey })); }
 export async function getAsset(objectKey: string) { return client.send(new GetObjectCommand({ Bucket: bucket, Key: objectKey })); }

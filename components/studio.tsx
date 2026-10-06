@@ -2,23 +2,15 @@
 
 import Image from "next/image";
 import {
-  addEdge,
-  Background,
-  Controls,
-  Handle,
-  MiniMap,
-  Position,
-  ReactFlow,
-  type Connection,
   type Edge,
   type Node,
-  type NodeProps,
   useEdgesState,
   useNodesState,
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
 import {
   Download,
+  Coins,
   Film,
   FolderKanban,
   Image as ImageIcon,
@@ -49,7 +41,16 @@ import {
   type GenerationJob,
   type Project,
 } from "@/lib/types";
-import { providerForNode } from "@/lib/provider";
+import { InfiniteCanvasV2 } from "@/components/canvas/infinite-canvas-v2";
+import { CreditWallet } from "@/components/credit-wallet";
+
+type VideoCatalogModel = {
+  name: string;
+  displayName: string;
+  type: string;
+  inputTypes: string[];
+  defaults: Record<string, unknown>;
+};
 
 const palette: Record<
   CanvasNodeType,
@@ -61,6 +62,7 @@ const palette: Record<
   panorama: { accent: "#56a7e8", icon: Layers3 },
   composition_3d: { accent: "#d68de7", icon: WandSparkles },
   keyframe: { accent: "#e47e9b", icon: Film },
+  tailframe: { accent: "#e58d62", icon: Film },
   image_edit: { accent: "#efad6a", icon: WandSparkles },
   style_polish: { accent: "#8e9de7", icon: Sparkles },
   video: { accent: "#f4799c", icon: Film },
@@ -91,8 +93,10 @@ const initialNodes: Node<CanvasNodeData>[] = [
   node("panorama", "全景环境", "补足镜头移动空间", 620, 260),
   node("composition", "3D 构图", "机位、站位、比例与视线", 900, 260),
   node("keyframe", "关键帧", "将布局落成可用首帧", 1180, 260),
+  node("tailframe", "尾帧", "定义镜头结束姿态与连续性", 1180, 430),
   node("edit", "局部修复", "Nano Banana 2 补全与修图", 1460, 260),
   node("polish", "风格优化", "保持构图的最后抛光", 1740, 260),
+  node("audio", "音频", "对白、环境声与节奏参考", 1740, 430),
   node("video", "Seedance 2.5", "动作、运镜、声音与连续性", 2020, 260),
   node("output", "成片预览", "播放、复盘与下载", 2300, 260),
 ];
@@ -126,6 +130,7 @@ const initialEdges: Edge[] = [
     label: "空间参考",
   },
   { id: "e-c-k", source: "composition", target: "keyframe", label: "构图" },
+  { id: "e-c-t", source: "composition", target: "tailframe", label: "尾帧构图" },
   { id: "e-k-e", source: "keyframe", target: "edit", label: "局部修复" },
   { id: "e-e-p", source: "edit", target: "polish", label: "风格保持" },
   {
@@ -135,6 +140,8 @@ const initialEdges: Edge[] = [
     label: "I2V / R2V",
     animated: true,
   },
+  { id: "e-t-v", source: "tailframe", target: "video", label: "尾帧参考" },
+  { id: "e-a-v", source: "audio", target: "video", label: "声音参考" },
   {
     id: "e-v-o",
     source: "video",
@@ -144,6 +151,14 @@ const initialEdges: Edge[] = [
   },
 ];
 
+function migrateCanvas(nodes: Node<CanvasNodeData>[], edges: Edge[]) {
+  const known = new Set(nodes.map((item) => item.id));
+  const nextNodes = [...nodes, ...initialNodes.filter((item) => !known.has(item.id))];
+  const edgeIds = new Set(edges.map((item) => item.id));
+  const nextEdges = [...edges, ...initialEdges.filter((item) => !edgeIds.has(item.id) && nextNodes.some((nodeItem) => nodeItem.id === item.source) && nextNodes.some((nodeItem) => nodeItem.id === item.target))];
+  return { nodes: nextNodes, edges: nextEdges };
+}
+
 function nodeTypeForLabel(label: string): CanvasNodeType {
   if (label === "Seedance 2.5") return "video";
   if (label === "角色三视图") return "character";
@@ -151,14 +166,16 @@ function nodeTypeForLabel(label: string): CanvasNodeType {
   if (label === "全景环境") return "panorama";
   if (label === "3D 构图") return "composition_3d";
   if (label === "关键帧") return "keyframe";
+  if (label === "尾帧") return "tailframe";
   if (label === "局部修复") return "image_edit";
   if (label === "风格优化") return "style_polish";
+  if (label === "音频") return "audio";
   if (label === "成片预览") return "output";
   return "prompt";
 }
 
-function StudioNode({ data, selected }: NodeProps) {
-  const nodeData = data as CanvasNodeData;
+function StudioNode({ data, selected }: { data: CanvasNodeData; selected?: boolean }) {
+  const nodeData = data;
   const style = palette[nodeTypeForLabel(nodeData.label)];
   const Icon = style.icon;
   const statusLabel =
@@ -176,7 +193,6 @@ function StudioNode({ data, selected }: NodeProps) {
       className={`studio-node ${selected ? "selected" : ""}`}
       style={{ "--node-accent": style.accent } as React.CSSProperties}
     >
-      <Handle type="target" position={Position.Left} />
       <div className="node-head">
         <span className="node-icon">
           <Icon size={15} />
@@ -186,34 +202,63 @@ function StudioNode({ data, selected }: NodeProps) {
       </div>
       <div className="node-body">{nodeData.description}</div>
       {nodeData.output && <div className="node-output">{nodeData.output}</div>}
-      <Handle type="source" position={Position.Right} />
     </div>
   );
 }
 
-const nodeTypes = { studio: StudioNode };
-
 function AuthScreen({ onDone }: { onDone: (email: string) => void }) {
   const [mode, setMode] = useState<"login" | "register">("register");
-  const [email, setEmail] = useState("");
+  const [channel, setChannel] = useState<"sms" | "email">("sms");
+  const [account, setAccount] = useState("");
+  const [code, setCode] = useState("");
+  const [inviteCode, setInviteCode] = useState("");
+  const [legacy, setLegacy] = useState(false);
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
+  const [notice, setNotice] = useState("");
+  const [countdown, setCountdown] = useState(0);
+  const [busy, setBusy] = useState(false);
+  useEffect(() => {
+    if (countdown <= 0) return;
+    const timer = window.setInterval(() => setCountdown((value) => Math.max(0, value - 1)), 1000);
+    return () => window.clearInterval(timer);
+  }, [countdown]);
+  const accountValid = channel === "sms"
+    ? /^(?:\+?86)?1[3-9]\d{9}$/.test(account.replace(/[\s()-]/g, ""))
+    : /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(account.trim());
+  const sendCode = async () => {
+    if (!accountValid || countdown > 0 || busy) return;
+    setBusy(true); setError(""); setNotice("");
+    try {
+      const response = await fetch("/api/auth/verification/send", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ channel, account, scene: mode }),
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(payload.error ?? "验证码发送失败，请稍后重试");
+      setCountdown(Number(payload.retryAfter) || 60);
+      setNotice("验证码已发送");
+    } catch (sendError) {
+      setError(sendError instanceof Error ? sendError.message : "验证码发送失败，请稍后重试");
+    } finally { setBusy(false); }
+  };
   const submit = async (event: React.FormEvent) => {
     event.preventDefault();
-    setError("");
-    const endpoint =
-      mode === "register" ? "/api/auth/register" : "/api/auth/login";
-    const response = await fetch(endpoint, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ email, password }),
-    });
-    const payload = await response.json().catch(() => ({}));
-    if (!response.ok) {
-      setError(payload.error ?? "操作失败");
-      return;
-    }
-    onDone(payload.user.email);
+    setError(""); setNotice(""); setBusy(true);
+    try {
+      const endpoint = legacy ? "/api/auth/login" : `/api/auth/${mode}/code`;
+      const response = await fetch(endpoint, {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(legacy
+          ? { email: account, password }
+          : { channel, account, code, inviteCode: mode === "register" ? inviteCode : undefined }),
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(payload.error ?? "操作失败");
+      onDone(payload.user.email ?? payload.user.phone);
+    } catch (submitError) {
+      setError(submitError instanceof Error ? submitError.message : "操作失败");
+    } finally { setBusy(false); }
   };
   return (
     <main className="auth-shell">
@@ -222,20 +267,28 @@ function AuthScreen({ onDone }: { onDone: (email: string) => void }) {
         <p className="eyebrow">JINGJIE STUDIO</p>
         <h1>{mode === "register" ? "创建你的工作区" : "欢迎回到镜界"}</h1>
         <p className="auth-copy">
-          登录后创建项目，保存每一次画布和 Mock 任务。
+          使用手机号或邮箱验证码进入同一个工作区。
         </p>
+        <div className="auth-mode-tabs">
+          <button className={mode === "register" ? "active" : ""} type="button" onClick={() => { setMode("register"); setLegacy(false); setError(""); }}>注册</button>
+          <button className={mode === "login" ? "active" : ""} type="button" onClick={() => { setMode("login"); setLegacy(false); setError(""); }}>登录</button>
+        </div>
+        {!legacy && <div className="auth-channel-tabs">
+          <button className={channel === "sms" ? "active" : ""} type="button" onClick={() => { setChannel("sms"); setAccount(""); setCountdown(0); }}>{mode === "register" ? "手机号注册" : "手机号登录"}</button>
+          <button className={channel === "email" ? "active" : ""} type="button" onClick={() => { setChannel("email"); setAccount(""); setCountdown(0); }}>{mode === "register" ? "邮箱注册" : "邮箱登录"}</button>
+        </div>}
         <form onSubmit={submit} className="auth-form">
           <label>
-            邮箱
+            {legacy || channel === "email" ? "邮箱地址" : "手机号"}
             <input
-              type="email"
-              placeholder="you@example.com"
-              value={email}
-              onChange={(event) => setEmail(event.target.value)}
+              type={legacy || channel === "email" ? "email" : "tel"}
+              placeholder={legacy || channel === "email" ? "you@example.com" : "+86 请输入手机号"}
+              value={account}
+              onChange={(event) => setAccount(event.target.value)}
               required
             />
           </label>
-          <label>
+          {legacy ? <label>
             密码
             <input
               type="password"
@@ -245,19 +298,35 @@ function AuthScreen({ onDone }: { onDone: (email: string) => void }) {
               minLength={6}
               required
             />
-          </label>
+          </label> : <label>
+            验证码
+            <span className="verification-row">
+              <input inputMode="numeric" maxLength={6} placeholder="6 位数字验证码" value={code} onChange={(event) => setCode(event.target.value.replace(/\D/g, "").slice(0, 6))} required />
+              <button type="button" onClick={() => void sendCode()} disabled={!accountValid || countdown > 0 || busy}>
+                {countdown > 0 ? `${countdown} 秒` : "获取验证码"}
+              </button>
+            </span>
+          </label>}
+          {!legacy && mode === "register" && <label>
+            邀请码（如有）
+            <input value={inviteCode} onChange={(event) => setInviteCode(event.target.value.toUpperCase())} placeholder="请输入邀请码" />
+          </label>}
+          {notice && <p className="form-notice">{notice}</p>}
           {error && <p className="form-error">{error}</p>}
-          <button className="primary-button" type="submit">
+          <button className="primary-button" type="submit" disabled={busy}>
             <LogIn size={17} />
-            {mode === "register" ? "注册并继续" : "登录工作区"}
+            {busy ? "请稍候…" : mode === "register" ? "注册并继续" : "登录工作区"}
           </button>
         </form>
         <button
           className="link-button"
-          onClick={() => setMode(mode === "register" ? "login" : "register")}
+          onClick={() => { setMode(mode === "register" ? "login" : "register"); setLegacy(false); setError(""); }}
         >
           {mode === "register" ? "已有账号？登录" : "还没有账号？注册"}
         </button>
+        {mode === "login" && <button className="link-button legacy-login" onClick={() => { setLegacy((value) => !value); setChannel("email"); setAccount(""); setError(""); }}>
+          {legacy ? "改用验证码登录" : "旧账号使用密码登录"}
+        </button>}
       </div>
     </main>
   );
@@ -950,7 +1019,7 @@ function ModelConfigPanel({ projectId }: { projectId: string }) {
         </button>
       </div>
       <div className="catalog-strip">
-        <span className="eyebrow">TOKEN360 CATALOG · {catalog.length || "…"} MODELS</span>
+        <span className="eyebrow">MODEL CATALOG · {catalog.length || "…"} MODELS</span>
         <div className="catalog-filters">
           {[['all', '全部'], ['LLM', '文本'], ['VIDEO_GENERATION', '视频'], ['IMAGE_GENERATION', '图片'], ['AUDIO_GENERATION', '音频']].map(([value, label]) => (
             <button key={value} className={catalogType === value ? "filter-chip active" : "filter-chip"} onClick={() => setCatalogType(value)}>{label}</button>
@@ -1065,19 +1134,79 @@ function MembersPanel({ projectId }: { projectId: string }) {
   );
 }
 
+type AdminUserRow = {
+  id: string;
+  phone: string;
+  phoneVerified: boolean;
+  email: string;
+  emailVerified: boolean;
+  sourceType: string;
+  inviteCode: string | null;
+  schoolId: string | null;
+  channelId: string | null;
+  status: string;
+  credits: number | null;
+  projectCount: number;
+  createdAt: string;
+  lastLoginAt: string | null;
+};
+
+function AdminUsersPanel() {
+  const [rows, setRows] = useState<AdminUserRow[]>([]);
+  const [reveal, setReveal] = useState(false);
+  const [error, setError] = useState("");
+  useEffect(() => {
+    void fetch(`/api/admin/users${reveal ? "?reveal=1" : ""}`)
+      .then(async (response) => {
+        const payload = await response.json();
+        if (!response.ok) throw new Error(payload.error ?? "用户列表加载失败");
+        setRows(payload.users ?? []);
+      })
+      .catch((loadError) => setError(loadError instanceof Error ? loadError.message : "用户列表加载失败"));
+  }, [reveal]);
+  return <div className="platform-panel admin-users-panel">
+    <div className="platform-head">
+      <div><p className="eyebrow">ADMIN / USERS</p><h2>用户管理</h2><p>手机号和邮箱默认脱敏，仅管理员可临时查看完整信息。</p></div>
+      <button className="secondary-button" onClick={() => { setError(""); setReveal((value) => !value); }}>{reveal ? "恢复脱敏" : "查看完整信息"}</button>
+    </div>
+    {error && <p className="form-error">{error}</p>}
+    <div className="admin-users-table">
+      <div className="admin-user-head"><span>用户 / 凭证</span><span>验证</span><span>来源</span><span>账户</span><span>时间 / 状态</span></div>
+      {rows.map((user) => <div className="admin-user-row" key={user.id}>
+        <span><b>{user.id}</b><small>{user.phone}<br />{user.email}</small></span>
+        <span><small>手机 {user.phoneVerified ? "已验证" : "未验证"}<br />邮箱 {user.emailVerified ? "已验证" : "未验证"}</small></span>
+        <span><small>{user.sourceType}<br />邀请码 {user.inviteCode ?? "—"}<br />学校 {user.schoolId ?? "—"} / 渠道 {user.channelId ?? "—"}</small></span>
+        <span><small>{Number(user.credits ?? 0).toLocaleString()} 积分<br />{user.projectCount} 个项目</small></span>
+        <span><small>{new Date(user.createdAt).toLocaleString("zh-CN")}<br />最近 {user.lastLoginAt ? new Date(user.lastLoginAt).toLocaleString("zh-CN") : "未记录"}</small><b className={user.status === "active" ? "status-active" : "status-disabled"}>{user.status === "active" ? "正常" : "禁用"}</b></span>
+      </div>)}
+    </div>
+  </div>;
+}
+
 export default function Studio() {
   const [session, setSession] = useState<string | null>(null);
+  const [isAdmin, setIsAdmin] = useState(false);
   const [project, setProject] = useState<Project | null>(null);
-  const [nodes, setNodes, onNodesChange] = useNodesState(initialNodes);
-  const [edges, setEdges, onEdgesChange] = useEdgesState(initialEdges);
+  const [nodes, setNodes] = useNodesState(initialNodes);
+  const [edges, setEdges] = useEdgesState(initialEdges);
   const [jobs, setJobs] = useState<GenerationJob[]>([]);
   const [selectedId, setSelectedId] = useState("video");
   const [activeView, setActiveView] = useState("canvas");
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      if (new URLSearchParams(window.location.search).get("view") === "credits") setActiveView("credits");
+    }, 0);
+    return () => window.clearTimeout(timer);
+  }, []);
   const [addIndex, setAddIndex] = useState(0);
   const [ready, setReady] = useState(false);
   const [canvasReady, setCanvasReady] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
-  const [useRealVideo, setUseRealVideo] = useState(false);
+  // 视频节点统一使用目录中的真实模型；非视频节点按节点类型匹配模型。
+  const useRealVideo = true;
+  const [videoModel, setVideoModel] = useState("seedance-2.5");
+  const [videoCatalog, setVideoCatalog] = useState<VideoCatalogModel[]>([]);
+  const [modelCatalog, setModelCatalog] = useState<VideoCatalogModel[]>([]);
   const [creditBalance, setCreditBalance] = useState(1000);
   const [, setHistoryTick] = useState(0);
   const historyRef = useRef<{
@@ -1099,7 +1228,8 @@ export default function Studio() {
     fetch("/api/auth/me")
       .then((response) => (response.ok ? response.json() : null))
       .then((payload) => {
-        setSession(payload?.user?.email ?? null);
+        setSession(payload?.user?.email ?? payload?.user?.phone ?? null);
+        setIsAdmin(Boolean(payload?.user?.isAdmin));
         setReady(true);
       })
       .catch(() => setReady(true));
@@ -1113,6 +1243,20 @@ export default function Studio() {
           setCreditBalance(Number(payload.balance));
       });
   }, [session]);
+
+  useEffect(() => {
+    void fetch("/api/models/catalog")
+      .then((response) => (response.ok ? response.json() : null))
+      .then((payload) => {
+        const models = Array.isArray(payload?.models) ? payload.models : [];
+        const typedModels = models as VideoCatalogModel[];
+        setModelCatalog(typedModels);
+        const videos = typedModels.filter((item) => item.type === "VIDEO_GENERATION");
+        setVideoCatalog(videos);
+        if (videos.some((item: VideoCatalogModel) => item.name === "seedance-2.5")) setVideoModel("seedance-2.5");
+      })
+      .catch(() => undefined);
+  }, []);
 
   useEffect(() => {
     if (!session) return;
@@ -1164,9 +1308,12 @@ export default function Studio() {
         response.json(),
       ),
     ]).then(([canvas, jobPayload]) => {
-      if (Array.isArray(canvas.nodes) && canvas.nodes.length)
-        setNodes(canvas.nodes);
-      if (Array.isArray(canvas.edges)) setEdges(canvas.edges);
+      if (Array.isArray(canvas.nodes) && canvas.nodes.length) {
+        const migrated = migrateCanvas(canvas.nodes, Array.isArray(canvas.edges) ? canvas.edges : []);
+        setNodes(migrated.nodes);
+        setEdges(migrated.edges);
+      }
+      else if (Array.isArray(canvas.edges)) setEdges(canvas.edges);
       setJobs((jobPayload.jobs ?? []).map(toClientJob));
       setCanvasReady(true);
     });
@@ -1239,6 +1386,8 @@ export default function Studio() {
   }, [nodes, edges, canvasReady]);
 
   const selectedNode = nodes.find((item) => item.id === selectedId);
+  const isVideoNode = (item?: Node<CanvasNodeData>) =>
+    Boolean(item && nodeTypeForLabel(item.data.label) === "video");
   const completedCount = nodes.filter(
     (item) => item.data.status === "completed",
   ).length;
@@ -1255,8 +1404,15 @@ export default function Studio() {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         nodeId,
-        mode: currentNode.type === "video" ? "I2V" : "edit",
-        parameters: currentNode.type === "video" ? { real: useRealVideo, modelId: "seedance-2.5", duration: 5, aspectRatio: "16:9" } : {},
+        mode: isVideoNode(currentNode) ? "I2V" : "edit",
+        parameters: isVideoNode(currentNode) ? {
+          real: useRealVideo,
+          modelId: videoModel,
+          duration: Number(videoCatalog.find((item) => item.name === videoModel)?.defaults?.duration ?? 5),
+          aspectRatio: String(videoCatalog.find((item) => item.name === videoModel)?.defaults?.aspect_ratio ?? "16:9"),
+          resolution: String(videoCatalog.find((item) => item.name === videoModel)?.defaults?.resolution ?? "720p"),
+          generateAudio: true,
+        } : { modelId: videoModel },
       }),
     });
     const payload = await response.json().catch(() => ({}));
@@ -1299,6 +1455,17 @@ export default function Studio() {
       ),
     ]);
     setAddIndex((value) => value + 1);
+  };
+  const addPluginNode = async () => {
+    if (!project) return;
+    const response = await fetch(`/api/projects/${project.id}/plugins`);
+    const payload = await response.json().catch(() => ({}));
+    const plugin = [...(payload.plugins ?? []), ...(payload.builtins ?? [])].find((item: { enabled?: number }) => item.enabled === undefined || item.enabled === 1);
+    if (!plugin) return;
+    const pluginType = String(plugin.config?.nodeType ?? "prompt") as CanvasNodeType;
+    const id = `plugin-${plugin.slug}-${Date.now()}`;
+    setNodes((current) => [...current, node(id, plugin.name, "插件节点，可连接到生产链", 520 + (current.length % 3) * 280, 650 + Math.floor(current.length / 3) * 130, { pluginSlug: plugin.slug, pluginType })]);
+    setSelectedId(id);
   };
   const exportManifest = () => {
     const payload = JSON.stringify(
@@ -1414,18 +1581,12 @@ export default function Studio() {
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
   });
-  const miniMapColor = (item: Node<CanvasNodeData>) =>
-    palette[nodeTypeForLabel(item.data.label)].accent;
-  const onConnect = (connection: Connection) =>
-    setEdges((current) => addEdge({ ...connection, animated: true }, current));
-
   if (!ready) return <div className="loading-screen">加载镜界工坊…</div>;
   if (!session) return <AuthScreen onDone={setSession} />;
   if (!project) return <div className="loading-screen">正在准备工作台…</div>;
 
-  const inspectorProvider = selectedNode
-    ? providerForNode(selectedNode.id === "video" ? "video" : "prompt")
-    : "Mock Studio";
+  const selectedIsVideo = isVideoNode(selectedNode);
+  const inspectorProvider = selectedIsVideo ? videoModel : (selectedNode ? "自动匹配" : "未选择");
   return (
     <main className="app-shell">
       <aside className="sidebar">
@@ -1524,6 +1685,13 @@ export default function Studio() {
             <Film size={17} />
             任务中心<span className="nav-count">{jobs.length}</span>
           </button>
+          <button
+            className={activeView === "credits" ? "nav-item active" : "nav-item"}
+            onClick={() => setActiveView("credits")}
+          >
+            <Coins size={17} />
+            积分账户
+          </button>
           <p className="nav-label second">LIBRARY</p>
           <button
             className={
@@ -1593,18 +1761,26 @@ export default function Studio() {
             <UsersRound size={17} />
             团队成员
           </button>
+          {isAdmin && <button
+            className={activeView === "users" ? "nav-item active" : "nav-item"}
+            onClick={() => setActiveView("users")}
+          >
+            <UsersRound size={17} />
+            用户管理
+          </button>}
         </nav>
         <div className="sidebar-bottom">
           <div className="credit-card">
-            <span>MOCK CREDITS</span>
+            <span>我的积分</span>
             <strong>{creditBalance.toLocaleString()}</strong>
-            <small>真实生成接入后启用账本</small>
+            <small>当前为免费体验 · Mock 任务不扣分</small>
           </div>
           <button
             className="user-row"
             onClick={() => {
               void fetch("/api/auth/logout", { method: "POST" });
               setSession(null);
+              setIsAdmin(false);
             }}
           >
             <span className="avatar">{session[0]?.toUpperCase()}</span>
@@ -1623,6 +1799,8 @@ export default function Studio() {
             <h1>
               {activeView === "canvas"
                 ? "生产画布"
+                : activeView === "credits"
+                  ? "积分账户"
                 : activeView === "tasks"
                   ? "任务中心"
                   : activeView === "assets"
@@ -1643,6 +1821,8 @@ export default function Studio() {
                                   ? "模型脚本"
                                   : activeView === "members"
                                     ? "团队成员"
+                                    : activeView === "users"
+                                      ? "用户管理"
                                     : "项目概览"}
             </h1>
           </div>
@@ -1682,6 +1862,7 @@ export default function Studio() {
           </div>
         </header>
         {activeView === "assets" && <AssetLibrary projectId={project.id} />}
+        {activeView === "credits" && <CreditWallet onBalanceChange={setCreditBalance} />}
         {(activeView === "outline" ||
           activeView === "agents" ||
           activeView === "workflows") && (
@@ -1696,7 +1877,9 @@ export default function Studio() {
         {activeView === "plugins" && <PluginPanel projectId={project.id} />}
         {activeView === "models" && <ModelConfigPanel projectId={project.id} />}
         {activeView === "members" && <MembersPanel projectId={project.id} />}
+        {activeView === "users" && isAdmin && <AdminUsersPanel />}
         {activeView !== "canvas" &&
+          activeView !== "credits" &&
           activeView !== "assets" &&
           activeView !== "outline" &&
           activeView !== "agents" &&
@@ -1705,7 +1888,8 @@ export default function Studio() {
           activeView !== "prompts" &&
           activeView !== "plugins" &&
           activeView !== "models" &&
-          activeView !== "members" && (
+          activeView !== "members" &&
+          activeView !== "users" && (
             <ProjectEmpty
               activeView={activeView}
               onCanvas={() => setActiveView("canvas")}
@@ -1734,19 +1918,31 @@ export default function Studio() {
                       恢复默认连线
                     </button>
                   )}
+                  <button className="ghost-button" onClick={() => { setNodes(initialNodes); setEdges(initialEdges); setSelectedId("prompt"); }}>
+                    <Workflow size={15} />
+                    载入工作流
+                  </button>
                   <button className="ghost-button" onClick={addNode}>
                     <Plus size={15} />
                     添加节点
+                  </button>
+                  <button className="ghost-button" onClick={() => void addPluginNode()}>
+                    <Puzzle size={15} />
+                    插件节点
                   </button>
                   <button className="ghost-button" onClick={runPending}>
                     <Send size={15} />
                     批量生成
                   </button>
-                  {selectedNode?.type === "video" && (
-                    <label className="real-toggle">
-                      <input type="checkbox" checked={useRealVideo} onChange={(event) => setUseRealVideo(event.target.checked)} />
-                      <span>使用 Token360 真实视频（会消耗额度）</span>
-                    </label>
+                  {isVideoNode(selectedNode) && (
+                    <div className="real-video-controls">
+                      <span className="platform-badge">已接入</span>
+                      <select className="model-select" value={videoModel} onChange={(event) => setVideoModel(event.target.value)} aria-label="视频模型">
+                        {(videoCatalog.length ? videoCatalog : [{ name: "seedance-2.5", displayName: "Seedance 2.5", type: "VIDEO_GENERATION", inputTypes: ["text", "image", "video", "audio"], defaults: { duration: 5, aspect_ratio: "16:9", resolution: "720p" } }]).map((model) => (
+                          <option value={model.name} key={model.name}>{model.displayName} · {model.name}</option>
+                        ))}
+                      </select>
+                    </div>
                   )}
                   <button
                     className="ghost-button"
@@ -1765,27 +1961,15 @@ export default function Studio() {
                 </div>
               </div>
               <div className="flow-canvas">
-                <ReactFlow
+                <InfiniteCanvasV2
                   nodes={nodes}
                   edges={edges}
-                  nodeTypes={nodeTypes}
-                  onNodesChange={onNodesChange}
-                  onEdgesChange={onEdgesChange}
-                  onConnect={onConnect}
-                  onNodeClick={(_, item) => setSelectedId(item.id)}
-                  fitView
-                  minZoom={0.25}
-                  maxZoom={1.5}
-                >
-                  <Background color="#d9d4ca" gap={24} size={1} />
-                  <Controls position="bottom-left" />
-                  <MiniMap
-                    position="bottom-right"
-                    nodeColor={miniMapColor}
-                    pannable
-                    zoomable
-                  />
-                </ReactFlow>
+                  selectedId={selectedId}
+                  onSelect={setSelectedId}
+                  onNodesChange={setNodes}
+                  onEdgesChange={setEdges}
+                  nodeRenderer={(item, selected) => <StudioNode data={item.data} selected={selected} />}
+                />
               </div>
             </div>
             <aside className="inspector">
@@ -1832,7 +2016,7 @@ export default function Studio() {
                   </label>
                   <div className="field-row">
                     <div>
-                      <span className="field-label">Provider</span>
+                      <span className="field-label">模型</span>
                       <div className="select-like">{inspectorProvider}</div>
                     </div>
                     <div>
@@ -1842,17 +2026,37 @@ export default function Studio() {
                       </div>
                     </div>
                   </div>
+                  {!selectedIsVideo && modelCatalog.length > 0 && (
+                    <label className="field-label model-field">
+                      生成模型
+                      <select className="model-select inspector-model" value={videoModel} onChange={(event) => setVideoModel(event.target.value)}>
+                        {modelCatalog.map((model) => (
+                          <option value={model.name} key={model.name}>{model.displayName} · {model.name}</option>
+                        ))}
+                      </select>
+                    </label>
+                  )}
+                  {selectedIsVideo && useRealVideo && (
+                    <div className="model-summary">
+                      <span className="field-label">实际模型</span>
+                      <strong>{videoCatalog.find((item) => item.name === videoModel)?.displayName ?? "Seedance 2.5"}</strong>
+                      <small>{videoModel}</small>
+                    </div>
+                  )}
                   {selectedNode.data.output && (
                     <div className="result-box">
                       <span>最新输出</span>
                       <strong>{selectedNode.data.output}</strong>
-                      {selectedNode.id === "video" && (
+                      {selectedNode.id === "video" && !useRealVideo && (
                         <Image
                           src="/demo/mock-video.svg"
                           alt="Mock Seedance 2.5 预览"
                           width={240}
                           height={135}
                         />
+                      )}
+                      {selectedNode.id === "video" && useRealVideo && (
+                        <small className="result-hint">真实视频生成完成后将在此显示结果链接</small>
                       )}
                     </div>
                   )}
@@ -1861,13 +2065,14 @@ export default function Studio() {
                     onClick={() => runNode(selectedNode.id)}
                   >
                     <Play size={16} />
-                    {selectedNode.type === "video"
-                      ? useRealVideo ? "运行真实 Seedance 2.5" : "运行 Mock Seedance 2.5"
+                    {isVideoNode(selectedNode)
+                      ? `运行 ${videoCatalog.find((item) => item.name === videoModel)?.displayName ?? "Seedance 2.5"}`
                       : "运行此节点"}
                   </button>
                   <p className="inspector-note">
-                    真实 Provider
-                    接入后，这里会显示模型、参考资产、时长、比例和任务费用。
+                    {selectedIsVideo && useRealVideo
+                      ? "当前任务将提交到所选视频模型，完成后回写到画布。"
+                      : "当前节点使用自动匹配的生成模型。"}
                   </p>
                 </>
               ) : (
@@ -1882,7 +2087,7 @@ export default function Studio() {
               <span className="status-dot green" />
               系统正常
             </span>
-            <span>Mock Provider</span>
+        <span>模型服务已连接</span>
             <span>PostgreSQL / Redis / MinIO 已在 Docker 编排中预留</span>
             <span className="status-right">v0.1 MVP</span>
           </footer>

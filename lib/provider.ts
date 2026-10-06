@@ -1,9 +1,10 @@
-type CanvasNodeType = "prompt" | "character" | "scene" | "panorama" | "composition_3d" | "keyframe" | "image_edit" | "style_polish" | "video" | "audio" | "output";
+type CanvasNodeType = "prompt" | "character" | "scene" | "panorama" | "composition_3d" | "keyframe" | "tailframe" | "image_edit" | "style_polish" | "video" | "audio" | "output";
 type GenerationJob = { id: string; nodeId: string; nodeLabel: string; provider: string; model: string; status: "pending" | "running" | "completed" | "failed"; progress: number; createdAt: string; error?: string; outputUrl?: string };
 
 export type VideoMode = "T2V" | "I2V" | "R2V" | "FLF2V" | "edit";
 
 export type VideoJobInput = {
+  requestId?: string;
   projectId: string;
   nodeId: string;
   mode: VideoMode;
@@ -12,9 +13,11 @@ export type VideoJobInput = {
   modelId: string;
   duration?: number;
   aspectRatio?: string;
+  resolution?: string;
+  generateAudio?: boolean;
 };
 
-export type VideoJobHandle = { provider: string; remoteId: string };
+export type VideoJobHandle = { provider: string; remoteId: string; traceId?: string };
 
 export interface VideoProvider {
   createJob(input: VideoJobInput): Promise<VideoJobHandle>;
@@ -67,26 +70,28 @@ export class Token360VideoProvider implements VideoProvider {
       model: input.modelId || "seedance-2.5",
       prompt: input.prompt,
       duration: input.duration ?? 5,
-      aspect_ratio: input.aspectRatio ?? "16:9",
-      resolution: "720p",
-      generate_audio: true,
+      aspect_ratio: input.aspectRatio ?? "adaptive",
+      resolution: input.resolution ?? "720p",
+      generate_audio: input.generateAudio ?? false,
       metadata: { project_id: input.projectId, node_id: input.nodeId, mode: input.mode },
     };
     const frames = input.references.filter((ref) => ref.uri && (ref.role === "first_frame" || ref.role === "last_frame"));
     if (frames.length) body.frame_images = frames.map((ref) => ({ type: "image_url", frame_type: ref.role, image_url: { url: ref.uri } }));
     const refs = input.references.filter((ref) => ref.uri && ref.role !== "first_frame" && ref.role !== "last_frame");
     if (refs.length) body.input_references = refs.map((ref) => ({ type: "image_url", role: ref.role, image_url: { url: ref.uri } }));
-    const response = await fetch(`${this.base}/videos`, { method: "POST", headers: this.headers(), body: JSON.stringify(body) });
+    const headers = new Headers(this.headers());
+    if (input.requestId) { headers.set("X-Trace-ID", input.requestId); headers.set("X-Request-ID", input.requestId); }
+    const response = await fetch(`${this.base}/videos`, { method: "POST", headers, body: JSON.stringify(body) });
     const payload = await response.json().catch(() => ({})) as { id?: string; error?: { message?: string } };
-    if (!response.ok || !payload.id) throw new Error(payload.error?.message ?? `Token360 视频任务创建失败（${response.status}）`);
-    return { provider: "token360", remoteId: payload.id };
+    if (!response.ok || !payload.id) throw new Error(payload.error?.message ?? `供应商视频任务创建失败（${response.status}）`);
+    return { provider: "token360", remoteId: payload.id, traceId: response.headers.get("X-Trace-ID") ?? input.requestId };
   }
   async getJob(handle: VideoJobHandle): Promise<GenerationJob> {
     const response = await fetch(`${this.base}/videos/${encodeURIComponent(handle.remoteId)}`, { headers: this.headers() });
     const payload = await response.json().catch(() => ({})) as { id?: string; status?: string; model?: string; prompt?: string; url?: string; video_url?: string; error?: { message?: string } };
-    if (!response.ok) throw new Error(payload.error?.message ?? `Token360 视频任务查询失败（${response.status}）`);
+    if (!response.ok) throw new Error(payload.error?.message ?? `供应商视频任务查询失败（${response.status}）`);
     const status = payload.status === "completed" ? "completed" : payload.status === "failed" ? "failed" : "running";
-    return { id: payload.id ?? handle.remoteId, nodeId: "", nodeLabel: "Token360 视频任务", provider: handle.provider, model: payload.model ?? "seedance-2.5", status, progress: status === "completed" ? 100 : status === "failed" ? 0 : 50, createdAt: new Date().toISOString(), error: payload.error?.message, outputUrl: payload.video_url ?? payload.url } as GenerationJob;
+    return { id: payload.id ?? handle.remoteId, nodeId: "", nodeLabel: "供应商视频任务", provider: handle.provider, model: payload.model ?? "seedance-2.5", status, progress: status === "completed" ? 100 : status === "failed" ? 0 : 50, createdAt: new Date().toISOString(), error: payload.error?.message, outputUrl: payload.video_url ?? payload.url } as GenerationJob;
   }
   async cancelJob(handle: VideoJobHandle) {
     await fetch(`${this.base}/videos/${encodeURIComponent(handle.remoteId)}`, { method: "DELETE", headers: this.headers() });
@@ -94,7 +99,7 @@ export class Token360VideoProvider implements VideoProvider {
   async downloadResult(handle: VideoJobHandle) {
     const response = await fetch(`${this.base}/videos/${encodeURIComponent(handle.remoteId)}/content?format=url`, { headers: this.headers() });
     const payload = await response.json().catch(() => ({})) as { url?: string; video_url?: string };
-    if (!response.ok || !(payload.url ?? payload.video_url)) throw new Error("Token360 视频结果尚未就绪");
+    if (!response.ok || !(payload.url ?? payload.video_url)) throw new Error("供应商视频结果尚未就绪");
     return { url: payload.url ?? payload.video_url!, mimeType: "video/mp4" };
   }
 }

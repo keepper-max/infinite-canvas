@@ -12,7 +12,10 @@ export async function POST(_request: Request, context: { params: Promise<{ jobId
   const user = await getCurrentUser(); const { jobId } = await context.params;
   if (!user) return NextResponse.json({ error: "未登录" }, { status: 401 });
   const [job] = await db.select().from(generationJobs).where(eq(generationJobs.id, jobId)).limit(1);
-  if (!job || !await getProjectForUser(job.projectId, user.id)) return NextResponse.json({ error: "任务不存在" }, { status: 404 });
+  if (!job) return NextResponse.json({ error: "任务不存在" }, { status: 404 });
+  const project = await getProjectForUser(job.projectId, user.id);
+  if (!project) return NextResponse.json({ error: "任务不存在" }, { status: 404 });
+  if (project.role === "viewer") return NextResponse.json({ error: "只读成员不能取消任务" }, { status: 403 });
   if (!["pending", "running"].includes(job.status)) return NextResponse.json({ job });
   if (job.provider === "token360") {
     const remoteId = (job.parameters as { remoteId?: string })?.remoteId;
