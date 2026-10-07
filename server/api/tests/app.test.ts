@@ -114,7 +114,7 @@ test("phone verification registers and logs into the same user", async () => {
   const sent = await jsonRequest(app, "/api/auth/sms/send", { account: "13800138000", purpose: "register" });
   assert.equal(sent.response.status, 200);
   assert.equal(sms.requestedPhone, "+8613800138000");
-  const registered = await jsonRequest(app, "/api/auth/register/phone", { account: "13800138000", code: "123456" });
+  const registered = await jsonRequest(app, "/api/auth/register/phone", { account: "13800138000", code: "123456", password: "password-123" });
   assert.equal(registered.response.status, 201);
   assert.equal(registered.body.data.user.phone, "+8613800138000");
   sms.consumed = false;
@@ -122,20 +122,26 @@ test("phone verification registers and logs into the same user", async () => {
   const loggedIn = await jsonRequest(app, "/api/auth/login/phone", { account: "13800138000", code: "123456" });
   assert.equal(loggedIn.response.status, 200);
   assert.equal(loggedIn.body.data.user.id, registered.body.data.user.id);
+  const passwordLogin = await jsonRequest(app, "/api/auth/login/password", { channel: "phone", account: "13800138000", password: "password-123" });
+  assert.equal(passwordLogin.response.status, 200);
+  assert.equal(passwordLogin.body.data.user.id, registered.body.data.user.id);
 });
 
-test("email verification registers and logs into the same user without a password", async () => {
+test("email verification registration sets a password and code login remains available", async () => {
   const repository = new MemoryRepository();
   const email = new MemoryEmailVerificationService();
   const app = createApp(repository, dualChannelConfig(), undefined, undefined, undefined, undefined, undefined, undefined, undefined, email);
   await jsonRequest(app, "/api/auth/email/send", { account: "code@example.com", purpose: "register" });
-  const registered = await jsonRequest(app, "/api/auth/register/email", { account: "code@example.com", code: "123456" });
+  const registered = await jsonRequest(app, "/api/auth/register/email", { account: "code@example.com", code: "123456", password: "password-123" });
   assert.equal(registered.response.status, 201);
   email.consumed = false;
   await jsonRequest(app, "/api/auth/email/send", { account: "code@example.com", purpose: "login" });
   const loggedIn = await jsonRequest(app, "/api/auth/login/email", { account: "code@example.com", code: "123456" });
   assert.equal(loggedIn.response.status, 200);
   assert.equal(loggedIn.body.data.user.id, registered.body.data.user.id);
+  const passwordLogin = await jsonRequest(app, "/api/auth/login/password", { channel: "email", account: "code@example.com", password: "password-123" });
+  assert.equal(passwordLogin.response.status, 200);
+  assert.equal(passwordLogin.body.data.user.id, registered.body.data.user.id);
 });
 
 test("duplicate email and wrong password return stable errors", async () => {
@@ -882,10 +888,10 @@ class MemoryRepository implements PlatformRepository {
     return [...this.users.values()].find((user) => user.phone === phone) || null;
   }
 
-  async createIdentityUserWithWorkspace(identity: { email?: string; phone?: string }) {
+  async createIdentityUserWithWorkspace(identity: { email?: string; phone?: string; passwordHash?: string | null }) {
     if ([...this.users.values()].some((user) => (identity.email && user.email === identity.email) || (identity.phone && user.phone === identity.phone)))
       throw new DomainError(identity.phone ? "PHONE_ALREADY_REGISTERED" : "EMAIL_ALREADY_REGISTERED", identity.phone ? "手机号已注册" : "邮箱已注册", 409);
-    const user = { id: crypto.randomUUID(), email: identity.email || null, phone: identity.phone || null, passwordHash: null, isAdmin: false, accountStatus: "active" as const };
+    const user = { id: crypto.randomUUID(), email: identity.email || null, phone: identity.phone || null, passwordHash: identity.passwordHash || null, isAdmin: false, accountStatus: "active" as const };
     this.users.set(user.id, user as any);
     return { user, workspace: this.workspaceFor(user.id) };
   }

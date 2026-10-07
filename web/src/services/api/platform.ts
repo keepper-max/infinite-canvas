@@ -40,11 +40,14 @@ export type VerificationChannel = "phone" | "email";
 export function requestVerificationCode(channel: VerificationChannel, account: string, purpose: "register" | "login") {
     return platformRequest<{ accepted: true; retryAfterSeconds: number }>(`/api/auth/${channel === "phone" ? "sms" : "email"}/send`, { method: "POST", body: JSON.stringify({ account, purpose }) });
 }
-export function registerWithCode(channel: VerificationChannel, account: string, code: string, inviteCode?: string, deviceId?: string) {
-    return platformRequest<AuthSession>(`/api/auth/register/${channel}`, { method: "POST", body: JSON.stringify({ account, code, inviteCode: inviteCode || undefined, deviceId }) });
+export function registerWithCode(channel: VerificationChannel, account: string, code: string, password: string, inviteCode?: string, deviceId?: string) {
+    return platformRequest<AuthSession>(`/api/auth/register/${channel}`, { method: "POST", body: JSON.stringify({ account, code, password, inviteCode: inviteCode || undefined, deviceId }) });
 }
 export function loginWithCode(channel: VerificationChannel, account: string, code: string) {
     return platformRequest<AuthSession>(`/api/auth/login/${channel}`, { method: "POST", body: JSON.stringify({ account, code }) });
+}
+export function loginWithPassword(channel: VerificationChannel, account: string, password: string) {
+    return platformRequest<AuthSession>("/api/auth/login/password", { method: "POST", body: JSON.stringify({ channel, account, password }) });
 }
 
 export function validateInviteCode(code: string, deviceId?: string) {

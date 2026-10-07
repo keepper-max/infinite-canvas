@@ -226,7 +226,7 @@ export function createApp(
     const email = normalizeEmail(input.account);
     const verification = await emailVerificationService.verifyCode(email, input.code, "register");
     const registration = await beginVerifiedRegistration(context.req.raw, input.inviteCode, input.deviceId);
-    const result = await repository.createIdentityUserWithWorkspace({ email }, { inviteCode: input.inviteCode, registrationIp: registration.registrationIp });
+    const result = await repository.createIdentityUserWithWorkspace({ email, passwordHash: await hashPassword(input.password) }, { inviteCode: input.inviteCode, registrationIp: registration.registrationIp });
     if (!(await emailVerificationService.consumeCode(verification))) throw invalidVerificationCode();
     await finishVerifiedRegistration(registration.registrationIp, registration.deviceHash);
     const expiresAt = await issueSession(context, repository, config, result.user.id);
@@ -240,7 +240,7 @@ export function createApp(
     const phone = normalizePhone(input.account);
     const verification = await smsVerificationService.verifyCode(phone, input.code, "register");
     const registration = await beginVerifiedRegistration(context.req.raw, input.inviteCode, input.deviceId);
-    const result = await repository.createIdentityUserWithWorkspace({ phone }, { inviteCode: input.inviteCode, registrationIp: registration.registrationIp });
+    const result = await repository.createIdentityUserWithWorkspace({ phone, passwordHash: await hashPassword(input.password) }, { inviteCode: input.inviteCode, registrationIp: registration.registrationIp });
     if (!(await smsVerificationService.consumeCode(verification))) throw invalidVerificationCode();
     await finishVerifiedRegistration(registration.registrationIp, registration.deviceHash);
     const expiresAt = await issueSession(context, repository, config, result.user.id);
@@ -268,6 +268,20 @@ export function createApp(
     if (!user || user.accountStatus === "disabled") throw new DomainError("INVALID_CREDENTIALS", "验证码错误或已失效", 401);
     const verification = await smsVerificationService.verifyCode(phone, input.code, "login");
     if (!(await smsVerificationService.consumeCode(verification))) throw invalidVerificationCode();
+    const workspace = await repository.ensureDefaultWorkspace(user.id);
+    const expiresAt = await issueSession(context, repository, config, user.id);
+    return context.json(success(context, { user: publicUser(user, config), workspace, sessionExpiresAt: expiresAt.toISOString() }));
+  });
+
+  app.post("/api/auth/login/password", async (context) => {
+    const input = passwordLoginInput.parse(await readJson(context.req.raw));
+    const user = input.channel === "phone"
+      ? await repository.findUserByPhone?.(normalizePhone(input.account))
+      : await repository.findUserByEmail(normalizeEmail(emailSchema.parse(input.account)));
+    if (!user || !user.passwordHash || !(await verifyPassword(user.passwordHash, input.password)))
+      throw new DomainError("INVALID_CREDENTIALS", "账号或密码错误", 401);
+    if (user.accountStatus === "disabled")
+      throw new DomainError("ACCOUNT_DISABLED", "账号已停用，请联系管理员", 403);
     const workspace = await repository.ensureDefaultWorkspace(user.id);
     const expiresAt = await issueSession(context, repository, config, user.id);
     return context.json(success(context, { user: publicUser(user, config), workspace, sessionExpiresAt: expiresAt.toISOString() }));
@@ -2389,16 +2403,17 @@ const phoneSchema = z
   .trim()
   .regex(/^(?:\+?86)?1[3-9]\d{9}$/, "请输入有效的中国大陆手机号");
 const verificationSendInput = z.object({ purpose: z.enum(["register", "login"]) });
-const verifiedRegisterInput = z.object({
-  code: z.string().trim().regex(/^\d{6}$/, "请输入 6 位验证码"),
-  inviteCode: z.string().trim().toUpperCase().max(40).optional(),
-  deviceId: z.string().trim().min(16).max(200).optional(),
-});
 const verifiedLoginInput = z.object({ code: z.string().trim().regex(/^\d{6}$/, "请输入 6 位验证码") });
 const passwordSchema = z
   .string()
   .min(passwordPolicy.minLength, `密码至少 ${passwordPolicy.minLength} 位`)
   .max(passwordPolicy.maxLength, `密码最多 ${passwordPolicy.maxLength} 位`);
+const verifiedRegisterInput = z.object({
+  code: z.string().trim().regex(/^\d{6}$/, "请输入 6 位验证码"),
+  password: passwordSchema,
+  inviteCode: z.string().trim().toUpperCase().max(40).optional(),
+  deviceId: z.string().trim().min(16).max(200).optional(),
+});
 const registerInput = z
   .object({
     email: emailSchema,
@@ -2441,6 +2456,11 @@ const loginInput = z
       .max(passwordPolicy.maxLength, "密码过长"),
   })
   .strict();
+const passwordLoginInput = z.object({
+  channel: z.enum(["phone", "email"]),
+  account: z.string().trim().min(1).max(254),
+  password: z.string().min(1).max(passwordPolicy.maxLength),
+}).strict();
 const projectName = z
   .string()
   .trim()

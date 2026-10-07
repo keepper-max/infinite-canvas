@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { Link, Navigate, useNavigate } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 
-import { confirmPasswordReset, getAuthConfig, loginWithCode, PlatformApiError, registerWithCode, requestPasswordReset, requestVerificationCode, validateInviteCode, type VerificationChannel } from "@/services/api/platform";
+import { confirmPasswordReset, getAuthConfig, loginWithCode, loginWithPassword, PlatformApiError, registerWithCode, requestPasswordReset, requestVerificationCode, validateInviteCode, type VerificationChannel } from "@/services/api/platform";
 import { useCanvasStore } from "@/stores/canvas/use-canvas-store";
 
 type AuthMode = "login" | "register" | "forgot-password";
@@ -21,7 +21,8 @@ export default function AuthPage({ mode }: { mode: AuthMode }) {
     const [inviteValidating, setInviteValidating] = useState(false);
     const [inviteValid, setInviteValid] = useState(false);
     const [authenticatedProjectId, setAuthenticatedProjectId] = useState<string | null>(null);
-    const [channel, setChannel] = useState<VerificationChannel>("phone");
+    const [channel, setChannel] = useState<VerificationChannel>(mode === "login" ? "email" : "phone");
+    const [loginMethod, setLoginMethod] = useState<"password" | "code">("password");
     const hydrated = useCanvasStore((state) => state.hydrated);
     const [form] = Form.useForm();
 
@@ -34,6 +35,8 @@ export default function AuthPage({ mode }: { mode: AuthMode }) {
     useEffect(() => {
         setCountdown(0);
         form.resetFields();
+        setChannel(mode === "login" ? "email" : "phone");
+        setLoginMethod("password");
         if (mode === "forgot-password") {
             setVerificationRequired(true);
             return;
@@ -93,7 +96,7 @@ export default function AuthPage({ mode }: { mode: AuthMode }) {
         }
     };
 
-    const submit = async (values: { email?: string; account?: string; newPassword?: string; verificationCode?: string; inviteCode?: string }) => {
+    const submit = async (values: { email?: string; account?: string; password?: string; newPassword?: string; verificationCode?: string; inviteCode?: string }) => {
         setSubmitting(true);
         try {
             if (mode === "forgot-password") {
@@ -102,7 +105,11 @@ export default function AuthPage({ mode }: { mode: AuthMode }) {
                 navigate("/login", { replace: true });
                 return;
             }
-            const session = mode === "register" ? await registerWithCode(channel, values.account || "", values.verificationCode || "", values.inviteCode, deviceId) : await loginWithCode(channel, values.account || "", values.verificationCode || "");
+            const session = mode === "register"
+                ? await registerWithCode(channel, values.account || "", values.verificationCode || "", values.password || "", values.inviteCode, deviceId)
+                : loginMethod === "password"
+                  ? await loginWithPassword(channel, values.account || "", values.password || "")
+                  : await loginWithCode(channel, values.account || "", values.verificationCode || "");
             useCanvasStore.getState().ensureProjectShell(session.workspace);
             setAuthenticatedProjectId(session.workspace.projectId);
             message.success(t(mode === "register" ? "auth.registered" : "auth.loggedIn"));
@@ -144,6 +151,19 @@ export default function AuthPage({ mode }: { mode: AuthMode }) {
                             ]}
                         />
                     ) : null}
+                    {mode === "login" ? (
+                        <Segmented
+                            block
+                            className="mb-6"
+                            value={loginMethod}
+                            onChange={(value) => {
+                                setLoginMethod(value as "password" | "code");
+                                setCountdown(0);
+                                form.setFieldsValue({ password: "", verificationCode: "" });
+                            }}
+                            options={[{ label: "密码登录", value: "password" }, { label: "验证码登录", value: "code" }]}
+                        />
+                    ) : null}
                     {mode === "forgot-password" ? (
                         <Form.Item name="email" label={<span className="text-stone-300">{t("auth.email")}</span>} rules={[{ required: true, type: "email", message: t("auth.emailInvalid") }]}>
                             <Input size="large" prefix={<Mail className="size-4 text-stone-500" />} placeholder="you@example.com" autoComplete="email" />
@@ -163,7 +183,7 @@ export default function AuthPage({ mode }: { mode: AuthMode }) {
                             />
                         </Form.Item>
                     )}
-                    {(mode !== "register" || verificationRequired) && (
+                    {(mode === "forgot-password" || mode === "register" || loginMethod === "code") && (mode !== "register" || verificationRequired) && (
                         <Form.Item
                             name="verificationCode"
                             label={<span className="text-stone-300">{mode !== "forgot-password" && channel === "phone" ? "短信验证码" : t("auth.verificationCode")}</span>}
@@ -200,6 +220,26 @@ export default function AuthPage({ mode }: { mode: AuthMode }) {
                             />
                         </Form.Item>
                     ) : null}
+                    {mode === "register" || (mode === "login" && loginMethod === "password") ? (
+                        <>
+                            <Form.Item name="password" label={<span className="text-stone-300">{mode === "register" ? "设置密码" : t("auth.password")}</span>} rules={[{ required: true, min: mode === "register" ? 8 : 1, message: t("auth.passwordInvalid") }]}>
+                                <Input.Password size="large" prefix={<LockKeyhole className="size-4 text-stone-500" />} placeholder={t("auth.passwordPlaceholder")} autoComplete={mode === "register" ? "new-password" : "current-password"} />
+                            </Form.Item>
+                            {mode === "register" ? (
+                                <Form.Item
+                                    name="confirmPassword"
+                                    dependencies={["password"]}
+                                    label={<span className="text-stone-300">{t("auth.confirmPassword")}</span>}
+                                    rules={[
+                                        { required: true, message: t("auth.passwordInvalid") },
+                                        ({ getFieldValue }) => ({ validator(_, value) { return !value || getFieldValue("password") === value ? Promise.resolve() : Promise.reject(new Error(t("auth.passwordMismatch"))); } }),
+                                    ]}
+                                >
+                                    <Input.Password size="large" prefix={<LockKeyhole className="size-4 text-stone-500" />} placeholder={t("auth.passwordPlaceholder")} autoComplete="new-password" />
+                                </Form.Item>
+                            ) : null}
+                        </>
+                    ) : null}
                     {mode === "forgot-password" ? (
                         <>
                             <Form.Item name="newPassword" label={<span className="text-stone-300">{t("auth.newPassword")}</span>} rules={[{ required: true, min: 8, message: t("auth.passwordInvalid") }]}>
@@ -221,6 +261,11 @@ export default function AuthPage({ mode }: { mode: AuthMode }) {
                                 <Input.Password size="large" prefix={<LockKeyhole className="size-4 text-stone-500" />} placeholder={t("auth.passwordPlaceholder")} autoComplete="new-password" />
                             </Form.Item>
                         </>
+                    ) : null}
+                    {mode === "login" && loginMethod === "password" && channel === "email" ? (
+                        <div className="-mt-3 mb-3 text-right text-sm">
+                            <Link className="text-stone-300 underline underline-offset-4" to="/forgot-password">{t("auth.forgotPassword")}</Link>
+                        </div>
                     ) : null}
                     <Button
                         htmlType="submit"
