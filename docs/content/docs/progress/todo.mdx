@@ -5,6 +5,8 @@ description: Planned follow-up work
 
 # TODO
 
+- Publish the standalone Director Desk build to the production host directory configured by `DIRECTOR_DESK_DIST`, then complete end-to-end acceptance at `https://shoumiren.online/3d-director/`. If a different origin is introduced later, keep CSP restricted to that exact origin instead of using a wildcard.
+
 - Production capacity policy: confirm API rate limits, Docker log rotation size/count, disk alerts, and queue backlog thresholds from real traffic and recovery targets before enabling them in deployment configuration.
 - Production cutover: after an explicit ECS deployment instruction, run the Part 9 preflight, backup, staged service switch, external smoke tests, and manifest-based rollback exercise on the server.
 

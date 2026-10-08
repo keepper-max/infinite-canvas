@@ -12,6 +12,7 @@ const AuthPage = lazy(routeModules.auth);
 const CanvasPage = lazy(routeModules.canvas);
 const CanvasProjectPage = lazy(routeModules.canvasProject);
 const DirectorWorkbenchPage = lazy(routeModules.director);
+const DirectorDeskPage = lazy(routeModules["director-desk"]);
 const ConfigPage = lazy(routeModules.config);
 const HomePage = lazy(routeModules.home);
 const ImagePage = lazy(routeModules.image);
@@ -59,6 +60,7 @@ export const router = createBrowserRouter([
             { path: "/canvas", element: deferred(<CanvasPage />) },
             { path: "/canvas/:id", element: deferred(<CanvasProjectPage />) },
             { path: "/director", element: deferred(<DirectorWorkbenchPage />) },
+            { path: "/director-desk", element: deferred(<DirectorDeskPage />) },
             { path: "/config", element: deferred(<ConfigPage />) },
             { path: "/operations", element: deferred(<OperationsPage />) },
             { path: "/credits", element: deferred(<CreditsPage />) },

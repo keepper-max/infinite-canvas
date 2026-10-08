@@ -11,6 +11,7 @@
 
 - `shoumiren.online` 指向 ECS；ECS 只承担公网 Nginx、HTTPS 和反向代理，不运行应用容器。
 - Web、API、Worker、PostgreSQL、Redis 和 MinIO 运行在物理服务器 `shoumiren`。
+- 3D 导演台保持独立仓库和构建产物；生产 `.env` 的 `DIRECTOR_DESK_DIST` 必须指向版本化发布目录中的绝对 `dist` 路径，Web 容器只读挂载并通过 `/3d-director/` 同域名提供。
 - 物理服务器通过独立反向隧道，把 SSH 管理入口绑定到 ECS 回环地址 `127.0.0.1:19222`；该端口不得监听 ECS 公网地址。
 - 发布必须使用 ECS 非 root 账号 `deploy-gateway` 作为跳板，再进入物理服务器 `adminsun`；禁止根据域名解析或历史物理服务器公网 IP 直接判断部署目标。
 - `ops/deploy-via-ecs.ps1` 会核对本地 `main`、`origin/main`、两台主机指纹、物理服务器主机名、生产容器工作目录和公网健康状态，再调用现有生产发布脚本。
@@ -50,6 +51,7 @@ Windows 发布入口示例；健康检查等待秒数必须由负责人明确填
 2. 确认 `.env` 权限只允许部署账号读取，并检查必填变量是否存在；禁止打印变量值。
 3. 确认磁盘空间、数据库和 Redis 就绪，记录当前 Web/API/Worker 镜像 ID。
 4. 确认公网域名已启用 HTTPS，MinIO 控制台与 API 不直接暴露公网。
+5. 确认 `DIRECTOR_DESK_DIST/index.html` 存在且对应本次验收版本；切换新版本时保留上一版本目录用于回滚，不要原地覆盖。
 
 在生产目录执行统一预检。脚本只检查必填变量是否存在，不输出变量值：
 

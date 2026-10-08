@@ -8,6 +8,11 @@ services:
     container_name: infinite-canvas
     ports:
       - "3000:3000"
+    volumes:
+      - type: bind
+        source: ${DIRECTOR_DESK_DIST:-../3d-director-desk/dist}
+        target: /usr/share/nginx/html/3d-director
+        read_only: true
     restart: unless-stopped
     depends_on:
       api:

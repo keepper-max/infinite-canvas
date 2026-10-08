@@ -5,6 +5,8 @@ description: Implemented changes that still need manual verification
 
 # Pending Tests
 
+- Standalone 3D Director Desk: verify that the read-only standalone build loads at `https://shoumiren.online/3d-director/`, the main navigation opens simple mode by default, and switching to professional mode and back preserves characters, props, cameras, timeline data, and advanced path fields. Export current/first/last frames plus 720p/1080p white-model MP4 at 24/30/60 FPS without UI or helpers and confirm playback state is restored. All four result types must enter the selected project asset library; ordinary image/video nodes may be created only after the user clicks Insert into canvas. Production testing must also cover same-origin iframe CSP, strict postMessage validation, the documented 60-second video request timeout, concurrent exports, upload failures, missing MediaRecorder support, read-only projects, and a missing standalone build mount.
+
 - 账号密码与验证码兼容登录：登录页默认保留邮箱密码登录，并可切换手机号密码、邮箱验证码或短信验证码登录；已有邮箱密码账号应继续正常登录。新用户使用手机号或邮箱注册时，必须先通过验证码并同时设置密码，注册完成后应能分别使用密码和验证码登录同一账号；忘记密码入口继续只在邮箱密码登录时显示。验证码错误、密码错误、已停用账号和重复注册应保持原有错误与拦截行为。
 
 - 失败任务人工结算：对存在供应商任务号且处于“待人工核验”的失败任务，点击“人工核验”应出现“确认未扣费”和“确认已扣费”两种裁决；两者均必须填写备注并二次确认。确认未扣费后应标记“未出账”、释放该任务全部冻结积分且不产生积分流水；确认已扣费后按录入币种、金额和当前积分汇率只扣一次积分，标记“已对账”并保持生成状态为失败。余额不足、USD 汇率缺失、重复提交或非待核验任务应拒绝处理并保持原核验状态；审计日志应记录管理员、裁决、备注和结果。

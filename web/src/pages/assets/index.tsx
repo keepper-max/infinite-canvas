@@ -1,6 +1,7 @@
 import { ArchiveRestore, Download, History, RefreshCw, Search, Trash2, Upload } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { App, Button, Card, Drawer, Empty, Input, Popconfirm, Progress, Segmented, Select, Space, Spin, Tag, Typography } from "antd";
+import { useSearchParams } from "react-router-dom";
 
 import { useAuth } from "@/components/auth/auth-context";
 import { formatBytes } from "@/lib/image-utils";
@@ -36,6 +37,8 @@ const kindLabels: Record<CloudAssetKind, string> = {
 export default function AssetsPage() {
     const { message } = App.useApp();
     const { workspace } = useAuth();
+    const [searchParams] = useSearchParams();
+    const projectId = searchParams.get("projectId") || workspace.projectId;
     const fileInputRef = useRef<HTMLInputElement>(null);
     const versionInputRef = useRef<HTMLInputElement>(null);
     const versionParentIdsRef = useRef<string[]>([]);
@@ -54,7 +57,7 @@ export default function AssetsPage() {
         setLoading(true);
         try {
             const [items, usage] = await Promise.all([
-                listCloudAssets(workspace.projectId, true),
+                listCloudAssets(projectId, true),
                 getCloudStorageUsage().catch(() => null),
             ]);
             setAssets(items);
@@ -65,7 +68,7 @@ export default function AssetsPage() {
         } finally {
             setLoading(false);
         }
-    }, [message, workspace.projectId]);
+    }, [message, projectId]);
 
     useEffect(() => {
         void load();
@@ -81,7 +84,7 @@ export default function AssetsPage() {
         if (!list.length) return;
         setUploading(true);
         try {
-            for (const file of list) await uploadCloudAsset(workspace.projectId, file, { assetId, parentVersionIds });
+            for (const file of list) await uploadCloudAsset(projectId, file, { assetId, parentVersionIds });
             message.success(assetId ? "新版本已保存" : `已上传 ${list.length} 个素材`);
             await load();
         } catch (error) {
@@ -94,7 +97,7 @@ export default function AssetsPage() {
     };
 
     const migrateLocalAssets = async (onlyIds?: string[]) => {
-        const migrated = readMigratedIds(workspace.projectId);
+        const migrated = readMigratedIds(projectId);
         const candidates = localAssets.filter(
             (asset): asset is Extract<LocalAsset, { kind: "image" | "video" }> =>
                 (asset.kind === "image" || asset.kind === "video") && !migrated.has(asset.id) && (!onlyIds || onlyIds.includes(asset.id)),
@@ -110,9 +113,9 @@ export default function AssetsPage() {
                 const blob = await readLocalBlob(asset);
                 if (!blob) throw new Error("本地文件不存在");
                 const file = new File([blob], fileNameForLocalAsset(asset), { type: blob.type || asset.data.mimeType || "application/octet-stream" });
-                await uploadCloudAsset(workspace.projectId, file, { source: "migration", provenance: { localAssetId: asset.id, localStorageKey: asset.data.storageKey || null } });
+                await uploadCloudAsset(projectId, file, { source: "migration", provenance: { localAssetId: asset.id, localStorageKey: asset.data.storageKey || null } });
                 migrated.add(asset.id);
-                writeMigratedIds(workspace.projectId, migrated);
+                writeMigratedIds(projectId, migrated);
             } catch {
                 failed.push(asset.id);
             }

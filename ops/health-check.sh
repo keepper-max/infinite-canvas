@@ -18,6 +18,7 @@ compose ps
 compose exec -T db sh -ec 'pg_isready -U "$POSTGRES_USER" -d "$POSTGRES_DB"'
 compose exec -T redis redis-cli ping
 curl --fail --silent --show-error "${public_url%/}/healthz" >/dev/null
+curl --fail --silent --show-error "${public_url%/}/3d-director/" | grep -Fq '<div id="root"></div>'
 curl --fail --silent --show-error "${public_url%/}/api/health/live" >/dev/null
 curl --fail --silent --show-error "${public_url%/}/api/health/ready" >/dev/null
 df -P .

@@ -566,3 +566,32 @@
 - 最终采用原图身份参考 + 引导图构图参考的两图顺序；已有多参考图仍按连接原序处理，只有明确设置环境、构图或动作角色的图片会映射相应供应商角色。
 - 运镜引导图使用现有云资产上传和不可变版本；重复编辑同一原图时更新同一资产的新版本，并保留上个版本为父版本。
 - 编辑器只在桌面图片工具栏显示，避免把精细轨迹绘制界面硬塞进当前移动端轻编辑模式；画布节点和生成结果仍可在移动端正常查看。
+# 3D 导演台接入发现（2026-10-08）
+
+- 正式宿主仓库：`H:\CodexStorage\infinite-canvas-auth-upgrade`。
+- 用户 Fork：`keepper-max/3d-director-desk`，上游为 `xiaozangao/3d-director-desk`，MIT，默认分支 `main`。
+- 已浅克隆到 `H:\CodexStorage\3d-director-desk`，未建分支、未提交、未推送。
+- 导演台仓库未发现 `AGENTS.md`；仍需完整读取 README、`docs/embed-contract.md`、示例、依赖和实现。
+- 导演台 v0.3.1 已提供协议 v1：严格 `hostOrigin`、`ready`、会话切换、能力/工程/时间轴读取、干净帧导出、H.264 MP4 Blob 导出、并发导出错误和请求 ID 响应。
+- `export.frame` 已支持 current/first/last 与 720p/1080p；`export.video` 已支持 720p/1080p、24/30/60 FPS，并承诺恢复导出前时间与播放状态。
+- 工程 schema v1 与 UI 状态分离，工程只引用 IndexedDB 中的大型本地素材；双模式可只做 UI 能力分层，无需新工程格式或协议升级。
+- 导演台依赖 Three.js、R3F、Drei、Zustand 等；必须继续作为独立构建部署，不能加入宿主依赖。
+- 示例宿主客户端已覆盖 origin/source 校验、唯一 requestId、action 匹配、超时和卸载清理，可直接适配宿主。
+- 导演台 UI 由单一 `DirectorDeskShell`、`DirectorCanvas`、左右面板和 `MotionStudio` 组合；双模式应在这些现有 UI 边界做条件呈现，不能分叉 store 或渲染器。
+- 当前工程按 `instanceId` 写入 localStorage，导入模型二进制另存 IndexedDB；模式偏好可使用独立小型 localStorage key，不应进入工程 JSON。
+- 当前 `hostBridge` 已处理严格 host origin、session、capabilities/project/timeline/frame/video 请求和导出忙碌状态；协议主体无需重写。
+- 宿主代码搜索首次在导演台工作目录执行，因不存在 `web/src` 失败；后续切回宿主仓库重新检查，不重复该错误。
+- 宿主路由使用 `routeModules` 懒加载与 `navigationTools` 统一导航；新增 `director-desk` 模块和 `/director-desk`，不改布局架构。
+- 宿主已有云端素材 `uploadCloudAsset(projectId, file, metadata)`、素材页版本/缩略图链路，以及本地 `uploadImage`/`uploadMediaFile`；导演台输出必须直接走云端素材接口以满足“素材库”要求。
+- 画布列表页会把 `location.state` 原样传给具体画布；画布工程页已有一次性 handoff 插入文本节点模式，可扩展为一次性媒体 handoff，仍只创建普通 Image/Video 节点。
+- 主画布已有 `createCanvasNode`、`imageMetadata`、`videoMetadata` 和立即保存机制；无需新增节点类型或修改画布 schema。
+- 导航已有 AI 漫剧导演台 slug `director`，3D 导演台使用独立 slug/路由 `director-desk`，避免语义冲突。
+- 简易模式可安全保留：变换工具、添加内置人物、模型库常用道具、画幅、机位、当前截图、人物姿势/基础动作、人物路线与基础运镜；应隐藏本地模型/动作导入、群众/几何高级入口、批量轨迹编辑、逐点跟踪、复杂速度曲线、碰撞开关、性能设置及插件/实验入口。
+- `MotionStudio` 已同时包含基础预设、起始/终点轨迹、预演与 MP4 导出；简易模式只需裁剪高级控制，不能另建运镜状态。
+- 云端素材上传会自动计算 SHA-256、媒体元数据和缩略图并创建不可变版本；可在 provenance 中复用现有自由 JSON，记录 `source=3d-director-desk` 与 `purpose`，无需加数据库字段。
+- 画布展示可通过 `assetVersionId` 获取签名预览；插入节点时可只保存云端资产/版本引用及尺寸，不保存大 Blob/data URL。
+- 直接在 3D 导演台页选择目标画布，导出时上传到该项目素材库；“插入主画布”再读取并按 revision 保存普通 Image/Video 节点，可留在当前页面并提供显式打开画布入口。
+- 宿主默认工作区和资产库是项目级；3D 页需让用户选择一个有编辑权限的目标画布，所有上传和插入都绑定该项目，不能把媒体先放入全局或 localStorage。
+- 导演台模式可由 React Context 管理，入口 URL 参数优先、否则读取独立偏好 key，App 根节点仅加 UI mode class；store/project schema 完全不变。
+- 接入前宿主没有 `VITE_DIRECTOR_DESK_URL`；现已在 `.env.example` 与只读前端 env 常量增加同域名路径，且不包含密钥。
+- 正式入口改为同域名 `/3d-director/`：导演台仍独立构建，Compose 只读挂载其 `dist` 到 Web 容器；该路径使用 `frame-ancestors 'self'`，主应用其余路径继续禁止被嵌入。

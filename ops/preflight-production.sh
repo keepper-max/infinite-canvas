@@ -42,10 +42,18 @@ for name in \
   OBJECT_STORAGE_PUBLIC_ENDPOINT \
   OBJECT_STORAGE_ACCESS_KEY_ID \
   OBJECT_STORAGE_SECRET_ACCESS_KEY \
+  DIRECTOR_DESK_DIST \
   TOKEN360_API_KEY \
   TRUSTED_ORIGINS; do
   test -n "$(read_env_value "$name")" || fail "required variable is empty: $name"
 done
+
+director_desk_dist="$(read_env_value DIRECTOR_DESK_DIST)"
+case "$director_desk_dist" in
+  /*) ;;
+  *) fail "DIRECTOR_DESK_DIST must be an absolute path" ;;
+esac
+test -f "$director_desk_dist/index.html" || fail "3D Director Desk build is missing: DIRECTOR_DESK_DIST/index.html"
 
 test "$(read_env_value COOKIE_SECURE)" = "true" || fail "COOKIE_SECURE must be true"
 case "$(read_env_value TRUSTED_ORIGINS)" in

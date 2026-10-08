@@ -1,4 +1,4 @@
-import { Clapperboard, Coins, FileText, Gauge, ImagePlus, Images, Maximize2, MessageSquareText, Settings2, Video } from "lucide-react";
+import { Box, Clapperboard, Coins, FileText, Gauge, ImagePlus, Images, Maximize2, MessageSquareText, Settings2, Video } from "lucide-react";
 
 export const navigationTools = [
     {
@@ -8,6 +8,10 @@ export const navigationTools = [
     {
         slug: "director",
         icon: Clapperboard,
+    },
+    {
+        slug: "director-desk",
+        icon: Box,
     },
     {
         slug: "image",

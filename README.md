@@ -94,10 +94,13 @@ git clone git@github.com:basketikun/infinite-canvas.git
 cd infinite-canvas
 cp .env.example .env
 # 在 .env 中设置强随机 POSTGRES_PASSWORD；生产 HTTPS 同时设置 COOKIE_SECURE=true。
+# 单独构建 3D 导演台，并把 DIRECTOR_DESK_DIST 指向其 dist 绝对路径。
 docker compose up -d
 ```
 
 运行后默认端口3000，可访问 `http://localhost:3000`。
+
+3D 导演台仍是独立工程。启动前在 `3d-director-desk` 仓库执行 `npm ci && npm run build`，主站只读挂载其 `dist`，并通过同域名 `/3d-director/` 提供访问；Three.js/R3F 不会进入主站构建。
 
 首次访问先注册邮箱账号。系统会自动创建唯一的“未命名项目”并直接进入画布，不要求用户先手动创建项目。页面、账号 API 和模型接口均通过同一站点入口访问；全局托管模型的 API Key 只保存在服务器 `.env` 中。
 
