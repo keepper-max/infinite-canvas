@@ -20,6 +20,7 @@ description: 在守守画布的专用项目中策划、生成和管理 Vibe 知�
 - 每个阶段分别保留为清晰命名的文字节点；脚本和分镜必须经用户确认后才能进入下一阶段。
 - 画布中的模型调用走正式登录、项目权限、积分和模型网关，不直接访问数据库或供应商密钥。
 - Playwright、Python、FFmpeg 和最终 MP4 渲染在本机执行，工作目录优先放在 `H:\CodexStorage`，不要把大型帧序列或视频写入仓库。
+- 当前 Windows 渲染环境位于 `H:\CodexStorage\vibe-video-runtime`。运行 Python 脚本时使用 `.venv\Scripts\python.exe`；Playwright 浏览器目录为 `ms-playwright`，FFmpeg/ffprobe 位于 `ffmpeg\ffmpeg-9.0.2-full_build\bin`。
 - 成片通过守守画布现有上传入口加入专用项目；若当前 MCP 没有本地视频上传工具，使用浏览器上传，不要把视频编码成超大文本节点或提交到 Git。
 
 ## 停止条件
