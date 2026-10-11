@@ -1,13 +1,13 @@
 {
   "name": "infinite-canvas",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Use Codex to read and operate Shoushou Huabu through the local Canvas Agent MCP server.",
   "author": {
     "name": "basketikun",
-    "url": "https://canvas.best/"
+    "url": "https://shoumiren.online/"
   },
-  "homepage": "https://canvas.best/",
-  "repository": "https://github.com/basketikun/infinite-canvas",
+  "homepage": "https://shoumiren.online/",
+  "repository": "https://github.com/keepper-max/infinite-canvas",
   "license": "AGPL-3.0",
   "keywords": ["infinite-canvas", "canvas", "mcp", "agent"],
   "skills": "./skills/",
@@ -19,11 +19,12 @@
     "developerName": "basketikun",
     "category": "Productivity",
     "capabilities": ["Canvas", "MCP", "Creative Workflow"],
-    "websiteURL": "https://canvas.best/",
+    "websiteURL": "https://shoumiren.online/",
     "defaultPrompt": [
       "打开守守画布",
       "读取当前画布并总结节点结构",
-      "根据选中节点创建一组生图提示词"
+      "根据选中节点创建一组生图提示词",
+      "在 Vibe 知识视频制作项目中策划一条知识视频"
     ],
     "brandColor": "#2563EB",
     "composerIcon": "./assets/icon.png",
