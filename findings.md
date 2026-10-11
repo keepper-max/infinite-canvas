@@ -50,3 +50,13 @@
 - 邀请码此前不存在可复用实现，因此新增最小 `invite_codes` 与兑换记录；手机号和邮箱注册共享同一事务。
 - 验证码校验改为 Redis Lua 原子消费，避免并发请求重复使用同一验证码。
 - 后台用户列表仅环境变量白名单管理员可访问，默认返回脱敏手机号和邮箱。
+## 守守画布 MCP 长耗时生成与历史查询
+
+- `.codex/config.toml` 的 `tool_timeout_sec = 300` 精确对应用户观察到的 5 分钟；生产 API/Worker 的 `PROVIDER_SUBMIT_TIMEOUT_MS=0`、`JOB_MAX_RUNTIME_MS=0`，因此不是模型网关主动限时。
+- `generate_vibe_text` 当前在单次 MCP 调用内同步执行 `runChatModel`，没有任务号、断线恢复或幂等保护；超时后立即重试存在重复模型调用和重复计费风险。
+- 当前会话暴露的是旧 MCP 工具清单，且 `list_projects` 复现了旧用户表字段查询异常；本地源码与服务器 bundle 已包含兼容的原生 SQL 用户查询，但运行中的旧 MCP 进程/会话未重新加载。
+- 生产库只读确认 MCP 账号为 active，可访问 12 个项目，并存在 1 个 `Vibe 知识视频制作`项目，数据本身未丢失。
+- 生产主队列使用另一套 `generation_jobs` 契约（`node_key`、`input_snapshot`、`compiled_request` 等），不能把本仓库旧版 Drizzle 任务结构直接塞入主 Worker，否则会扩大兼容风险。
+- 本次选择为 MCP 文字生成增加独立的轻量持久化任务表：提交立即返回任务号，模型调用在 MCP 进程后台继续；同一用户同一请求通过摘要幂等复用，失败任务默认不自动重扣费。
+- 执行器使用 PostgreSQL 会话级 advisory lock 保证同一任务只有一个执行者；MCP 进程异常退出时锁随数据库连接释放，再次提交相同请求可接管 `running` 任务，无需引入新的恢复超时值。
+- 历史查询改为原生 SQL 兼容读取 `node_id/node_key` 与 `error_reason/user_error_message` 两代字段，避免旧 schema 映射整行查询失败。

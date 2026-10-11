@@ -22,8 +22,10 @@ test("守守画布 MCP 可通过 stdio 启动并发布预期工具", { timeout: 
         "generate_vibe_text",
         "get_project_context",
         "get_vibe_status",
+        "get_vibe_text_status",
         "import_rendered_video",
         "list_projects",
+        "list_vibe_text_jobs",
         "queue_vibe_preview",
       ],
     );
