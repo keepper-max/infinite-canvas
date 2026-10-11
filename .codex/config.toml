@@ -1,0 +1,7 @@
+[mcp_servers.shoushou_canvas]
+command = "node"
+args = ["H:\\代码相关\\项目\\漫剧工作流\\scripts\\shoushou-mcp-remote.mjs"]
+cwd = "H:\\代码相关\\项目\\漫剧工作流"
+env_vars = ["ProgramData", "Path", "ALL_PROXY", "HTTP_PROXY", "HTTPS_PROXY", "NO_PROXY", "COMPUTERNAME", "USERDOMAIN", "LOGONSERVER", "ComSpec", "PATHEXT", "windir", "TMP", "PSModulePath"]
+startup_timeout_sec = 60
+tool_timeout_sec = 300

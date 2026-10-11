@@ -61,3 +61,30 @@ ECS 部署时将项目上传服务器，在 `.env` 中替换数据库、Redis、
 - `lib/types.ts`：节点、项目和任务类型
 - `lib/provider.ts`：视频 Provider 适配器
 - `public/demo/mock-video.svg`：Mock 视频预览
+
+## Codex 本机接入
+
+项目内置 `shoushou_canvas` stdio MCP，不新增 HTTP 端口。先在未提交的 `.env` 中配置
+`SHOUSHOU_MCP_USER_ID` 或 `SHOUSHOU_MCP_ACCOUNT`，需要进一步收窄权限时再配置
+`SHOUSHOU_MCP_PROJECT_IDS`。重新打开 Codex 项目聊天后，可直接列出项目、读取画布、创建
+Vibe 知识视频分镜、提交流程预览、查询状态，并把允许目录中的渲染成片导回资产库。
+适配器会读取 `.env`、`.env.local` 和本机忽略提交的 `.env.mcp`；若网站使用 Docker 内部主机名，可用
+`SHOUSHOU_MCP_DATABASE_URL`、`SHOUSHOU_MCP_REDIS_URL` 和 `SHOUSHOU_MCP_S3_ENDPOINT`
+为宿主机上的 MCP 单独配置连接地址。
+
+本机验证命令：
+
+```bash
+npm run mcp:shoushou
+```
+
+该进程使用标准输入输出等待 MCP 请求；看到 `[shoushou-mcp] ready on stdio` 即表示启动完成。
+
+当前生产连接由 `scripts/shoushou-mcp-remote.mjs` 负责：它使用
+`H:\CodexStorage\ssh\shoumiren-deploy-config` 的 `shoumiren-production` 主机，经现有反向隧道
+进入物理服务器，再动态定位 `jingjie-studio` 的 `api` 容器。MCP 运行包保存在物理服务器
+`adminsun` 用户私有目录，连接时仅复制到容器 `/tmp`，进程退出时清理容器副本；不会连接
+ECS 跳板 Shell，也不会开放数据库、Redis 或 MinIO 端口。
+修改 MCP 服务代码后先运行 `npm run mcp:bundle`，代码包只生成到 `H:\CodexStorage\shoushou-mcp`。
+生产连接不会在每次启动时自动上传运行包；更新后应先校验哈希、备份上一版，再发布到物理服务器
+`/home/adminsun/.local/share/shoushou-mcp/shoushou-mcp-server.cjs`。

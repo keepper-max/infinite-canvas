@@ -19,7 +19,18 @@ export function envModelConfig(): ModelConfig | null {
   } as ModelConfig;
 }
 
-export async function runChatModel(config: ModelConfig, prompt: string) {
+export type ChatModelOptions = {
+  systemPrompt?: string;
+  /** Set to null for models whose gateway schema does not accept temperature. */
+  temperature?: number | null;
+  maxCompletionTokens?: number;
+};
+
+export async function runChatModel(
+  config: ModelConfig,
+  prompt: string,
+  options: ChatModelOptions = {},
+) {
   const key = config.apiKeyEnv ? process.env[config.apiKeyEnv] : undefined;
   if (!key)
     return {
@@ -38,8 +49,18 @@ export async function runChatModel(config: ModelConfig, prompt: string) {
     },
     body: JSON.stringify({
       model: config.model,
-      messages: [{ role: "user", content: prompt }],
-      temperature: 0.7,
+      messages: [
+        ...(options.systemPrompt
+          ? [{ role: "system", content: options.systemPrompt }]
+          : []),
+        { role: "user", content: prompt },
+      ],
+      ...(options.temperature === null
+        ? {}
+        : { temperature: options.temperature ?? 0.7 }),
+      ...(options.maxCompletionTokens
+        ? { max_completion_tokens: options.maxCompletionTokens }
+        : {}),
     }),
   });
   const payload = (await response.json().catch(() => ({}))) as {
