@@ -8,6 +8,13 @@ This block is written and re-added by `next dev` — verify at `node_modules/nex
 
 <!-- END:nextjs-agent-rules -->
 
+## 守守画布项目寻址
+
+- 守守画布正式代码仓库固定为 `H:\CodexStorage\infinite-canvas-auth-upgrade`；涉及读码、修改、测试、提交、推送或部署时，必须以该目录为工作目录，不要把当前文档目录 `H:\代码相关\项目\漫剧工作流` 当成正式代码仓库。
+- 守守画布线上入口固定为 `https://shoumiren.online`；生产服务器当前发布入口为 `/opt/infinite-canvas-releases/current`。
+- 独立 3D 导演台源码仓库固定为 `H:\CodexStorage\3d-director-desk`；只有涉及 3D 导演台自身代码时才进入该目录，主画布代码仍在守守画布正式仓库。
+- 生产应用容器不运行在公网 ECS 上；必须通过 `H:\CodexStorage\ssh\shoumiren-deploy-config` 的 `shoumiren-production` 连接进入应用服务器，不得把 ECS 跳板机误判为应用主机。
+
 ## 守守画布 MCP
 
 - 用户要求制作、续作或查询 Vibe 知识视频时，优先使用 `shoushou_canvas` MCP 读取项目上下文并写入分镜。
