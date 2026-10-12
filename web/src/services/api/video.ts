@@ -7,7 +7,7 @@ import { clampVideoSeconds, computeVideoSize, inferVideoRatio } from "@/lib/medi
 import { getMediaBlob, resolveMediaUrl, uploadMediaFile, type UploadedFile } from "@/services/file-storage";
 import { imageToDataUrl } from "@/services/image-storage";
 import { boolConfig, buildApiUrl, isServerManagedConfig, modelOptionName, resolveModelRequestConfig, resolveModelScript, withLocalProxy, type AiConfig } from "@/stores/use-config-store";
-import { isSeedanceVideoModel, normalizeVideoGenerationMode, selectedVideoModel, supportedVideoModes, videoParameterPayload } from "@/lib/video-model-capabilities";
+import { isSeedance25VideoModel, isSeedanceVideoModel, normalizeVideoGenerationMode, selectedVideoModel, supportedVideoModes, videoParameterPayload } from "@/lib/video-model-capabilities";
 import { runModelPlugin } from "./model-plugin";
 import { currentVersion, getCloudAssetDownloadUrls, uploadCloudAsset } from "./assets";
 import { artifactUrl, cancelManagedJobOnAbort, createManagedJob, getManagedJob } from "./jobs";
@@ -222,14 +222,19 @@ async function createManagedVideoTask(config: AiConfig, model: string, prompt: s
             return { ...(await stageManagedReference(projectId, file, "audio", audio.name, audio.storageKey, options?.signal)), durationMs: audio.durationMs };
         }),
     );
-    const generationMode = normalizeVideoGenerationMode(config.videoMode, supportedVideoModes(modelDefinition), images.length);
+    const modelModes = supportedVideoModes(modelDefinition);
+    const requestedMode = normalizeVideoGenerationMode(config.videoMode, modelModes, images.length);
+    const generationMode = (videos.length || audios.length) && modelModes.includes("multiref") ? "multiref" : requestedMode;
     const firstImage = images[references.findIndex((reference) => reference.role === "first_frame")] || images[0];
     const lastImage = images[references.findIndex((reference) => reference.role === "last_frame")] || images.find((image) => image !== firstImage);
     const mappedReferences =
         generationMode === "multiref"
             ? [
                   ...images.map(({ sourceRole, ...reference }) => ({ role: managedImageReferenceRole(sourceRole), ...reference })),
-                  ...videos.map((reference) => ({ ...reference, role: reference.role === "video_input" ? ("video_input" as const) : ("motion_reference" as const) })),
+                  ...videos.map((reference) => ({
+                      ...reference,
+                      role: reference.role === "video_extension" ? ("video_extension" as const) : reference.role === "video_input" ? ("video_input" as const) : ("motion_reference" as const),
+                  })),
                   ...audios.map((reference) => ({ role: "audio_reference" as const, ...reference })),
               ]
             : generationMode === "t2v"
@@ -240,7 +245,9 @@ async function createManagedVideoTask(config: AiConfig, model: string, prompt: s
                     : []
                 : [...(firstImage ? [{ role: "first_frame" as const, ...stripManagedSourceRole(firstImage) }] : []), ...(lastImage ? [{ role: "last_frame" as const, ...stripManagedSourceRole(lastImage) }] : [])];
     const parameters = videoParameterPayload(config, modelDefinition);
-    if (isSeedanceVideoModel(modelDefinition) && mappedReferences.some((reference) => reference.role === "video_input")) parameters.aspectRatio = "adaptive";
+    const hasVideoExtension = mappedReferences.some((reference) => reference.role === "video_extension");
+    if (isSeedanceVideoModel(modelDefinition) && hasVideoExtension) parameters.aspectRatio = "adaptive";
+    if (isSeedance25VideoModel(modelDefinition) && hasVideoExtension) parameters.omniReferenceTaskType = "extend";
     try {
         const created = await createManagedJob(
             {

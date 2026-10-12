@@ -35,7 +35,7 @@ const edgeSchema = z
         sourcePortId: z.string().min(1).max(200).optional(),
         targetPortId: z.string().min(1).max(200).optional(),
         resourceType: z.enum(["text", "prompt", "image", "video", "audio", "json", "asset", "timeline"]).optional(),
-        role: z.enum(["data", "identity", "environment", "composition", "motion", "first_frame", "last_frame", "video_input", "audio_input", "mask"]).optional(),
+        role: z.enum(["data", "identity", "environment", "composition", "motion", "first_frame", "last_frame", "video_input", "video_extension", "audio_input", "mask"]).optional(),
         order: z.number().int().min(0).max(100_000).optional(),
         metadata: metadataSchema.optional(),
     })

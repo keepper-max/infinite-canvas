@@ -186,7 +186,7 @@ async function executeVideoNode(ctx: CanvasNodeContext, snapshot: ReturnType<typ
     const model = ctx.ai.defaultModel("video");
     const references = inputReferences(ctx, "video");
     const roles = new Set(references.map((item) => item.role));
-    const mode = roles.has("first_frame") && roles.has("last_frame") ? "flf2v" : references.length > 1 || roles.has("video_input") || roles.has("motion_reference") ? "multiref" : roles.has("first_frame") ? "i2v" : "t2v";
+    const mode = roles.has("first_frame") && roles.has("last_frame") ? "flf2v" : references.length > 1 || roles.has("video_input") || roles.has("video_extension") || roles.has("motion_reference") ? "multiref" : roles.has("first_frame") ? "i2v" : "t2v";
     const skill = upstreamSkill(ctx);
     const prompt = skill
         ? skillPromptText(skill)
@@ -470,6 +470,7 @@ function managedRole(role: string, target: "image" | "video"): ManagedReference[
         first_frame: "first_frame",
         last_frame: "last_frame",
         video_input: "video_input",
+        video_extension: "video_extension",
         audio_input: "audio_reference",
     };
     return map[role] || null;
@@ -481,7 +482,7 @@ function bindings(ctx: CanvasNodeContext) {
         .filter((edge) => edge.toNodeId === ctx.node.id)
         .flatMap((edge) => {
             const source = ctx.getNode(edge.fromNodeId);
-            if (!source || !["identity", "environment", "composition", "motion", "first_frame", "last_frame", "video_input", "audio_input"].includes(edge.role || "")) return [];
+            if (!source || !["identity", "environment", "composition", "motion", "first_frame", "last_frame", "video_input", "video_extension", "audio_input"].includes(edge.role || "")) return [];
             return [{ role: edge.role as NonNullable<DramaNodeState["assetBindings"]>[number]["role"], nodeId: source.id, assetId: source.metadata?.assetId, assetVersionId: source.metadata?.assetVersionId }];
         });
 }

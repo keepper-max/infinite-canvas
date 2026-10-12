@@ -18,6 +18,7 @@ import { CanvasNodeType, type CanvasConnection, type CanvasGenerationMode, type 
 import type { CanvasResourceReference } from "@/lib/canvas/canvas-resource-references";
 import { CanvasNodeReferenceBar } from "./canvas-node-reference-bar";
 import { selectedVideoModel, supportedVideoModes } from "@/lib/video-model-capabilities";
+import type { VideoReferencePurpose } from "./canvas-node-generation";
 
 export type CanvasNodeGenerationMode = CanvasGenerationMode;
 
@@ -33,7 +34,7 @@ type CanvasNodePromptPanelProps = {
     connectedNodes?: CanvasNodeData[];
     connections?: CanvasConnection[];
     onDisconnectReference?: (fromNodeId: string, toNodeId: string) => void;
-    onVideoPurposeChange?: (fromNodeId: string, toNodeId: string, role: "motion" | "video_input") => void;
+    onVideoPurposeChange?: (fromNodeId: string, toNodeId: string, role: VideoReferencePurpose) => void;
     onStartReferenceSelection?: (nodeId: string) => void;
     onImageSettingsOpenChange?: (open: boolean) => void;
     modeOverride?: CanvasNodeGenerationMode; // Plugin nodes set their generation type through useBuiltinPanel.mode.

@@ -10,6 +10,7 @@ const referenceSchema = z
       "composition_reference",
       "motion_reference",
       "video_input",
+      "video_extension",
       "audio_reference",
     ]),
     assetVersionId: z.string().uuid().optional(),

@@ -96,7 +96,7 @@ function node(type: string, title: string, workflowKind: DramaWorkflowKind, icon
 }
 
 function dramaPorts(kind: DramaWorkflowKind): NonNullable<CanvasNodeDefinition["ports"]> {
-    const allRoles = ["data", "identity", "environment", "composition", "motion", "first_frame", "last_frame", "video_input", "audio_input"] as const;
+    const allRoles = ["data", "identity", "environment", "composition", "motion", "first_frame", "last_frame", "video_input", "video_extension", "audio_input"] as const;
     const outputType =
         kind === "video.seedance" || kind === "output.episode"
             ? "video"

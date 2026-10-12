@@ -12,6 +12,7 @@ const ROLE_COLORS: Partial<Record<NonNullable<CanvasConnection["role"]>, string>
     first_frame: "#3b82f6",
     last_frame: "#6366f1",
     video_input: "#ef4444",
+    video_extension: "#f97316",
     audio_input: "#14b8a6",
     mask: "#64748b",
 };

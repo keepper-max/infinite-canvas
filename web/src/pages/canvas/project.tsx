@@ -36,7 +36,7 @@ import { CanvasNodeCropDialog, type CanvasImageCropRect } from "@/components/can
 import { CanvasNodeMaskEditDialog, type CanvasImageMaskEditPayload } from "@/components/canvas/canvas-node-mask-edit-dialog";
 import { CanvasNodeSplitDialog, type CanvasImageSplitParams } from "@/components/canvas/canvas-node-split-dialog";
 import { CanvasNodeUpscaleDialog, type CanvasImageUpscaleParams } from "@/components/canvas/canvas-node-upscale-dialog";
-import { buildNodeGenerationContext, buildNodeGenerationInputs, buildNodeResponseMessages, hasVideoInputReference, hydrateNodeGenerationContext, type NodeGenerationInput } from "@/components/canvas/canvas-node-generation";
+import { buildNodeGenerationContext, buildNodeGenerationInputs, buildNodeResponseMessages, hasVideoExtensionReference, hydrateNodeGenerationContext, type NodeGenerationInput, type VideoReferencePurpose } from "@/components/canvas/canvas-node-generation";
 import { CanvasNodeHoverToolbar, CanvasNodeInfoModal } from "@/components/canvas/canvas-node-hover-toolbar";
 import { CanvasSelectionToolbar } from "@/components/canvas/canvas-selection-toolbar";
 import { CanvasInspector } from "@/components/canvas/canvas-inspector";
@@ -1391,7 +1391,7 @@ function InfiniteCanvasPage({ projectId }: { projectId: string }) {
             }
             setConnections((prev) =>
                 prev.map((item) =>
-                    item.id === connectionId ? { ...item, resourceType, role, metadata: resourceType === "video" && (role === "motion" || role === "video_input") ? { ...item.metadata, videoPurposeSelected: true } : item.metadata } : item,
+                    item.id === connectionId ? { ...item, resourceType, role, metadata: resourceType === "video" && (role === "motion" || role === "video_input" || role === "video_extension") ? { ...item.metadata, videoPurposeSelected: true, videoPurpose: role } : item.metadata } : item,
                 ),
             );
         },
@@ -1399,7 +1399,7 @@ function InfiniteCanvasPage({ projectId }: { projectId: string }) {
     );
 
     const updateVideoReferencePurpose = useCallback(
-        (fromNodeId: string, toNodeId: string, role: "motion" | "video_input") => {
+        (fromNodeId: string, toNodeId: string, role: VideoReferencePurpose) => {
             const connection = connectionsRef.current.find((item) => item.fromNodeId === fromNodeId && item.toNodeId === toNodeId);
             if (connection) updateConnectionRole(connection.id, role);
         },
@@ -4055,7 +4055,7 @@ function InfiniteCanvasPage({ projectId }: { projectId: string }) {
                     onStartReferenceSelection={startNodeReferenceSelection}
                     onConvertDepthReference={(targetNode, sourceNode) => void openDepthMotionForReference(targetNode, sourceNode)}
                     modeOverride={getNodeDefinition(panelNode.type)?.useBuiltinPanel?.mode}
-                    forceAdaptiveVideoRatio={hasVideoInputReference(panelNode.id, nodes, connections)}
+                    forceAdaptiveVideoRatio={hasVideoExtensionReference(panelNode.id, nodes, connections)}
                     onImageSettingsOpenChange={(open) => {
                         setNodeImageSettingsOpen(open);
                         if (open) setToolbarNodeId(null);
@@ -4087,7 +4087,7 @@ function InfiniteCanvasPage({ projectId }: { projectId: string }) {
                 node={contentNode}
                 isRunning={runningNodeId === contentNode.id}
                 inputSummary={getInputSummary(configInputsById.get(contentNode.id) || [])}
-                forceAdaptiveVideoRatio={hasVideoInputReference(contentNode.id, nodes, connections)}
+                forceAdaptiveVideoRatio={hasVideoExtensionReference(contentNode.id, nodes, connections)}
                 onConfigChange={handleConfigNodeChange}
                 onComposerToggle={() => setDialogNodeId((current) => (current === contentNode.id ? null : contentNode.id))}
                 onStop={confirmStopGeneration}

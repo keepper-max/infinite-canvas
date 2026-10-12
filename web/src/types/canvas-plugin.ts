@@ -132,7 +132,7 @@ export type CanvasNodeDefinition = {
         label: string;
         direction: "input" | "output";
         resourceTypes: Array<"text" | "prompt" | "image" | "video" | "audio" | "json" | "asset" | "timeline">;
-        roles: Array<"data" | "identity" | "environment" | "composition" | "motion" | "first_frame" | "last_frame" | "video_input" | "audio_input" | "mask">;
+        roles: Array<"data" | "identity" | "environment" | "composition" | "motion" | "first_frame" | "last_frame" | "video_input" | "video_extension" | "audio_input" | "mask">;
         cardinality: "one" | "many";
         required?: boolean;
     }>;

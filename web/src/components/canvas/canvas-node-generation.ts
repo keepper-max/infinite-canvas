@@ -53,7 +53,7 @@ export function buildNodeGenerationContext(nodeId: string, nodes: CanvasNodeData
         const role = imageReferenceRole(connectionByNodeId.get(input.nodeId)?.role);
         return [{ ...input.image, ...(role ? { role } : {}) }];
     });
-    const referenceVideos = videoReferences(resourceInputs, connectionByNodeId, referenceImages.length > 0);
+    const referenceVideos = videoReferences(resourceInputs, connectionByNodeId);
     const referenceAudios = resourceInputs.map((input) => input.audio).filter((audio): audio is ReferenceAudio => Boolean(audio));
 
     return {
@@ -106,7 +106,7 @@ function buildComposerGenerationContext(inputs: NodeGenerationInput[], prompt: s
         const role = imageReferenceRole(connectionByNodeId.get(input.nodeId)?.role);
         return [{ ...input.image, ...(role ? { role } : {}) }];
     });
-    const referenceVideos = videoReferences(selectedInputs, connectionByNodeId, referenceImages.length > 0);
+    const referenceVideos = videoReferences(selectedInputs, connectionByNodeId);
     const referenceAudios = selectedInputs.map((input) => input.audio).filter((audio): audio is ReferenceAudio => Boolean(audio));
 
     if (!hasToken) {
@@ -140,21 +140,33 @@ function generationConnectionByNodeId(nodeId: string, nodes: CanvasNodeData[], c
     return new Map(connections.filter((connection) => connection.toNodeId === targetId).map((connection) => [connection.fromNodeId, connection]));
 }
 
-export function hasVideoInputReference(nodeId: string, nodes: CanvasNodeData[], connections: CanvasConnection[]) {
-    const inputs = flattenGenerationInputs(buildNodeGenerationInputs(nodeId, nodes, connections));
-    const hasImageReference = inputs.some((input) => Boolean(input.image));
-    return [...generationConnectionByNodeId(nodeId, nodes, connections).values()].some((connection) => isVideoExtensionReference(connection, hasImageReference));
+export type VideoReferencePurpose = "motion" | "video_input" | "video_extension";
+
+export function hasVideoExtensionReference(nodeId: string, nodes: CanvasNodeData[], connections: CanvasConnection[]) {
+    return [...generationConnectionByNodeId(nodeId, nodes, connections).values()].some((connection) => isVideoExtensionReference(connection));
 }
 
-export function isVideoExtensionReference(connection: CanvasConnection | undefined, hasImageReference: boolean) {
-    if (connection?.role !== "video_input") return false;
-    return connection.metadata?.videoPurposeSelected === true || !hasImageReference;
+export function videoReferencePurpose(connection: CanvasConnection | undefined): VideoReferencePurpose {
+    const savedPurpose = connection?.metadata?.videoPurpose;
+    if (savedPurpose === "motion" || savedPurpose === "video_input" || savedPurpose === "video_extension") return savedPurpose;
+    if (connection?.role === "video_extension") return "video_extension";
+    if (connection?.role === "video_input") {
+        // Older canvases used video_input plus this marker for the former “视频延长” option.
+        return connection.metadata?.videoPurposeSelected === true ? "video_extension" : "video_input";
+    }
+    return "motion";
 }
 
-function videoReferences(inputs: NodeGenerationResourceInput[], connectionByNodeId: Map<string, CanvasConnection>, hasImageReference: boolean): ReferenceVideo[] {
+export function isVideoExtensionReference(connection: CanvasConnection | undefined) {
+    return videoReferencePurpose(connection) === "video_extension";
+}
+
+function videoReferences(inputs: NodeGenerationResourceInput[], connectionByNodeId: Map<string, CanvasConnection>): ReferenceVideo[] {
     return inputs.flatMap((input) => {
         if (!input.video) return [];
-        return [{ ...input.video, role: isVideoExtensionReference(connectionByNodeId.get(input.nodeId), hasImageReference) ? "video_input" : "motion_reference" }];
+        const purpose = videoReferencePurpose(connectionByNodeId.get(input.nodeId));
+        const role = purpose === "motion" ? "motion_reference" : purpose;
+        return [{ ...input.video, role }];
     });
 }
 

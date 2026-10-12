@@ -14,6 +14,10 @@ export function isSeedanceVideoModel(model?: ChannelModel) {
     return /seedance/i.test(`${model?.name || ""} ${model?.displayName || ""}`);
 }
 
+export function isSeedance25VideoModel(model?: ChannelModel) {
+    return /seedance[-_.\s]*2[-_.\s]*5/i.test(`${model?.name || ""} ${model?.displayName || ""}`);
+}
+
 export function supportedVideoModes(model?: ChannelModel): VideoGenerationMode[] {
     const modes = (model?.modes || []).filter((mode): mode is VideoGenerationMode => VIDEO_MODES.includes(mode as VideoGenerationMode));
     return modes.length ? modes : VIDEO_MODES;

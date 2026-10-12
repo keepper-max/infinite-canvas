@@ -339,7 +339,21 @@ export class ModelGateway {
         422,
       );
     const references = Array.isArray(input.references) ? input.references : [];
+    if (
+      references.some((reference) => reference.role === "video_extension") &&
+      input.mode !== "multiref"
+    )
+      throw new DomainError(
+        "INVALID_MODEL_PARAMETER",
+        "视频续写必须使用多模态参考模式",
+        422,
+      );
     const videoExtension = isSeedanceVideoExtension(
+      row.upstream_model,
+      input,
+      references,
+    );
+    const nativeVideoExtension = isSeedance25VideoExtension(
       row.upstream_model,
       input,
       references,
@@ -360,6 +374,8 @@ export class ModelGateway {
       ...effectiveParameters,
     };
     if (videoExtension) parameterSource.aspectRatio = "adaptive";
+    if (nativeVideoExtension)
+      parameterSource.omniReferenceTaskType = "extend";
     const byRole = new Map(
       references.map((reference) => [reference.role, reference]),
     );
@@ -403,6 +419,10 @@ export class ModelGateway {
     }
     return {
       ...input,
+      prompt:
+        nativeVideoExtension && !hasVideoExtensionIntent(input.prompt)
+          ? `向后延长输入视频。${input.prompt}`
+          : input.prompt,
       references,
       upstreamModel: row.upstream_model,
       providerId: row.provider_id,
@@ -423,6 +443,9 @@ export function runningHubModelProfile(
 ): CatalogCapabilityProfile | null {
   const capability = runningHubCapability(candidate);
   if (!capability) return null;
+  const supportsSeedance25Extension = /seedance[-_.\s]*2[-_.\s]*5/i.test(
+    [candidate.id, candidate.model, candidate.name].join(" "),
+  );
   if (candidate.category === "Volcengine Ark" && capability === "video")
     return {
       capability,
@@ -433,6 +456,7 @@ export function runningHubModelProfile(
         "aspectRatio",
         "generateAudio",
         "watermark",
+        ...(supportsSeedance25Extension ? ["omniReferenceTaskType"] : []),
         "firstFrame",
         "lastFrame",
         "references",
@@ -460,6 +484,7 @@ export function runningHubModelProfile(
       parameterMap: {
         aspectRatio: "ratio",
         generateAudio: "generate_audio",
+        omniReferenceTaskType: "omni_reference_task_type",
       },
     };
   const params = runningHubParameters(candidate.params);
@@ -814,8 +839,24 @@ function isSeedanceVideoExtension(
   return (
     input.capability === "video" &&
     /seedance/i.test(String(upstreamModel || "")) &&
-    references.some((reference) => reference.role === "video_input")
+    references.some((reference) => reference.role === "video_extension")
   );
+}
+
+function isSeedance25VideoExtension(
+  upstreamModel: unknown,
+  input: GenerationInput,
+  references: NonNullable<GenerationInput["references"]>,
+) {
+  return (
+    isSeedanceVideoExtension(upstreamModel, input, references) &&
+    input.mode === "multiref" &&
+    /seedance[-_.\s]*2[-_.\s]*5/i.test(String(upstreamModel || ""))
+  );
+}
+
+function hasVideoExtensionIntent(prompt: string) {
+  return /(?:向前|向后)?延长|延续|续写/.test(prompt);
 }
 
 function catalogItems(payload: unknown): Array<Record<string, unknown>> {
@@ -1378,6 +1419,11 @@ export function catalogModelProfile(
     const supportsReferences =
       accepts("input_references") &&
       (!referenceField || catalogReferenceSupport(referenceField));
+    const supportsSeedance25Extension =
+      supportsReferences &&
+      /seedance[-_.\s]*2[-_.\s]*5/i.test(
+        [candidate.id, candidate.model, candidate.name].join(" "),
+      );
     const parameters = publicParameterSchema(candidate);
     const modes: GenerationMode[] = ["t2v"];
     if (supportsFrames) modes.push("i2v");
@@ -1388,7 +1434,7 @@ export function catalogModelProfile(
       modes,
       acceptedParameters: [
         ...parameters.map((parameter) => parameter.key),
-        ...(accepts("omni_reference_task_type")
+        ...(accepts("omni_reference_task_type") || supportsSeedance25Extension
           ? ["omniReferenceTaskType"]
           : []),
         ...(supportsFrames ? ["firstFrame"] : []),
@@ -1749,6 +1795,7 @@ function validateModelLimits(
       item.mimeType?.startsWith("video/") ||
       item.mimeType?.startsWith("audio/") ||
       item.role === "video_input" ||
+      item.role === "video_extension" ||
       item.role === "motion_reference" ||
       item.role === "audio_reference",
   );

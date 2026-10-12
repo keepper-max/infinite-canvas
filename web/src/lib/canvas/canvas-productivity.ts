@@ -183,7 +183,7 @@ export function isConnectionRoleCompatible(connection: Pick<CanvasConnection, "r
     if (connection.role === "motion") return connection.resourceType === "image" || connection.resourceType === "video";
     if (connection.role === "first_frame" || connection.role === "last_frame" || connection.role === "identity" || connection.role === "environment" || connection.role === "composition" || connection.role === "mask")
         return connection.resourceType === "image";
-    if (connection.role === "video_input") return connection.resourceType === "video";
+    if (connection.role === "video_input" || connection.role === "video_extension") return connection.resourceType === "video";
     if (connection.role === "audio_input") return connection.resourceType === "audio";
     return true;
 }

@@ -7,7 +7,7 @@ const MANUAL_JOB_CANCEL_REASON = "manual-managed-job-cancel";
 export type ManagedCapability = "text" | "image" | "video" | "audio";
 export type ManagedMode = "chat" | "t2i" | "i2i" | "tts" | "t2v" | "i2v" | "flf2v" | "multiref";
 export type ManagedReference = {
-    role: "first_frame" | "last_frame" | "identity_reference" | "environment_reference" | "composition_reference" | "motion_reference" | "video_input" | "audio_reference";
+    role: "first_frame" | "last_frame" | "identity_reference" | "environment_reference" | "composition_reference" | "motion_reference" | "video_input" | "video_extension" | "audio_reference";
     dataUrl?: string;
     url?: string;
     assetVersionId?: string;

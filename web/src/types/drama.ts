@@ -29,7 +29,7 @@ export type DramaTimeline = {
 };
 
 export type DramaAssetBinding = {
-    role: "identity" | "environment" | "composition" | "motion" | "first_frame" | "last_frame" | "video_input" | "audio_input";
+    role: "identity" | "environment" | "composition" | "motion" | "first_frame" | "last_frame" | "video_input" | "video_extension" | "audio_input";
     nodeId: string;
     assetId?: string;
     assetVersionId?: string;

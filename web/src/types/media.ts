@@ -10,7 +10,7 @@ export type ReferenceVideo = {
     width?: number;
     height?: number;
     durationMs?: number;
-    role?: "motion_reference" | "video_input";
+    role?: "motion_reference" | "video_input" | "video_extension";
 };
 
 export type ReferenceAudio = {

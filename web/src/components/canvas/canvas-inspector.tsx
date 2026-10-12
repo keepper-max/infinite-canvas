@@ -15,6 +15,7 @@ const ROLE_OPTIONS: Array<{ value: NonNullable<CanvasConnection["role"]>; label:
     { value: "first_frame", label: "首帧" },
     { value: "last_frame", label: "尾帧" },
     { value: "video_input", label: "视频输入" },
+    { value: "video_extension", label: "视频续写" },
     { value: "audio_input", label: "音频输入" },
     { value: "mask", label: "蒙版" },
 ];

@@ -129,7 +129,7 @@ export type CanvasConnection = {
     sourcePortId?: string;
     targetPortId?: string;
     resourceType?: "text" | "prompt" | "image" | "video" | "audio" | "json" | "asset" | "timeline";
-    role?: "data" | "identity" | "environment" | "composition" | "motion" | "first_frame" | "last_frame" | "video_input" | "audio_input" | "mask";
+    role?: "data" | "identity" | "environment" | "composition" | "motion" | "first_frame" | "last_frame" | "video_input" | "video_extension" | "audio_input" | "mask";
     order?: number;
     metadata?: Record<string, unknown>;
 };

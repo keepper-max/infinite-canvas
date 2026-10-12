@@ -7,20 +7,19 @@ import { getNodeDefinition } from "@/lib/canvas/node-registry";
 import { getGroupResourceNodes } from "@/lib/canvas/canvas-resource-references";
 import { useThemeStore } from "@/stores/use-theme-store";
 import { CanvasNodeType, type CanvasConnection, type CanvasNodeData } from "@/types/canvas";
-import { isVideoExtensionReference } from "./canvas-node-generation";
+import { videoReferencePurpose, type VideoReferencePurpose } from "./canvas-node-generation";
 
-export function CanvasNodeReferenceBar({ nodeId, nodes, connectedNodes, connections = [], allowVideoPurpose = false, onDisconnect, onStartSelection, onVideoPurposeChange }: { nodeId: string; nodes: CanvasNodeData[]; connectedNodes: CanvasNodeData[]; connections?: CanvasConnection[]; allowVideoPurpose?: boolean; onDisconnect?: (fromNodeId: string, toNodeId: string) => void; onStartSelection?: (nodeId: string) => void; onVideoPurposeChange?: (fromNodeId: string, toNodeId: string, role: "motion" | "video_input") => void }) {
+export function CanvasNodeReferenceBar({ nodeId, nodes, connectedNodes, connections = [], allowVideoPurpose = false, onDisconnect, onStartSelection, onVideoPurposeChange }: { nodeId: string; nodes: CanvasNodeData[]; connectedNodes: CanvasNodeData[]; connections?: CanvasConnection[]; allowVideoPurpose?: boolean; onDisconnect?: (fromNodeId: string, toNodeId: string) => void; onStartSelection?: (nodeId: string) => void; onVideoPurposeChange?: (fromNodeId: string, toNodeId: string, role: VideoReferencePurpose) => void }) {
     const { t } = useTranslation();
     const theme = canvasThemes[useThemeStore((state) => state.theme)];
     const references = connectedNodes.flatMap((sourceNode) => (sourceNode.type === CanvasNodeType.Group ? getGroupResourceNodes(sourceNode.id, nodes) : [sourceNode]).map((node) => ({ node, sourceNodeId: sourceNode.id })));
-    const hasImageReference = references.some(({ node }) => referenceKind(node) === "image");
     return (
         <div className="mb-2">
             <div className="mb-1.5 text-[11px] font-medium" style={{ color: theme.node.muted }}>{t("canvas.references.title")}</div>
             <div className="thin-scrollbar flex min-h-12 items-start gap-2 overflow-x-auto pb-1">
                 {references.map(({ node, sourceNodeId }) => {
                     const connection = connections.find((item) => item.fromNodeId === sourceNodeId && item.toNodeId === nodeId);
-                    return <ReferenceItem key={`${sourceNodeId}:${node.id}`} node={node} videoPurpose={allowVideoPurpose && sourceNodeId === node.id && referenceKind(node) === "video" ? (isVideoExtensionReference(connection, hasImageReference) ? "video_input" : "motion") : undefined} onVideoPurposeChange={(role) => onVideoPurposeChange?.(sourceNodeId, nodeId, role)} onRemove={() => onDisconnect?.(sourceNodeId, nodeId)} />;
+                    return <ReferenceItem key={`${sourceNodeId}:${node.id}`} node={node} videoPurpose={allowVideoPurpose && sourceNodeId === node.id && referenceKind(node) === "video" ? videoReferencePurpose(connection) : undefined} onVideoPurposeChange={(role) => onVideoPurposeChange?.(sourceNodeId, nodeId, role)} onRemove={() => onDisconnect?.(sourceNodeId, nodeId)} />;
                 })}
                 <button type="button" className="grid size-12 shrink-0 place-items-center rounded-xl border bg-transparent transition hover:opacity-70" style={{ borderColor: theme.toolbar.border, color: theme.node.muted }} title={t("canvas.references.select")} onClick={() => onStartSelection?.(nodeId)}>
                     <Plus className="size-4" />
@@ -30,7 +29,7 @@ export function CanvasNodeReferenceBar({ nodeId, nodes, connectedNodes, connecti
     );
 }
 
-function ReferenceItem({ node, videoPurpose, onVideoPurposeChange, onRemove }: { node: CanvasNodeData; videoPurpose?: "motion" | "video_input"; onVideoPurposeChange: (role: "motion" | "video_input") => void; onRemove: () => void }) {
+function ReferenceItem({ node, videoPurpose, onVideoPurposeChange, onRemove }: { node: CanvasNodeData; videoPurpose?: VideoReferencePurpose; onVideoPurposeChange: (role: VideoReferencePurpose) => void; onRemove: () => void }) {
     const { t } = useTranslation();
     const theme = canvasThemes[useThemeStore((state) => state.theme)];
     const resource = getNodeDefinition(node.type)?.resource?.(node);
@@ -53,7 +52,7 @@ function ReferenceItem({ node, videoPurpose, onVideoPurposeChange, onRemove }: {
                     variant="borderless"
                     value={videoPurpose}
                     className="mt-0.5 w-full text-[11px]"
-                    options={[{ value: "motion", label: t("canvas.references.motionReference") }, { value: "video_input", label: t("canvas.references.videoExtension") }]}
+                    options={[{ value: "motion", label: t("canvas.references.motionReference") }, { value: "video_input", label: t("canvas.references.videoInput") }, { value: "video_extension", label: t("canvas.references.videoExtension") }]}
                     onMouseDown={(event) => event.stopPropagation()}
                     onChange={onVideoPurposeChange}
                 />

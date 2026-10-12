@@ -5,6 +5,8 @@ description: Implemented changes that still need manual verification
 
 # Pending Tests
 
+- Seedance 2.5 原生视频续写：把一段普通视频连接到 Seedance 2.5 视频节点，主动选择“视频续写”后提交；请求应自动使用多模态模式、`omni_reference_task_type=extend` 和自适应比例，未写“延长/延续/续写”关键词时应补充默认向后延长意图。保留用户指定的时长，原视频和输出视频应连续衔接。切回“动作参考”后不得携带 `extend` 参数，比例继续使用用户选择；其他 Seedance 版本和非 Seedance 模型不得套用 2.5 续写参数。
+
 - 邮箱验证码邮件：分别触发注册、登录和密码重置邮件，在 QQ 邮箱、主流桌面客户端及手机邮箱中确认品牌抬头、验证码卡片、有效期和安全提醒布局完整；关闭外部图片后内容仍应完整可读，纯文本客户端应显示验证码、有效期与非本人操作提醒。
 
 - 账号前端邮箱单通道：登录页和注册页不再显示手机号入口或短信验证码文案；邮箱密码登录、邮箱验证码登录、邮箱验证码注册并设置密码、忘记密码均应正常工作。已有手机号接口、短信配置和后台数据保持不变，直接请求现有服务端接口的兼容行为不受影响。
@@ -31,7 +33,7 @@ description: Implemented changes that still need manual verification
 
 - 超大参考图自动降采样：在 Token360 与海马云的图片、视频多参考模型中分别加入超过 3600 万像素的 JPEG、PNG 和 WebP；提交时应保持原比例自动缩小到上限以内并成功进入模型队列，原始资产的尺寸、下载内容和画布预览不得改变。低于上限的图片、透明图片、角色库引用以及视频和音频参考保持原行为；无法解码的素材仍应返回明确的上游错误而不是损坏原文件。
 
-- 画布视频参考用途：把普通视频或深度视频连接到 Seedance 视频节点时，默认应显示“动作参考”，同时连接图片后仍可选择输出比例，请求应按 `motion_reference` 提交；主动切换为“视频延长”后才应显示比例跟随输入视频并按 `video_input` 提交。刷新已保存画布后选择保持不变，真正的视频延长流程不得受影响。
+- 画布视频参考用途：把普通视频或深度视频连接到 Seedance 视频节点时，默认应显示“动作参考”，并可独立切换为“视频输入”或“视频续写”。三种用途应分别按 `motion_reference`、`video_input`、`video_extension` 提交；只有“视频续写”显示比例跟随输入视频。刷新已保存画布后选择保持不变，旧画布中曾明确选择“视频延长”的连接应继续识别为续写。
 
 - 画布视频节点移动与播放：打开包含已生成视频的画布，视频节点默认应能从画面任意位置拖动；选择节点后，工具栏应提供“交互”入口，切换后播放、暂停、音量、进度和全屏控件均可操作且不会拖动节点；点击“移动”切回后应恢复整块画面拖动。已有视频节点、刷新后恢复的节点及新生成节点均应一致，图片、文本等其他节点行为不得变化。
 
@@ -163,7 +165,7 @@ description: Implemented changes that still need manual verification
 
 - 管理后台：概览应正常显示用户、项目、素材、任务、近 30 天趋势和消耗汇总；任务与消耗列表中的长任务、Trace、资源及账单 ID 应以短格式展示，悬停可查看且点击可复制完整值；`completed` 且没有真实错误的任务不应在失败原因列显示“任务失败”。
 
-- Seedance video extension ratio: connect a source video to a Seedance 2.0 or 2.5 video node using the `video_input` role. The canvas settings summary and ratio panel should show Adaptive and explain that the output follows the input video; submitting with an old fixed ratio such as `9:16` must send `adaptive` upstream and complete without the provider ratio rejection. A `motion_reference` video must retain the user's selected ratio, and non-Seedance models must remain unchanged.
+- Seedance 2.5 video extension ratio: connect a source video to a Seedance 2.5 node and choose “视频续写”, which must submit the `video_extension` role, show Adaptive, and send `omni_reference_task_type=extend`. Choosing “视频输入” must submit `video_input` without forcing Adaptive or `extend`; a `motion_reference` video must also retain the user's selected ratio. Other Seedance versions and non-Seedance models must remain unchanged.
 
 - Admin and Token360 reconciliation: verify that only administrators can access `/admin`; disabling an account revokes its sessions and blocks new requests without cancelling jobs already submitted. Run text, image, audio, and video jobs and confirm the local job UUID is the initial Token360 Trace, video polling never overwrites it, actual usage and currency-separated string amounts are reconciled, and a manual retry creates a new linked job. Exercise delayed 404 billing responses, duplicate reconciliation, Trace mismatches, the 24-hour cutoff for successful jobs, indefinite manual review for failed jobs with provider IDs, read-only project inspection, asset downloads, and immutable audit logs.
 

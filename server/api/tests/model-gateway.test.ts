@@ -189,6 +189,20 @@ test("video catalog profiles preserve model-specific options and request mapping
   assert.equal(profile?.parameterMap.outputFormat, "output_format");
 });
 
+test("Seedance 2.5 catalog profiles retain native extension support when the provider catalog omits the task-type field", () => {
+  const profile = catalogModelProfile({
+    model: "seedance-2.5",
+    modelType: "VIDEO_GENERATION",
+    modelInputTypes: ["text", "video"],
+    supported_parameters: ["input_references"],
+  });
+  assert.ok(profile?.acceptedParameters.includes("omniReferenceTaskType"));
+  assert.equal(
+    profile?.parameterMap.omniReferenceTaskType,
+    "omni_reference_task_type",
+  );
+});
+
 test("video modes follow frame and multimodal reference limits", () => {
   const singleFrame = catalogModelProfile({
     modelType: "VIDEO_GENERATION",
@@ -350,13 +364,37 @@ test("Seedance video extension forces adaptive ratio without changing motion ref
     parameters: { aspectRatio: "9:16" },
     references: [
       {
-        role: "video_input",
+        role: "video_extension",
         url: "https://example.com/source.mp4",
         mimeType: "video/mp4",
       },
     ],
   });
   assert.equal(extension.upstreamParameters.ratio, "adaptive");
+  assert.equal(
+    extension.upstreamParameters.omni_reference_task_type,
+    "extend",
+  );
+  assert.equal(extension.prompt, "延续上一镜头");
+
+  const extensionWithoutKeyword = await gateway().compile({
+    modelId: definition.id,
+    capability: "video",
+    mode: "multiref",
+    prompt: "人物继续向前走",
+    parameters: { aspectRatio: "9:16" },
+    references: [
+      {
+        role: "video_extension",
+        url: "https://example.com/source.mp4",
+        mimeType: "video/mp4",
+      },
+    ],
+  });
+  assert.equal(
+    extensionWithoutKeyword.prompt,
+    "向后延长输入视频。人物继续向前走",
+  );
 
   const motionReference = await gateway().compile({
     modelId: definition.id,
@@ -373,6 +411,51 @@ test("Seedance video extension forces adaptive ratio without changing motion ref
     ],
   });
   assert.equal(motionReference.upstreamParameters.ratio, "16:9");
+  assert.equal(
+    motionReference.upstreamParameters.omni_reference_task_type,
+    undefined,
+  );
+
+  const genericVideoInput = await gateway().compile({
+    modelId: definition.id,
+    capability: "video",
+    mode: "multiref",
+    prompt: "参考输入视频的场景与节奏",
+    parameters: { aspectRatio: "16:9" },
+    references: [
+      {
+        role: "video_input",
+        url: "https://example.com/reference.mp4",
+        mimeType: "video/mp4",
+      },
+    ],
+  });
+  assert.equal(genericVideoInput.upstreamParameters.ratio, "16:9");
+  assert.equal(
+    genericVideoInput.upstreamParameters.omni_reference_task_type,
+    undefined,
+  );
+  assert.equal(genericVideoInput.prompt, "参考输入视频的场景与节奏");
+
+  await assert.rejects(
+    gateway().compile({
+      modelId: definition.id,
+      capability: "video",
+      mode: "t2v",
+      prompt: "继续向前走",
+      references: [
+        {
+          role: "video_extension",
+          url: "https://example.com/source.mp4",
+          mimeType: "video/mp4",
+        },
+      ],
+    }),
+    (error: unknown) =>
+      error instanceof DomainError &&
+      error.code === "INVALID_MODEL_PARAMETER" &&
+      error.message === "视频续写必须使用多模态参考模式",
+  );
 });
 
 test("FLF2V binds first and last frame by role instead of upload order", async () => {
