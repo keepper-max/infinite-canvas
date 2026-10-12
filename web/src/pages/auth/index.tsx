@@ -1,10 +1,10 @@
 import { App, Button, Form, Input, Segmented } from "antd";
-import { ArrowRight, BadgeCheck, KeyRound, LockKeyhole, Mail, Smartphone } from "lucide-react";
+import { ArrowRight, BadgeCheck, KeyRound, LockKeyhole, Mail } from "lucide-react";
 import { useEffect, useState } from "react";
 import { Link, Navigate, useNavigate } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 
-import { confirmPasswordReset, getAuthConfig, loginWithCode, loginWithPassword, PlatformApiError, registerWithCode, requestPasswordReset, requestVerificationCode, validateInviteCode, type VerificationChannel } from "@/services/api/platform";
+import { confirmPasswordReset, getAuthConfig, loginWithCode, loginWithPassword, PlatformApiError, registerWithCode, requestPasswordReset, requestVerificationCode, validateInviteCode } from "@/services/api/platform";
 import { useCanvasStore } from "@/stores/canvas/use-canvas-store";
 
 type AuthMode = "login" | "register" | "forgot-password";
@@ -21,7 +21,7 @@ export default function AuthPage({ mode }: { mode: AuthMode }) {
     const [inviteValidating, setInviteValidating] = useState(false);
     const [inviteValid, setInviteValid] = useState(false);
     const [authenticatedProjectId, setAuthenticatedProjectId] = useState<string | null>(null);
-    const [channel, setChannel] = useState<VerificationChannel>(mode === "login" ? "email" : "phone");
+    const channel = "email" as const;
     const [loginMethod, setLoginMethod] = useState<"password" | "code">("password");
     const hydrated = useCanvasStore((state) => state.hydrated);
     const [form] = Form.useForm();
@@ -35,7 +35,6 @@ export default function AuthPage({ mode }: { mode: AuthMode }) {
     useEffect(() => {
         setCountdown(0);
         form.resetFields();
-        setChannel(mode === "login" ? "email" : "phone");
         setLoginMethod("password");
         if (mode === "forgot-password") {
             setVerificationRequired(true);
@@ -46,8 +45,7 @@ export default function AuthPage({ mode }: { mode: AuthMode }) {
         void getAuthConfig()
             .then((result) => {
                 if (active) {
-                    setVerificationRequired(result.emailCodeEnabled || result.smsCodeEnabled);
-                    if (!result.smsCodeEnabled && result.emailCodeEnabled) setChannel("email");
+                    setVerificationRequired(result.emailCodeEnabled);
                     setInviteMode(result.inviteMode);
                 }
             })
@@ -135,22 +133,6 @@ export default function AuthPage({ mode }: { mode: AuthMode }) {
                 <p className="mt-3 text-sm leading-6 text-stone-400">{t(mode === "forgot-password" ? "auth.forgotPasswordHint" : "auth.directEntry")}</p>
 
                 <Form form={form} layout="vertical" requiredMark={false} className="mt-8" onFinish={(values) => void submit(values)}>
-                    {mode !== "forgot-password" ? (
-                        <Segmented
-                            block
-                            className="mb-6"
-                            value={channel}
-                            onChange={(value) => {
-                                setChannel(value as VerificationChannel);
-                                setCountdown(0);
-                                form.setFieldsValue({ account: "", verificationCode: "" });
-                            }}
-                            options={[
-                                { label: mode === "register" ? "手机号注册" : "手机号登录", value: "phone" },
-                                { label: mode === "register" ? "邮箱注册" : "邮箱登录", value: "email" },
-                            ]}
-                        />
-                    ) : null}
                     {mode === "login" ? (
                         <Segmented
                             block
@@ -171,22 +153,21 @@ export default function AuthPage({ mode }: { mode: AuthMode }) {
                     ) : (
                         <Form.Item
                             name="account"
-                            label={<span className="text-stone-300">{channel === "phone" ? "手机号" : t("auth.email")}</span>}
-                            rules={channel === "phone" ? [{ required: true, pattern: /^(?:\+?86)?1[3-9]\d{9}$/, message: "请输入有效的中国大陆手机号" }] : [{ required: true, type: "email", message: t("auth.emailInvalid") }]}
+                            label={<span className="text-stone-300">{t("auth.email")}</span>}
+                            rules={[{ required: true, type: "email", message: t("auth.emailInvalid") }]}
                         >
                             <Input
                                 size="large"
-                                prefix={channel === "phone" ? <Smartphone className="size-4 text-stone-500" /> : <Mail className="size-4 text-stone-500" />}
-                                addonBefore={channel === "phone" ? "+86" : undefined}
-                                placeholder={channel === "phone" ? "请输入手机号" : "you@example.com"}
-                                autoComplete={channel === "phone" ? "tel" : "email"}
+                                prefix={<Mail className="size-4 text-stone-500" />}
+                                placeholder="you@example.com"
+                                autoComplete="email"
                             />
                         </Form.Item>
                     )}
                     {(mode === "forgot-password" || mode === "register" || loginMethod === "code") && (mode !== "register" || verificationRequired) && (
                         <Form.Item
                             name="verificationCode"
-                            label={<span className="text-stone-300">{mode !== "forgot-password" && channel === "phone" ? "短信验证码" : t("auth.verificationCode")}</span>}
+                            label={<span className="text-stone-300">{t("auth.verificationCode")}</span>}
                             rules={[{ required: true, pattern: /^\d{6}$/, message: t("auth.codeInvalid") }]}
                         >
                             <Input
@@ -262,7 +243,7 @@ export default function AuthPage({ mode }: { mode: AuthMode }) {
                             </Form.Item>
                         </>
                     ) : null}
-                    {mode === "login" && loginMethod === "password" && channel === "email" ? (
+                    {mode === "login" && loginMethod === "password" ? (
                         <div className="-mt-3 mb-3 text-right text-sm">
                             <Link className="text-stone-300 underline underline-offset-4" to="/forgot-password">{t("auth.forgotPassword")}</Link>
                         </div>
