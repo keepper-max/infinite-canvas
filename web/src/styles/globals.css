@@ -241,6 +241,25 @@
         border-radius: 999px;
     }
 
+    .canvas-connection-role-popup {
+        --rc-virtual-list-scrollbar-bg: rgba(87, 83, 78, 0.82);
+    }
+
+    .canvas-connection-role-popup .rc-virtual-list-scrollbar-vertical {
+        right: 2px !important;
+        width: 10px !important;
+        border-radius: 999px;
+        background: rgba(120, 113, 108, 0.2);
+    }
+
+    .dark .canvas-connection-role-popup {
+        --rc-virtual-list-scrollbar-bg: rgba(245, 245, 244, 0.78);
+    }
+
+    .dark .canvas-connection-role-popup .rc-virtual-list-scrollbar-vertical {
+        background: rgba(255, 255, 255, 0.16);
+    }
+
     .hover-scrollbar {
         scrollbar-color: transparent transparent;
         scrollbar-width: thin;

@@ -3,6 +3,7 @@ import { Cable, ExternalLink, Lock, LockOpen, Trash2, Unplug } from "lucide-reac
 import type { ReactNode } from "react";
 
 import { canvasThemes } from "@/lib/canvas-theme";
+import { isConnectionRoleCompatible } from "@/lib/canvas/canvas-productivity";
 import { useThemeStore } from "@/stores/use-theme-store";
 import type { CanvasConnection, CanvasNodeData, CanvasNodeMetadata } from "@/types/canvas";
 
@@ -11,7 +12,7 @@ const ROLE_OPTIONS: Array<{ value: NonNullable<CanvasConnection["role"]>; label:
     { value: "identity", label: "角色身份" },
     { value: "environment", label: "环境" },
     { value: "composition", label: "构图" },
-    { value: "motion", label: "动作" },
+    { value: "motion", label: "动作参考" },
     { value: "first_frame", label: "首帧" },
     { value: "last_frame", label: "尾帧" },
     { value: "video_input", label: "视频输入" },
@@ -50,6 +51,7 @@ export function CanvasInspector({
     const theme = canvasThemes[useThemeStore((state) => state.theme)];
     if (!node && !connection) return null;
     const panelStyle = { background: theme.toolbar.panel, borderColor: theme.toolbar.border, color: theme.node.text };
+    const connectionRoleOptions = connection ? ROLE_OPTIONS.filter((option) => isConnectionRoleCompatible({ resourceType: connection.resourceType, role: option.value })) : [];
 
     return (
         <aside className="pointer-events-auto absolute bottom-24 right-4 top-20 z-[75] w-[300px] overflow-y-auto rounded-2xl border p-4 shadow-2xl backdrop-blur-xl" style={panelStyle} onMouseDown={(event) => event.stopPropagation()}>
@@ -107,7 +109,7 @@ export function CanvasInspector({
                     </div>
                     <Info label="资源类型" value={connection.resourceType || "自动识别"} />
                     <InspectorField label="引用角色">
-                        <Select className="w-full" value={connection.role || "data"} options={ROLE_OPTIONS} onChange={(role) => onUpdateConnectionRole(connection.id, role)} />
+                        <Select className="w-full" classNames={{ popup: { root: "canvas-connection-role-popup" } }} value={connection.role || "data"} options={connectionRoleOptions} onChange={(role) => onUpdateConnectionRole(connection.id, role)} />
                     </InspectorField>
                     <div className="grid grid-cols-2 gap-2">
                         <Button icon={<Unplug className="size-4" />} onClick={() => onReconnect(connection.id)}>
