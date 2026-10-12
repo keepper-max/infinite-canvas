@@ -24,6 +24,7 @@ import type {
   EmailVerificationServicePort,
   VerifiedEmailCode,
 } from "../src/email-verification-service.js";
+import { renderVerificationEmail } from "../src/email-verification-service.js";
 import type { SmsVerificationPurpose, SmsVerificationServicePort, VerifiedSmsCode } from "../src/sms-verification-service.js";
 
 const config: ApiConfig = {
@@ -83,6 +84,15 @@ function dualChannelConfig(): ApiConfig {
     },
   };
 }
+
+test("email verification template renders branded security content", () => {
+  const html = renderVerificationEmail({ action: "登录", code: "582848", minutes: 5 });
+  assert.match(html, /SHOUSHOU CANVAS/);
+  assert.match(html, /请验证是你本人/);
+  assert.match(html, /582848/);
+  assert.match(html, /5 分钟内有效/);
+  assert.match(html, /工作人员不会向你索要验证码/);
+});
 
 test("register creates one workspace and subsequent login reuses it", async () => {
   const repository = new MemoryRepository();
