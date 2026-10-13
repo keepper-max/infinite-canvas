@@ -829,10 +829,18 @@ function VideoNodeContent({ node, theme, isActive }: NodeContentRendererProps) {
             className="h-full w-full rounded-[18px] bg-black object-contain"
             data-canvas-video={node.id}
             data-canvas-no-zoom
-            onMouseDown={(event) => event.stopPropagation()}
-            onPointerDown={(event) => event.stopPropagation()}
+            onMouseDown={handleVideoPointerDown}
+            onPointerDown={handleVideoPointerDown}
         />
     );
+}
+
+function handleVideoPointerDown(event: React.MouseEvent<HTMLVideoElement> | React.PointerEvent<HTMLVideoElement>) {
+    const video = event.currentTarget;
+    const bounds = video.getBoundingClientRect();
+    // Keep native controls usable while paused; the remaining picture can drag the node.
+    const controlsHeight = video.clientHeight ? 48 * bounds.height / video.clientHeight : bounds.height;
+    if (!video.paused || video.matches(":fullscreen") || event.clientY >= bounds.bottom - controlsHeight) event.stopPropagation();
 }
 
 function AudioNodeContent({ node, theme }: NodeContentRendererProps) {
