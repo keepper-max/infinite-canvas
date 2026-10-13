@@ -17,6 +17,7 @@ import {
 } from "./provider.js";
 import { ProviderRouter } from "./provider-router.js";
 import { createVideoThumbnail } from "./video-thumbnail.js";
+import { fetchRemoteMedia } from "./remote-media.js";
 import type { StorageQuotaService } from "./storage-quota-service.js";
 
 export type JobQueuePort = {
@@ -1293,7 +1294,7 @@ export async function downloadBytes(
       const response =
         useAlternate && alternateFetch
           ? await alternateFetch(range, requestSignal)
-          : await fetch(currentUrl, {
+          : await fetchRemoteMedia(currentUrl, {
               signal: requestSignal,
               headers: { Range: range },
             });

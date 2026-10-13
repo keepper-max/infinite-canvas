@@ -112,7 +112,7 @@ export class S3ObjectStorage implements ObjectStorage {
   async createDownloadUrl(storageKey: string, fileName?: string) {
     const disposition = fileName
       ? `attachment; filename*=UTF-8''${encodeURIComponent(fileName)}`
-      : undefined;
+      : "attachment";
     return getSignedUrl(
       this.publicClient,
       new GetObjectCommand({

@@ -2,6 +2,8 @@ import type { RunningHubConfig } from "./config.js";
 import type { CompiledGenerationRequest } from "./model-gateway.js";
 import type { ObjectStorage } from "./object-storage.js";
 import { constrainReferenceImage } from "./reference-image.js";
+import { fetchRemoteMedia } from "./remote-media.js";
+import { DomainError } from "./domain.js";
 import {
   ProviderError,
   isReferenceDownloadTimeout,
@@ -279,7 +281,7 @@ export class RunningHubProvider
           type: referenceMimeType(reference) || "application/octet-stream",
         });
       } else {
-        const response = await fetch(source!, { signal });
+        const response = await fetchRemoteMedia(source!, { signal });
         if (!response.ok)
           throw new ProviderError(
             "PROVIDER_UPLOAD_FAILED",
@@ -291,6 +293,9 @@ export class RunningHubProvider
       }
     } catch (error) {
       if (error instanceof ProviderError) throw error;
+      const cause = error instanceof Error && error.cause ? error.cause : error;
+      if (cause instanceof DomainError && cause.code === "UNSAFE_MEDIA_URL")
+        throw new ProviderError("UNSAFE_MEDIA_URL", cause.message, false);
       throw new ProviderError(
         "PROVIDER_UPLOAD_FAILED",
         "读取参考素材失败",

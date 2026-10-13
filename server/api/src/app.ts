@@ -1,8 +1,11 @@
 import { randomUUID } from "node:crypto";
+import { MEDIA_SANDBOX_CSP } from "./media-security.js";
+import { authAttemptInput, forwardedClientIp, type AuthRateLimiterPort } from "./auth-rate-limit.js";
 import { isIP } from "node:net";
 
 import { deleteCookie, getCookie, setCookie } from "hono/cookie";
 import { Hono, type Context } from "hono";
+import { getConnInfo } from "@hono/node-server/conninfo";
 import { streamSSE } from "hono/streaming";
 import { z } from "zod";
 
@@ -76,6 +79,7 @@ import type { SmsVerificationServicePort } from "./sms-verification-service.js";
 
 type Variables = { requestId: string };
 type AppEnv = { Variables: Variables };
+const trustedClientIps = new WeakMap<Request, string>();
 
 export function createApp(
   repository: PlatformRepository,
@@ -90,10 +94,14 @@ export function createApp(
   emailVerificationService?: EmailVerificationServicePort,
   channelAttributionService?: ChannelAttributionService,
   smsVerificationService?: SmsVerificationServicePort,
+  authRateLimiter?: AuthRateLimiterPort,
 ) {
   const app = new Hono<AppEnv>();
 
   app.use("*", async (context, next) => {
+    let peerAddress: string | undefined;
+    try { peerAddress = getConnInfo(context).remote.address; } catch { /* In-memory request tests have no socket. */ }
+    trustedClientIps.set(context.req.raw, forwardedClientIp(context.req.raw, peerAddress));
     const requestId =
       context.req.header("x-request-id")?.slice(0, 128) || randomUUID();
     context.set("requestId", requestId);
@@ -129,6 +137,21 @@ export function createApp(
       );
     }
     await next();
+  });
+
+  app.use("/api/auth/*", async (context, next) => {
+    if (!authRateLimiter || context.req.method !== "POST") return next();
+    const body: unknown = await context.req.raw.clone().json().catch(() => null);
+    if (!body || typeof body !== "object" || Array.isArray(body)) return next();
+    const input = authAttemptInput(context.req.path, body as Record<string, unknown>);
+    if (!input) return next();
+    const attempt = await authRateLimiter.reserve(input.kind, input.account, clientIp(context.req.raw));
+    await next();
+    const status = context.res.status;
+    const credentialFailure = ["INVALID_CREDENTIALS", "INVALID_VERIFICATION_CODE"].includes(
+      context.error instanceof DomainError ? context.error.code : "",
+    );
+    await authRateLimiter.finish(attempt, input.kind === "send" ? status < 400 : credentialFailure);
   });
 
   app.get("/api/health/live", (context) =>
@@ -2206,6 +2229,7 @@ export function createApp(
       context.header("cache-control", "private, no-cache");
       context.header("accept-ranges", download.acceptRanges || "bytes");
       context.header("content-type", download.mimeType);
+      context.header("content-security-policy", MEDIA_SANDBOX_CSP);
       context.header("content-length", String(download.bytes));
       if (download.contentRange)
         context.header("content-range", download.contentRange);
@@ -2680,12 +2704,7 @@ function readCookie(cookieHeader: string, name: string) {
 }
 
 function clientIp(request: Request) {
-  return (
-    request.headers.get("cf-connecting-ip") ||
-    request.headers.get("x-real-ip") ||
-    request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ||
-    "unknown"
-  );
+  return trustedClientIps.get(request) || "unknown";
 }
 
 function clientIpOrNull(request: Request) {
@@ -2719,6 +2738,9 @@ function success<T>(context: Context<AppEnv>, data: T) {
 }
 
 function apiError(context: Context<AppEnv>, error: DomainError) {
+  const retryAfter = error.details?.retryAfterSeconds;
+  if (error.status === 429 && typeof retryAfter === "number" && Number.isFinite(retryAfter))
+    context.header("retry-after", String(Math.max(1, Math.ceil(retryAfter))));
   return context.json(
     {
       error: {
