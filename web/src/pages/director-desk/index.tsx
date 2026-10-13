@@ -183,14 +183,14 @@ export default function DirectorDeskPage() {
             if (!directorOrigin || event.origin !== directorOrigin || event.source !== iframeRef.current?.contentWindow) return;
             const messageData = event.data;
             if (messageData?.type === "storyai:director-desk-ready") {
-                iframeRef.current?.contentWindow?.postMessage(
-                    {
-                        type: "storyai:director-desk-session",
-                        payload: { instanceId: `canvas_${projectId}`, theme },
-                    },
-                    directorOrigin,
-                );
                 if (!readyRequestRef.current) {
+                    iframeRef.current?.contentWindow?.postMessage(
+                        {
+                            type: "storyai:director-desk-session",
+                            payload: { instanceId: `canvas_${projectId}`, theme },
+                        },
+                        directorOrigin,
+                    );
                     readyRequestRef.current = request("capabilities.get")
                         .then((value) => {
                             const capabilities = value as Partial<DirectorCapabilities>;
