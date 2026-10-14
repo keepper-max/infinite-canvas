@@ -1,15 +1,51 @@
-import { useEffect, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useState, type ReactNode } from "react";
 import { Navigate, useLocation } from "react-router-dom";
 
 import { AuthProvider } from "@/components/auth/auth-context";
 import { clearCloudAssetDownloadUrlCache } from "@/services/api/assets";
-import { getCurrentSession, listProjects, logout as logoutRequest, PlatformApiError, type AuthSession } from "@/services/api/platform";
+import { getCurrentSession, listProjects, logout as logoutRequest, PlatformApiError, PLATFORM_SESSION_EXPIRED_EVENT, type AuthSession } from "@/services/api/platform";
 
 export function AuthGate({ children }: { children: ReactNode }) {
     const location = useLocation();
     const [session, setSession] = useState<AuthSession | null>(null);
     const [state, setState] = useState<"loading" | "ready" | "signed-out" | "error">("loading");
     const [shellReady, setShellReady] = useState(false);
+
+    const invalidateSession = useCallback(() => {
+        clearCloudAssetDownloadUrlCache();
+        setSession(null);
+        setShellReady(false);
+        setState("signed-out");
+    }, []);
+
+    useEffect(() => {
+        window.addEventListener(PLATFORM_SESSION_EXPIRED_EVENT, invalidateSession);
+        return () => window.removeEventListener(PLATFORM_SESSION_EXPIRED_EVENT, invalidateSession);
+    }, [invalidateSession]);
+
+    useEffect(() => {
+        if (!session) return;
+        const controller = new AbortController();
+        let checking = false;
+        const checkSession = async () => {
+            if (document.visibilityState !== "visible" || checking) return;
+            checking = true;
+            try {
+                await getCurrentSession(controller.signal);
+            } catch (error) {
+                if (!controller.signal.aborted && error instanceof PlatformApiError && error.status === 401) invalidateSession();
+            } finally {
+                checking = false;
+            }
+        };
+        window.addEventListener("focus", checkSession);
+        document.addEventListener("visibilitychange", checkSession);
+        return () => {
+            controller.abort();
+            window.removeEventListener("focus", checkSession);
+            document.removeEventListener("visibilitychange", checkSession);
+        };
+    }, [session, invalidateSession]);
 
     useEffect(() => {
         const controller = new AbortController();
@@ -106,12 +142,9 @@ export function AuthGate({ children }: { children: ReactNode }) {
 
     const logout = async () => {
         await logoutRequest();
-        clearCloudAssetDownloadUrlCache();
-        setSession(null);
-        setShellReady(false);
-        setState("signed-out");
+        invalidateSession();
     };
-    return <AuthProvider value={{ ...session, logout }}>{children}</AuthProvider>;
+    return <AuthProvider value={{ ...session, logout, invalidateSession }}>{children}</AuthProvider>;
 }
 
 function FullScreenStatus({ text }: { text: string }) {

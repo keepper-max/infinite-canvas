@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, gt, inArray, isNull, ne, sql } from "drizzle-orm";
+import { and, asc, desc, eq, gt, inArray, isNull, sql } from "drizzle-orm";
 import type {
   NodePgDatabase,
   NodePgTransaction,
@@ -284,7 +284,6 @@ export class PostgresPlatformRepository implements PlatformRepository {
   async updatePasswordAndRevokeSessions(
     userId: string,
     passwordHash: string,
-    keepTokenHash?: string,
   ) {
     await this.db.transaction(async (tx) => {
       await tx
@@ -293,14 +292,7 @@ export class PostgresPlatformRepository implements PlatformRepository {
         .where(eq(tables.users.id, userId));
       await tx
         .delete(tables.sessions)
-        .where(
-          keepTokenHash
-            ? and(
-                eq(tables.sessions.userId, userId),
-                ne(tables.sessions.tokenHash, keepTokenHash),
-              )
-            : eq(tables.sessions.userId, userId),
-        );
+        .where(eq(tables.sessions.userId, userId));
     });
   }
 

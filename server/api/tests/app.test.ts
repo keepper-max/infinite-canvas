@@ -307,7 +307,7 @@ test("password reset request does not reveal or email an unknown account", async
   assert.equal(verification.requestedEmail, "");
 });
 
-test("password change keeps the current session and revokes other sessions", async () => {
+test("password change revokes current and other sessions without affecting another account", async () => {
   const repository = new MemoryRepository();
   const app = createApp(repository, config);
   const registered = await jsonRequest(app, "/api/auth/register", {
@@ -320,6 +320,22 @@ test("password change keeps the current session and revokes other sessions", asy
     password: "password-123",
   });
   const otherCookie = cookieFrom(otherLogin.response);
+  const unrelated = await jsonRequest(app, "/api/auth/register", {
+    email: "unrelated@example.com",
+    password: "password-123",
+  });
+  const unrelatedCookie = cookieFrom(unrelated.response);
+
+  for (const input of [
+    { currentPassword: "wrong-password", newPassword: "new-password-456" },
+    { currentPassword: "password-123", newPassword: "password-123" },
+  ]) {
+    const rejected = await postJson(app, "/api/auth/password/change", currentCookie, input);
+    assert.equal(rejected.response.status, 422);
+    assert.equal(rejected.response.headers.get("set-cookie"), null);
+    assert.equal((await app.request("/api/auth/me", { headers: { cookie: currentCookie } })).status, 200);
+    assert.equal((await app.request("/api/auth/me", { headers: { cookie: otherCookie } })).status, 200);
+  }
 
   const changed = await postJson(
     app,
@@ -328,14 +344,18 @@ test("password change keeps the current session and revokes other sessions", asy
     { currentPassword: "password-123", newPassword: "new-password-456" },
   );
   assert.equal(changed.response.status, 200);
+  assert.match(changed.response.headers.get("set-cookie") || "", /test_session=;/);
+  assert.match(changed.response.headers.get("set-cookie") || "", /Max-Age=0/i);
   assert.equal(
     (await app.request("/api/auth/me", { headers: { cookie: currentCookie } })).status,
-    200,
+    401,
   );
   assert.equal(
     (await app.request("/api/auth/me", { headers: { cookie: otherCookie } })).status,
     401,
   );
+  assert.equal((await app.request("/api/auth/me", { headers: { cookie: unrelatedCookie } })).status, 200);
+  assert.equal((await jsonRequest(app, "/api/auth/login", { email: "change@example.com", password: "password-123" })).response.status, 401);
   assert.equal(
     (
       await jsonRequest(app, "/api/auth/login", {
@@ -926,12 +946,11 @@ class MemoryRepository implements PlatformRepository {
   async updatePasswordAndRevokeSessions(
     userId: string,
     passwordHash: string,
-    keepTokenHash?: string,
   ) {
     const user = this.users.get(userId);
     if (user) this.users.set(userId, { ...user, passwordHash });
     for (const [tokenHash, session] of this.sessions) {
-      if (session.userId === userId && tokenHash !== keepTokenHash)
+      if (session.userId === userId)
         this.sessions.delete(tokenHash);
     }
   }

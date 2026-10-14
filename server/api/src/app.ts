@@ -507,15 +507,15 @@ export function createApp(
         "新密码不能与当前密码相同",
         422,
       );
-    const token = readCookie(
-      context.req.header("cookie") || "",
-      config.cookieName,
-    );
     await repository.updatePasswordAndRevokeSessions(
       user.id,
       await hashPassword(input.newPassword),
-      token ? hashSessionToken(token) : undefined,
     );
+    deleteCookie(context, config.cookieName, {
+      path: "/",
+      secure: config.cookieSecure,
+      sameSite: "Lax",
+    });
     return context.json(success(context, { ok: true }));
   });
 

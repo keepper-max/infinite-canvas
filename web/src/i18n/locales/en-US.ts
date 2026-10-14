@@ -46,7 +46,7 @@ export default {
         registered: "Account created",
         passwordReset: "Password reset. Sign in with your new password.",
         changePassword: "Change password",
-        passwordChanged: "Password changed. Other devices have been signed out.",
+        passwordChanged: "Password changed. All previous sessions have expired. Please sign in again.",
         failed: "Request failed",
         logout: "Sign out",
     },

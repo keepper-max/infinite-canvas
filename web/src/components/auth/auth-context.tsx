@@ -2,7 +2,7 @@ import { createContext, useContext, type ReactNode } from "react";
 
 import type { AuthSession } from "@/services/api/platform";
 
-export type AuthContextValue = AuthSession & { logout: () => Promise<void> };
+export type AuthContextValue = AuthSession & { logout: () => Promise<void>; invalidateSession: () => void };
 
 const AuthContext = createContext<AuthContextValue | null>(null);
 

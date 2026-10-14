@@ -46,7 +46,7 @@ export default {
         registered: "注册成功",
         passwordReset: "密码已重置，请使用新密码登录",
         changePassword: "修改密码",
-        passwordChanged: "密码已修改，其他设备已退出登录",
+        passwordChanged: "密码已修改，所有旧登录状态已失效，请重新登录",
         failed: "操作失败",
         logout: "退出登录",
     },

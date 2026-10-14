@@ -10,6 +10,7 @@ export type Workspace = {
 };
 
 export type AuthSession = { user: PlatformUser; workspace: Workspace; sessionExpiresAt?: string };
+export const PLATFORM_SESSION_EXPIRED_EVENT = "platform:session-expired";
 export type ProjectSummary = Workspace & { role: string };
 
 type ApiSuccess<T> = { data: T; meta?: { requestId?: string } };
@@ -130,6 +131,9 @@ export async function platformRequest<T>(path: string, init: RequestInit = {}): 
     if (!response.ok) {
         if (response.status === 413) throw new PlatformApiError("请求内容过大，请减少参考素材后重试", 413, "REQUEST_TOO_LARGE", false);
         const failure = payload as ApiFailure | null;
+        if (response.status === 401 && failure?.error?.code === "UNAUTHENTICATED" && typeof window !== "undefined") {
+            window.dispatchEvent(new Event(PLATFORM_SESSION_EXPIRED_EVENT));
+        }
         throw new PlatformApiError(failure?.error?.message || "请求失败", response.status, failure?.error?.code || "REQUEST_FAILED", Boolean(failure?.error?.retryable), failure?.error?.details);
     }
     if (!payload || !("data" in payload)) throw new PlatformApiError("服务返回了无法识别的数据", response.status, "INVALID_RESPONSE", false);

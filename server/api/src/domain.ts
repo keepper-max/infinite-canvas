@@ -86,7 +86,6 @@ export interface PlatformRepository {
   updatePasswordAndRevokeSessions(
     userId: string,
     passwordHash: string,
-    keepTokenHash?: string,
   ): Promise<void>;
   ensureDefaultWorkspace(userId: string): Promise<Workspace>;
   createProjectForUser(

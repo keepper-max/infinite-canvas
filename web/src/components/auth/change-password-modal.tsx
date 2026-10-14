@@ -4,10 +4,12 @@ import { useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import { changePassword, PlatformApiError } from "@/services/api/platform";
+import { useAuth } from "./auth-context";
 
 export function ChangePasswordModal({ open, onClose }: { open: boolean; onClose: () => void }) {
     const { message } = App.useApp();
     const { t } = useTranslation();
+    const { invalidateSession } = useAuth();
     const [form] = Form.useForm();
     const [submitting, setSubmitting] = useState(false);
 
@@ -19,6 +21,7 @@ export function ChangePasswordModal({ open, onClose }: { open: boolean; onClose:
             message.success(t("auth.passwordChanged"));
             form.resetFields();
             onClose();
+            invalidateSession();
         } catch (error) {
             if (error instanceof PlatformApiError) message.error(error.message);
         } finally {
