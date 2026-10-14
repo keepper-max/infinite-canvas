@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { ArrowUp, LoaderCircle, Maximize2, ScanLine, Square } from "lucide-react";
+import { ArrowUp, LoaderCircle, Maximize2, ScanLine } from "lucide-react";
 import { Button, Modal, Tooltip } from "antd";
 import { useTranslation } from "react-i18next";
 
@@ -28,7 +28,6 @@ type CanvasNodePromptPanelProps = {
     onPromptChange: (nodeId: string, prompt: string) => void;
     onConfigChange: (nodeId: string, patch: Partial<CanvasNodeData["metadata"]>) => void;
     onGenerate: (nodeId: string, mode: CanvasNodeGenerationMode, prompt: string) => void;
-    onStop: (nodeId: string) => void;
     mentionReferences?: CanvasResourceReference[];
     nodes: CanvasNodeData[];
     connectedNodes?: CanvasNodeData[];
@@ -49,7 +48,6 @@ export function CanvasNodePromptPanel({
     onPromptChange,
     onConfigChange,
     onGenerate,
-    onStop,
     mentionReferences = [],
     connectedNodes = [],
     connections = [],
@@ -173,17 +171,15 @@ export function CanvasNodePromptPanel({
                 <Button
                     type="primary"
                     className="!h-10 !min-w-16 shrink-0 !rounded-full !px-3"
-                    danger={isRunning}
-                    disabled={!isRunning && !prompt.trim()}
-                    onClick={() => (isRunning ? onStop(node.id) : submit())}
-                    aria-label={t(isRunning ? "canvas.promptPanel.stopGeneration" : "canvas.promptPanel.generate")}
+                    disabled={isRunning || !prompt.trim()}
+                    onClick={submit}
+                    aria-label={isRunning ? "生成中" : t("canvas.promptPanel.generate")}
                 >
                     <span className="flex items-center gap-1.5">
                         {isRunning ? (
                             <>
                                 <LoaderCircle className="size-4 animate-spin" />
-                                <Square className="size-3.5 fill-current" />
-                                <span className="text-xs font-medium">{t("canvas.promptPanel.stop")}</span>
+                                <span className="text-xs font-medium">生成中</span>
                             </>
                         ) : (
                             <ArrowUp className="size-4" />

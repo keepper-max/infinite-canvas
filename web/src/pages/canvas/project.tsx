@@ -8,7 +8,7 @@ import { useTranslation } from "react-i18next";
 import { requestEdit, requestGeneration, requestImageQuestion } from "@/services/api/image";
 import { requestAudioGeneration, storeGeneratedAudio } from "@/services/api/audio";
 import { createVideoGenerationTask, storeGeneratedVideo, waitForVideoGenerationTask } from "@/services/api/video";
-import { abortForManualJobCancellation, getManagedJob, retryManagedJob, subscribeProjectJobEvents, type ManagedJobEvent } from "@/services/api/jobs";
+import { getManagedJob, retryManagedJob, subscribeProjectJobEvents, type ManagedJobEvent } from "@/services/api/jobs";
 import { createCanvasDraft, type CanvasDraft } from "@/services/api/canvas";
 import { currentVersion, getCloudAssetDownloadUrl, invalidateCloudAssetDownloadUrls, uploadCloudAsset } from "@/services/api/assets";
 import { useDownloadMedia } from "@/hooks/use-download-media";
@@ -246,7 +246,7 @@ function supportedReferenceDuration(definition: ReturnType<typeof videoParameter
 }
 
 function InfiniteCanvasPage({ projectId }: { projectId: string }) {
-    const { message, modal } = App.useApp();
+    const { message } = App.useApp();
     const downloadMedia = useDownloadMedia();
     const confirmGenerationRisk = useGenerationRiskConfirmation();
     const { logout } = useAuth();
@@ -664,52 +664,6 @@ function InfiniteCanvasPage({ projectId }: { projectId: string }) {
                 }
             }),
         [pollVideoNodeTask, projectId],
-    );
-
-    const stopGenerationByRunningId = useCallback(
-        (runningId: string) => {
-            const affectedNodeIds = new Set<string>();
-            generationRequestsRef.current.forEach((request) => {
-                if (request.runningNodeId !== runningId) return;
-                abortForManualJobCancellation(request.controller);
-                generationRequestsRef.current.delete(request.targetNodeId);
-                affectedNodeIds.add(request.targetNodeId);
-                affectedNodeIds.add(request.originNodeId);
-            });
-            setRunningNodeId((current) => (current === runningId ? null : current));
-            if (!affectedNodeIds.size) return;
-            setNodes((prev) =>
-                prev.map((node) =>
-                    affectedNodeIds.has(node.id) && node.metadata?.status === NODE_STATUS_LOADING
-                        ? {
-                              ...node,
-                              metadata: {
-                                  ...node.metadata,
-                                  status: NODE_STATUS_IDLE,
-                                  errorDetails: undefined,
-                                  images: node.metadata.images?.map((image) => (image.status === NODE_STATUS_LOADING ? { ...image, status: NODE_STATUS_ERROR, errorDetails: t("common.requestCanceled") } : image)),
-                                  texts: node.metadata.texts?.map((text) => (text.status === NODE_STATUS_LOADING ? { ...text, status: NODE_STATUS_ERROR, errorDetails: t("common.requestCanceled") } : text)),
-                              },
-                          }
-                        : node,
-                ),
-            );
-        },
-        [t],
-    );
-
-    const confirmStopGeneration = useCallback(
-        (nodeId: string) => {
-            modal.confirm({
-                title: t("canvas.projectPage.stopTitle"),
-                content: t("canvas.projectPage.stopDescription"),
-                okText: t("canvas.projectPage.stop"),
-                cancelText: t("canvas.projectPage.continue"),
-                okButtonProps: { danger: true },
-                onOk: () => stopGenerationByRunningId(nodeId),
-            });
-        },
-        [modal, stopGenerationByRunningId, t],
     );
 
     useEffect(() => {
@@ -4057,7 +4011,6 @@ function InfiniteCanvasPage({ projectId }: { projectId: string }) {
                     onPromptChange={handleNodePromptChange}
                     onConfigChange={handleConfigNodeChange}
                     onGenerate={handleGenerateNode}
-                    onStop={confirmStopGeneration}
                     onDisconnectReference={disconnectNodeReference}
                     onVideoPurposeChange={updateVideoReferencePurpose}
                     onStartReferenceSelection={startNodeReferenceSelection}
@@ -4072,7 +4025,6 @@ function InfiniteCanvasPage({ projectId }: { projectId: string }) {
             ),
         [
             configInputsById,
-            confirmStopGeneration,
             connections,
             connectedNodesByNodeId,
             disconnectNodeReference,
@@ -4098,14 +4050,13 @@ function InfiniteCanvasPage({ projectId }: { projectId: string }) {
                 forceAdaptiveVideoRatio={hasVideoExtensionReference(contentNode.id, nodes, connections)}
                 onConfigChange={handleConfigNodeChange}
                 onComposerToggle={() => setDialogNodeId((current) => (current === contentNode.id ? null : contentNode.id))}
-                onStop={confirmStopGeneration}
                 onGenerate={(nodeId) => {
                     const target = nodesRef.current.find((item) => item.id === nodeId);
                     void handleGenerateNode(nodeId, target?.metadata?.generationMode || "image", target?.metadata?.composerContent ?? target?.metadata?.prompt ?? "");
                 }}
             />
         ),
-        [configInputsById, confirmStopGeneration, connections, handleConfigNodeChange, handleGenerateNode, nodes, runningNodeId],
+        [configInputsById, connections, handleConfigNodeChange, handleGenerateNode, nodes, runningNodeId],
     );
 
     if (!projectLoaded) return <CanvasRefreshShell />;

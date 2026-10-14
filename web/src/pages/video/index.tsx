@@ -1,4 +1,4 @@
-import { ArrowLeft, ArrowRight, BookOpen, CheckSquare, ClipboardPaste, Download, FolderPlus, History, LoaderCircle, Plus, ScanLine, SlidersHorizontal, Sparkles, Square, Trash2, Upload, VideoIcon } from "lucide-react";
+import { ArrowLeft, ArrowRight, BookOpen, CheckSquare, ClipboardPaste, Download, FolderPlus, History, LoaderCircle, Plus, ScanLine, SlidersHorizontal, Sparkles, Trash2, Upload, VideoIcon } from "lucide-react";
 import { useEffect, useRef, useState, type DragEvent } from "react";
 import { App, Button, Checkbox, Drawer, Empty, Input, Modal, Tag, Typography } from "antd";
 import localforage from "localforage";
@@ -18,7 +18,7 @@ import { formatBytes, formatDuration } from "@/lib/image-utils";
 import { deleteStoredMedia, resolveMediaUrl, uploadMediaFile } from "@/services/file-storage";
 import { resolveImageUrl, uploadImage } from "@/services/image-storage";
 import { createVideoGenerationTask, pollVideoGenerationTask, storeGeneratedVideo, type VideoGenerationTask } from "@/services/api/video";
-import { abortForManualJobCancellation, cancelManagedJobOnAbort } from "@/services/api/jobs";
+import { cancelManagedJobOnAbort } from "@/services/api/jobs";
 import { useAssetStore } from "@/stores/use-asset-store";
 import { useWorkbenchAgentStore } from "@/stores/use-workbench-agent-store";
 import { boolConfig, modelOptionLabel, useConfigStore, useEffectiveConfig, type AiConfig } from "@/stores/use-config-store";
@@ -451,10 +451,6 @@ export default function VideoPage() {
         }
     };
 
-    const stopGeneration = () => {
-        for (const controller of pollingControllersRef.current.values()) abortForManualJobCancellation(controller);
-    };
-
     const previewGenerationLog = (log: GenerationLog) => {
         setPreviewLog(log);
         setLogsOpen(false);
@@ -618,15 +614,14 @@ export default function VideoPage() {
 
                         <div className="mt-auto pt-6">
                             <Button
-                                type={running ? "default" : "primary"}
-                                danger={running}
+                                type="primary"
                                 size="large"
                                 block
-                                icon={running ? <Square className="size-4" /> : <Sparkles className="size-4" />}
-                                disabled={!running && !canGenerate}
-                                onClick={running ? stopGeneration : () => void generate()}
+                                icon={running ? <LoaderCircle className="size-4 animate-spin" /> : <Sparkles className="size-4" />}
+                                disabled={running || !canGenerate}
+                                onClick={() => void generate()}
                             >
-                                {t(running ? "workbench.stop" : "workbench.generate")}
+                                {running ? "生成中" : t("workbench.generate")}
                             </Button>
                         </div>
                     </div>
