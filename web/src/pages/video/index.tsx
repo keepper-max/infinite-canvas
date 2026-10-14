@@ -27,6 +27,7 @@ import type { ReferenceImage } from "@/types/image";
 import type { ReferenceVideo } from "@/types/media";
 import i18n from "@/i18n";
 import { useDownloadMedia } from "@/hooks/use-download-media";
+import { useGenerationRiskConfirmation } from "@/hooks/use-generation-risk-confirmation";
 
 type GeneratedVideo = {
     id: string;
@@ -77,6 +78,7 @@ const logStore = localforage.createInstance({ name: "infinite-canvas", storeName
 export default function VideoPage() {
     const { message } = App.useApp();
     const downloadMedia = useDownloadMedia();
+    const confirmGenerationRisk = useGenerationRiskConfirmation();
     const { t } = useTranslation();
     const location = useLocation();
     const handoffRef = useRef(false);
@@ -205,6 +207,10 @@ export default function VideoPage() {
         const snapshot = buildRequestSnapshot();
         if (!snapshot) {
             if (agentTaskId) updateAgentTask(agentTaskId, { status: "failed", error: t("videoWorkbench.invalidParams") });
+            return;
+        }
+        if (!(await confirmGenerationRisk())) {
+            if (agentTaskId) updateAgentTask(agentTaskId, { status: "failed", error: "用户未确认生成，任务未提交" });
             return;
         }
         setElapsedMs(0);

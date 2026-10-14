@@ -12,6 +12,7 @@ import { abortForManualJobCancellation, getManagedJob, retryManagedJob, subscrib
 import { createCanvasDraft, type CanvasDraft } from "@/services/api/canvas";
 import { currentVersion, getCloudAssetDownloadUrl, invalidateCloudAssetDownloadUrls, uploadCloudAsset } from "@/services/api/assets";
 import { useDownloadMedia } from "@/hooks/use-download-media";
+import { useGenerationRiskConfirmation } from "@/hooks/use-generation-risk-confirmation";
 import { defaultConfig, useConfigStore, useEffectiveConfig, withLocalProxy } from "@/stores/use-config-store";
 import { uploadImage } from "@/services/image-storage";
 import { getMediaBlob, resolveMediaUrl, uploadMediaFile, type UploadedFile } from "@/services/file-storage";
@@ -247,6 +248,7 @@ function supportedReferenceDuration(definition: ReturnType<typeof videoParameter
 function InfiniteCanvasPage({ projectId }: { projectId: string }) {
     const { message, modal } = App.useApp();
     const downloadMedia = useDownloadMedia();
+    const confirmGenerationRisk = useGenerationRiskConfirmation();
     const { logout } = useAuth();
     const { t } = useTranslation();
     // Subscribe to the registry version so plugin registration changes rerender the canvas.
@@ -2642,6 +2644,7 @@ function InfiniteCanvasPage({ projectId }: { projectId: string }) {
                 return;
             }
             const userPrompt = payload.prompt.trim();
+            if (payload.generate && !(await confirmGenerationRisk())) return;
             const prompt = t("canvas.projectPage.maskPrompt", { source: imageReferenceLabel(0), mask: imageReferenceLabel(1), prompt: userPrompt });
             setMaskEditNodeId(null);
             const maskImage = await uploadImage(payload.maskDataUrl);
@@ -2695,7 +2698,7 @@ function InfiniteCanvasPage({ projectId }: { projectId: string }) {
                 setRunningNodeId(null);
             }
         },
-        [effectiveConfig, finishGenerationRequest, isAiConfigReady, message, openConfigDialog, projectId, startGenerationRequest, t],
+        [confirmGenerationRisk, effectiveConfig, finishGenerationRequest, isAiConfigReady, message, openConfigDialog, projectId, startGenerationRequest, t],
     );
 
     const upscaleImageNode = useCallback(async (node: CanvasNodeData, params: CanvasImageUpscaleParams) => {
@@ -2731,6 +2734,7 @@ function InfiniteCanvasPage({ projectId }: { projectId: string }) {
                 openConfigDialog(true);
                 return;
             }
+            if (!(await confirmGenerationRisk())) return;
             const childId = nanoid();
             const imageConfig = NODE_DEFAULT_SIZE[CanvasNodeType.Image];
             const title = buildAngleLabel(params);
@@ -2790,13 +2794,14 @@ function InfiniteCanvasPage({ projectId }: { projectId: string }) {
                 setRunningNodeId(null);
             }
         },
-        [effectiveConfig, finishGenerationRequest, openConfigDialog, projectId, startGenerationRequest, t],
+        [confirmGenerationRisk, effectiveConfig, finishGenerationRequest, openConfigDialog, projectId, startGenerationRequest, t],
     );
 
     const saveCameraMotion = useCallback(
         async (result: CameraMotionEditorResult) => {
             const sourceNode = nodesRef.current.find((node) => node.id === result.motion.sourceImageNodeId);
             if (!sourceNode?.metadata?.content) throw new Error("原图片节点已不存在，请重新选择图片");
+            if (result.generate && !(await confirmGenerationRisk())) return;
             const existingMotionNode = nodesRef.current.find((node) => node.type === CAMERA_MOTION_NODE_TYPE && node.metadata?.cameraMotion?.sourceImageNodeId === sourceNode.id);
             const previousVersionId = existingMotionNode?.metadata?.assetVersionId;
             const file = new File([result.guideBlob], `camera-motion-${sourceNode.id}.png`, { type: "image/png" });
@@ -2939,7 +2944,7 @@ function InfiniteCanvasPage({ projectId }: { projectId: string }) {
                     setRunningNodeId((current) => (current === targetVideoNode.id ? null : current));
                 });
         },
-        [backgroundMode, canvasPersistence.saveDraftNow, completeVideoNodeTask, effectiveConfig, finishGenerationRequest, isAiConfigReady, message, mobileMode, openConfigDialog, projectId, showImageInfo, startGenerationRequest, t],
+        [backgroundMode, canvasPersistence.saveDraftNow, completeVideoNodeTask, confirmGenerationRisk, effectiveConfig, finishGenerationRequest, isAiConfigReady, message, mobileMode, openConfigDialog, projectId, showImageInfo, startGenerationRequest, t],
     );
 
     const handleFontSizeChange = useCallback((nodeId: string, fontSize: number) => {
@@ -3138,6 +3143,7 @@ function InfiniteCanvasPage({ projectId }: { projectId: string }) {
                 openConfigDialog(true);
                 return;
             }
+            if (!(await confirmGenerationRisk())) return;
             if (!(await saveCanvasBeforeGeneration())) return;
 
             // useBuiltinPanel.writeBackToSelf reuses built-in generation while writing the result back to the plugin node.
@@ -3600,7 +3606,7 @@ function InfiniteCanvasPage({ projectId }: { projectId: string }) {
                 setRunningNodeId(null);
             }
         },
-        [completeVideoNodeTask, effectiveConfig, finishGenerationRequest, isAiConfigReady, message, openConfigDialog, projectId, saveCanvasBeforeGeneration, startGenerationRequest, t],
+        [completeVideoNodeTask, confirmGenerationRisk, effectiveConfig, finishGenerationRequest, isAiConfigReady, message, openConfigDialog, projectId, saveCanvasBeforeGeneration, startGenerationRequest, t],
     );
     useEffect(() => {
         generateNodeRef.current = handleGenerateNode;
@@ -3615,6 +3621,7 @@ function InfiniteCanvasPage({ projectId }: { projectId: string }) {
                     try {
                         const job = await getManagedJob(node.metadata.videoTaskId);
                         if (job.status === "failed" && job.error?.retryable) {
+                            if (!(await confirmGenerationRisk())) return;
                             const retried = await retryManagedJob(job.id);
                             resumableNode = { ...node, metadata: { ...node.metadata, videoTaskId: retried.id } };
                             setNodes((prev) => prev.map((item) => (item.id === node.id ? resumableNode : item)));
@@ -3683,6 +3690,7 @@ function InfiniteCanvasPage({ projectId }: { projectId: string }) {
             }
             const retryImages = retryReferenceImages || [];
 
+            if (!(await confirmGenerationRisk())) return;
             setRunningNodeId(node.id);
             setNodes((prev) =>
                 prev.map((item) =>
@@ -3825,7 +3833,7 @@ function InfiniteCanvasPage({ projectId }: { projectId: string }) {
                 setRunningNodeId(null);
             }
         },
-        [completeVideoNodeTask, effectiveConfig, finishGenerationRequest, isAiConfigReady, message, openConfigDialog, pollVideoNodeTask, projectId, saveCanvasBeforeGeneration, startGenerationRequest, t],
+        [completeVideoNodeTask, confirmGenerationRisk, effectiveConfig, finishGenerationRequest, isAiConfigReady, message, openConfigDialog, pollVideoNodeTask, projectId, saveCanvasBeforeGeneration, startGenerationRequest, t],
     );
 
     const deleteBatchImage = useCallback((nodeId: string, imageId: string) => {
