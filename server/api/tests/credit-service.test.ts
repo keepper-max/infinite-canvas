@@ -3,6 +3,35 @@ import test from "node:test";
 
 import { CreditService, decimalProductCeil } from "../src/credit-service.js";
 
+test("account queries never overlap on the transaction client", async () => {
+  let active = false;
+  const calls: string[] = [];
+  const account = { id: "account-1", user_id: "user-1", balance: "0", reserved: "0", created_at: new Date(), updated_at: new Date() };
+  const client = {
+    async query(sql: string) {
+      assert.equal(active, false, "concurrent query on one transaction client");
+      active = true;
+      calls.push(sql);
+      try {
+        await new Promise<void>((resolve) => setImmediate(resolve));
+        if (sql.includes("select * from credit_accounts")) return { rows: [account], rowCount: 1 };
+        if (sql.includes("select count(*)::int total")) return { rows: [{ total: 0 }], rowCount: 1 };
+        return { rows: [], rowCount: 0 };
+      } finally { active = false; }
+    },
+    release() {},
+  };
+  const service = new CreditService({ async connect() { return client; } } as never);
+  const result = await service.account("user-1");
+  assert.equal(result.account.balance, "0");
+  assert.equal(result.pendingCharges, 0);
+  assert.deepEqual(result.ledger, []);
+  assert.deepEqual(result.lots, []);
+  assert.equal(calls[0], "begin");
+  assert.equal(calls.at(-1), "commit");
+  assert.ok(calls.some(sql => sql.includes("pg_advisory_xact_lock")));
+});
+
 test("credit charge applies 100 points per CNY and 1.2 markup", () => {
   assert.equal(decimalProductCeil(["10", "1", "120"]), BigInt(1200));
 });

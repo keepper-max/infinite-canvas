@@ -289,23 +289,21 @@ export class CreditService {
       const account = await ensureAccount(client, userId, true);
       await expireLots(client, account);
       const refreshed = await accountRow(client, userId);
-      const [ledger, lots, pending] = await Promise.all([
-        client.query(
-          `select id,entry_type,delta,balance_after,reference_type,reference_id,metadata,created_at
+      const ledger = await client.query(
+        `select id,entry_type,delta,balance_after,reference_type,reference_id,metadata,created_at
            from credit_ledger where account_id=$1 order by id desc limit 100`,
-          [refreshed.id],
-        ),
-        client.query(
-          `select id,source,credits,remaining,reference_type,reference_id,expires_at,metadata,created_at
+        [refreshed.id],
+      );
+      const lots = await client.query(
+        `select id,source,credits,remaining,reference_type,reference_id,expires_at,metadata,created_at
            from credit_lots where account_id=$1 order by expires_at asc nulls last,created_at asc limit 100`,
-          [refreshed.id],
-        ),
-        client.query(
-          `select count(*)::int total from generation_usage
+        [refreshed.id],
+      );
+      const pending = await client.query(
+        `select count(*)::int total from generation_usage
            where user_id=$1 and credit_status in ('pending','pending_rate','pending_currency','payment_required')`,
-          [userId],
-        ),
-      ]);
+        [userId],
+      );
       return {
         account: serializeAccount(refreshed),
         ledger: ledger.rows.map(serializeLedger),

@@ -143,3 +143,29 @@ sh ops/rollback-production.sh /opt/infinite-canvas-releases/release-提交短号
 缓存上限为 15 GB，索引区为 32 MB，视频与大文件统一按 2 MB 分片，30 天未访问的条目可以淘汰。缓存命中仍会通过主 API 隧道执行轻量权限检查；缓存未命中时才通过独立媒体隧道读取文件。回滚时恢复站点 Nginx 备份并停止独立媒体隧道即可，禁止删除 MinIO 权威数据。
 
 告警阈值、日志轮转大小与保留份数属于生产容量策略，需结合实际并发和磁盘确认后写入 Compose/监控平台。
+
+## 8. ECS API JSON 压缩
+
+公网 `/api/` 直接经 ECS 代理到业务隧道 `127.0.0.1:19002`，不经过 Web 容器，因此不能依赖仓库根目录 `nginx.conf` 的 JSON 压缩设置。ECS 当前站点 `/etc/nginx/sites-enabled/shoumiren` 指向 `/etc/nginx/sites-available/shoumiren-live`；改动前先核验实际路径并备份原文件。
+
+在现有 `location /api/` 内保留以下设置；不要覆盖代理头、超时或把 API 代理缓冲打开：
+
+```nginx
+gzip on;
+gzip_types application/json;
+gzip_vary on;
+```
+
+仅对协商支持压缩的客户端压缩 JSON，保持 `Cache-Control: no-store`；不将 `text/event-stream`、图片或视频加入压缩类型。现有 `proxy_buffering off` 和 `proxy_request_buffering off` 必须保留，素材热缓存 location 不变。后续重建 ECS 站点配置时也应保留此设置，不只更新应用容器。
+
+变更后先执行 `nginx -t`，通过后平滑 reload，并检查首页、就绪接口、已登录画布响应的 `Content-Encoding: gzip` 和 `Vary: Accept-Encoding`，同时检查 `Accept-Encoding: identity` 仍返回可读 JSON。任何检查失败时恢复站点备份，重新检查并 reload；不要重启应用或数据库。本轮原配置备份为 `/root/shoumiren-api-gzip-20261015-c/shoumiren-live.before`，恢复前仍需核对是否存在后续配置变更，避免覆盖他人修改。
+
+## 9. 正式生成并发50（待发布执行）
+
+旧镜像只接受1—32，不能先把旧镜像环境变量改为50，否则Worker无法启动。先发布包含新配置校验的镜像；本次代码默认及上限均50，转存并发仍4、合成仍1，失败任务不增加自动重试。
+
+发布前在应用服务器受限备份目录保存当前Worker镜像、命令、挂载、Compose文件及环境文件（权限600，不输出密钥）。确认没有执行中的生成/转存/合成任务后，将正式环境的`WORKER_CONCURRENCY`显式设为50；核对Compose最终覆盖来源，历史压测override可能覆盖环境值，不能只改`.env.example`或依赖默认值。新镜像使用正常`node dist/worker.js`，不得继续挂载`worker-load50.js`压测入口。
+
+发布后核对实际Worker启动日志`concurrency=50`、健康检查、转存4、合成1，以及无重复执行/对账异常。先复用既有测试媒体验证元数据处理，不自动发起额外付费生成。并发50是单Worker的执行槽数量，不是供应商无限并发承诺，多副本会叠加。
+
+回滚必须同时恢复原镜像和原环境并发2，勿让旧镜像加载50；保留任务、账本和媒体数据。当前本地变更尚未执行此发布步骤。

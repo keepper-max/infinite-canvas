@@ -16,7 +16,7 @@ import {
   type ProviderArtifact,
 } from "./provider.js";
 import { ProviderRouter } from "./provider-router.js";
-import { createVideoThumbnail } from "./video-thumbnail.js";
+import { createVideoThumbnail, readVideoMetadata, type VideoMetadata } from "./video-thumbnail.js";
 import { fetchRemoteMedia } from "./remote-media.js";
 import type { StorageQuotaService } from "./storage-quota-service.js";
 
@@ -945,7 +945,13 @@ export class JobExecutor {
       let thumbnail:
         | { storageKey: string; mimeType: string; bytes: Uint8Array }
         | undefined;
+      let videoMetadata: VideoMetadata | undefined;
       if (assetKind === "video") {
+        try {
+          videoMetadata = await readVideoMetadata(bytes, this.config.ffmpegPath, `video.${extension}`);
+        } catch {
+          console.warn(`[generation-worker] video metadata unavailable for job ${row.id}`);
+        }
         try {
           const thumbnailBytes = await createVideoThumbnail(bytes, this.config.ffmpegPath, `video.${extension}`);
           const thumbnailStorageKey = `projects/${row.project_id}/generated/${row.id}/${index}.thumbnail.jpg`;
@@ -988,7 +994,7 @@ export class JobExecutor {
             ],
           );
           const version = await client.query(
-            "insert into asset_versions(asset_id,version,storage_key,mime_type,bytes,sha256,source,source_job_id,provenance,created_by,thumbnail_storage_key,thumbnail_mime_type,thumbnail_bytes) values($1,1,$2,$3,$4,$5,'generation',$6,$7,$8,$9,$10,$11) returning id",
+            "insert into asset_versions(asset_id,version,storage_key,mime_type,bytes,sha256,source,source_job_id,provenance,created_by,thumbnail_storage_key,thumbnail_mime_type,thumbnail_bytes,width,height,duration_ms) values($1,1,$2,$3,$4,$5,'generation',$6,$7,$8,$9,$10,$11,$12,$13,$14) returning id",
             [
               asset.rows[0].id,
               storageKey,
@@ -1001,6 +1007,9 @@ export class JobExecutor {
               thumbnail?.storageKey || null,
               thumbnail?.mimeType || null,
               thumbnail?.bytes.byteLength || null,
+              videoMetadata?.width ?? null,
+              videoMetadata?.height ?? null,
+              videoMetadata?.durationMs ?? null,
             ],
           );
           await client.query(

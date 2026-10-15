@@ -133,9 +133,9 @@ export function readConfig(env: NodeJS.ProcessEnv = process.env): ApiConfig {
     ffmpegPath: env.FFMPEG_PATH?.trim() || "ffmpeg",
     workerConcurrency: readInteger(
       env.WORKER_CONCURRENCY,
-      2,
+      50,
       1,
-      32,
+      50,
       "WORKER_CONCURRENCY",
     ),
     maxAttempts: readInteger(
