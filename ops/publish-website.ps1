@@ -75,7 +75,15 @@ restore() {
 }
 install -m 644 RELEASE/homepage-locations.conf /etc/nginx/snippets/shoumiren-homepage.conf
 if ! nginx -t || ! systemctl reload nginx; then restore; exit 1; fi
-if ! curl -fsS https://shoumiren.online/ | grep -q '20261017-site02'; then restore; exit 1; fi
+# Reload is asynchronous: use the existing 300-second deployment readiness window.
+ready=false
+elapsed=0
+while test "$elapsed" -lt 300; do
+  if curl -fsS https://shoumiren.online/ -o BACKUP/activation.html && cmp -s RELEASE/index.html BACKUP/activation.html; then ready=true; break; fi
+  sleep 2
+  elapsed=$((elapsed+2))
+done
+if test "$ready" != true; then restore; exit 1; fi
 for item in content.css content.js cases/quality-concept-v1.png cases/factory-concept-v1.png cases/canvas-concept-v1.png; do
   if ! curl -fsS "https://shoumiren.online/website-assets/20261017-site02/$item" -o /dev/null; then restore; exit 1; fi
 done
