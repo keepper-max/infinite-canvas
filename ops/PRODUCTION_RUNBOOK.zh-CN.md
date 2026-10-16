@@ -10,6 +10,15 @@
 
 ## 0. 生产拓扑与部署入口
 
+### 官网与画布分域（分阶段上线）
+
+- 目标根域shoumiren.online为守密人官网，canvas.shoumiren.online为画布工作台；业务验收通过前根域仍服务现有画布，禁止全量重定向。新域Web/API/3D仍同源代理既有隧道，不新增应用数据库或开放端口。
+- 边缘SSH deploy-gateway仅用于跳转，不提供shell。边缘站点维护可使用现有授权阿里云云助手，先验证实例ID、主机名和当前Nginx配置，命令不得携带密钥或输出环境文件。
+- 新子域边缘站点/etc/nginx/sites-available/shoumiren-canvas，独立证书/etc/letsencrypt/live/canvas.shoumiren.online；沿用旧站点上游、请求头、媒体鉴权缓存和代理超时。原站点和续期配置备份/root/shoumiren-domain-20261016/nginx-before.tgz；只对新增站点做可回滚的平滑reload。
+- canvas证书以现有certbot.timer及webroot续期，deploy hook /etc/letsencrypt/renewal-hooks/deploy/shoumiren-canvas-reload只在该证书更新后校验并reload Nginx；不更改根域证书及续期方式。
+- 登录Cookie仍host-only；新域须重新登录。API同源Origin可由既有校验接受，若遇到来源错误应先查Host/转发链，不盲目扩大TRUSTED_ORIGINS或Cookie Domain。
+- 切首页前必须验收新域登录、读取/保存、上传/下载、视频Range、跨账号权限和3D；保留旧域本地数据同步/迁移入口。回滚时停用新增子域站点并nginx -t/reload，DNS只处理新增canvas记录，不能覆盖后来改动或删除权威媒体。
+
 - `shoumiren.online` 指向 ECS；ECS 只承担公网 Nginx、HTTPS 和反向代理，不运行应用容器。
 - Web、API、Worker、PostgreSQL、Redis 和 MinIO 运行在物理服务器 `shoumiren`。
 - 3D 导演台保持独立仓库和构建产物；生产 `.env` 的 `DIRECTOR_DESK_DIST` 必须指向版本化发布目录中的绝对 `dist` 路径，Web 容器只读挂载并通过 `/3d-director/` 同域名提供。
