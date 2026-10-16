@@ -28,6 +28,7 @@ import { EmailVerificationService } from "./email-verification-service.js";
 import { SmsVerificationService } from "./sms-verification-service.js";
 import { VerificationCodeStore } from "./verification-code-store.js";
 import { AuthRateLimiter } from "./auth-rate-limit.js";
+import { WebsiteInquiryService } from "./website-inquiry-service.js";
 
 const config = readConfig();
 const { db, pool } = createDatabase(config.databaseUrl);
@@ -140,6 +141,7 @@ const app = createApp(
   channelAttributionService,
   smsVerificationService,
   new AuthRateLimiter(verificationRedis),
+  new WebsiteInquiryService(pool, verificationRedis),
 );
 
 const server = serve({ fetch: app.fetch, port: config.port }, (info) => {

@@ -17,3 +17,4 @@
 0041_release_terminal_no_bill_reservations.sql
 0042_dual_channel_auth.sql
 0043_seedance_25_video_extension.sql
+0044_website_inquiries.sql

@@ -76,6 +76,7 @@ import type {
   VerifiedEmailCode,
 } from "./email-verification-service.js";
 import type { SmsVerificationServicePort } from "./sms-verification-service.js";
+import type { WebsiteInquiryService } from "./website-inquiry-service.js";
 
 type Variables = { requestId: string };
 type AppEnv = { Variables: Variables };
@@ -95,6 +96,7 @@ export function createApp(
   channelAttributionService?: ChannelAttributionService,
   smsVerificationService?: SmsVerificationServicePort,
   authRateLimiter?: AuthRateLimiterPort,
+  websiteInquiryService?: WebsiteInquiryService,
 ) {
   const app = new Hono<AppEnv>();
 
@@ -2065,6 +2067,34 @@ export function createApp(
         ),
       ),
     );
+  });
+
+  const inquiries = () => {
+    if (!websiteInquiryService) throw new DomainError("INQUIRY_UNAVAILABLE", "咨询服务暂时不可用，请直接邮件联系", 503, true);
+    return websiteInquiryService;
+  };
+  app.post("/api/website/inquiries", async (context) => {
+    const input = z.object({
+      id: z.string().uuid(),
+      content: feedbackInput.shape.content,
+      contact: z.string().trim().min(1).max(200),
+      consent: z.literal(true),
+    }).strict().parse(await readJson(context.req.raw));
+    return context.json(success(context, await inquiries().submit(input, clientIp(context.req.raw))), 201);
+  });
+  app.get("/api/admin/website-inquiries", async (context) => {
+    const user = await requireUser(context.req.raw, repository, config);
+    if (!publicUser(user, config).isAdmin) throw new DomainError("ADMIN_FORBIDDEN", "需要管理员权限", 403);
+    const query = parseAdminQuery(context);
+    return context.json(success(context, await inquiries().list(query.page, query.pageSize)));
+  });
+  app.patch("/api/admin/website-inquiries/:id", async (context) => {
+    const user = await requireUser(context.req.raw, repository, config);
+    if (!publicUser(user, config).isAdmin) throw new DomainError("ADMIN_FORBIDDEN", "需要管理员权限", 403);
+    const id = uuidParam.parse(context.req.param("id"));
+    const input = z.object({ status: z.enum(["open", "closed"]), note: feedbackReplyInput.shape.content.or(z.literal("")) }).strict()
+      .parse(await readJson(context.req.raw));
+    return context.json(success(context, await inquiries().update(id, input, user.id, context.get("requestId"))));
   });
 
   app.post("/api/feedback", async (context) => {

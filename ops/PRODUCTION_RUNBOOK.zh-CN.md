@@ -12,7 +12,9 @@
 
 ### 官网与画布分域（分阶段上线）
 
-- 目标根域shoumiren.online为守密人官网，canvas.shoumiren.online为画布工作台；业务验收通过前根域仍服务现有画布，禁止全量重定向。新域Web/API/3D仍同源代理既有隧道，不新增应用数据库或开放端口。
+- 根域shoumiren.online精确首页已切为守密人官网，canvas.shoumiren.online为画布工作台；根域旧工作台/API/媒体路径仍兼容，禁止全量重定向。新域Web/API/3D仍同源代理既有隧道，不新增应用数据库或开放端口。
+- 官网源为website/，静态发布目录/var/www/shoumiren-site/releases/20261016-site01，include为/etc/nginx/snippets/shoumiren-homepage.conf，仅分流根域精确首页和CSS/Logo。ops/publish-website.ps1分准备/激活阶段，以云助手上传公共文件并校验SHA256，不重建画布容器。新版本应使用新的目录和资源路径，不覆盖immutable缓存文件。
+- 官网切换备份/root/shoumiren-homepage-20261016-site01/shoumiren-live.before，after保存激活配置。回滚前cmp确认当前配置等于after，再恢复before并nginx -t/reload；若已存在后续修改则停止，不覆盖他人配置。不删静态版本、数据库或媒体；新画布子域不受根首页回滚影响。
 - 边缘SSH deploy-gateway仅用于跳转，不提供shell。边缘站点维护可使用现有授权阿里云云助手，先验证实例ID、主机名和当前Nginx配置，命令不得携带密钥或输出环境文件。
 - 新子域边缘站点/etc/nginx/sites-available/shoumiren-canvas，独立证书/etc/letsencrypt/live/canvas.shoumiren.online；沿用旧站点上游、请求头、媒体鉴权缓存和代理超时。原站点和续期配置备份/root/shoumiren-domain-20261016/nginx-before.tgz；只对新增站点做可回滚的平滑reload。
 - canvas证书以现有certbot.timer及webroot续期，deploy hook /etc/letsencrypt/renewal-hooks/deploy/shoumiren-canvas-reload只在该证书更新后校验并reload Nginx；不更改根域证书及续期方式。
@@ -178,3 +180,13 @@ gzip_vary on;
 发布后核对实际Worker启动日志`concurrency=50`、健康检查、转存4、合成1，以及无重复执行/对账异常。先复用既有测试媒体验证元数据处理，不自动发起额外付费生成。并发50是单Worker的执行槽数量，不是供应商无限并发承诺，多副本会叠加。
 
 回滚必须同时恢复原镜像和原环境并发2，勿让旧镜像加载50；保留任务、账本和媒体数据。当前本地变更尚未执行此发布步骤。
+
+## 10. 官网内容与公开咨询发布
+
+官网第二版静态目录为`/var/www/shoumiren-site/releases/20261017-site02`，旧site01的CSS/Logo路径继续保留，不覆盖不可变资源。只发布首页、公开CSS/JS和三张concept-v1.png，不发布原截图、源码、研究记录或配置文件。
+
+先发布Web/API及增量迁移0044_website_inquiries.sql。咨询记录独立留档，管理员入口`/admin/inquiries`；原反馈鉴权和用户归属不变。回滚应用时保留新增表，不删除咨询数据。上线后核对匿名提交、管理员限制及已确认的IP滑动窗口（5分钟5次），不调用付费生成。
+
+官网使用`ops/publish-website.ps1`分为PrepareOnly和激活两步。公开资源包经现有HTTPS工作台临时路径传输，包中只有公开文件；ECS核对归档SHA256、精确文件清单、常规文件类型及每个文件SHA256后解包。传输完成移除临时公开包，不开放新端口。
+
+PrepareOnly在`/root/shoumiren-homepage-20261017-site02`备份主站配置和旧homepage snippet；激活前比较备份与当前文件，只替换snippet，nginx检查/reload或公开资源/画布就绪检查失败时恢复旧snippet。手工回滚前比较当前snippet与备份homepage.after，确认没有后续改动，再恢复homepage.before并检查/reload；不覆盖主站其他配置，不改旧画布/API/媒体代理。

@@ -6,6 +6,7 @@ import { Link, useParams, useSearchParams } from "react-router-dom";
 
 import { useAuth } from "@/components/auth/auth-context";
 import ChannelManagement from "./channels";
+import WebsiteInquiries from "./inquiries";
 import { randomUuid } from "@/lib/utils";
 import { getBatches, getCampaigns, getChannels, getInvites, updateUserAttribution, type Batch, type Campaign, type Channel, type InviteCode } from "@/services/api/channel-attribution";
 import {
@@ -82,6 +83,7 @@ const sections = [
     { key: "payments", label: "充值", icon: CreditCard },
     { key: "models", label: "模型", icon: Boxes },
     { key: "feedback", label: "反馈", icon: MessageSquareText },
+    { key: "inquiries", label: "官网咨询", icon: MessageSquareText },
     { key: "audit", label: "审计", icon: ShieldCheck },
 ] as const;
 
@@ -192,6 +194,7 @@ function AdminSection({ section, modelProvider }: { section: Section; modelProvi
     if (section === "payments") return <PaymentsPanel />;
     if (section === "models") return <ModelsPanel provider={modelProvider} />;
     if (section === "feedback") return <FeedbackPanel />;
+    if (section === "inquiries") return <WebsiteInquiries />;
     return <AuditPanel />;
 }
 
