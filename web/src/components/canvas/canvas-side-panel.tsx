@@ -1,8 +1,8 @@
-import { memo, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
+import { memo, useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
 import { App, Drawer, Empty, Input, Popconfirm, Select, Spin, Tag } from "antd";
 import { useQuery } from "@tanstack/react-query";
 import { BookOpen, Check, ChevronRight, Download, Eye, FileText, Image as ImageIcon, ListChecks, Music2, Plus, Search, Settings2, Square, Trash2, Type, Video } from "lucide-react";
-import { motion } from "motion/react";
+import { motion, useReducedMotion } from "motion/react";
 import { useTranslation } from "react-i18next";
 
 import { canvasThemes, type CanvasTheme } from "@/lib/canvas-theme";
@@ -66,25 +66,57 @@ export function CanvasSidePanel({ nodes, selectedNodeIds, onFocusNode, onPreview
     const panelClosing = useCanvasSidePanelStore((state) => state.panelClosing);
     const setWidth = useCanvasSidePanelStore((state) => state.setWidth);
     const [resizing, setResizing] = useState(false);
+    const reducedMotion = useReducedMotion();
+    const resizeCleanupRef = useRef<(() => void) | null>(null);
+
+    useEffect(() => () => resizeCleanupRef.current?.(), []);
+    useEffect(() => {
+        if ((mobile || !panelOpen || !panelMounted) && resizeCleanupRef.current) {
+            resizeCleanupRef.current();
+            setResizing(false);
+        }
+    }, [mobile, panelOpen, panelMounted]);
+
+    const persistWidth = (nextWidth: number) => {
+        try { localStorage.setItem("canvas-side-panel-width", String(nextWidth)); } catch { /* Width remains usable when browser storage is unavailable. */ }
+    };
 
     const startResize = (event: ReactPointerEvent<HTMLButtonElement>) => {
+        if (event.button !== 0 || !event.isPrimary || resizeCleanupRef.current) return;
         event.preventDefault();
+        const handle = event.currentTarget;
+        const pointerId = event.pointerId;
         const startX = event.clientX;
         const startWidth = width;
         let nextWidth = startWidth;
         const onMove = (moveEvent: PointerEvent) => {
+            if (moveEvent.pointerId !== pointerId) return;
             nextWidth = Math.min(CANVAS_SIDE_PANEL_MAX_WIDTH, Math.max(CANVAS_SIDE_PANEL_MIN_WIDTH, startWidth + moveEvent.clientX - startX));
             setWidth(nextWidth);
         };
-        const onUp = () => {
-            localStorage.setItem("canvas-side-panel-width", String(nextWidth));
+        const cleanup = () => {
             window.removeEventListener("pointermove", onMove);
             window.removeEventListener("pointerup", onUp);
+            window.removeEventListener("pointercancel", onUp);
+            window.removeEventListener("blur", finish);
+            handle.removeEventListener("lostpointercapture", finish);
+            resizeCleanupRef.current = null;
+            if (handle.hasPointerCapture(pointerId)) handle.releasePointerCapture(pointerId);
+        };
+        const finish = () => {
+            cleanup();
+            persistWidth(nextWidth);
             setResizing(false);
         };
+        const onUp = (upEvent: PointerEvent) => { if (upEvent.pointerId === pointerId) finish(); };
+        handle.setPointerCapture(pointerId);
+        resizeCleanupRef.current = cleanup;
         setResizing(true);
         window.addEventListener("pointermove", onMove);
         window.addEventListener("pointerup", onUp);
+        window.addEventListener("pointercancel", onUp);
+        window.addEventListener("blur", finish);
+        handle.addEventListener("lostpointercapture", finish);
     };
 
     const content = (
@@ -123,32 +155,40 @@ export function CanvasSidePanel({ nodes, selectedNodeIds, onFocusNode, onPreview
 
     return (
         <motion.div
+            inert={!panelOpen}
             className="relative z-[60] flex h-full shrink-0"
             initial={{ width: 0, opacity: 0 }}
             animate={{ width: panelOpen ? width + 1 : 0, opacity: panelOpen ? 1 : 0 }}
-            transition={{ duration: resizing ? 0 : PANEL_MOTION_SECONDS, ease: PANEL_EASE }}
+            transition={{ duration: resizing || reducedMotion ? 0 : PANEL_MOTION_SECONDS, ease: PANEL_EASE }}
             style={{ overflow: "clip", pointerEvents: panelClosing ? "none" : undefined }}
         >
             <motion.aside
                 className="relative flex h-full shrink-0 flex-col overflow-hidden border-r"
                 initial={{ x: -48 }}
                 animate={{ x: panelClosing ? -28 : 0 }}
-                transition={{ duration: resizing ? 0 : PANEL_MOTION_SECONDS, ease: PANEL_EASE }}
+                transition={{ duration: resizing || reducedMotion ? 0 : PANEL_MOTION_SECONDS, ease: PANEL_EASE }}
                 style={{ width, background: theme.toolbar.panel, borderColor: theme.toolbar.border, color: theme.node.text }}
                 data-canvas-no-zoom
             >
                 {content}
-                <button type="button" className="absolute inset-y-0 right-0 z-40 w-4 translate-x-1/2 cursor-col-resize" onPointerDown={startResize} aria-label={t("canvas.sidePanel.resize")} />
+                <button type="button" role="separator" aria-orientation="vertical" aria-valuemin={CANVAS_SIDE_PANEL_MIN_WIDTH} aria-valuemax={CANVAS_SIDE_PANEL_MAX_WIDTH} aria-valuenow={width} className="absolute inset-y-0 right-0 z-40 w-4 translate-x-1/2 cursor-col-resize touch-none focus-visible:outline-2 focus-visible:outline-ring" onPointerDown={startResize} onKeyDown={(event) => {
+                    if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) return;
+                    event.preventDefault();
+                    const nextWidth = Math.min(CANVAS_SIDE_PANEL_MAX_WIDTH, Math.max(CANVAS_SIDE_PANEL_MIN_WIDTH, event.key === "Home" ? CANVAS_SIDE_PANEL_MIN_WIDTH : event.key === "End" ? CANVAS_SIDE_PANEL_MAX_WIDTH : width + (event.key === "ArrowRight" ? 10 : -10)));
+                    setWidth(nextWidth);
+                    persistWidth(nextWidth);
+                }} aria-label={t("canvas.sidePanel.resize")} />
             </motion.aside>
         </motion.div>
     );
 }
 
 function TabButton({ label, active, theme, onClick }: { label: string; active: boolean; theme: CanvasTheme; onClick: () => void }) {
+    const reducedMotion = useReducedMotion();
     return (
-        <button type="button" onClick={onClick} className="relative pb-1.5 text-sm font-semibold transition-opacity" style={{ color: theme.node.text, opacity: active ? 1 : 0.45 }}>
+        <button type="button" onClick={onClick} aria-pressed={active} className="relative min-h-11 text-sm font-semibold focus-visible:outline-2 focus-visible:outline-ring" style={{ color: active ? theme.node.text : theme.node.muted }}>
             {label}
-            {active ? <motion.span layoutId="sidePanelTabIndicator" className="absolute inset-x-0 -bottom-px h-0.5 rounded-full" style={{ background: theme.toolbar.activeText }} transition={{ type: "spring", stiffness: 500, damping: 34 }} /> : null}
+            {active ? <motion.span layoutId="sidePanelTabIndicator" className="absolute inset-x-0 -bottom-px h-0.5 rounded-full" style={{ background: theme.toolbar.activeText }} transition={reducedMotion ? { duration: 0 } : { type: "spring", stiffness: 500, damping: 34 }} /> : null}
         </button>
     );
 }
@@ -479,7 +519,7 @@ const CanvasAssetsTab = memo(function CanvasAssetsTab({ onInsert, theme }: { onI
                                         <span className="opacity-50">{group.items.length}</span>
                                     </button>
                                     {isCollapsed ? null : (
-                                        <div className="grid grid-cols-2 gap-2 px-1 pb-2 pt-1">
+                                        <div className="grid grid-cols-[repeat(auto-fit,minmax(min(100%,104px),1fr))] gap-2 px-1 pb-2 pt-1">
                                             {group.items.map((asset) => {
                                                 const payload = buildInsertPayload(asset);
                                                 return (
@@ -514,11 +554,11 @@ function AssetCard({ asset, payload, theme, onInsert, onRemove }: { asset: Asset
             }}
         >
             <AssetCover asset={asset} />
-            <div className="absolute inset-0 flex items-center justify-center gap-2.5 opacity-0 transition duration-200 group-hover:opacity-100">
+            <div className="absolute inset-0 flex items-center justify-center gap-2.5 opacity-0 transition duration-200 group-hover:opacity-100 group-focus-within:opacity-100 [@media(hover:none)]:opacity-100">
                 <button
                     type="button"
                     onClick={onInsert}
-                    className="grid size-8 place-items-center rounded-full bg-white/90 text-stone-700 shadow-sm backdrop-blur transition hover:bg-white hover:text-stone-900 dark:bg-black/60 dark:text-stone-100 dark:hover:bg-black/80"
+                    className="grid size-11 place-items-center rounded-full bg-white/90 text-stone-700 shadow-sm backdrop-blur transition hover:bg-white hover:text-stone-900 focus-visible:outline-2 focus-visible:outline-ring dark:bg-black/60 dark:text-stone-100 dark:hover:bg-black/80"
                     aria-label={t("canvas.sidePanel.inserted")}
                 >
                     <Plus className="size-4" />
@@ -526,7 +566,7 @@ function AssetCard({ asset, payload, theme, onInsert, onRemove }: { asset: Asset
                 <Popconfirm title={t("canvas.sidePanel.removeAssetTitle")} okText={t("canvas.sidePanel.remove")} cancelText={t("common.cancel")} okButtonProps={{ danger: true }} onConfirm={onRemove}>
                     <button
                         type="button"
-                        className="grid size-8 place-items-center rounded-full bg-white/90 text-stone-700 shadow-sm backdrop-blur transition hover:bg-white hover:text-red-500 dark:bg-black/60 dark:text-stone-100 dark:hover:bg-black/80 dark:hover:text-red-400"
+                        className="grid size-11 place-items-center rounded-full bg-white/90 text-stone-700 shadow-sm backdrop-blur transition hover:bg-white hover:text-red-500 focus-visible:outline-2 focus-visible:outline-ring dark:bg-black/60 dark:text-stone-100 dark:hover:bg-black/80 dark:hover:text-red-400"
                         aria-label={t("canvas.sidePanel.removeAsset")}
                     >
                         <Trash2 className="size-4" />

@@ -638,6 +638,9 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
+    .ai-title-aurora {
+        animation: none;
+    }
     .canvas-connection-flow {
         animation: none;
         opacity: 0.55;

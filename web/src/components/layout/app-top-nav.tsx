@@ -22,9 +22,11 @@ type AppTopNavProps = {
     onCanvasPointerEnter: () => void;
     onCanvasPointerLeave: () => void;
     onRevealCanvasNav: () => void;
+    onCanvasFocus: () => void;
+    onCanvasBlur: () => void;
 };
 
-export function AppTopNav({ canvasProject, canvasVisible, onCanvasPointerEnter, onCanvasPointerLeave, onRevealCanvasNav }: AppTopNavProps) {
+export function AppTopNav({ canvasProject, canvasVisible, onCanvasPointerEnter, onCanvasPointerLeave, onRevealCanvasNav, onCanvasFocus, onCanvasBlur }: AppTopNavProps) {
     const { t } = useTranslation();
     const { user } = useAuth();
     const { pathname } = useLocation();
@@ -35,6 +37,7 @@ export function AppTopNav({ canvasProject, canvasVisible, onCanvasPointerEnter, 
     const autoConnectRef = useRef(false);
     const navigationRequestRef = useRef(0);
     const navigationRef = useRef<HTMLElement>(null);
+    const headerRef = useRef<HTMLElement>(null);
     const [canScrollNavigationLeft, setCanScrollNavigationLeft] = useState(false);
     const [canScrollNavigationRight, setCanScrollNavigationRight] = useState(false);
     const agentToken = useAgentStore((state) => state.token);
@@ -47,6 +50,12 @@ export function AppTopNav({ canvasProject, canvasVisible, onCanvasPointerEnter, 
     const mobileNavigationTools = visibleNavigationTools.filter((tool) => ["canvas", "image", "video", "text"].includes(tool.slug));
     const slug = pathname.split("/").filter(Boolean)[0];
     const activeToolSlug = visibleNavigationTools.some((tool) => tool.slug === slug) ? (slug as NavigationToolSlug) : undefined;
+
+    useEffect(() => {
+        if (!canvasProject) return;
+        if (headerRef.current?.contains(document.activeElement)) onCanvasFocus();
+        else onCanvasBlur();
+    }, [canvasProject, onCanvasFocus, onCanvasBlur]);
 
     const refreshFeedbackUnread = useCallback(() => {
         void getFeedbackUnread()
@@ -113,8 +122,10 @@ export function AppTopNav({ canvasProject, canvasVisible, onCanvasPointerEnter, 
 
     return (
         <>
-            {canvasProject ? <button type="button" className="absolute inset-x-0 top-0 z-[79] h-2 cursor-default bg-transparent outline-none" onPointerEnter={onRevealCanvasNav} onFocus={onRevealCanvasNav} aria-label={t("topNav.showNavigation")} /> : null}
+            {canvasProject ? <button type="button" className="group absolute inset-x-0 top-0 z-[79] h-2 cursor-default bg-transparent focus-visible:inset-x-auto focus-visible:z-[81] focus-visible:h-10 focus-visible:rounded-md focus-visible:bg-background focus-visible:px-3 focus-visible:outline-2 focus-visible:outline-ring" onPointerEnter={onRevealCanvasNav} onFocus={onCanvasFocus} onBlur={onCanvasBlur} onClick={onRevealCanvasNav} aria-label={t("topNav.showNavigation")}><span className="sr-only group-focus-visible:not-sr-only">{t("topNav.showNavigation")}</span></button> : null}
             <header
+                ref={headerRef}
+                inert={canvasProject && !canvasVisible}
                 className={cn(
                     "z-20 h-14 shrink-0 border-b border-stone-200 bg-background/90 backdrop-blur-xl dark:border-stone-800",
                     canvasProject ? "absolute inset-x-0 top-0 z-[80] transition-[transform,opacity] duration-300 ease-out motion-reduce:transition-none" : "sticky top-0",
@@ -122,6 +133,8 @@ export function AppTopNav({ canvasProject, canvasVisible, onCanvasPointerEnter, 
                 style={canvasProject ? { transform: canvasVisible ? "translateY(0)" : "translateY(-100%)", opacity: canvasVisible ? 1 : 0, pointerEvents: canvasVisible ? "auto" : "none" } : undefined}
                 onPointerEnter={canvasProject ? onCanvasPointerEnter : undefined}
                 onPointerLeave={canvasProject ? onCanvasPointerLeave : undefined}
+                onFocusCapture={canvasProject ? onCanvasFocus : undefined}
+                onBlurCapture={canvasProject ? (event) => { if (!event.currentTarget.contains(event.relatedTarget)) onCanvasBlur(); } : undefined}
             >
                 <div className="mx-auto flex h-full max-w-7xl items-stretch justify-between gap-1 px-2 md:gap-5 md:px-6">
                     <div className="flex min-w-0 flex-1 items-center">

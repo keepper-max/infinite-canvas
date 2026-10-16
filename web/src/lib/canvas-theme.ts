@@ -28,6 +28,7 @@ export const canvasThemes = {
             itemHover: "#e7e5df",
             activeBg: "#e7e5df",
             activeText: "#292524",
+            danger: "#b91c1c",
         },
     },
     dark: {
@@ -56,6 +57,7 @@ export const canvasThemes = {
             itemHover: "#292524",
             activeBg: "#3a3631",
             activeText: "#f5f5f4",
+            danger: "#fca5a5",
         },
     },
 } as const;

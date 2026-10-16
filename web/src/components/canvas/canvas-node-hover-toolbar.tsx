@@ -224,10 +224,10 @@ export function CanvasNodeHoverToolbar({
             <div
                 className={
                     mobile
-                        ? "thin-scrollbar absolute inset-x-3 bottom-[82px] z-[70] flex h-14 items-center overflow-x-auto rounded-2xl border border-black/10 bg-white px-1 text-[15px] text-[#242529] shadow-[0_8px_28px_rgba(15,23,42,.16)]"
-                        : "absolute z-[70] flex h-12 -translate-x-1/2 -translate-y-full items-center overflow-visible rounded-[18px] border border-black/10 bg-white text-[15px] text-[#242529] shadow-[0_8px_28px_rgba(15,23,42,.12)]"
+                        ? "thin-scrollbar absolute inset-x-3 bottom-[82px] z-[70] flex h-14 items-center overflow-x-auto rounded-2xl border px-1 text-[15px] shadow-[0_8px_28px_rgba(15,23,42,.16)]"
+                        : "absolute z-[70] flex h-12 -translate-x-1/2 -translate-y-full items-center overflow-visible rounded-[18px] border text-[15px] shadow-[0_8px_28px_rgba(15,23,42,.12)]"
                 }
-                style={mobile ? undefined : { left, top }}
+                style={{ ...(mobile ? {} : { left, top }), background: theme.toolbar.panel, borderColor: theme.toolbar.border, color: theme.toolbar.item }}
                 onMouseEnter={() => onKeep(node.id)}
                 onMouseLeave={() => {
                     if (!imageToolSettingsOpen) onLeave();
@@ -350,11 +350,12 @@ export function CanvasNodeInfoModal({ node, open, onClose }: { node: CanvasNodeD
 }
 
 function ToolbarAction({ title, label, icon, onClick, showLabel, active = false, danger = false }: ToolbarTool & { showLabel: boolean }) {
+    const theme = canvasThemes[useThemeStore((state) => state.theme)];
     const hasText = showLabel && Boolean(label);
     return (
-        <Tooltip title={title} placement="top" mouseEnterDelay={0.2} color="#ffffff" styles={{ root: { color: "#242529", boxShadow: "0 8px 24px rgba(15,23,42,.16)", fontSize: 13, fontWeight: 500 } }}>
-            <button type="button" className={`group relative flex h-12 items-center whitespace-nowrap px-1.5 ${danger ? "text-[#ef4444]" : ""}`} onClick={onClick} aria-label={title}>
-                <span className={`flex h-9 items-center ${hasText ? "gap-2 px-2.5" : "justify-center px-2"} rounded-lg transition group-hover:bg-[#f0f0f1] ${active ? "bg-[#eeeeef]" : ""}`}>
+        <Tooltip title={title} placement="top" mouseEnterDelay={0.2} color={theme.toolbar.panel} styles={{ root: { color: theme.node.text, boxShadow: "0 8px 24px rgba(15,23,42,.16)", fontSize: 13, fontWeight: 500 } }}>
+            <button type="button" className="group relative flex h-12 min-w-11 items-center whitespace-nowrap px-1.5 focus-visible:outline-2 focus-visible:outline-ring" style={{ color: danger ? theme.toolbar.danger : theme.toolbar.item, background: active ? theme.toolbar.activeBg : undefined }} onClick={onClick} aria-label={title}>
+                <span className={`flex h-9 items-center ${hasText ? "gap-2 px-2.5" : "justify-center px-2"} rounded-lg transition group-hover:bg-black/5 group-focus-visible:bg-black/5 dark:group-hover:bg-white/10 dark:group-focus-visible:bg-white/10`}>
                     {icon}
                     {hasText ? <span>{label}</span> : null}
                 </span>

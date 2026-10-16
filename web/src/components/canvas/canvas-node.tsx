@@ -777,7 +777,7 @@ function EmptyImageContent({ node, theme, onReloadAsset }: NodeContentRendererPr
             <div className="flex size-14 items-center justify-center rounded-2xl" style={{ background: theme.toolbar.activeBg }}>
                 <ImageIcon className="size-6 opacity-30" />
             </div>
-            <span className="text-[10px] tracking-[0.18em] opacity-50">{t(hasStoredAsset ? "canvas.node.assetNotLoaded" : "canvas.node.emptyImage")}</span>
+            <span className="text-sm" style={{ color: theme.node.text }}>{t(hasStoredAsset ? "canvas.node.assetNotLoaded" : "canvas.node.emptyImage")}</span>
             {hasStoredAsset ? (
                 <button
                     type="button"

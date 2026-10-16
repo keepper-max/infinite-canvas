@@ -121,9 +121,9 @@ export default function AuthPage({ mode }: { mode: AuthMode }) {
     };
 
     return (
-        <main className="relative flex h-dvh items-center justify-center overflow-hidden bg-[#101010] px-5 py-8 text-stone-100">
+        <main className="relative flex h-dvh flex-col overflow-y-auto bg-[#101010] px-5 py-8 text-stone-100">
             <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_18%_15%,rgba(139,92,246,0.2),transparent_32%),radial-gradient(circle_at_82%_78%,rgba(59,130,246,0.12),transparent_28%)]" />
-            <section className="relative w-full max-w-md rounded-[28px] border border-white/10 bg-[#191817]/95 p-8 shadow-2xl shadow-black/40 backdrop-blur-xl sm:p-10">
+            <section className="relative mx-auto my-auto w-full max-w-md shrink-0 rounded-[28px] border border-white/10 bg-[#191817]/95 p-8 shadow-2xl shadow-black/40 backdrop-blur-xl sm:p-10">
                 <div className="flex items-center gap-3">
                     <img src="/shoushou-logo.png" alt="" className="size-11 rounded-xl bg-black object-contain" />
                     <div>

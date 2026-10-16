@@ -1,6 +1,13 @@
+import { Link } from "react-router-dom";
+
 export function CanvasRefreshShell() {
     return (
         <main className="relative h-full min-h-0 overflow-hidden bg-background text-foreground">
+            <div className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-3 px-6 text-center">
+                <p role="status" aria-live="polite" className="text-sm">正在读取画布与素材…</p>
+                <p className="max-w-sm text-sm text-muted-foreground">首次打开或素材较多时可能需要等待。你可以返回画布列表，稍后重新进入。</p>
+                <Link to="/canvas" className="inline-flex min-h-11 items-center rounded-md px-3 text-sm underline underline-offset-4 focus-visible:outline-2 focus-visible:outline-ring">返回我的画布</Link>
+            </div>
             <div
                 className="absolute inset-0 opacity-60"
                 style={{

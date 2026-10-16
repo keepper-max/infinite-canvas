@@ -5,7 +5,7 @@ description: Planned follow-up work
 
 # TODO
 
-- 继续定位个别画布进入时骨架屏长期不消失的问题：采集真实浏览器请求与 IndexedDB 缓存链路证据，区分公网传输延迟和前端加载门控，避免把接口压测通过等同于问题解决。
+- 继续定位个别画布进入时骨架屏长期不消失的问题：加载壳已补充状态说明和返回入口，仍需采集真实浏览器请求与 IndexedDB 缓存链路证据，区分公网传输延迟和前端加载门控，避免把加载反馈或接口压测通过等同于根因解决。
 - 视频并发后续：发布修正版镜像后按运维手册将线上生成并发切至50；历史视频缺失时长需另行备份后回填。复用已生成素材补验浏览器播放与长视频转存，不把1秒360p单批50并发当作长期容量承诺。
 
 - Publish the standalone Director Desk build to the production host directory configured by `DIRECTOR_DESK_DIST`, then complete end-to-end acceptance at `https://shoumiren.online/3d-director/`. If a different origin is introduced later, keep CSP restricted to that exact origin instead of using a wildcard.

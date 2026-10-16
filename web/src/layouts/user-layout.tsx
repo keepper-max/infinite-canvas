@@ -13,6 +13,8 @@ export default function UserLayout({ children }: { children: ReactNode }) {
     const canvasProject = /^\/canvas\/[^/]+/.test(pathname);
     const [canvasNavVisible, setCanvasNavVisible] = useState(canvasProject);
     const hideTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+    const navFocusedRef = useRef(false);
+    const navHoveredRef = useRef(false);
 
     const cancelHide = useCallback(() => {
         if (!hideTimerRef.current) return;
@@ -22,8 +24,10 @@ export default function UserLayout({ children }: { children: ReactNode }) {
 
     const scheduleHide = useCallback(() => {
         cancelHide();
-        if (!canvasProject) return;
-        hideTimerRef.current = setTimeout(() => setCanvasNavVisible(false), CANVAS_NAV_IDLE_MS);
+        if (!canvasProject || navFocusedRef.current || navHoveredRef.current) return;
+        hideTimerRef.current = setTimeout(() => {
+            if (!navFocusedRef.current && !navHoveredRef.current) setCanvasNavVisible(false);
+        }, CANVAS_NAV_IDLE_MS);
     }, [cancelHide, canvasProject]);
 
     const revealCanvasNav = useCallback(() => {
@@ -32,8 +36,20 @@ export default function UserLayout({ children }: { children: ReactNode }) {
         scheduleHide();
     }, [canvasProject, scheduleHide]);
 
+    const focusCanvasNav = useCallback(() => {
+        navFocusedRef.current = true;
+        cancelHide();
+        setCanvasNavVisible(true);
+    }, [cancelHide]);
+
+    const blurCanvasNav = useCallback(() => {
+        navFocusedRef.current = false;
+        scheduleHide();
+    }, [scheduleHide]);
+
     useEffect(() => {
         cancelHide();
+        navHoveredRef.current = false;
         setCanvasNavVisible(canvasProject);
         if (canvasProject) scheduleHide();
         return cancelHide;
@@ -45,9 +61,11 @@ export default function UserLayout({ children }: { children: ReactNode }) {
                 <AppTopNav
                     canvasProject={canvasProject}
                     canvasVisible={canvasNavVisible}
-                    onCanvasPointerEnter={cancelHide}
-                    onCanvasPointerLeave={scheduleHide}
+                    onCanvasPointerEnter={() => { navHoveredRef.current = true; cancelHide(); }}
+                    onCanvasPointerLeave={() => { navHoveredRef.current = false; scheduleHide(); }}
                     onRevealCanvasNav={revealCanvasNav}
+                    onCanvasFocus={focusCanvasNav}
+                    onCanvasBlur={blurCanvasNav}
                 />
                 <div
                     className={cn(
