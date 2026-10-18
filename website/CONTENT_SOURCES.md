@@ -10,6 +10,8 @@
 
 ## 资讯来源
 
+- 用户批准新增DeepSeek V4.1-Flash-1017，事件日期2026-10-17；来源为可访问的官方模型卡 https://huggingface.co/deepseek-ai/DeepSeek-V4.1-Flash-1017 ，保留厂商报告归属，不承诺实际提效、API可用性或价格。公告原页抓取超时，未用其补充未经模型卡支持的事实。
+
 - 腾讯混元 Hy-Memory 2.0 发布页：https://memory.hunyuan.tencent.com/ ，页面标注发布日2026-10-16；核对模型/框架/应用及三类记忆场景，未采用排名营销说法。
 - IT之家 Ling-3.1-flash 报道：https://www.ithome.com/1/013/700.htm ，页面标注2026-10-16；只摘要开放模型、工具调用与服务器部署背景，不把测试数字当作本站表现。
 - 千问办公产品新鲜事：https://learn.qwenwork.cn/whatsnew/ ，取10月14日第5期电商版及连接器更新；不把发布介绍等同于所有账号已开放。

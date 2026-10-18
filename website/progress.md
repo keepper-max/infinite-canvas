@@ -11,3 +11,6 @@
 - 浏览器确认三张新图均为1672×941并成功加载，桌面没有横向溢出。工具并行任务完成前存储未可读，待完成后再落提示词文件；未重复生成。
 - 新图手机390px验证：案例区单列330px，无横向溢出；已恢复默认浏览器尺寸。整合效果截图保存在H:/CodexStorage/website-qa/concepts-integrated.jpg。
 - v0.16.23应用与site02官网已发布，0044迁移完成，健康检查及公开资源哈希通过；匿名咨询与相同编号重试只产生1条自检记录，匿名管理接口401。备份及回滚记录见ops/releases/v0.16.23.md。仅进行授权的部署构建，未额外测试；正式浏览器工具两次超时，管理员登录后的完整验收仍待确认。
+- 经用户批准发布DeepSeek资讯与顶部速览，备份/root/shoumiren-news-20261018；新资源content-news-20261018.js，原content.js保持不变。Cloud Assistant t-qd070dor61x277k成功；首页SHA256为8178dee54a6d39602bd3283b547fd42de1df076a08017e0f3ec9fc0c63c0837d，新JS为bb36031cfb11dcfe006aadb4df97796ff436ece9c5bcad0fce4e93dbb11215fa，snippet为bd1b0159125ba4c069904d477e7142554d82e0d71c59f8eb28fa530a474ed72f。公网文件逐字节匹配，nginx配置检查及画布健康通过；主站配置不变，临时归档已移出公开路径。未构建、测试、commit或push；浏览器视觉仍待人工验收。
+- 记录更新首次补丁因progress.md标题匹配失败未写入，改用实际末行上下文补记；无线上影响。todo已复核，本次只是资讯内容发布，服务器采集/审核后台待办保持不变。
+- 最新自动化升级：ops/publish-website-news.ps1 -Bootstrap成功，调用t-qd070dp7kz6tce8，备份/root/shoumiren-news-20261018T045232Z-6cfaad26；新首页哈希cbc2e76f9cec2956dcf0a2fb0741be6324237aeacce8be32af4d9219bbdd8d7e，snippet哈希34ac5916f38e769d18a1f6ded3b0a97a3c0d018964e3f00b64b81c48818ad22f。日常不带参数重复运行t-qd070dp8r72j6kg返回NEWS_UNCHANGED；公网current.js为200/no-store，内容哈希匹配。任务ai通过产品工具更新为ACTIVE且仍每日9点，无重复创建；编辑规则同步到既有news-editorial.md。无数据库、画布镜像或付费API变更。下一次自然调度及故障回滚待验证。

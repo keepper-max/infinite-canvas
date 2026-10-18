@@ -1,5 +1,7 @@
 # 守密人官网独立静态发布
 
+最新流程：每日北京时间9点由现有Codex任务ai核实后自动发布，不再逐条人工审核。首页引用/website-news/current.js（no-store），旧不可变资源保留。日常执行ops/publish-website-news.ps1，只替换资讯数据，不重建应用；细则及失败恢复见NEWS_WORKFLOW.md。调度仍依赖当前电脑/Codex，不是服务器独立任务。旧ops/publish-website.ps1固定site02整包白名单不适用于当前整站覆盖，下次整站发布须更新公开白名单和资源映射。
+
 官网首页与画布Vite应用分开；当前site02包含咨询表单、项目概念视觉、完整文章与资讯摘要，不引入主画布依赖。
 
 - 公开入口：https://shoumiren.online/
@@ -12,4 +14,4 @@
 
 咨询已部署：POST /api/website/inquiries，管理员在画布 /admin/inquiries 查阅、写内部备注并标记完成。公开邮箱shoushouhuabu@126.com，不依赖咨询邮件通知；原登录用户反馈保持不变。0044迁移已完成，Redis独立限流同IP每5分钟5次，故障拒绝。线上提交/重试去重及匿名管理接口401已确认，管理员完整操作和真实浏览器验收待补充，详见ops/releases/v0.16.23.md。
 
-第二版使用独立site02目录，保留旧site01的不可变CSS/Logo；脚本只替换homepage snippet，失败恢复旧snippet。已补齐三则资讯摘要、三篇咨询文章与三类真实项目说明；图片为原界面作参考的AI产品概念视觉，见CONTENT_SOURCES.md与IMAGE_PROMPTS.md。content.js、content.css与三张concept-v1.png一并发布到site02，原截图和内部文档不公开。每日任务仍仅产出待审核草稿，不开启自动发布。
+第二版使用独立site02目录，保留旧site01的不可变CSS/Logo。已补齐资讯摘要、三篇咨询文章与三类真实项目说明；图片为原界面作参考的AI产品概念视觉，见CONTENT_SOURCES.md与IMAGE_PROMPTS.md。原截图和内部文档不公开。最新资讯自动发布流程只更新独立数据入口，原页面、案例和咨询接口不随每日更新而部署。

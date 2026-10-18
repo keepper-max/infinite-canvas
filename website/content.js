@@ -1,6 +1,10 @@
 // Curated summaries, not a browser-side scraper. Keep sources and reporting dates with every update.
 const websiteContent = {
   news: [
+    {date:'2026-10-17',category:'模型与智能体',title:'DeepSeek 更新 Flash 模型，编程与智能体流程值得重新评估',
+      summary:'DeepSeek 公开 V4.1-Flash-1017 模型卡与 MIT 许可权重。官方报告称，新版本改善推理、编程、智能体与视觉任务表现，并减少任务耗时和输出长度；这些收益来自厂商评测，不等于所有业务场景都能获得同样提升。',
+      observation:'已有自动编程或多步工具调用流程的团队，可以用自己的任务重新比较成功率、总调用成本与失败恢复能力，先回归验证，再决定是否替换生产模型。',
+      source:'DeepSeek 官方模型卡',url:'https://huggingface.co/deepseek-ai/DeepSeek-V4.1-Flash-1017'},
     {date:'2026-10-16',category:'智能体记忆',title:'混元开放 Hy-Memory 2.0，覆盖聊天、工作与代码记忆',
       summary:'腾讯混元发布 Hy-Memory 2.0，开放记忆模型、框架和 MemHub 应用。除聊天历史外，新版本还关注任务进度、经验适用条件与代码修改的上下文，三层能力可以分开接入。',
       observation:'对需要持续处理同一任务的助手，记忆不仅是保存聊天。还要明确哪些记录可被召回、何时失效，以及用户如何查看和清除。',
