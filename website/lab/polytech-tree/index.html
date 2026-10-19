@@ -9,19 +9,23 @@
 <body>
   <header class="page-header"><a href="/#projects" class="back">← 返回守密人官网</a><span>互动知识可视化与教学课件</span></header>
   <main>
-    <div class="intro"><div><h1>人类科技树<span>从石器到智能时代</span></h1><p>拖动探索科技发展的脉络，点击节点查看它与其他技术之间的关系。</p></div><p class="view-caption">时间向上生长，<br>知识彼此相连。</p></div>
+    <div class="intro"><div><h1>人类科技树<span>从石器到智能时代</span></h1><p>远看文明全景，近看知识之间的真实关联。拖动平移，放大探索。</p></div><p class="view-caption">时间向上生长，<br>知识彼此相连。</p></div>
     <section class="experience" aria-label="互动知识空间">
       <div class="explore-tools" inert>
         <label>时代<select id="era"><option value="">所有时代</option></select></label>
         <label>领域<select id="category"><option value="">所有领域</option></select></label>
-        <label class="node-select">知识节点<select id="node"><option value="">选择节点，查看关联</option></select></label>
+        <label class="node-select">重点知识<select id="node"><option value="">选择重点知识</option></select></label>
+        <div class="search-control"><label for="search">搜索全部知识</label><input id="search" type="search" placeholder="名称 / 英文名" autocomplete="off" aria-controls="search-results"><div id="search-results" hidden><p id="search-status" role="status"></p><ul id="search-list"></ul><button id="search-more" type="button" hidden>显示更多结果</button></div></div>
         <button id="tour" type="button">开始漫游</button><button id="reset" type="button">重置视角</button>
       </div>
+      <div class="view-controls" inert><button id="overview" type="button">返回全景</button><button id="zoom-in" type="button" aria-label="放大知识网络">放大</button><button id="zoom-out" type="button" aria-label="缩小知识网络">缩小</button><button id="lines-toggle" type="button" aria-pressed="true">隐藏关系线</button><label>显示质量<select id="performance"><option value="quality">完整细节</option><option value="economy">性能模式</option></select></label></div>
+      <div class="branch-bar"><nav id="breadcrumbs" aria-label="知识浏览路径"></nav><div class="branch-actions" id="branch-actions"><button id="up" type="button" disabled>返回上一级</button><button id="collapse" type="button" disabled>折叠全部</button></div></div>
       <div class="workspace">
-        <div id="scene"><div id="loading" role="status" aria-live="polite"><div class="skeleton-tree" aria-hidden="true"></div><h2>正在展开知识空间</h2><p id="load-status">准备三维场景</p><progress id="load-progress" max="100" value="5" aria-label="场景准备进度"></progress></div></div>
-        <aside class="reader"><div class="reader-heading"><h2>沿着关联，发现知识</h2><button id="clear" type="button" hidden>取消聚焦</button></div><div id="detail" aria-live="polite"></div><details class="legend-disclosure"><summary>领域图例</summary><div class="legend" id="legend" aria-label="领域图例"></div></details><p class="data-note">这是一份教育用途的知识索引；技术起源的年代与关联关系仍可能存在争议。</p></aside>
+        <div id="scene"><div id="node-tooltip" role="tooltip" hidden></div><div id="loading" role="status" aria-live="polite"><div class="skeleton-tree" aria-hidden="true"></div><h2>正在展开知识空间</h2><p id="load-status">准备三维场景</p><progress id="load-progress" max="100" value="5" aria-label="场景准备进度"></progress></div></div>
+        <aside class="reader"><div class="reader-heading"><h2>沿着关联，发现知识</h2><button id="clear" type="button" hidden>取消选择</button></div><div id="detail" aria-live="polite"></div><details class="legend-disclosure"><summary>领域图例</summary><div class="legend" id="legend" aria-label="领域图例"></div></details><p class="data-note">这是一份教育用途的知识索引；技术起源的年代与关联关系仍可能存在争议。路径为索引中的真实关联，不代表因果结论。</p></aside>
       </div>
-      <div class="scene-footer"><p id="scene-status" role="status">准备中</p><p>拖动旋转 · 滚轮缩放 · 右键平移<span class="touch-hint"> · 双指缩放与平移</span></p><label>显示名称 <input id="labels" type="range" min="0" max="100" value="60"><output id="label-count" for="labels">60</output></label></div>
+      <div class="branch-pager"><span id="branch-context"></span><div><button id="prev" type="button" disabled>上一页</button><span id="page-number" aria-live="polite"></span><button id="next" type="button" disabled>下一页</button></div></div>
+      <div class="scene-footer"><p id="scene-status" role="status">准备中</p><p>拖动平移 · 指针缩放 · 右键旋转<span class="touch-hint"> · 双指缩放与平移</span></p><label>名称上限 <input id="labels" type="range" min="0" max="40" value="32"><output id="label-count" for="labels">32</output></label></div>
     </section>
     <section id="fallback" class="fallback" hidden><img src="/website-assets/polytech-tree/cover-f67e358e16e5.webp" width="1200" height="675" alt="按时代分层、按领域着色的立体科技树"><div><h2 id="fallback-title">暂时无法打开三维场景</h2><p id="fallback-message">可以先了解知识树的组织方式：时间、领域与技术关联共同组成可探索的知识空间。</p><button id="retry" type="button">重新加载</button><a href="/#projects">返回官网项目实践 ↗</a></div></section>
     <noscript><p class="notice">此互动课件需要启用JavaScript。你仍可阅读下方版权信息，或返回官网。</p></noscript>

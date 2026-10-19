@@ -1,6 +1,8 @@
 # 互动知识树｜本地验收版
 
-最新未发布的性能优化与前后采样见[PERFORMANCE.md](./PERFORMANCE.md)。线上仍为v0.16.25；本地4411预览已使用优化产物，不能把此前发布状态理解为本轮优化已上线。
+当前为V3本地版：恢复V1完整纵向网络与真实坐标，3862微点、真实关联线和最多60项前景/40名称共用相机；带空间索引、LOD、全库搜索、关系高亮与视图控制。实现、实测和回退见[V3.md](./V3.md)。本地预览：http://127.0.0.1:4411/lab/polytech-tree/ ，本轮不commit/push/部署。
+
+上一轮全塔性能优化已发布v0.16.26，采样见[PERFORMANCE.md](./PERFORMANCE.md)，发布记录见../../../ops/releases/v0.16.26.md。V2宫格未发布且已备份，其历史报告为[HIERARCHY.md](./HIERARCHY.md)。下列初次接入/视觉历史记录不代表V3：手机不再精选截断、浏览时不运行layoutTower，构建时自动校验/更新坐标缓存。
 
 线上入口：https://shoumiren.online/#knowledge-tree ，独立课件：https://shoumiren.online/lab/polytech-tree/ 。用户已授权并发布v0.16.25；此前本地验收记录保留。仅切换官网Nginx片段和独立静态资源，没有修改生产数据、画布依赖、节点/权限/生成接口或应用镜像。发布证据见../../../ops/releases/v0.16.25.md。
 

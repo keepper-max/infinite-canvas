@@ -191,6 +191,7 @@ export function buildNameLabels(placed: PlacedNode[]): {
   /** 聚焦：跳数表（>=0 的条目名字优先占名额），传 null 取消 */
   setFocus: (focus: Int8Array | null) => void
   setHover: (index: number | null) => void
+  setCandidates: (indices: number[]) => void
   dispose: () => void
 } {
   const measure=document.createElement('canvas').getContext('2d')!;measure.font=NAME_FONT
@@ -334,6 +335,11 @@ export function buildNameLabels(placed: PlacedNode[]): {
       lastCamPos.set(0, -1e9, 0)
     },
     setHover: (index: number | null) => { if (hover !== index) { hover = index; lastCamPos.set(0,-1e9,0) } },
+    setCandidates: (indices: number[]) => {
+      groups=Array.from({length:5},()=>[])
+      for(const i of indices)groups[Math.min(4,Math.max(0,placed[i].node.importance-1))].push(i)
+      lastCamPos.set(0,-1e9,0)
+    },
     dispose: () => layer.remove(),
   }
 }

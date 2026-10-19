@@ -17,7 +17,7 @@ export class CameraRig {
   onTourEnd?: () => void
 
   private camera: THREE.PerspectiveCamera
-  private plan: TourPlan
+  private plan: TourPlan | null
   private towerHeight: number
   private lastEra = -1
   private startPos = new THREE.Vector3()
@@ -30,7 +30,7 @@ export class CameraRig {
 
   constructor(
     camera: THREE.PerspectiveCamera, dom: HTMLElement,
-    towerHeight: number, plan: TourPlan, private overview: THREE.Vector3[]
+    towerHeight: number, plan: TourPlan | null, private overview: THREE.Vector3[]
   ) {
     this.camera = camera
     this.plan = plan
@@ -96,7 +96,7 @@ export class CameraRig {
   }
 
   startTour() {
-    if (this.mode === 'tour') return
+    if (!this.plan || this.mode === 'tour') return
     this.mode = 'tour'
     this.transition = null
     this.tourT = 0
@@ -139,6 +139,7 @@ export class CameraRig {
       return
     }
 
+    if (!this.plan) return
     this.tourT += dt
     if (this.tourT >= this.plan.total) {
       this.applyTourPose(this.plan.total)
@@ -149,6 +150,7 @@ export class CameraRig {
   }
 
   private applyTourPose(t: number) {
+    if (!this.plan) return
     this.plan.poseAt(t, this.pos, this.lookTarget)
     this.plan.upAt(t, this.up)
 

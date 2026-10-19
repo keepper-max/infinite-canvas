@@ -2,8 +2,8 @@ param([switch]$PrepareOnly,[string]$ArchiveUrl,[string]$ArchivePath)
 $ErrorActionPreference='Stop'
 $cli='H:/CodexStorage/tools/aliyun-cli/aliyun.exe'
 $website=Join-Path $PSScriptRoot '../website'
-$release='/var/www/shoumiren-site/releases/20261019-site04'
-$backup='/root/shoumiren-homepage-20261019-site04'
+$release='/var/www/shoumiren-site/releases/20261019-site05'
+$backup='/root/shoumiren-homepage-20261019-site05'
 function Invoke-WebsiteEdge([string]$Script) {
     $script="set -eu`numask 077`ntest `"`$(hostname)`" = iZm5edijeycdxfyte4d9igZ`nexec 9>/run/lock/shoumiren-website-news.lock`nflock -n 9`n"+$Script
     $encoded=[Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($script.Replace("`r`n","`n")))
@@ -38,11 +38,11 @@ if($PrepareOnly){
     $script=@'
 test ! -e RELEASE
 test ! -e BACKUP
-printf '%s  %s\n' '9ea0cfc6879357718a48c3dd1f5af44e07ac8271f5eae12c26319f69cabaf9fd' /etc/nginx/snippets/shoumiren-homepage.conf 'c83742803bc1082b5f1fa03e9d0dddaf246060533de5afe1cff2ca8b3c9ffd11' /var/www/shoumiren-site/releases/20261019-site03/index.html '109b39f25e53d4eebec367ff847fc155b1984c9daf5fde7b3028dca2f739bd12' /etc/nginx/sites-available/shoumiren-live | sha256sum -c -
+printf '%s  %s\n' 'f8ad9517fbf59460928779176f1ba2deab6ae5b1b1a241da4ea637a7c08734a8' /etc/nginx/snippets/shoumiren-homepage.conf 'c83742803bc1082b5f1fa03e9d0dddaf246060533de5afe1cff2ca8b3c9ffd11' /var/www/shoumiren-site/releases/20261019-site04/index.html '109b39f25e53d4eebec367ff847fc155b1984c9daf5fde7b3028dca2f739bd12' /etc/nginx/sites-available/shoumiren-live | sha256sum -c -
 mkdir BACKUP RELEASE
 cp -p /etc/nginx/snippets/shoumiren-homepage.conf BACKUP/homepage.before
 cp -p /etc/nginx/sites-available/shoumiren-live BACKUP/main.before
-cp -p /var/www/shoumiren-site/releases/20261019-site03/news-current.js BACKUP/news.before
+cp -p /var/www/shoumiren-site/releases/20261019-site04/news-current.js BACKUP/news.before
 curl -fsS 'ARCHIVE_URL' -o BACKUP/public-assets.tgz
 printf '%s  %s\n' 'ARCHIVE_HASH' BACKUP/public-assets.tgz | sha256sum -c -
 printf '%s\n' 'EXPECTED' | LC_ALL=C sort > BACKUP/expected-files
@@ -53,7 +53,7 @@ tar -xzf BACKUP/public-assets.tgz -C RELEASE --no-same-owner
 printf '%s' 'MANIFEST_BYTES' | base64 -d > BACKUP/SHA256SUMS
 (cd RELEASE && sha256sum -c BACKUP/SHA256SUMS)
 # Preserve old hashed chunks for tabs opened before this switch; never replace a collision.
-old_assets=/var/www/shoumiren-site/releases/20261019-site03/lab/polytech-tree/assets
+old_assets=/var/www/shoumiren-site/releases/20261019-site04/lab/polytech-tree/assets
 for asset in "$old_assets"/*; do
  test -f "$asset"
  target="RELEASE/lab/polytech-tree/assets/$(basename "$asset")"
@@ -79,7 +79,7 @@ cmp /etc/nginx/sites-available/shoumiren-live BACKUP/main.before
 (cd RELEASE && tr -d '\r' < BACKUP/SHA256SUMS | grep -v '  news-current.js$' | sha256sum -c -)
 (cd RELEASE/lab/polytech-tree/assets && sha256sum -c BACKUP/old-assets.sha256)
 # Refresh news under the same lock immediately before switching its public alias.
-cp -p /var/www/shoumiren-site/releases/20261019-site03/news-current.js RELEASE/news-current.js
+cp -p /var/www/shoumiren-site/releases/20261019-site04/news-current.js RELEASE/news-current.js
 printf '%s  %s\n' 'CONFIG_HASH' RELEASE/homepage-locations.conf 'INDEX_HASH' RELEASE/index.html | sha256sum -c -
 restore(){ cp -p BACKUP/homepage.before /etc/nginx/snippets/shoumiren-homepage.conf; nginx -t && systemctl reload nginx; }
 trap 'restore' EXIT
