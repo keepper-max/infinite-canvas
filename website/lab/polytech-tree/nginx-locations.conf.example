@@ -10,6 +10,9 @@ location = /lab/polytech-tree/ {
     add_header Content-Security-Policy "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'self'; frame-ancestors 'none'" always;
 }
 location ^~ /lab/polytech-tree/assets/ {
+    gzip on;
+    gzip_types application/javascript text/css;
+    gzip_vary on;
     alias /var/www/shoumiren-site/releases/NEW_RELEASE/lab/polytech-tree/assets/;
     autoindex off;
     add_header Cache-Control "public, max-age=31536000, immutable" always;

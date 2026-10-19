@@ -28,14 +28,18 @@ export async function mount(report: (value: number, message: string) => void, fa
   // Layout sorts by era/importance; picking, graph, filters and labels must share its index space.
   const nodes = placed.map(node => node.node)
   const { scene, camera, renderer } = createScene(towerHeight, eraRadii)
+  const host=el('scene')
+  let viewportW=host.clientWidth,viewportH=host.clientHeight,stageVisible=true
   let rig: CameraRig | undefined
   let observer: ResizeObserver | undefined
+  let visibilityObserver: IntersectionObserver | undefined
   let animation = 0, disposed = false
+  let disposeNames: (()=>void)|undefined
   function dispose() {
     if (disposed) return
     disposed = true
     cancelAnimationFrame(animation)
-    events.abort(); observer?.disconnect(); rig?.dispose()
+    events.abort(); observer?.disconnect();visibilityObserver?.disconnect(); rig?.dispose();disposeNames?.()
     const geometries = new Set<THREE.BufferGeometry>(), materials = new Set<THREE.Material>(), textures = new Set<THREE.Texture>()
     scene.traverse(object => {
       const mesh = object as THREE.Mesh
@@ -61,7 +65,8 @@ export async function mount(report: (value: number, message: string) => void, fa
     rings.forEach(ring => scene.add(ring))
     // Era glyphs are separate from the node-name budget: omit them on phones, not just hide their meshes.
     const names = buildNameLabels(placed), eras = mobile ? null : buildEraLabels(eraRadii, eraY)
-    names.meshes.forEach(mesh => scene.add(mesh)); eras?.meshes.forEach(mesh => scene.add(mesh))
+    disposeNames=names.dispose
+    eras?.meshes.forEach(mesh => scene.add(mesh))
     const plan = new TourPlan(placed, eraRadii, eraY)
     rig = new CameraRig(camera, renderer.domElement, towerHeight, plan, placed.map(p=>p.position))
     const cameraRig = rig
@@ -73,6 +78,7 @@ export async function mount(report: (value: number, message: string) => void, fa
     let focus: Int8Array | null = null, selected: number | null = null
     let hover: number | null = null, labels = mobile ? 8 : 24, visibleCount = nodes.length
     let lastHover: number | null = null
+    let pendingPointer:PointerEvent|null=null
     const visibility = new Uint8Array(nodes.length), active = new Uint8Array(nodes.length)
     const eraSelect = el<HTMLSelectElement>('era'), category = el<HTMLSelectElement>('category'), nodeSelect = el<HTMLSelectElement>('node')
     const tourButton = el<HTMLButtonElement>('tour'), clear = el<HTMLButtonElement>('clear')
@@ -104,7 +110,7 @@ export async function mount(report: (value: number, message: string) => void, fa
       if (selected === null) el('detail').innerHTML = '<div class="reading-guide"><p>时间向上生长，<br>知识彼此相连。</p><dl><dt>纵览科技脉络</dt><dd>拖动旋转，滚轮或双指缩放。</dd><dt>找到感兴趣的领域</dt><dd>通过时代、领域或知识节点筛选。</dd><dt>沿着关系深入</dt><dd>点选一项科技，查看它的前置知识与关联技术。</dd></dl><p class="node-meta">高度代表时代，颜色区分领域，形状对应重要度。</p></div>'
     }
     function select(index: number | null) {
-      hover = null; lastHover = null; names.setHover(null); field.highlight(null)
+      pendingPointer=null;hover = null; lastHover = null; names.setHover(null); field.highlight(null)
       selected = selected === index ? null : index
       focus = selected === null ? null : kHopDepth(graph, selected, 2, new Int8Array(nodes.length))
       apply()
@@ -151,25 +157,17 @@ export async function mount(report: (value: number, message: string) => void, fa
     function pick(event: PointerEvent) {
       const rect = renderer.domElement.getBoundingClientRect()
       pointer.set((event.clientX - rect.left) / rect.width * 2 - 1, -(event.clientY - rect.top) / rect.height * 2 + 1)
-      raycaster.setFromCamera(pointer, camera)
-      for (const hit of raycaster.intersectObjects(field.meshes, false)) {
-        const index = field.nodeIndexAt(hit.object, hit.instanceId!)
-        if (index !== null) return index
-      }
-      return null
+      camera.updateMatrixWorld();raycaster.setFromCamera(pointer, camera)
+      return field.pick(raycaster)
     }
     let down = { x: 0, y: 0, time: 0, moved:false, pointer:-1 }
     const pointers = new Set<number>()
     renderer.domElement.addEventListener('pointermove', event => {
       if (event.pointerId === down.pointer && Math.hypot(event.clientX-down.x,event.clientY-down.y) > 5) down.moved = true
       if (cameraRig.mode === 'tour' || event.buttons || event.pointerType === 'touch') return
-      hover = pick(event)
-      names.setHover(hover)
-      if (hover !== null && hover !== lastHover && selected === null) showNode(hover)
-      lastHover = hover
-      renderer.domElement.style.cursor = hover === null ? 'grab' : 'pointer'
+      pendingPointer=event
     }, { signal })
-    renderer.domElement.addEventListener('pointerleave', () => { hover = null; lastHover = null; names.setHover(null) }, { signal })
+    renderer.domElement.addEventListener('pointerleave', () => { pendingPointer=null;hover = null; lastHover = null; names.setHover(null) }, { signal })
     renderer.domElement.addEventListener('pointerdown', event => { pointers.add(event.pointerId); down = {x:event.clientX,y:event.clientY,time:performance.now(),moved:pointers.size>1,pointer:event.pointerId} }, { signal })
     renderer.domElement.addEventListener('pointercancel', event => { pointers.delete(event.pointerId); down.moved = true }, { signal })
     renderer.domElement.addEventListener('pointerup', event => {
@@ -196,16 +194,19 @@ export async function mount(report: (value: number, message: string) => void, fa
     renderer.domElement.addEventListener('webglcontextlost', event => { event.preventDefault(); fail('三维绘图上下文已中断。请关闭占用显存的标签页后重新加载，或先查看静态介绍。') }, { signal })
     let firstSize = true
     observer = new ResizeObserver(() => {
-      const host = el('scene'); camera.aspect = host.clientWidth / host.clientHeight; camera.updateProjectionMatrix()
-      renderer.setSize(host.clientWidth, host.clientHeight); updateLabelFocal(host.clientHeight, camera.fov)
+      viewportW=host.clientWidth;viewportH=host.clientHeight
+      if(!viewportW||!viewportH)return
+      camera.aspect = viewportW / viewportH; camera.updateProjectionMatrix()
+      renderer.setSize(viewportW, viewportH); updateLabelFocal(viewportH, camera.fov)
       if (firstSize) { cameraRig.fitInitial(); firstSize = false }
       else if (cameraRig.mode === 'orbit') {
         if (selected !== null) { const bounds = new THREE.Box3(); placed.forEach((p,i)=>{if(active[i])bounds.expandByPoint(p.position)}); cameraRig.frameBounds(bounds.expandByScalar(12),false) }
         else cameraRig.fitInitial()
       }
-    }); observer.observe(el('scene'))
+    }); observer.observe(host)
+    visibilityObserver=new IntersectionObserver(entries=>{stageVisible=entries[0]?.isIntersecting??false});visibilityObserver.observe(host)
     apply()
-    field.update(0); updateLabelFocal(el('scene').clientHeight, camera.fov)
+    field.update(0); updateLabelFocal(viewportH, camera.fov)
     report(90, '准备第一帧')
     await renderer.compileAsync(scene, camera)
     if (disposed) return dispose
@@ -214,18 +215,20 @@ export async function mount(report: (value: number, message: string) => void, fa
       if (disposed) return
       animation = requestAnimationFrame(loop)
       const dt = Math.min(clock.getDelta(), .1)
-      if (document.hidden) return
+      if (document.hidden||!stageVisible) return
       cameraRig.update(dt)
       if (cameraRig.mode === 'tour') {
         const t = cameraRig.tourT - BLEND
-        camera.fov = plan.fovAt(t); camera.updateProjectionMatrix(); updateLabelFocal(el('scene').clientHeight, camera.fov)
+        camera.fov = plan.fovAt(t); camera.updateProjectionMatrix(); updateLabelFocal(viewportH, camera.fov)
         field.setTourTime(t); field.update(clock.elapsedTime); edges.update(t)
         const era = plan.eraOf(t); eras?.setVisibleThrough(era); rings.forEach((ring, i) => ring.visible = i <= era)
         names.setTourNames(Math.max(0, plan.collectNames(t, nameIdx, nameAlpha)), nameIdx, nameAlpha)
-        names.update(camera, labels, el('scene').clientWidth, el('scene').clientHeight, eras?.update(camera,el('scene').clientWidth,el('scene').clientHeight))
+        names.update(camera, labels, viewportW, viewportH, eras?.update(camera,viewportW,viewportH))
       } else {
-        field.update(motion.matches ? 0 : clock.elapsedTime); field.highlight(hover)
-        names.update(camera, labels, el('scene').clientWidth, el('scene').clientHeight, eras?.update(camera,el('scene').clientWidth,el('scene').clientHeight))
+        field.update(motion.matches ? 0 : clock.elapsedTime)
+        if(pendingPointer){const event=pendingPointer;pendingPointer=null;hover=pick(event);names.setHover(hover);if(hover!==null&&hover!==lastHover&&selected===null)showNode(hover);lastHover=hover;renderer.domElement.style.cursor=hover===null?'grab':'pointer'}
+        field.highlight(hover)
+        names.update(camera, labels, viewportW, viewportH, eras?.update(camera,viewportW,viewportH))
       }
       field.updateIndicators(camera)
       renderer.render(scene, camera)

@@ -1,220 +1,234 @@
+// Adapted from Polytech Tree, Copyright (c) 2026 secwind, MIT.
 import * as THREE from 'three'
 import { geomRadius, type PlacedNode } from './layout'
 import { FLASH } from './tour'
-import { displayScale, STAGE } from './presentation'
+import { displayScale } from './presentation'
 
-// 形状 = 重要度（面数越多越重要），颜色 = 领域（见 categories.json）
-// 5 档重要度正好对应 5 种柏拉图立体的面数：20 / 12 / 8 / 6 / 4
-// importance 1 = 基石 → 二十面体；importance 5 = 长尾 → 四面体
-// 外接球半径由 layout.ts 的 geomRadius 统一给出，低面数立体因体积小而自然显得更小
-const R = geomRadius(2) // 除基石外各档共用的外接球半径
-const BY_IMPORTANCE: THREE.BufferGeometry[] = [
-  new THREE.IcosahedronGeometry(R * 1.12), // 基石略大，但不再占据过量空间
-  new THREE.DodecahedronGeometry(R),     // 12 面 —— importance 2
-  new THREE.OctahedronGeometry(R),       //  8 面 —— importance 3
-  new THREE.BoxGeometry(R * 2 / Math.sqrt(3), R * 2 / Math.sqrt(3), R * 2 / Math.sqrt(3)), // 6 面 —— 4
-  new THREE.TetrahedronGeometry(R),      //  4 面 —— importance 5
+const R = geomRadius(2)
+const geometries = [
+  new THREE.IcosahedronGeometry(R * 1.12),
+  new THREE.DodecahedronGeometry(R),
+  new THREE.OctahedronGeometry(R),
+  new THREE.BoxGeometry((R * 2) / Math.sqrt(3), (R * 2) / Math.sqrt(3), (R * 2) / Math.sqrt(3)),
+  new THREE.TetrahedronGeometry(R)
 ]
-const LEVELS = BY_IMPORTANCE.length
-
-export function facesOf(importance: number): number {
-  return [20, 12, 8, 6, 4][Math.min(LEVELS, Math.max(1, Math.round(importance))) - 1]
+export function facesOf(importance: number) {
+  return [20, 12, 8, 6, 4][Math.min(5, Math.max(1, Math.round(importance))) - 1]
 }
+const levelOf = (p: PlacedNode) => Math.min(5, Math.max(1, Math.round(p.node.importance))) - 1
 
-interface InstanceMeta {
-  nodeIdx: number
-  placed: PlacedNode
+// Keep the exact CPU rotation/reveal formulas, but evaluate them once per vertex on the GPU.
+const motionShader = `
+attribute vec4 aSpin;
+attribute float aPhase;
+attribute float aReveal;
+uniform float uNodeTime;
+uniform float uTourTime;
+uniform float uInTour;
+vec3 spinNode(vec3 v) {
+  float angle = aPhase + uNodeTime * aSpin.w;
+  return v*cos(angle) + cross(aSpin.xyz,v)*sin(angle) + aSpin.xyz*dot(aSpin.xyz,v)*(1.0-cos(angle));
 }
+float nodeAge() { return uTourTime-aReveal; }
+float nodeScale() {
+  if(uInTour < 0.5) return 1.0;
+  float age=nodeAge();
+  if(age < 0.0) return 0.0;
+  float k=clamp(age/${FLASH.toFixed(6)},0.0,1.0);
+  return (1.0+0.3*sin(k*3.14159265))*min(1.0,k*4.0);
+}
+`
 
 export class PolyhedraField {
   meshes: THREE.InstancedMesh[] = []
-  indicators = [new THREE.Mesh(new THREE.RingGeometry(1, 1.06, 48), new THREE.MeshBasicMaterial({ color:'#d5f5ff', transparent:true, opacity:.9, depthTest:false, depthWrite:false })), new THREE.Mesh(new THREE.RingGeometry(1, 1.035, 48), new THREE.MeshBasicMaterial({ color:'#9cbccc', transparent:true, opacity:.55, depthTest:false, depthWrite:false }))]
-  private metas: InstanceMeta[][] = []
-  private highlightIdx: number | null = null
-  private colors: THREE.Color[]
+  indicators = [
+    new THREE.Mesh(
+      new THREE.RingGeometry(1, 1.06, 48),
+      new THREE.MeshBasicMaterial({
+        color: '#d5f5ff',
+        transparent: true,
+        opacity: 0.9,
+        depthTest: false,
+        depthWrite: false
+      })
+    ),
+    new THREE.Mesh(
+      new THREE.RingGeometry(1, 1.035, 48),
+      new THREE.MeshBasicMaterial({
+        color: '#9cbccc',
+        transparent: true,
+        opacity: 0.55,
+        depthTest: false,
+        depthWrite: false
+      })
+    )
+  ]
+  private buckets: number[][] = Array.from({ length: 5 }, () => [])
+  private local: { level: number; instance: number }[] = []
+  private keep: ((index: number) => boolean) | null = null
+  private selected = -1
+  private hover: number | null = null
   private tmp = new THREE.Object3D()
-  private white = new THREE.Color(0xffffff)
-  // 隐去：实例尺寸归零，同时不参与射线拾取；避免用淡色实体遮挡目标。
-  private keep: ((nodeIdx: number) => boolean) | null = null
-  // 聚焦（点击某科技）：跳数表，0 = 选中自身、>0 = 连线可达、<0 = 不相干而淡出
-  private focus: Int8Array | null = null
-  private byIdx: PlacedNode[]
-  private dim = new THREE.Color(STAGE)
+  private color = new THREE.Color()
   private focusColor = new THREE.Color('#d5f5ff')
-  // 三档混合系数：隐去要几乎不可见，聚焦时集外仍要看得出"那里还有东西"
-  private static readonly HIDE_MIX = 0.995
-  private static readonly OUT_MIX = 0.93
-  private static readonly HOVER_MIX = 0.45
-  // 漫游显现：revealAt[节点] = 出现时刻，tourTime < 0 表示不在漫游中（全部可见）
-  private revealAt: Float32Array | null = null
-  private tourTime = -1
-  private flashFlags: Uint8Array[] = []
-  private tmpColor = new THREE.Color()
+  private uniforms = { uNodeTime: { value: 0 }, uTourTime: { value: 0 }, uInTour: { value: 0 } }
+  private picker: THREE.Mesh
+  private hits: THREE.Intersection[] = []
 
-  constructor(placed: PlacedNode[], colors: THREE.Color[]) {
-    this.colors = colors
-    this.byIdx = placed
-    const buckets: InstanceMeta[][] = Array.from({ length: LEVELS }, () => [])
-    placed.forEach((p, globalIdx) => {
-      const level = Math.min(LEVELS, Math.max(1, Math.round(p.node.importance))) - 1
-      buckets[level].push({ nodeIdx: globalIdx, placed: p })
+  constructor(
+    private placed: PlacedNode[],
+    private colors: THREE.Color[]
+  ) {
+    placed.forEach((p, index) => {
+      const level = levelOf(p)
+      this.local[index] = { level, instance: this.buckets[level].length }
+      this.buckets[level].push(index)
     })
-
-    for (let lv = 0; lv < LEVELS; lv++) {
-      const meta = buckets[lv]
-      const mesh = new THREE.InstancedMesh(
-        BY_IMPORTANCE[lv],
-        new THREE.MeshStandardMaterial({ metalness: 0.32, roughness: 0.42 }),
-        Math.max(1, meta.length)
+    this.buckets.forEach((indices, level) => {
+      const geometry = geometries[level],
+        spin = new Float32Array(indices.length * 4),
+        phase = new Float32Array(indices.length)
+      indices.forEach((index, i) => {
+        const p = placed[index]
+        spin.set([p.spinAxis.x, p.spinAxis.y, p.spinAxis.z, p.spinSpeed], i * 4)
+        phase[i] = p.phase
+      })
+      geometry.setAttribute('aSpin', new THREE.InstancedBufferAttribute(spin, 4))
+      geometry.setAttribute('aPhase', new THREE.InstancedBufferAttribute(phase, 1))
+      geometry.setAttribute(
+        'aReveal',
+        new THREE.InstancedBufferAttribute(new Float32Array(indices.length), 1)
       )
-      mesh.count = meta.length
-      mesh.frustumCulled = false // 实例分布全塔，禁用剔除避免误裁
-      meta.forEach((m, i) => mesh.setColorAt(i, colors[m.placed.node.category]))
+      geometry.computeBoundingSphere()
+      const material = new THREE.MeshStandardMaterial({ metalness: 0.32, roughness: 0.42 })
+      material.onBeforeCompile = (shader) => {
+        Object.assign(shader.uniforms, this.uniforms)
+        shader.vertexShader = shader.vertexShader
+          .replace('#include <common>', '#include <common>\n' + motionShader)
+          .replace(
+            '#include <beginnormal_vertex>',
+            '#include <beginnormal_vertex>\nobjectNormal = spinNode(objectNormal);'
+          )
+          .replace(
+            '#include <begin_vertex>',
+            '#include <begin_vertex>\ntransformed = spinNode(transformed)*nodeScale();'
+          )
+          .replace(
+            '#include <color_vertex>',
+            `#include <color_vertex>\n#ifdef USE_INSTANCING_COLOR\nif(uInTour > 0.5) vColor.rgb *= 1.0 + clamp(1.0-nodeAge()/${FLASH.toFixed(6)},0.0,1.0)*1.8;\n#endif`
+          )
+      }
+      material.customProgramCacheKey = () => 'polytech-node-motion-v1'
+      const mesh = new THREE.InstancedMesh(geometry, material, Math.max(1, indices.length))
+      mesh.count = indices.length
+      mesh.frustumCulled = false
+      indices.forEach((index, i) => mesh.setColorAt(i, colors[placed[index].node.category]))
       this.meshes.push(mesh)
-      this.metas.push(meta)
-    }
-    this.indicators.forEach(mesh => { mesh.visible = false; mesh.renderOrder = 5 })
+    })
+    this.picker = new THREE.Mesh(geometries[0], this.meshes[0].material)
+    this.writeMatrices()
+    this.indicators.forEach((mesh) => {
+      mesh.visible = false
+      mesh.renderOrder = 5
+    })
   }
-
-  /** 每帧更新自转；漫游中还要处理"按年份逐个显现 + 闪亮" */
-  update(time: number) {
-    const reveal = this.revealAt
-    for (let lv = 0; lv < this.meshes.length; lv++) {
-      const mesh = this.meshes[lv]
-      const meta = this.metas[lv]
-      const flags = reveal ? this.flashFlags[lv] : null
-      let repaint = false
-      for (let i = 0; i < meta.length; i++) {
-        const p = meta[i].placed
-        let s = displayScale(p.scale)
-        let flash = 0
-        if (this.hidden(meta[i].nodeIdx)) s = 0 // 隐去：不在画面里占位，也不挡后面的节点
-        else if (reveal) {
-          const age = this.tourTime - reveal[meta[i].nodeIdx]
-          if (age < 0) s = 0
-          else if (age < FLASH) {
-            const k = age / FLASH
-            s = displayScale(p.scale) * (1 + .3 * Math.sin(k * Math.PI)) * Math.min(1, k * 4)
-            flash = 1 - k
-          }
-        }
+  private writeMatrices() {
+    this.tmp.quaternion.identity()
+    this.meshes.forEach((mesh, level) => {
+      this.buckets[level].forEach((index, i) => {
+        const p = this.placed[index]
         this.tmp.position.copy(p.position)
-        this.tmp.quaternion.setFromAxisAngle(p.spinAxis, p.phase + time * p.spinSpeed)
-        this.tmp.scale.setScalar(s)
+        this.tmp.scale.setScalar(this.hidden(index) ? 0 : displayScale(p.scale))
         this.tmp.updateMatrix()
         mesh.setMatrixAt(i, this.tmp.matrix)
-
-        if (flags) {
-          const was = flags[i] > 0
-          if (flash > 0) {
-            // 显现瞬间冲亮（闪白是漫游里唯一能抓住眼的信号）
-            mesh.setColorAt(i, this.colorOf(meta[i].nodeIdx).multiplyScalar(1 + flash * 1.8))
-            flags[i] = 1
-            repaint = true
-          } else {
-            // 闪亮结束的那一帧把颜色写回本档，其余帧不动这张 buffer
-            if (was) { mesh.setColorAt(i, this.colorOf(meta[i].nodeIdx)); repaint = true }
-            flags[i] = 0
-          }
-        }
-      }
+      })
       mesh.instanceMatrix.needsUpdate = true
-      if (repaint && mesh.instanceColor) mesh.instanceColor.needsUpdate = true
-    }
+    })
   }
-
-  updateIndicators(camera: THREE.Camera) {
-    const selected = this.focus?.indexOf(0) ?? -1
-    for (let i = 0; i < this.indicators.length; i++) {
-      const index = i === 0 ? selected : this.highlightIdx
-      const mesh = this.indicators[i]
-      mesh.visible = index !== null && index >= 0 && !this.hidden(index) && (i === 0 || index !== selected)
-      if (!mesh.visible || index === null) continue
-      const p = this.byIdx[index]
-      mesh.position.copy(p.position); mesh.quaternion.copy(camera.quaternion)
-      mesh.scale.setScalar(R * (p.node.importance === 1 ? 1.12 : 1) * displayScale(p.scale) * 1.65)
-    }
+  update(time: number) {
+    this.uniforms.uNodeTime.value = time
   }
-
-  /** 进入漫游：接管可见性，节点按 revealAt 逐个出现 */
-  beginTour(revealAt: Float32Array, t: number) {
-    this.revealAt = revealAt
-    this.tourTime = t
-    this.flashFlags = this.metas.map(m => new Uint8Array(m.length))
+  beginTour(revealAt: Float32Array, time: number) {
+    this.uniforms.uInTour.value = 1
+    this.uniforms.uTourTime.value = time
+    this.meshes.forEach((mesh, level) => {
+      const attr = mesh.geometry.getAttribute('aReveal') as THREE.InstancedBufferAttribute
+      this.buckets[level].forEach((index, i) => {
+        attr.array[i] = revealAt[index]
+      })
+      attr.needsUpdate = true
+    })
   }
-
-  /** 退出漫游：全部恢复可见并按当前掩码/聚焦重绘 */
   endTour() {
-    this.revealAt = null
-    this.tourTime = -1
-    this.flashFlags = []
-    this.repaintAll()
+    this.uniforms.uInTour.value = 0
   }
-
-  setTourTime(t: number) {
-    if (this.revealAt) this.tourTime = t
+  setTourTime(time: number) {
+    this.uniforms.uTourTime.value = time
   }
-
-  /**
-   * 下发两个通道并一次性重绘：
-   * keep = 领域/kind 掩码（不通过的节点隐去：尺寸归零，射线也穿不过去）
-   * focus = 点击聚焦的跳数表（集内保留领域色，选中浅冰蓝；宿主同时隐藏集外实体）
-   */
-  setVisible(keep: ((nodeIdx: number) => boolean) | null, focus: Int8Array | null) {
+  private hidden(index: number) {
+    return !!this.keep && !this.keep(index)
+  }
+  private repaint(index: number) {
+    const { level, instance } = this.local[index],
+      mesh = this.meshes[level]
+    this.color.copy(this.colors[this.placed[index].node.category])
+    if (index === this.selected) this.color.copy(this.focusColor)
+    else if (index === this.hover) this.color.lerp(this.focusColor, 0.45)
+    mesh.setColorAt(instance, this.color)
+    mesh.instanceColor!.needsUpdate = true
+  }
+  setVisible(keep: ((index: number) => boolean) | null, focus: Int8Array | null) {
     this.keep = keep
-    this.focus = focus
-    this.repaintAll()
+    this.selected = focus?.indexOf(0) ?? -1
+    this.writeMatrices()
+    this.placed.forEach((_, index) => this.repaint(index))
   }
-
-  private repaintAll() {
-    for (let lv = 0; lv < this.meshes.length; lv++) {
-      const mesh = this.meshes[lv]
-      this.metas[lv].forEach((m, i) => mesh.setColorAt(i, this.colorOf(m.nodeIdx)))
-      if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true
-    }
+  highlight(index: number | null) {
+    if (index === this.hover) return
+    const prev = this.hover
+    this.hover = index
+    if (prev !== null) this.repaint(prev)
+    if (index !== null) this.repaint(index)
   }
-
-  private hidden(nodeIdx: number): boolean {
-    return !!this.keep && !this.keep(nodeIdx)
+  updateIndicators(camera: THREE.Camera) {
+    this.indicators.forEach((mesh, i) => {
+      const index = i === 0 ? this.selected : this.hover
+      mesh.visible =
+        index !== null && index >= 0 && !this.hidden(index) && (i === 0 || index !== this.selected)
+      if (!mesh.visible || index === null) return
+      const p = this.placed[index]
+      mesh.position.copy(p.position)
+      mesh.quaternion.copy(camera.quaternion)
+      mesh.scale.setScalar(R * (p.node.importance === 1 ? 1.12 : 1) * displayScale(p.scale) * 1.65)
+    })
   }
-
-  private colorOf(nodeIdx: number): THREE.Color {
-    this.tmpColor.copy(this.colors[this.byIdx[nodeIdx].node.category])
-    if (this.hidden(nodeIdx)) return this.tmpColor.lerp(this.dim, PolyhedraField.HIDE_MIX)
-    const hop = this.focus ? this.focus[nodeIdx] : 1
-    if (hop === 0) return this.tmpColor.copy(this.focusColor)
-    if (hop < 0) return this.tmpColor.lerp(this.dim, PolyhedraField.OUT_MIX)
-    if (this.highlightIdx === nodeIdx) return this.tmpColor.lerp(this.focusColor, PolyhedraField.HOVER_MIX)
-    return this.tmpColor
-  }
-
-  /** 悬停提亮：nodeIdx 为全局索引，null 恢复 */
-  highlight(nodeIdx: number | null) {
-    if (this.highlightIdx === nodeIdx) return
-    const prev = this.highlightIdx
-    this.highlightIdx = nodeIdx
-    for (const idx of [prev, nodeIdx]) {
-      if (idx !== null && idx !== undefined) this.repaint(idx)
-    }
-  }
-
-  private repaint(nodeIdx: number) {
-    for (let lv = 0; lv < this.meshes.length; lv++) {
-      const meta = this.metas[lv]
-      for (let i = 0; i < meta.length; i++) {
-        if (meta[i].nodeIdx !== nodeIdx) continue
-        this.meshes[lv].setColorAt(i, this.colorOf(nodeIdx))
-        if (this.meshes[lv].instanceColor) this.meshes[lv].instanceColor!.needsUpdate = true
-        return
-      }
-    }
-  }
-
-  /** 根据射线命中的 mesh + instanceId 找回全局节点索引；隐去的节点不可拾取 */
-  nodeIndexAt(mesh: THREE.Object3D, instanceId: number): number | null {
-    const lv = this.meshes.indexOf(mesh as THREE.InstancedMesh)
-    if (lv < 0 || instanceId >= this.metas[lv].length) return null
-    const idx = this.metas[lv][instanceId].nodeIdx
-    return this.hidden(idx) ? null : idx
+  /** Broad-phase sphere pruning, followed by the actual rotated geometry: no approximate picks. */
+  pick(raycaster: THREE.Raycaster): number | null {
+    let nearest = Infinity,
+      result: number | null = null
+    this.placed.forEach((p, index) => {
+      if (this.hidden(index)) return
+      const geometry = geometries[this.local[index].level],
+        scale = displayScale(p.scale),
+        radius = geometry.boundingSphere!.radius * scale
+      if (raycaster.ray.distanceSqToPoint(p.position) > radius * radius) return
+      this.tmp.position.copy(p.position)
+      this.tmp.quaternion.setFromAxisAngle(
+        p.spinAxis,
+        p.phase + this.uniforms.uNodeTime.value * p.spinSpeed
+      )
+      this.tmp.scale.setScalar(scale)
+      this.tmp.updateMatrix()
+      this.picker.geometry = geometry
+      this.picker.matrixWorld.copy(this.tmp.matrix)
+      this.hits.length = 0
+      this.picker.raycast(raycaster, this.hits)
+      for (const hit of this.hits)
+        if (hit.distance < nearest) {
+          nearest = hit.distance
+          result = index
+        }
+    })
+    return result
   }
 }

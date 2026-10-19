@@ -1,5 +1,7 @@
 # 互动知识树｜本地验收版
 
+最新未发布的性能优化与前后采样见[PERFORMANCE.md](./PERFORMANCE.md)。线上仍为v0.16.25；本地4411预览已使用优化产物，不能把此前发布状态理解为本轮优化已上线。
+
 线上入口：https://shoumiren.online/#knowledge-tree ，独立课件：https://shoumiren.online/lab/polytech-tree/ 。用户已授权并发布v0.16.25；此前本地验收记录保留。仅切换官网Nginx片段和独立静态资源，没有修改生产数据、画布依赖、节点/权限/生成接口或应用镜像。发布证据见../../../ops/releases/v0.16.25.md。
 
 ## 运行与构建

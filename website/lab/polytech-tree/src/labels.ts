@@ -1,5 +1,5 @@
 import * as THREE from 'three'
-import { geomRadius, type PlacedNode } from './layout'
+import type { PlacedNode } from './layout'
 import { ERA_INFO } from './data'
 
 // 文字标签：Canvas 图集 + 实例化 billboard（始终正对摄像机）
@@ -173,76 +173,14 @@ export function setLabelMinPxAll(px: number) {
 
 // ───── 科技名称图集（shelf pack：行式排布，条目宽度随文字长度变化） ─────
 
-const PAGE_W = 2048 // 独立课件减少纹理内存，不改变节点数据
 const LINE_H = 72
 const FONT_PX = 34
 const PAD_X = 22
-const MAX_LINES = 32 // 每页最多行数（高度上限 3584px）
 
 const NAME_FONT = `500 ${FONT_PX}px "Microsoft YaHei", "PingFang SC", "Segoe UI", sans-serif`
 
-interface NameSlot {
-  page: number
-  x: number     // 条目左上角像素 x
-  y: number     // 条目左上角像素 y（行 × 行高）
-  w: number     // 条目像素宽（含留白）
-  pageH: number // 所在页总高（像素，用于归一化）
-}
-
-/** 名称打包进图集页：第一遍测量宽度并预排，第二遍逐页绘制 */
-function buildNameAtlas(names: string[]): { pages: AtlasPage[]; slots: NameSlot[] } {
-  // 第一遍：测量
-  const measure = document.createElement('canvas').getContext('2d')!
-  measure.font = NAME_FONT
-  const widths = names.map(n => Math.ceil(measure.measureText(n).width) + PAD_X * 2)
-
-  // 第二遍：预排（页 → 行 → 列）
-  const slots: NameSlot[] = []
-  const pageLineCounts: number[] = [1] // 每页已占用的行数
-  let page = 0, x = 0, line = 0
-  for (let i = 0; i < names.length; i++) {
-    const w = widths[i]
-    if (x + w > PAGE_W) { x = 0; line++ } // 当前行放不下 → 换行
-    if (line >= MAX_LINES) { page++; line = 0; pageLineCounts.push(1); x = 0 }
-    else if (line + 1 > pageLineCounts[page]) { pageLineCounts[page] = line + 1 }
-    slots.push({ page, x, y: line * LINE_H, w, pageH: 0 })
-    x += w
-  }
-  const pageCount = pageLineCounts.length
-  slots.forEach(s => { s.pageH = pageLineCounts[s.page] * LINE_H })
-
-  // 第三遍：逐页绘制
-  const pages: AtlasPage[] = []
-  for (let p = 0; p < pageCount; p++) {
-    const canvas = document.createElement('canvas')
-    canvas.width = PAGE_W
-    canvas.height = pageLineCounts[p] * LINE_H
-    const ctx = canvas.getContext('2d')!
-    ctx.font = NAME_FONT
-    ctx.textAlign = 'center'
-    ctx.textBaseline = 'middle'
-    let count = 0
-    for (let i = 0; i < names.length; i++) {
-      const s = slots[i]
-      if (s.page !== p) continue
-      const cx = s.x + s.w / 2
-      const cy = s.y + LINE_H / 2
-      ctx.fillStyle = 'rgba(10,31,49,0.94)'
-      ctx.beginPath(); ctx.roundRect(s.x + 2, s.y + 2, s.w - 4, LINE_H - 4, 12); ctx.fill()
-      ctx.strokeStyle = 'rgba(143,186,209,0.27)'; ctx.lineWidth = 1.5; ctx.stroke()
-      ctx.fillStyle = '#e4f1fa'
-      ctx.fillText(names[i], cx, cy)
-      count++
-    }
-    pages.push({ texture: makeCanvasTexture(canvas), count })
-  }
-  return { pages, slots }
-}
-
-/** 科技名称标签：名称打包进变宽图集，锚定多面体中心；
- *  update 按到相机距离只保留最近的 limit 个名称 */
+/** Projected label pool: only visible names exist as DOM, never thousands of CJK textures. */
 export function buildNameLabels(placed: PlacedNode[]): {
-  meshes: THREE.Mesh[]
   update: (camera: THREE.PerspectiveCamera, limit: number, viewportW: number, viewportH: number, reserved?: number[][]) => void
   /** 漫游：只点亮刚显现的科技名（带淡出 alpha） */
   setTourNames: (count: number, idx: Int32Array, alpha: Float32Array) => void
@@ -253,45 +191,22 @@ export function buildNameLabels(placed: PlacedNode[]): {
   /** 聚焦：跳数表（>=0 的条目名字优先占名额），传 null 取消 */
   setFocus: (focus: Int8Array | null) => void
   setHover: (index: number | null) => void
+  dispose: () => void
 } {
-  const names = placed.map(p => p.node.name)
-  const { pages, slots } = buildNameAtlas(names)
-
-  const datas: LabelData[] = placed.map((p, i) => {
-    const s = slots[i]
-    return {
-      // 锚定多面体中心 + 沿视线朝相机偏移 → 任何角度看文字都"贴"在多面体正面上
-      position: p.position.clone(),
-      uv: [s.x / PAGE_W, s.y / s.pageH, s.w / PAGE_W, LINE_H / s.pageH],
-      aspect: s.w / LINE_H,
-      size: 1.9 - p.node.importance * 0.2,
-      always: p.node.importance <= 2,
-      offset: geomRadius(p.node.importance) * p.scale + 0.8,
-    }
-  })
-
-  const meshes = createBillboards(datas, pages)
-
-  // 节点索引 → 所在页的 aVisible 属性 + 页内实例索引（页大小不一，需逐页累计）
-  const visAttrs = meshes.map(m =>
-    (m.geometry as THREE.InstancedBufferGeometry).getAttribute('aVisible') as THREE.InstancedBufferAttribute
-  )
-  const nodeLocal: { attr: THREE.InstancedBufferAttribute; local: number }[] = []
-  const pageStarts: number[] = [] // 每页在 datas 中的起始偏移
-  let acc = 0
-  pages.forEach(p => { pageStarts.push(acc); acc += p.count })
-  placed.forEach((_, i) => {
-    const pg = slots[i].page
-    nodeLocal.push({ attr: visAttrs[pg], local: i - pageStarts[pg] })
-  })
+  const measure=document.createElement('canvas').getContext('2d')!;measure.font=NAME_FONT
+  const datas=placed.map(p=>({aspect:(Math.ceil(measure.measureText(p.node.name).width)+PAD_X*2)/LINE_H,size:1.9-p.node.importance*.2}))
+  const layer=document.createElement('div');layer.className='tree-labels';layer.setAttribute('aria-hidden','true');document.getElementById('scene')!.appendChild(layer)
+  const pool:HTMLSpanElement[]=[]
+  const screenX=new Float32Array(placed.length),screenY=new Float32Array(placed.length),heights=new Float32Array(placed.length)
 
   // 距离排序缓存（避免每帧分配）
   const dists = new Float32Array(placed.length)
   const boxes: number[][] = []
   const occupied: number[][] = []
   const order: number[] = []
-  const pinOrder: number[] = [] // 聚焦集内、本轮真正拿到名额的条目
-  const pinned = new Uint8Array(placed.length)
+  const baseGroups:number[][]=Array.from({length:5},()=>[])
+  placed.forEach((p,i)=>baseGroups[Math.min(4,Math.max(0,p.node.importance-1))].push(i))
+  let groups=baseGroups,selected=-1
   const lastCamPos = new THREE.Vector3(0, -1e9, 0) // 初始值保证首帧必更新
   let lastLimit = -1
   let lastW = 0, lastH = 0
@@ -300,14 +215,12 @@ export function buildNameLabels(placed: PlacedNode[]): {
   let hover: number | null = null
   let tourVisibility: Float32Array | null = null
   const lastQuaternion = new THREE.Quaternion()
-  const priority = (i: number) => focus?.[i] === 0 ? -2 : i === hover ? -1 : focus ? focus[i] : placed[i].node.importance
 
   const _v = new THREE.Vector3()
   const _proj = new THREE.Vector3()
 
   // 与 shader 一致的像素尺寸钳制常量
   const MIN_PX = 24, MAX_PX = 28, MARGIN_PX = 12
-  const PIN_MAX = 40 // 聚焦时钉住的名字上限：2 跳集 p90 = 39，个别枢纽到 184，不能让字糊屏
 
   const update = (
     camera: THREE.PerspectiveCamera,
@@ -330,16 +243,15 @@ export function buildNameLabels(placed: PlacedNode[]): {
 
     // 只统计"文字能完整落在屏幕内"的节点：
     // 投影到 NDC，再按该标签的屏幕像素半宽/半高判定矩形是否整体在内
-    order.length = 0
-    for (let i = 0; i < placed.length; i++) {
-      if (keep && !keep(i)) continue
-      if (tourVisibility && tourVisibility[i] <= .05) continue
-      if (focus && focus[i] < 0) continue
+    const project=(i:number)=>{
+      if (keep && !keep(i)) return
+      if (tourVisibility && tourVisibility[i] <= .05) return
+      if (focus && focus[i] < 0) return
       const p = placed[i]
       // 相机空间深度：在相机背后或比近裁剪面近的剔除
       _proj.copy(p.position).applyMatrix4(camera.matrixWorldInverse)
       const depth = -_proj.z
-      if (depth < camera.near) continue
+      if (depth < camera.near) return
 
       // 投影到 NDC（裁剪空间归一化坐标）
       _v.copy(p.position).project(camera)
@@ -359,46 +271,45 @@ export function buildNameLabels(placed: PlacedNode[]): {
         _v.y - halfNdcH >= -1 && _v.y + halfNdcH <= 1
       ) {
         const sx = (_v.x + 1) * viewportW / 2, sy = (1 - _v.y) * viewportH / 2 - pxH * .85
-        if (sy - pxH / 2 < MARGIN_PX) continue
+        if (sy - pxH / 2 < MARGIN_PX) return
+        screenX[i]=sx;screenY[i]=sy;heights[i]=pxH
         boxes[i] = [sx - pxW / 2 - 4, sy - pxH / 2 - 3, sx + pxW / 2 + 4, sy + pxH / 2 + 3]
         dists[i] = depth * depth
         order.push(i)
       }
     }
-    order.sort((a, b) => priority(a) - priority(b) || dists[a] - dists[b])
 
-    // 聚焦：跳数小的先占名额（自身→1 跳→2 跳），拿不到名额的仍按近者优先
-    pinOrder.length = 0
-    if (focus) {
-      const cand = order.filter(i => focus![i] >= 0)
-      const nPin = Math.min(PIN_MAX, limit, cand.length)
-      for (let k = 0; k < nPin; k++) { pinned[cand[k]] = 1; pinOrder.push(cand[k]) }
-    }
-
-    visAttrs.forEach(a => (a.array as Float32Array).fill(0))
     occupied.length = 0
     occupied.push(...reserved)
     const put = (i: number, v: number) => {
       const box = boxes[i]
       if (box && occupied.some(b => box[0] < b[2] && box[2] > b[0] && box[1] < b[3] && box[3] > b[1])) return false
       if (box) occupied.push(box)
-      const e = nodeLocal[i]
-      ;(e.attr.array as Float32Array)[e.local] = v * (tourVisibility ? tourVisibility[i] : 1)
+      const label=pool[shown]??document.createElement('span')
+      if(!pool[shown]){label.className='tree-label';layer.appendChild(label);pool[shown]=label}
+      const p=placed[i],height=heights[i],width=height*datas[i].aspect
+      if(label.dataset.node!==p.node.id){label.textContent=p.node.name;label.dataset.node=p.node.id}
+      label.hidden=false;label.style.transform=`translate3d(${screenX[i]-width/2}px,${screenY[i]-height/2}px,0)`
+      label.style.width=`${width}px`;label.style.height=`${height}px`;label.style.fontSize=`${height*FONT_PX/LINE_H}px`
+      label.style.opacity=String(v*(tourVisibility?tourVisibility[i]:1))
       return true
     }
     let shown = 0
-    for (const i of pinOrder) { if (put(i, 1)) shown++ }
-    for (let k = 0; shown < limit && k < order.length; k++) {
-      const i = order[k]
-      if (pinned[i]) continue // 已钉住，不重复占名额
-      if (put(i, 1)) shown++
+    const paintGroup=(indices:number[],skipPriority=false)=>{
+      if(shown>=limit)return
+      order.length=0
+      for(const i of indices)if(!skipPriority||(i!==selected&&i!==hover))project(i)
+      order.sort((a,b)=>dists[a]-dists[b])
+      for(const i of order){if(shown>=limit)break;if(put(i,1))shown++}
     }
-    for (const i of pinOrder) pinned[i] = 0
-    visAttrs.forEach(a => { a.needsUpdate = true })
+    // Priority is unchanged, but stop projecting lower-priority groups once the visible budget is filled.
+    if(selected>=0)paintGroup([selected])
+    if(hover!==null&&hover!==selected)paintGroup([hover])
+    for(const group of groups)paintGroup(group,true)
+    for(let i=shown;i<pool.length;i++)pool[i].hidden=true
   }
 
   return {
-    meshes,
     update,
     /** 漫游：可见名称仍经过同一投影避让和优先级逻辑。 */
     setTourNames: (count: number, idx: Int32Array, alpha: Float32Array) => {
@@ -417,9 +328,13 @@ export function buildNameLabels(placed: PlacedNode[]): {
     },
     setFocus: (fn: Int8Array | null) => {
       focus = fn
+      selected=fn?.indexOf(0)??-1
+      groups=fn?Array.from({length:3},()=>[]):baseGroups
+      fn?.forEach((depth,i)=>{if(depth>=0&&depth<groups.length)groups[depth].push(i)})
       lastCamPos.set(0, -1e9, 0)
     },
     setHover: (index: number | null) => { if (hover !== index) { hover = index; lastCamPos.set(0,-1e9,0) } },
+    dispose: () => layer.remove(),
   }
 }
 
@@ -481,8 +396,14 @@ export function buildEraLabels(eraRadii: number[], eraY: number[]): {
     .getAttribute('aVisible') as THREE.InstancedBufferAttribute
   let through = -1
   const projected = new THREE.Vector3()
+  const lastPosition=new THREE.Vector3(Infinity,Infinity,Infinity),lastRotation=new THREE.Quaternion()
+  let lastW=0,lastH=0,lastThrough=-2,lastVisible=false
+  const eraBoxes:number[][]=[]
   const update = (camera: THREE.PerspectiveCamera, width: number, height: number) => {
-    const boxes: number[][] = [], values = visAttr.array as Float32Array
+    if(width===lastW&&height===lastH&&through===lastThrough&&meshes[0].visible===lastVisible&&camera.position.distanceToSquared(lastPosition)<.25&&camera.quaternion.angleTo(lastRotation)<.001)return eraBoxes
+    lastW=width;lastH=height;lastThrough=through;lastVisible=meshes[0].visible;lastPosition.copy(camera.position);lastRotation.copy(camera.quaternion)
+    const boxes=eraBoxes, values = visAttr.array as Float32Array
+    boxes.length=0
     values.fill(0)
     for (let i = 0; i < datas.length; i++) {
       if (!meshes[0].visible || (through >= 0 && i > through)) continue
