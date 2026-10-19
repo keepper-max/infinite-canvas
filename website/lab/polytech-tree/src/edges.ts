@@ -1,0 +1,205 @@
+import * as THREE from 'three'
+import type { PlacedNode } from './layout'
+import { CATEGORY_COLORS } from './presentation'
+import { ERA_COUNT } from './data'
+
+const SEG = 8 // 每条弧线的分段数
+const GROW_MAX = 1.6 // 单条边可见爬行的最长时长（秒）
+const OPACITY = 0.03
+const FOCUS_OPACITY = 0.72
+
+const VERT = `
+attribute vec3 aColor;
+attribute float aAlpha;
+varying vec3 vColor;
+varying float vAlpha;
+void main() {
+  vColor = aColor;
+  vAlpha = aAlpha;
+  gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+}`
+
+const FRAG = `
+uniform float uOpacity;
+varying vec3 vColor;
+varying float vAlpha;
+void main() {
+  float a = vAlpha * uOpacity;
+  if (a <= 0.001) discard;
+  gl_FragColor = vec4(vColor, a);
+  #include <colorspace_fragment>
+}`
+
+interface EdgeRec { start: number; dur: number; base: number; from: number; to: number }
+
+/**
+ * 真实依赖边：prereqs 中每条依赖连一条弧线（前置节点 → 当前节点），
+ * 控制点向塔轴内收，颜色取目标节点（当前科技）的领域色。
+ *
+ * 除漫游生长外，每条边还有一个 0/1 遮罩位：两端节点不同时"在场"就不画，
+ * 于是隐去某领域、或点击聚焦到某个子图时，画面里不会留下伸向隐形节点的半截线。
+ *
+ * 漫游期间逐条生长：前置一显现就从它起笔，沿弧向目标延伸，抵达终点那一刻正好是目标
+ * 科技显现的时刻 —— 故生长时长等于两端显现时刻之差。前置比目标更晚显现的"倒挂"边
+ * 没有过程可言，在前置显现时整条点亮。
+ */
+export function buildEdges(placed: PlacedNode[], revealAt: Float32Array): {
+  lines: THREE.LineSegments
+  /** 进入漫游：线全部隐去，等待按显现时刻生长 */
+  beginTour: () => void
+  /** 漫游中每帧推进（t 为漫游时钟，单调） */
+  update: (t: number) => void
+  /** 退出漫游 / 环绕模式：恢复遮罩允许的可见集 */
+  fillAll: () => void
+  /** 连线遮罩：active[节点] 非 0 才算在场，两端都在场才画（null = 全放行） */
+  setActive: (active: Uint8Array | null) => void
+  /** 聚焦时把剩下的线提亮（子图外本就无可见性可言） */
+  setEmphasis: (focus: Int8Array | null) => void
+} {
+  const idxById = new Map(placed.map((p, i) => [p.node.id, i]))
+  const byId = new Map(placed.map(p => [p.node.id, p]))
+
+  const positions: number[] = []
+  const colors: number[] = []
+  const recs: EdgeRec[] = []
+  const p0 = new THREE.Vector3(), p1 = new THREE.Vector3()
+  const mid = new THREE.Vector3(), ctrl = new THREE.Vector3(), axisPt = new THREE.Vector3()
+  const a = new THREE.Vector3(), b = new THREE.Vector3()
+
+  for (const node of placed) {
+    const to = idxById.get(node.node.id)!
+    const arrive = revealAt[to]
+    for (const prereqId of node.node.prereqs) {
+      const from = byId.get(prereqId)
+      if (!from) continue // 数据已验证无悬空，防御性跳过
+      const fromIdx = idxById.get(prereqId)!
+      p0.copy(from.position)
+      p1.copy(node.position)
+
+      // 控制点：中点向塔轴内收
+      mid.addVectors(p0, p1).multiplyScalar(0.5)
+      axisPt.set(0, mid.y, 0)
+      ctrl.copy(axisPt).sub(mid)
+      const bend = Math.min(8, p0.distanceTo(p1) * 0.12)
+      ctrl.normalize().multiplyScalar(bend).add(mid)
+
+      const c = CATEGORY_COLORS[node.node.category].clone().lerp(new THREE.Color('#c2e7f4'), .22)
+      // 每条弧按 t 递增写入 8 段 → 缓冲顺序即"前置→当前"的生长顺序
+      const base = positions.length / 3
+      for (let s = 0; s < SEG; s++) {
+        const t0 = s / SEG, t1 = (s + 1) / SEG
+        quadBezier(a, p0, ctrl, p1, t0)
+        quadBezier(b, p0, ctrl, p1, t1)
+        positions.push(a.x, a.y, a.z, b.x, b.y, b.z)
+        colors.push(c.r, c.g, c.b, c.r, c.g, c.b)
+      }
+      // 抵达时刻固定为目标节点的显现时刻；爬行过程压缩到 GROW_MAX 内 ——
+      // 实测前置→目标的间隔中位 13s、p90 55s，照原样爬肉眼看不出在动
+      const span = Math.max(0, Math.min(arrive - revealAt[fromIdx], GROW_MAX))
+      recs.push({ start: arrive - span, dur: span, base, from: fromIdx, to })
+    }
+  }
+
+  const geo = new THREE.BufferGeometry()
+  geo.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3))
+  geo.setAttribute('aColor', new THREE.Float32BufferAttribute(colors, 3))
+  const alpha = new Float32Array(positions.length / 3).fill(1)
+  const alphaAttr = new THREE.BufferAttribute(alpha, 1)
+  geo.setAttribute('aAlpha', alphaAttr)
+
+  const lines = new THREE.LineSegments(geo, new THREE.ShaderMaterial({
+    uniforms: { uOpacity: { value: 0.3 } },
+    vertexShader: VERT,
+    fragmentShader: FRAG,
+    transparent: true,
+    depthWrite: false,
+    blending: THREE.NormalBlending,
+  }))
+
+  // 0 = 未起笔，1 = 延伸中，2 = 已抵达。漫游时钟单调，故不需要回退
+  const state = new Uint8Array(recs.length).fill(2)
+  // 遮罩位：两端节点都在场才画，与漫游生长共用这一个乘子
+  const vis = new Uint8Array(recs.length).fill(1)
+  let focus: Int8Array | null = null
+
+  const writeEdge = (e: number, p: number) => {
+    const base = recs[e].base
+    const { from, to } = recs[e]
+    const m = vis[e] ? (!focus || focus[from] === 0 || focus[to] === 0 ? 1 : .28) : 0
+    for (let k = 0; k < SEG; k++) {
+      const v = Math.min(1, Math.max(0, p * SEG - k)) * m
+      alpha[base + k * 2] = v
+      alpha[base + k * 2 + 1] = v
+    }
+  }
+
+  /** 按当前遮罩把每条边重画到它此刻的进度（环绕模式下都已抵达，即整条） */
+  const redraw = () => {
+    for (let e = 0; e < recs.length; e++) writeEdge(e, state[e] === 2 ? 1 : 0)
+    alphaAttr.needsUpdate = true
+  }
+
+  return {
+    lines,
+    beginTour: () => { state.fill(0); redraw() },
+    update: (t: number) => {
+      let dirty = false
+      for (let e = 0; e < recs.length; e++) {
+        if (state[e] === 2) continue
+        const { start, dur } = recs[e]
+        if (t < start) continue
+        const p = dur <= 0 ? 1 : Math.min(1, (t - start) / dur)
+        writeEdge(e, p)
+        state[e] = p >= 1 ? 2 : 1
+        dirty = true
+      }
+      if (dirty) alphaAttr.needsUpdate = true
+    },
+    fillAll: () => { state.fill(2); redraw() },
+    setActive: (active: Uint8Array | null) => {
+      for (let e = 0; e < recs.length; e++) {
+        const { from, to } = recs[e]
+        vis[e] = !active || (active[from] && active[to]) ? 1 : 0
+      }
+      redraw() // 遮罩只在环绕模式下变更（漫游中图例不可点），故不必保留生长进度
+    },
+    setEmphasis: (depth: Int8Array | null) => {
+      focus = depth
+      ;(lines.material as THREE.ShaderMaterial).uniforms.uOpacity.value = focus ? FOCUS_OPACITY : OPACITY
+      redraw()
+    },
+  }
+}
+
+function quadBezier(out: THREE.Vector3, p0: THREE.Vector3, c: THREE.Vector3, p1: THREE.Vector3, t: number) {
+  const it = 1 - t
+  out.set(
+    it * it * p0.x + 2 * it * t * c.x + t * t * p1.x,
+    it * it * p0.y + 2 * it * t * c.y + t * t * p1.y,
+    it * it * p0.z + 2 * it * t * c.z + t * t * p1.z,
+  )
+}
+
+/** 每个时代层的标记环 + 时代名锚点 */
+export function buildEraRings(eraRadii: number[], eraY: number[]): { rings: THREE.Object3D[]; anchors: { era: number; pos: THREE.Vector3 }[] } {
+  const rings: THREE.Object3D[] = []
+  const anchors: { era: number; pos: THREE.Vector3 }[] = []
+  const labelAngle = Math.PI * 0.25 // 朝向初始相机方向
+
+  for (let e = 0; e < ERA_COUNT; e++) {
+    const y = eraY[e]
+    const r = eraRadii[e] + 2.5
+    const pts: THREE.Vector3[] = []
+    for (let i = 0; i <= 96; i++) {
+      const t = (i / 96) * Math.PI * 2
+      pts.push(new THREE.Vector3(Math.cos(t) * r, y, Math.sin(t) * r))
+    }
+    const geo = new THREE.BufferGeometry().setFromPoints(pts)
+    const ring = new THREE.Line(geo, new THREE.LineBasicMaterial({
+      color: 0x63899e, transparent: true, opacity: 0.18,
+    }))
+    rings.push(ring)
+    anchors.push({ era: e, pos: new THREE.Vector3(Math.cos(labelAngle) * (r + 4), y + 1.5, Math.sin(labelAngle) * (r + 4)) })
+  }
+  return { rings, anchors }
+}

@@ -1,0 +1,31 @@
+# LOCAL REVIEW ONLY. Merge into a NEW website release after explicit approval; do not reload production now.
+# Replace /var/www/shoumiren-site/releases/NEW_RELEASE with the verified release directory.
+location = /lab/polytech-tree { return 302 /lab/polytech-tree/; }
+location = /lab/polytech-tree/ {
+    alias /var/www/shoumiren-site/releases/NEW_RELEASE/lab/polytech-tree/index.html;
+    default_type text/html;
+    add_header Cache-Control "no-store" always;
+    add_header X-Content-Type-Options "nosniff" always;
+    add_header Content-Security-Policy "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'self'; frame-ancestors 'none'" always;
+}
+location ^~ /lab/polytech-tree/assets/ {
+    alias /var/www/shoumiren-site/releases/NEW_RELEASE/lab/polytech-tree/assets/;
+    autoindex off;
+    add_header Cache-Control "public, max-age=31536000, immutable" always;
+    add_header X-Content-Type-Options "nosniff" always;
+}
+location ~ ^/lab/polytech-tree/(LICENSE|LICENSE-data\.md|LICENSE-three\.txt|THIRD-PARTY-NOTICES\.txt|dataset-source\.json)$ {
+    alias /var/www/shoumiren-site/releases/NEW_RELEASE/lab/polytech-tree/$1;
+    default_type text/plain;
+    add_header Cache-Control "no-cache" always;
+    add_header X-Content-Type-Options "nosniff" always;
+}
+location /lab/polytech-tree/ { return 404; }
+location = /website-assets/polytech-tree/cover-f67e358e16e5.webp {
+    alias /var/www/shoumiren-site/releases/NEW_RELEASE/assets/polytech-tree/cover-f67e358e16e5.webp;
+    add_header Cache-Control "public, max-age=31536000, immutable" always;
+}
+location = /website-assets/polytech-tree/case.css {
+    alias /var/www/shoumiren-site/releases/NEW_RELEASE/assets/polytech-tree/case.css;
+    add_header Cache-Control "no-cache" always;
+}

@@ -1,0 +1,7 @@
+Polytech Tree — https://github.com/secwind7/polytech-tree
+Upstream commit: 51d6e1f (inspection copy). Copyright (c) 2026 secwind (polytech-tree).
+Source code and build tooling: MIT, see LICENSE. Original copyright notice retained.
+Structured dataset: Polytech Tree, CC BY 4.0, https://creativecommons.org/licenses/by/4.0/ .
+Chinese summaries containing translations/adaptations of English Wikipedia: Wikipedia contributors, CC BY-SA 4.0, https://creativecommons.org/licenses/by-sa/4.0/ . See LICENSE-data.md and each record's wikiEn field for the original article. Original data fields and descriptions are retained. Mobile presentation filters a subset; data is not rewritten.
+Adaptations by 守密人: website identity, independent lazy loading, responsive presentation, keyboard exploration, loading/error/fallback states, reduced motion, resource lifecycle. Upstream layout, geometry, label rendering, graph and tour algorithms reused.
+Three.js — https://threejs.org/ , MIT. See LICENSE-three.txt.

@@ -9,6 +9,13 @@ $runId = [DateTime]::UtcNow.ToString('yyyyMMddTHHmmssZ') + '-' + [Guid]::NewGuid
 $bootstrapFlag = if ($Bootstrap) { 'true' } else { 'false' }
 $indexHash = (Get-FileHash -LiteralPath (Join-Path $website 'index.html')).Hash.ToLowerInvariant()
 $configHash = (Get-FileHash -LiteralPath (Join-Path $website 'homepage-locations.conf')).Hash.ToLowerInvariant()
+if (-not $Bootstrap) {
+    # Unpublished local homepage work must not be mistaken for production drift.
+    $baseline = Get-Content -Raw -LiteralPath (Join-Path $PSScriptRoot 'releases/website-news-baseline.json') | ConvertFrom-Json
+    if ($baseline.directory -ne '/var/www/shoumiren-site/releases/20261017-site02' -or $baseline.indexSha256 -notmatch '^[a-f0-9]{64}$' -or $baseline.snippetSha256 -notmatch '^[a-f0-9]{64}$') { throw 'Invalid deployed website baseline; refuse publishing' }
+    $indexHash = $baseline.indexSha256
+    $configHash = $baseline.snippetSha256
+}
 $script = @'
 set -eu
 umask 077

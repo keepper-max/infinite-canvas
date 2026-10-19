@@ -14,6 +14,8 @@
 
 发布脚本使用既有阿里云CLI凭据引用，不读取或输出密钥。ECS脚本校验主机，使用非阻塞flock防重叠，校验当前首页/snippet与仓库版本、内容哈希，备份后同目录原子替换文件；公网读回或画布健康失败自动恢复内容。运行结果未知时先查调用，不抢占其他发布。
 
+日常首页/snippet的预期哈希读取ops/releases/website-news-baseline.json所记录的已部署版本，而不是开发中的本地首页。该文件只能在经批准的完整官网切换并读回核验后更新；不能为了绕过漂移错误直接采用未知线上哈希。当前本地互动课件未获发布许可，不得把它随资讯上线。
+
 首次接入使用-Bootstrap，仅在已知旧首页/snippet哈希匹配时追加独立no-store资源入口并更新脚本引用；旧不可变资源原封不动保留。后续无须再使用该参数。内容尺寸沿用现有Cloud Assistant调用大小约束，超限发布前拒绝，不自动扩大。
 
 回滚时先比较当前news-current.js与备份content.after一致，再把对应/root/shoumiren-news-运行编号/content.before恢复为news-current.js（先写同目录临时文件再重命名），不要覆盖后续新闻。首次接入的首页/snippet回滚需同样比较after、恢复before并nginx检查后reload；备份和旧资源不删除。

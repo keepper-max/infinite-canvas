@@ -1,6 +1,10 @@
 // Curated summaries, not a browser-side scraper. Keep sources and reporting dates with every update.
 const websiteContent = {
   news: [
+    {date:'2026-10-18',category:'开源与部署',title:'vLLM 0.32 发布，模型服务升级需兼顾安全与兼容',
+      summary:'vLLM 发布0.32.0，新增结构化决策接口和通用工具调用解析，并扩展多模态模型支持。官方记录同时列出安全修复与兼容变化：默认跨域来源不再全部放开，不再支持Python 3.10，部分推理流事件名称调整。',
+      observation:'自建模型服务的团队应先核对运行环境、跨域配置及流式响应客户端，再用实际模型和请求样本回归验证，不把发布说明中的吞吐提升直接当作业务收益。',
+      source:'vLLM 官方发布记录',url:'https://github.com/vllm-project/vllm/releases/tag/v0.32.0'},
     {date:'2026-10-17',category:'模型与智能体',title:'DeepSeek 更新 Flash 模型，编程与智能体流程值得重新评估',
       summary:'DeepSeek 公开 V4.1-Flash-1017 模型卡与 MIT 许可权重。官方报告称，新版本改善推理、编程、智能体与视觉任务表现，并减少任务耗时和输出长度；这些收益来自厂商评测，不等于所有业务场景都能获得同样提升。',
       observation:'已有自动编程或多步工具调用流程的团队，可以用自己的任务重新比较成功率、总调用成本与失败恢复能力，先回归验证，再决定是否替换生产模型。',
