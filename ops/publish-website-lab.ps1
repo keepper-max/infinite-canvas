@@ -67,7 +67,7 @@ test -s BACKUP/homepage.before
 cmp /etc/nginx/snippets/shoumiren-homepage.conf BACKUP/homepage.before
 cmp /etc/nginx/sites-available/shoumiren-live BACKUP/main.before
 # News is refreshed independently; all immutable staged resources must still match.
-(cd RELEASE && grep -v '  news-current.js$' BACKUP/SHA256SUMS | sha256sum -c -)
+(cd RELEASE && tr -d '\r' < BACKUP/SHA256SUMS | grep -v '  news-current.js$' | sha256sum -c -)
 # Refresh news under the same lock immediately before switching its public alias.
 cp -p /var/www/shoumiren-site/releases/20261017-site02/news-current.js RELEASE/news-current.js
 printf '%s  %s\n' 'CONFIG_HASH' RELEASE/homepage-locations.conf 'INDEX_HASH' RELEASE/index.html | sha256sum -c -

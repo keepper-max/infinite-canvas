@@ -9,10 +9,12 @@ $runId = [DateTime]::UtcNow.ToString('yyyyMMddTHHmmssZ') + '-' + [Guid]::NewGuid
 $bootstrapFlag = if ($Bootstrap) { 'true' } else { 'false' }
 $indexHash = (Get-FileHash -LiteralPath (Join-Path $website 'index.html')).Hash.ToLowerInvariant()
 $configHash = (Get-FileHash -LiteralPath (Join-Path $website 'homepage-locations.conf')).Hash.ToLowerInvariant()
+$deployedRelease = '/var/www/shoumiren-site/releases/20261017-site02'
 if (-not $Bootstrap) {
     # Unpublished local homepage work must not be mistaken for production drift.
     $baseline = Get-Content -Raw -LiteralPath (Join-Path $PSScriptRoot 'releases/website-news-baseline.json') | ConvertFrom-Json
-    if ($baseline.directory -ne '/var/www/shoumiren-site/releases/20261017-site02' -or $baseline.indexSha256 -notmatch '^[a-f0-9]{64}$' -or $baseline.snippetSha256 -notmatch '^[a-f0-9]{64}$') { throw 'Invalid deployed website baseline; refuse publishing' }
+    if ($baseline.directory -notmatch '^/var/www/shoumiren-site/releases/[0-9]{8}-site[0-9]{2}$' -or $baseline.indexSha256 -notmatch '^[a-f0-9]{64}$' -or $baseline.snippetSha256 -notmatch '^[a-f0-9]{64}$') { throw 'Invalid deployed website baseline; refuse publishing' }
+    $deployedRelease = $baseline.directory
     $indexHash = $baseline.indexSha256
     $configHash = $baseline.snippetSha256
 }
@@ -22,7 +24,7 @@ umask 077
 test "$(hostname)" = iZm5edijeycdxfyte4d9igZ
 exec 9>/run/lock/shoumiren-website-news.lock
 flock -n 9
-release=/var/www/shoumiren-site/releases/20261017-site02
+release=DEPLOYED_RELEASE
 snippet=/etc/nginx/snippets/shoumiren-homepage.conf
 content="$release/news-current.js"
 bootstrap=BOOTSTRAP_FLAG
@@ -100,7 +102,7 @@ sha256sum "$content" "$release/index.html" "$snippet"
 trap - EXIT
 printf 'NEWS_PUBLISHED backup=%s\n' "$backup"
 '@
-$script = $script.Replace('BOOTSTRAP_FLAG',$bootstrapFlag).Replace('RUN_ID',$runId).Replace('CONTENT_HASH',$contentHash).Replace('CONTENT_BYTES',$contentBytes).Replace('INDEX_HASH',$indexHash).Replace('CONFIG_HASH',$configHash)
+$script = $script.Replace('DEPLOYED_RELEASE',$deployedRelease).Replace('BOOTSTRAP_FLAG',$bootstrapFlag).Replace('RUN_ID',$runId).Replace('CONTENT_HASH',$contentHash).Replace('CONTENT_BYTES',$contentBytes).Replace('INDEX_HASH',$indexHash).Replace('CONFIG_HASH',$configHash)
 $encoded = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($script.Replace("`r`n","`n")))
 if ($encoded.Length -gt 24576) { throw 'News payload exceeds Cloud Assistant size; keep website content compact before publishing' }
 $raw = & $cli ecs RunCommand --RegionId cn-qingdao --InstanceId.1 i-m5edijeycdxfyte4d9ig --Name shoumiren-news-publish --Type RunShellScript --CommandContent $encoded --ContentEncoding Base64 --KeepCommand false

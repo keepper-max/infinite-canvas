@@ -1,6 +1,6 @@
 # 互动知识树｜本地验收版
 
-首页入口：http://127.0.0.1:4411/#knowledge-tree ，独立课件：http://127.0.0.1:4411/lab/polytech-tree/ 。仅本地预览，未提交、推送、新建分支或部署；没有修改线上Nginx、数据、画布依赖或节点/权限/生成接口。
+线上入口：https://shoumiren.online/#knowledge-tree ，独立课件：https://shoumiren.online/lab/polytech-tree/ 。用户已授权并发布v0.16.25；此前本地验收记录保留。仅切换官网Nginx片段和独立静态资源，没有修改生产数据、画布依赖、节点/权限/生成接口或应用镜像。发布证据见../../../ops/releases/v0.16.25.md。
 
 ## 运行与构建
 
