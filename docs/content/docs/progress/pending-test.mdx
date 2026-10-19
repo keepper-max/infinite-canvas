@@ -5,7 +5,7 @@ description: Implemented changes that still need manual verification
 
 # Pending Tests
 
-- 科技树性能优化（未发布）：保留全部节点、画质和交互，自转/显现由GPU计算，名称改为可见DOM池，分优先级投影排序，准确网格拾取合并至帧、缓存容器尺寸并在视口外停止绘制。同机RTX2070对比与构建、原33项回归、22项展项检查、9项专项检查已完成；中途发现手机空实例桶Shader颜色变量缺失，增加条件编译后复验通过。gzip仅更新本地Nginx文件，线上尚未启用；真实低端设备及跨浏览器仍待确认。详见website/lab/polytech-tree/PERFORMANCE.md。
+- v0.16.26科技树性能优化已发布至site04：保留全部节点、画质和交互，自转/显现由GPU计算，名称改为可见DOM池，按优先级投影、准确网格拾取合并至帧，并在视口外停止绘制。本地同机RTX2070采样及64项检查已完成；公网gzip/解压哈希、新旧资源、许可、资讯和画布/3D健康通过，实际浏览器渲染与点选无错误。保留旧资源及回滚备份；真实低端设备和Safari/Firefox仍待确认。详见website/lab/polytech-tree/PERFORMANCE.md及ops/releases/v0.16.26.md。
 
 - v0.16.25互动知识树已获准发布至官网site03：首页、课件、静态资源和新闻哈希匹配，许可路径正常，Nginx验证及画布/3D健康通过；首轮目录alias问题触发自动回滚，修复root+try_files后重新上线。保留旧资源、配置备份和应用镜像；每日资讯基线已同步并返回NEWS_UNCHANGED。真机性能和跨浏览器仍待用户确认，详见ops/releases/v0.16.25.md。
 
