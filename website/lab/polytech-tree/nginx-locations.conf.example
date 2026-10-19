@@ -2,7 +2,8 @@
 # Replace /var/www/shoumiren-site/releases/NEW_RELEASE with the verified release directory.
 location = /lab/polytech-tree { return 302 /lab/polytech-tree/; }
 location = /lab/polytech-tree/ {
-    alias /var/www/shoumiren-site/releases/NEW_RELEASE/lab/polytech-tree/index.html;
+    root /var/www/shoumiren-site/releases/NEW_RELEASE;
+    try_files /lab/polytech-tree/index.html =404;
     default_type text/html;
     add_header Cache-Control "no-store" always;
     add_header X-Content-Type-Options "nosniff" always;
