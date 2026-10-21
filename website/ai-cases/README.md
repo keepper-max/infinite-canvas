@@ -38,8 +38,10 @@ node website/ai-cases/build.mjs
 
 案例原始JSON不进行格式化，避免破坏逐字节一致性。其他源码使用Prettier检查；静态站未配置ESLint，不运行无关画布构建。最新验证见 progress.md。
 
-仅本地未发布；未来上线另等明确确认。生产Nginx与公开白名单须另行配置列表、有效详情、静态资源、无尾斜杠重定向及真实404。仅公开HTML、cases.css、cases.json、present/core/list/detail.mjs和许可；不要公开构建、测试、规划和内部文档，不改工作台/API路由。
+已按用户明确授权发布至 https://shoumiren.online/ai-cases/ ，版本v0.16.28，生产静态目录为 /var/www/shoumiren-site/releases/20261021-site06。列表、有效详情、资源类型及真实404已线上核验。后续发布仍需按批准流程执行。仅公开HTML、cases.css、cases.json、present/core/list/detail.mjs和许可；不要公开构建、测试、规划和内部文档，不改工作台/API路由。
 
 ## 改动文件
 
 本轮更新 cases.json、build.mjs、list.mjs、cases.css、core.test.mjs，新增 present.mjs 与 upstream.json，重建列表和127个详情；website/preview.cjs增加展示适配模块白名单。同步README、规划、进度和CHANGELOG、待测/TODO文档。此前首页入口和既有 website/content.js 工作区改动保留。
+
+原始案例文件在 .gitattributes 中设置 -text，避免 Git 自动换行转换破坏上游字节一致性。部署证据与回滚说明见 ops/releases/v0.16.28.md。
