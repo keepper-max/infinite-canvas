@@ -16,6 +16,6 @@
 
 - 按用户追加授权发布到独立 site07 静态目录；`homepage-locations.conf` 增加 `/learn/` 目录路由与保留 query 的尾斜线重定向，不落入画布 SPA fallback。发布记录见 `ops/releases/v0.16.30.md`。
 - 只发布 HTML、CSS、JS、data JSON、品牌图、LICENSE 和 vendor 许可；排除 tests、README、完整性清单及源项目脚本、草稿和截图。
-- 学习页需要同源脚本与数据、inline 初始化脚本、inline 样式及 `img-src 'self' data: blob:`；分享图预览使用 blob URL。须在正式 HTTPS/CSP 下再次验收，不能直接套用禁止 inline 的科技树 CSP。
+- 学习页需要同源脚本与数据、inline 初始化脚本、inline 样式及 `img-src 'self' data: blob:`；分享图预览使用 blob URL，已在正式 HTTPS/CSP 下完成桌面与手机宽度验收，不能直接套用禁止 inline 的科技树 CSP。
 - 分享二维码固定指向 `https://shoumiren.online/learn/?from=share`，英语携带 `subject=english`；避免导出 localhost。分享图是复习交流用图，不含姓名或答题原文，也不上传存档。
 - 来源与许可正文按用户要求暂不补齐，后续单独处理。物理手机、Safari/Firefox 与读屏器需补充验收。
