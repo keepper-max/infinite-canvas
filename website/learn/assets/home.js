@@ -1,0 +1,134 @@
+/* 首页：统计和年级入口都从 data/*.json 计算，不写死数量。 */
+(function () {
+  'use strict';
+  var raw = location.hash.replace(/^#/, '');
+  try { raw = decodeURIComponent(raw); } catch (e) { /* 保持原样 */ }
+  if (/^cnm_[A-Za-z0-9_]+$/.test(raw) || /^cne_[A-Za-z0-9_]+$/.test(raw)) return;
+
+  var CN = ['', '一', '二', '三', '四', '五', '六', '七', '八', '九'];
+  var subject = new URLSearchParams(location.search).get('subject') === 'english' ? 'english' : 'math';
+
+  function withSubject(href) {
+    if (!href || href === '/') return href;
+    var url = new URL(href, location.href);
+    if (url.origin !== location.origin || !url.pathname.startsWith('/learn/')) return href;
+    url.searchParams.set('subject', subject);
+    return url.pathname + url.search + url.hash;
+  }
+
+  document.body.classList.toggle('subject-english', subject === 'english');
+  document.querySelectorAll('.subject-link').forEach(function (link) {
+    var on = link.getAttribute('data-subject') === subject;
+    link.classList.toggle('on', on);
+    if (on) link.setAttribute('aria-current', 'true');
+    else link.removeAttribute('aria-current');
+  });
+  document.querySelectorAll('.site-nav a:not(.subject-link), a.brand').forEach(function (link) {
+    var href = link.getAttribute('href');
+    var next = withSubject(href);
+    if (next && next !== href) link.setAttribute('href', next);
+  });
+  if (subject === 'english') {
+    document.title = '英语 · 守密人 · 学习中心';
+    var eye = document.querySelector('#subject-scope');
+    if (eye) eye.textContent = '英语：三年级至九年级 · 选择一个年级探索';
+    var primary = document.querySelector('.hero-actions a.btn-primary');
+    var browse = document.querySelector('.hero-actions a.btn:not(.btn-primary)');
+    if (primary) primary.setAttribute('href', 'diagnose/?subject=english');
+    if (browse) browse.setAttribute('href', 'explore/?subject=english');
+    var demo = document.querySelector('.quiet-link a');
+    if (demo) {
+      demo.setAttribute('href', 'diagnose/?subject=english&grade=' + encodeURIComponent('四上') + '&demo=1');
+      demo.textContent = '先看一遍演示：四年级上册英语';
+    }
+  }
+
+  function setText(id, value) {
+    var node = document.getElementById(id);
+    if (node) node.textContent = value;
+  }
+
+  function fail(message) {
+    var box = document.getElementById('load-error');
+    if (!box) return;
+    box.hidden = false;
+    box.textContent = message;
+  }
+
+  Promise.all([
+    fetch('data/topics.json'),
+    fetch('data/dependencies.json'),
+    fetch('data/questions.json'),
+    fetch('data/cn-curriculum-standards.json')
+  ]).then(function (responses) {
+    responses.forEach(function (response, index) {
+      if (!response.ok) throw new Error('HTTP ' + response.status);
+    });
+    return Promise.all(responses.map(function (response) { return response.json(); }));
+  }).then(function (data) {
+    var topics = data[0];
+    var deps = data[1];
+    var questions = data[2];
+    var standards = data[3];
+    if (!Array.isArray(topics) || !Array.isArray(deps) || !Array.isArray(questions)) {
+      throw new Error('数据格式无法识别');
+    }
+    var items = standards && Array.isArray(standards.items) ? standards.items : [];
+    function isEnglishTopic(topic) {
+      return topic.subject === 'english' || String(topic.id || '').indexOf('cne_') === 0;
+    }
+    var wantEnglish = subject === 'english';
+    topics = topics.filter(function (topic) { return isEnglishTopic(topic) === wantEnglish; });
+    deps = deps.filter(function (edge) { return String(edge.topicId || '').indexOf('cne_') === 0 === wantEnglish; });
+    questions = questions.filter(function (question) { return String(question.topicId || '').indexOf('cne_') === 0 === wantEnglish; });
+    items = items.filter(function (item) { return String(item.id || '').indexOf('ces-') === 0 === wantEnglish; });
+    setText('n-topics', String(topics.length));
+    setText('n-edges', String(deps.length));
+    setText('n-questions', String(questions.length));
+    setText('n-standards', String(items.length));
+
+    var grades = document.getElementById('grades');
+    if (!grades) return;
+    grades.replaceChildren();
+    grades.removeAttribute('aria-busy');
+    function addCard(g, stageName, title, klass, splitText, href) {
+      var list = topics.filter(function (topic) { return topic.grade === g; });
+      var link = document.createElement('a');
+      link.className = 'grade-card ' + klass;
+      link.href = href;
+      var stage = document.createElement('span');
+      stage.className = 'grade-stage';
+      stage.textContent = stageName;
+      var name = document.createElement('strong');
+      name.textContent = title;
+      var count = document.createElement('span');
+      count.className = 'grade-count';
+      count.textContent = list.length + ' 个知识点';
+      var split = document.createElement('span');
+      split.className = 'grade-stage';
+      split.textContent = splitText;
+      link.append(stage, name, count, split);
+      grades.append(link);
+    }
+    var from = wantEnglish ? 3 : 1;
+    var to = wantEnglish ? 9 : 9;
+    for (var g = from; g <= to; g++) {
+      var list = topics.filter(function (topic) { return topic.grade === g; });
+      var up = list.filter(function (topic) { return topic.semester === '上'; }).length;
+      var down = list.filter(function (topic) { return topic.semester === '下'; }).length;
+      var whole = list.filter(function (topic) { return topic.semester === '全'; }).length;
+      var splitText = whole ? '全一册 ' + whole : '上 ' + up + ' · 下 ' + down;
+      var href = wantEnglish ? 'explore/?subject=english&grade=' + g : 'explore/?grade=' + g;
+      addCard(g, g <= 6 ? '小学' : '初中', CN[g] + '年级', g <= 6 ? 'is-primary' : 'is-junior', splitText, href);
+    }
+    if (!wantEnglish) {
+      addCard(10, '高中', '高一', 'is-senior', '必修第一册', 'explore/?grade=10');
+      addCard(11, '高中', '高二', 'is-senior', '必修第二册', 'explore/?grade=11');
+      addCard(12, '高中', '选必一', 'is-senior', '选择性必修第一册', 'explore/?grade=12');
+      addCard(13, '高中', '选必二', 'is-senior', '选择性必修第二册', 'explore/?grade=13');
+      addCard(14, '高中', '选必三', 'is-senior', '选择性必修第三册', 'explore/?grade=14');
+    }
+  }).catch(function (error) {
+    fail('数据没有加载成功（' + (error && error.message ? error.message : error) + '）。请刷新页面重试，或返回学习中心。');
+  });
+})();

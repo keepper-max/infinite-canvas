@@ -1,0 +1,11 @@
+{
+  "data/cn-curriculum-standards.json": "d7cc049f24d869155afb830672646388d76e967c38c37a7e4aa38407f28cb981",
+  "data/dependencies.json": "07597cbc75e9c7292e46136dd3ae6a25a4352b9f057951d86acd4aff992a2e3e",
+  "data/id-aliases.json": "47760dc1d5c3cba350e94e5430bea042de6c3dd571b8862fedafa1af01ecfab3",
+  "data/questions.json": "8082701099ce4950034adf3553b070774339242392be5fc848e22460e62bda35",
+  "data/second_pass_log.json": "f66f1de00d4da06af4ff777184e6ecda112dac3e52f1231deb0dd64e46b39f39",
+  "data/topics.json": "94f5903813a084728563a5d86133c2e5e95ea0340261c12f91315eafdf72e609",
+  "data/verification_report.json": "49a491ed60eb20a045e824c7059aee96d1c64e37fa77319cd57193ef53698003",
+  "diagnose/engine.js": "5bf7850bc033200b257662ad423b99efff9b918d218f0cbd2998aac1f9ca274b",
+  "tests/test_engine.js": "082a43d58dafe2e781f01772b02c67510d6e92c2bedc32fc43611a75769920ff"
+}

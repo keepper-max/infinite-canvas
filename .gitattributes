@@ -1,2 +1,8 @@
 *.sh text eol=lf
 website/ai-cases/cases.json -text
+
+# Preserve imported learning data and algorithm byte identities across checkouts.
+website/learn/data/*.json -text
+website/learn/diagnose/engine.js -text
+website/learn/tests/test_engine.js -text
+website/learn/assets/vendor/* -text

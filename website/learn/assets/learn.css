@@ -1,0 +1,29 @@
+/* 官网品牌只作用于 /learn/ 独立文档，不加载到首页或画布。 */
+:root {
+  --bg:#f7fbff;--bg-elev:#fff;--bg-muted:#edf5fa;--text:#1b3d58;--muted:#4e6a80;
+  --line:#cbdde9;--brand:#176b9b;--brand-strong:#155b83;--brand-soft:#e5f2fa;
+  --focus:#176b9b;--accent:#176b9b;--node-junior:#176b9b;--node-junior-bg:#e5f2fa;
+}
+body { background:var(--bg);color:var(--text); }
+.site-header { border-bottom:1px solid var(--line);background:#fff; }
+.brand .logo { object-fit:contain;flex-shrink:0; }
+.brand-name { display:flex;align-items:center;gap:12px; }
+.brand-section { font-size:13px;font-weight:400;color:var(--muted);border-left:1px solid var(--line);padding-left:12px; }
+.nav-link.subject-link.on,.step-no { background:var(--brand-soft);color:var(--brand); }
+.nav-link.official-home { font-size:12px;color:var(--muted); }
+.route-preview { background:#eaf4fb; }
+.route-preview>p,.route-caption { color:var(--muted); }
+.route-caption { border-color:var(--line); }
+.route-caption i { background:var(--brand); }
+.hero-actions .btn:not(.btn-primary) { border-color:var(--line); }
+a.grade-card:hover { background:var(--brand-soft); }
+.site-footer a { display:inline-block; }
+::selection { background:#cce8f7;color:#153e55; }
+:focus-visible { outline:3px solid var(--focus);outline-offset:3px; }
+@media(max-width:700px) {
+  .site-header { padding:14px 18px; }
+  .brand { white-space:normal; }
+  .site-nav { flex-wrap:wrap; }
+  .nav-link { padding:8px 10px; }
+  .nav-link.subject-link+.nav-link:not(.subject-link) { margin-left:0; }
+}

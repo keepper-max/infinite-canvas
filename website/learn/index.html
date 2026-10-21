@@ -1,0 +1,95 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>守密人 · 学习中心</title>
+<meta name="description" content="数学（小学到高中）和英语（三年级到九年级）的知识图谱。沿先修关系自适应出题，从选中的知识点往回找到薄弱根因。">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%230f766e'/%3E%3Ccircle cx='9' cy='21' r='2.5' fill='white'/%3E%3Ccircle cx='17' cy='11' r='2.5' fill='white'/%3E%3Ccircle cx='24' cy='20' r='2.5' fill='white'/%3E%3C/svg%3E">
+<script>
+(function () {
+  var id = location.hash.replace(/^#/, '');
+  try { id = decodeURIComponent(id); } catch (e) { return; }
+  if (/^(cnm|cne)_[A-Za-z0-9_]+$/.test(id)) {
+    var next = new URL('explore/', location.href);
+    next.search = location.search;
+    next.searchParams.set('subject', id.indexOf('cne_') === 0 ? 'english' : 'math');
+    next.hash = id;
+    location.replace(next.href);
+  }
+})();
+</script>
+<link rel="stylesheet" href="assets/site.css">
+<link rel="stylesheet" href="assets/brand.css">
+<link rel="stylesheet" href="assets/learn.css"><script defer src="assets/learn.js"></script></head>
+<body class="page-home">
+<header class="site-header">
+  <a class="brand" href="./">
+    <img class="logo" src="assets/brand-logo.png" width="38" height="38" alt="">
+    <span class="brand-name">守密人<span class="brand-section">学习中心</span></span>
+  </a>
+  <nav class="site-nav" aria-label="主导航">
+    <a class="nav-link subject-link on" data-subject="math" href="./">数学</a>
+    <a class="nav-link subject-link" data-subject="english" href="./?subject=english">英语</a>
+    <a class="nav-link active" href="./" aria-current="page">首页</a>
+    <a class="nav-link" href="explore/">知识图谱</a>
+    <a class="nav-link" href="diagnose/">诊断</a>
+    <a class="nav-link" href="about.html">关于学习中心</a>
+  <a class="nav-link official-home" href="/">守密人官网 ↗</a></nav>
+</header>
+<main class="home">
+  <section class="hero" aria-labelledby="home-title">
+    <div class="hero-copy">
+      <h1 id="home-title">学习卡住了？<br>找到<em>下一步</em>的方向。</h1>
+      <p class="lede">从一个知识点开始，看看哪里还需要练习。沿着知识之间的联系，找到适合自己的复习路径。</p>
+      <div class="hero-actions"><a class="btn btn-primary btn-lg" href="diagnose/">开始学习诊断</a><a class="btn btn-lg" href="explore/">探索知识图谱</a></div>
+      <p class="quiet-link"><a href="diagnose/?target=cnm_221&amp;demo=1">先看一次诊断演示：配方法</a></p>
+    </div>
+    <div class="route-preview"><h2>把零散的知识，连成一条路。</h2><p>你的回答，帮助确定接下来练什么。</p>
+      <svg viewBox="0 0 430 220" role="img" aria-label="学习流程：选择目标、回答问题、定位需要复习的先修知识，再继续学习">
+        <path d="M120 50H270Q300 50 300 80V150H150Q120 150 120 180" fill="none" stroke="#aebfe5" stroke-width="2" stroke-dasharray="5 6"/>
+        <rect x="8" y="22" width="160" height="58" rx="10" fill="#fff"/><circle cx="30" cy="51" r="5" fill="#3154ce"/><text x="48" y="57" fill="#23324a" font-size="16">选择学习目标</text>
+        <rect x="242" y="65" width="178" height="58" rx="10" fill="#3154ce"/><text x="270" y="100" fill="#fff" font-size="16">回答诊断问题</text>
+        <rect x="18" y="142" width="187" height="58" rx="10" fill="#fae5cc"/><circle cx="42" cy="171" r="5" fill="#9c6634"/><text x="60" y="177" fill="#71451f" font-size="15">找到需要复习的点</text>
+        <circle cx="300" cy="150" r="5" fill="#3154ce"/><path d="m114 207 6 6 6-6" fill="none" stroke="#6c83b4" stroke-width="2"/>
+      </svg><div class="route-caption"><i aria-hidden="true"></i>从目标出发，先补基础，再向前一步</div>
+    </div>
+  </section>
+
+
+
+  <section class="learning-overview" aria-label="当前学科内容"><h2>可以探索的内容</h2>
+  <div class="stat-grid" id="stats">
+    <div class="stat-card"><div class="stat-num" id="n-topics">…</div><div class="stat-label">知识点</div></div>
+    <div class="stat-card"><div class="stat-num" id="n-edges">…</div><div class="stat-label">先修边</div></div>
+    <div class="stat-card"><div class="stat-num" id="n-questions">…</div><div class="stat-label">题目</div></div>
+    <div class="stat-card"><div class="stat-num" id="n-standards">…</div><div class="stat-label">课标条目</div></div>
+  </div>
+  </section>
+  <p class="stat-note">以上数字在打开页面时从当前学科的知识点、先修、题库和课标统计。默认是数学。</p>
+  <div id="load-error" class="load-error" hidden></div>
+
+  <div class="section-heading"><h2>从你的年级开始</h2><p id="subject-scope">数学：小学至高中 · 选择一个年级探索</p></div>
+  <div class="grade-grid" id="grades" aria-busy="true"></div>
+  <section class="how-it-works"><div><h2>先找到问题，<br>再找到方法。</h2><p>每一次回答，都是了解自己的起点。</p></div><ol class="steps">
+    <li>
+      <span class="step-no">1</span>
+      <h3>选知识点</h3>
+      <p>数学从一年级到高中必修和选择性必修，英语从三年级到九年级。搜索或按册、章找到想检查的内容。</p>
+    </li>
+    <li>
+      <span class="step-no">2</span>
+      <h3>自适应答题</h3>
+      <p>先问目标本身。答错再出一道同级或更容易的题，仍然错才沿着先修往回追。</p>
+    </li>
+    <li>
+      <span class="step-no">3</span>
+      <h3>找到根因和学习路径</h3>
+      <p>标出薄弱根因和不稳的点，并按年级从低到高排出建议补学的顺序。</p>
+    </li>
+  </ol></section>
+</main>
+<footer class="site-footer"><p>守密人学习中心 · 知物知识图谱 <a href="credits.html">来源与许可</a></p></footer>
+<script src="assets/home.js"></script>
+</body>
+</html>
