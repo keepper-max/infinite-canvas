@@ -1,0 +1,8 @@
+{
+  "repository": "https://github.com/guminghao-avi/FDE-case-library",
+  "commit": "ef5501231b60539e91c770437a2bfd7c60d65277",
+  "path": "data/cases.json",
+  "sha256": "e98da1549a5e7b86f55d8316094ab91c5f15e9c21cf303f4a10a6cdaed467e3a",
+  "license": "MIT",
+  "note": "原始案例数据逐字节保留；未逐条重新核验第三方来源或独立审计披露结果。"
+}
