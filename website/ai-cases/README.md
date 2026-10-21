@@ -1,6 +1,6 @@
 # 企业 AI 案例库
 
-官网独立静态栏目，现按用户要求全量导入上游原始案例数据，沿用现有页面和咨询入口，不接入画布。
+官网独立私用静态栏目，完整保留127条上游原始案例，不接入画布。公开首页不再展示入口；线上 /ai-cases/ 及其全部资源由Nginx独立密码保护。
 
 ## 本地运行
 
@@ -38,10 +38,18 @@ node website/ai-cases/build.mjs
 
 案例原始JSON不进行格式化，避免破坏逐字节一致性。其他源码使用Prettier检查；静态站未配置ESLint，不运行无关画布构建。最新验证见 progress.md。
 
-已按用户明确授权发布至 https://shoumiren.online/ai-cases/ ，版本v0.16.28，生产静态目录为 /var/www/shoumiren-site/releases/20261021-site06。列表、有效详情、资源类型及真实404已线上核验。后续发布仍需按批准流程执行。仅公开HTML、cases.css、cases.json、present/core/list/detail.mjs和许可；不要公开构建、测试、规划和内部文档，不改工作台/API路由。
+已按用户明确授权发布至 https://shoumiren.online/ai-cases/ ，当前访问策略版本v0.16.29，生产静态目录为 /var/www/shoumiren-site/releases/20261021-site06。列表、有效详情、资源类型及真实404已线上核验。后续发布仍需按批准流程执行。仅发布受密码保护的HTML、cases.css、cases.json、present/core/list/detail.mjs和许可；不要公开构建、测试、规划和内部文档，不改工作台/API路由。
 
 ## 改动文件
 
 本轮更新 cases.json、build.mjs、list.mjs、cases.css、core.test.mjs，新增 present.mjs 与 upstream.json，重建列表和127个详情；website/preview.cjs增加展示适配模块白名单。同步README、规划、进度和CHANGELOG、待测/TODO文档。此前首页入口和既有 website/content.js 工作区改动保留。
 
 原始案例文件在 .gitattributes 中设置 -text，避免 Git 自动换行转换破坏上游字节一致性。部署证据与回滚说明见 ops/releases/v0.16.28.md。
+
+## 私用访问
+
+直接打开 https://shoumiren.online/ai-cases/ ，在浏览器认证框输入单独提供的账号与密码。不是隐藏链接；未认证与错误密码均无法读取列表、详情、JSON或脚本。只有一组独立私用凭据，不复用画布登录、管理员角色或Cookie。
+
+服务端只存密码哈希于 /etc/nginx/ai-cases-private/htpasswd，目录750、文件640，由root管理、www-data只读；明文密码只保存在用户本机受限文件，不进入代码、日志或版本库。响应使用private/no-store和noindex/nofollow/noarchive。修改访问策略时不得重新暴露v0.16.28公开片段；故障优先关闭案例路径。
+
+线上验证：303项断言通过，包含匿名/错误密码拒绝、正确密码访问、127条详情保护、数据原文一致、搜索/刷新和公开导航移除。无需改动画布/API/数据库。发布证据与恢复边界见ops/releases/v0.16.29.md。

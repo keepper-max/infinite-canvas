@@ -1,6 +1,6 @@
 # 守密人官网独立静态发布
 
-当前已发布v0.16.28：企业AI案例库 https://shoumiren.online/ai-cases/ ，全量127条。静态目录 /var/www/shoumiren-site/releases/20261021-site06；旧版资源和科技树保留，画布/API容器不变。资讯发布基线已更新并验证NEWS_UNCHANGED。发布与回滚证据见ops/releases/v0.16.28.md；下文site02为历史流程说明，不作为当前发布脚本入口。
+当前已发布v0.16.29：企业AI案例库 https://shoumiren.online/ai-cases/ 保留全量127条，改为独立密码保护私用，首页不展示入口。静态目录 /var/www/shoumiren-site/releases/20261021-site06；旧版资源和科技树保留，画布/API容器不变。资讯发布基线已更新并验证NEWS_UNCHANGED。最新私用访问与恢复说明见ops/releases/v0.16.29.md，初次发布证据见ops/releases/v0.16.28.md；下文site02为历史流程说明，不作为当前发布脚本入口。
 
 最新流程：每日北京时间9点由现有Codex任务ai核实后自动发布，不再逐条人工审核。首页引用/website-news/current.js（no-store），旧不可变资源保留。日常执行ops/publish-website-news.ps1，只替换资讯数据，不重建应用；细则及失败恢复见NEWS_WORKFLOW.md。调度仍依赖当前电脑/Codex，不是服务器独立任务。旧ops/publish-website.ps1固定site02整包白名单不适用于当前整站覆盖，下次整站发布须更新公开白名单和资源映射。
 
