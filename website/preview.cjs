@@ -11,6 +11,21 @@ http.createServer((req,res)=>{
   if(['/learn','/learn/explore','/learn/diagnose'].includes(route)) {
     res.writeHead(302,{Location:route+'/'+new URL(req.url,'http://localhost').search});return res.end();
   }
+  const columns={
+    '/ai-courses/':{'index.html':'text/html; charset=utf-8','courses.css':'text/css; charset=utf-8'},
+    '/reference/ai-repositories/':{'index.html':'text/html; charset=utf-8','library.css':'text/css; charset=utf-8','library.mjs':'application/javascript; charset=utf-8','catalog.json':'application/json; charset=utf-8'}
+  };
+  for(const [base,allowed] of Object.entries(columns)) {
+    if(route===base.slice(0,-1)){res.writeHead(302,{Location:base+new URL(req.url,'http://localhost').search});return res.end()}
+    if(route.startsWith(base)){
+      const relative=route.slice(base.length)||'index.html';
+      if(!Object.hasOwn(allowed,relative)){res.writeHead(404);return res.end('Not found')}
+      const headers={'Content-Type':allowed[relative],'Cache-Control':'no-cache','X-Content-Type-Options':'nosniff'};
+      if(base.startsWith('/reference/'))headers['X-Robots-Tag']='noindex, nofollow, noarchive';
+      res.writeHead(200,headers);
+      return fs.createReadStream(path.join(__dirname,base.slice(1),relative)).pipe(res);
+    }
+  }
   if(route.startsWith('/learn/')) {
     const relative=route.slice('/learn/'.length);
     if(/^(?:(?:explore|diagnose)\/)?(?:index\.html)?$/.test(relative) || /^(?:about\.html|credits\.html|LICENSE|assets\/(?:[\w.-]+|vendor\/[\w.-]+)|data\/[\w-]+\.json|(?:explore|diagnose)\/[\w.-]+)$/.test(relative)) {

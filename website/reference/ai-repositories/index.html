@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="robots" content="noindex,nofollow,noarchive">
+  <title>AI 开源学习资料册 · 守密人</title>
+  <meta name="description" content="Datawhale 223个公开仓库的分类查阅与选课参考。区分课程母本、学习参考、工具案例及待复核项目。">
+  <link rel="icon" href="/website-assets/20261016-site01/brand-logo.png">
+  <link rel="stylesheet" href="./library.css">
+  <script type="module" src="./library.mjs"></script>
+</head>
+<body>
+  <a class="skip" href="#results">跳到查阅结果</a>
+  <header class="site-header"><a class="brand" href="/"><img src="/website-assets/20261016-site01/brand-logo.png" alt="" width="32" height="32">守密人<span>资料查阅</span></a><a href="/">返回官网 ↗</a></header>
+  <main>
+    <section class="intro">
+      <div><p class="eyebrow">开源学习 / 选题研究</p><h1>从资料中，<br>找到值得学的那一条线。</h1><p class="lede">按主题、学习门槛与内容状态，查阅 Datawhale 的开源课程和实践项目。</p></div>
+      <aside class="intro-note"><span class="folio">223</span><p>个公开仓库 · 18 个主题</p><p>27 个课程母本做过正文样本复核，其余以项目说明与目录盘点为主。<strong>可参考不代表全部完稿、代码已跑通或材料可直接改编。</strong></p><p class="snapshot">资料快照 <time datetime="2026-10-21">2026.10.21</time> · 本页不加密码</p></aside>
+    </section>
+    <section class="workspace" aria-label="仓库筛选与查阅">
+      <aside class="filters">
+        <p class="eyebrow">缩小你的范围</p>
+        <form id="filters" role="search">
+          <label for="query">搜索名称、主题或用途</label><input id="query" name="q" type="search" placeholder="例如：智能体、Python、办公" autocomplete="off" disabled>
+          <label for="mode">内容状态</label><select id="mode" disabled><option value="study">课程与学习参考</option><option value="mother">27 个课程母本</option><option value="tool">工具与应用案例</option><option value="pending">待复核项目</option><option value="noncourse">不纳入选课</option><option value="all">全部仓库</option></select>
+          <label for="category">主题方向</label><select id="category" disabled><option value="">全部主题</option></select>
+          <label for="license">材料许可线索</label><select id="license" disabled><option value="">不限</option><option value="nc">含非商业性标记</option><option value="by-sa">BY-SA 标记</option><option value="permissive">MIT / Apache 等标记</option><option value="uncertain">标记冲突待确认</option><option value="unknown">未明确确认</option></select>
+          <label for="sort">排列方式</label><select id="sort" disabled><option value="recommended">课程母本优先</option><option value="name">按仓库名称</option><option value="updated">按最近推送</option></select>
+          <button id="reset" type="reset" disabled>清除筛选</button>
+        </form>
+        <details class="reading-guide"><summary>这些状态怎么理解？</summary><p><strong>课程母本：</strong>明确限定主线，结合正文样本筛选，仍需复做与编辑。</p><p><strong>学习参考：</strong>项目介绍和目录可用，可能是教材、习题、导航或活动资料。</p><p><strong>工具案例：</strong>研究实现方式；本次没有安装运行。</p><p><strong>待复核：</strong>有空章、占位或说明不足等缺口。</p><p><strong>不纳入选课：</strong>组织资料、模板、测试和更名入口，不作为独立课程。</p></details>
+      </aside>
+      <div class="results-panel" id="results" tabindex="-1">
+        <div class="result-heading"><div><p class="eyebrow" id="scope-label">课程与学习参考</p><h2><span id="result-count">—</span> 项结果</h2></div><p id="summary-count" class="small">正在读取资料…</p></div>
+        <p id="message" role="status" aria-live="polite">正在载入资料，请稍候。</p>
+        <div id="repository-list" class="repository-list"></div>
+        <p class="empty" id="empty" hidden>没有符合条件的项目。试试较短的关键词，或清除主题与许可筛选。</p>
+        <button id="reload" type="button" hidden>重新载入资料</button>
+        <noscript><p>请启用 JavaScript 后使用搜索与分类查阅。也可前往 <a href="https://github.com/datawhalechina">Datawhale 上游仓库</a>查看。</p></noscript>
+      </div>
+    </section>
+  </main>
+  <footer><p>守密人 · 课程研究资料册</p><p>基于公开项目的整理判断，不替代上游文档与许可。此页不在官网导航中展示，不属于保密访问系统。</p><a href="https://github.com/datawhalechina" target="_blank" rel="noopener noreferrer">查看资料来源 ↗</a></footer>
+  <dialog id="detail" aria-labelledby="detail-title"><div class="detail-bar"><p class="eyebrow">项目阅读卡</p><button type="button" id="close-detail" aria-label="关闭项目详情">关闭 ×</button></div><div id="detail-content"></div></dialog>
+  <template id="repository-template"><article class="repository"><div class="record-number" aria-hidden="true"></div><div class="record-main"><div class="record-meta"><span class="category-name"></span><span class="status"></span></div><h3><button class="open-detail" type="button"></button></h3><p class="record-summary"></p><p class="record-course" hidden></p><div class="record-foot"><span class="license-note"></span><span class="proof"></span></div></div><a class="upstream" target="_blank" rel="noopener noreferrer" aria-label="查看上游仓库">上游 ↗</a></article></template>
+</body>
+</html>
