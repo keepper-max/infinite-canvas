@@ -410,7 +410,7 @@ function Overview() {
                                 width: 230,
                                 render: (_, item) => (
                                     <>
-                                        <span className="block font-medium text-stone-900 dark:text-stone-100">{item.userEmail}</span>
+                                        <span className="block font-medium text-stone-900 dark:text-stone-100">{item.userEmail || item.userPhone || item.userId || "未知用户"}</span>
                                         <small className="text-stone-600 dark:text-stone-400">{item.projectName}</small>
                                     </>
                                 ),
@@ -1163,7 +1163,7 @@ function UsagePanel() {
                             title: "用户 / 项目",
                             render: (_, item) => (
                                 <>
-                                    <b className="block">{item.userEmail}</b>
+                                    <b className="block">{item.userEmail || item.userPhone || item.userId || "未知用户"}</b>
                                     <small>{item.projectName}</small>
                                 </>
                             ),
@@ -1371,7 +1371,7 @@ function JobsPanel() {
                         title: "用户 / 项目",
                         render: (_, item) => (
                             <>
-                                <span className="block">{item.userEmail}</span>
+                                <span className="block">{item.userEmail || item.userPhone || item.userId || "未知用户"}</span>
                                 <small>{item.projectName}</small>
                             </>
                         ),

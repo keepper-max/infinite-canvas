@@ -1437,7 +1437,7 @@ export class OperationsService implements OperationsServicePort {
     );
     values.push(query.pageSize, (query.page - 1) * query.pageSize);
     const result = await this.pool.query(
-      `select gu.*,${usageCurrencySql("gu")} display_currency,u.email,p.name project_name from generation_usage gu join users u on u.id=gu.user_id join projects p on p.id=gu.project_id
+      `select gu.*,${usageCurrencySql("gu")} display_currency,u.email,u.phone,p.name project_name from generation_usage gu join users u on u.id=gu.user_id join projects p on p.id=gu.project_id
        ${where} order by gu.reconciled_at desc limit $${values.length - 1} offset $${values.length}`,
       values,
     );
@@ -1462,7 +1462,7 @@ export class OperationsService implements OperationsServicePort {
     const result = await this.pool.query(
       `select j.id,j.project_id,j.created_by,j.model_id,j.capability,j.mode,j.status,j.progress,j.retryable,j.user_error_code,
         j.user_error_message,j.provider_error_sanitized,j.provider_job_id,j.retry_of_job_id,j.billing_trace_id,j.billing_status,
-        j.billing_error,j.created_at,j.updated_at,j.finished_at,u.email,p.name project_name
+        j.billing_error,j.created_at,j.updated_at,j.finished_at,u.email,u.phone,p.name project_name
        from generation_jobs j join users u on u.id=j.created_by join projects p on p.id=j.project_id ${where}
        order by j.created_at desc limit $${values.length - 1} offset $${values.length}`,
       values,
@@ -2013,6 +2013,7 @@ function serializeUsage(row: Record<string, unknown>) {
     projectName: row.project_name,
     userId: row.user_id,
     userEmail: row.email,
+    userPhone: row.phone,
     billingRequestId: row.billing_request_id,
     provider: row.provider,
     modelId: row.model_id,
@@ -2056,6 +2057,7 @@ function serializeAdminJob(row: Record<string, unknown>) {
     projectName: row.project_name,
     userId: row.created_by,
     userEmail: row.email,
+    userPhone: row.phone,
     modelId: row.model_id,
     capability: row.capability,
     mode: row.mode,

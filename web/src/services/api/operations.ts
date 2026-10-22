@@ -132,7 +132,8 @@ export type AdminUsage = {
     projectId: string;
     projectName: string;
     userId: string;
-    userEmail: string;
+    userEmail: string | null;
+    userPhone?: string | null;
     billingRequestId: string;
     provider: string;
     modelId: string;
@@ -160,7 +161,8 @@ export type AdminJob = {
     projectId: string;
     projectName: string;
     userId: string;
-    userEmail: string;
+    userEmail: string | null;
+    userPhone?: string | null;
     modelId: string;
     capability: string;
     mode: string;

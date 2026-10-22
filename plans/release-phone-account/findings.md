@@ -1,0 +1,5 @@
+# 发现
+
+线上应用记录为0516b12213a4；主分支后续官网静态发布未更新应用镜像，需确认应用目录差异。现有deploy-production包含备份校验、迁移兼容检查及失败自动恢复镜像，部署窗口沿用既有300秒。当前未跟踪0045及S0代码不纳入发布。
+
+git diff 0516b12213a4 HEAD在Dockerfile、Compose、Nginx、Web、API和插件范围为空，证明干净HEAD业务基线与运行版本一致。生产Web/API实际镜像均0516b12213a4，Web标签目录明确为/opt/infinite-canvas-releases/0516b12213a4。首条只读inspect模板在跨PowerShell/SSH引号转义处失败，改输出既有标签JSON核实，不更改运行状态。
