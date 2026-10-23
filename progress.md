@@ -665,3 +665,16 @@
 - 最终 `git diff --check` 通过；宿主构建仅保留既有动态/静态混合导入和大分块警告，导演台构建仅保留现有大分块警告。
 - 正式导演台地址已收口为同域名 `/3d-director/`；独立 `dist` 通过 Compose 只读挂载，不合并进宿主构建，Nginx 仅对该路径允许同源 iframe。
 - 同域名改动复验：显式 Windows 绝对挂载路径的 `docker compose config --quiet` 通过，生产 shell 脚本由 Git for Windows `sh -n` 检查通过，宿主 typecheck/build 与导演台 build 通过；本机 Docker daemon 未运行，未能执行容器内 `nginx -t`。
+
+## 原生知识管理审计
+- 已读取用户完整需求、正式仓库 AGENTS.md 和各 package.json；仅文档交付。
+- 检索错误：假设的 web/src/lib/canvas-agent.ts 不存在；已定位 web/src/services/api/canvas-agent.ts。
+- 官方文件路径 404：BlockNote 根 LICENSE / LICENSE.md、BlockSuite packages/blocks/package.json 与 packages/presets/package.json；改查仓库目录树与包级许可证，禁止用旧 README 推断实际包布局。
+- 只读审计未调用任何现有画布写入工具或生产数据库接口。已定位本机私有 MCP bundle；不把本机源码状态当作线上验收。
+- 非阻塞路径错误：假设 text.ts 不存在，已按目录定位 image.ts 中 requestImageQuestion。一次无效备用文件读取返回不存在，不影响审计结果。
+- 报告已完成并复核；只追加审计记录和独立 Markdown，不改业务/依赖/数据库/UI/MCP/部署，不 commit/push/建分支。
+- 检查了 todo.mdx/pending-test.mdx：未批准的技术方案不冒充功能实现或正式待办，两文件无需更新，CHANGELOG 无功能变更无需修改。
+- 文档检查覆盖 12 章节、16 项能力、46 个本地引用；初次行号核对误用 Measure-Object -Line（忽略空行）导致 bundle 链接假失败，已改为实际物理行计数复核。
+- 仅运行文档/差异检查；没有运行 typecheck/test/build，因为没有功能代码变更。等待用户确认方案后进入隔离原型。
+
+R1.1：用户已授权提交、推送和生产热修，保留全部工作区后准备 v0.16.33；无生产历史修复和付费调用。

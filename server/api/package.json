@@ -12,7 +12,8 @@
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "db:migrate": "tsx src/db/migrate-cli.ts",
     "assets:backfill-video-thumbnails": "node dist/db/backfill-video-thumbnails-cli.js",
-    "test": "tsx --test --test-concurrency=1 tests/*.test.ts"
+    "test": "tsx --test --test-concurrency=1 tests/*.test.ts",
+    "canvas:repair": "tsx scripts/canvas-repair.ts"
   },
   "dependencies": {
     "@alicloud/dm20151123": "^1.11.0",
@@ -31,8 +32,13 @@
     "ioredis": "^6.0.0",
     "ipaddr.js": "2.5.0",
     "pg": "8.23.0",
+    "remark-frontmatter": "5.0.0",
+    "remark-gfm": "4.0.1",
+    "remark-parse": "11.0.0",
     "sharp": "^0.35.5",
     "undici": "7.29.1",
+    "unified": "11.0.5",
+    "yaml": "2.9.0",
     "zod": "4.5.4"
   },
   "overrides": {

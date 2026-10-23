@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
-import { getCanvas, migrateIndexedDbCanvas, saveCanvas, type CanvasDocument, type CanvasDraft, type CanvasMigrationReport } from "@/services/api/canvas";
+import { getCanvas, migrateIndexedDbCanvas, restoreCanvasSnapshot, saveCanvas, type CanvasDocument, type CanvasDraft, type CanvasMigrationReport } from "@/services/api/canvas";
 import { backupLegacyCanvas, clearPendingCanvas, getCanvasCloudCache, recordPendingCanvas, recordSuccessfulCanvas } from "@/services/canvas-cloud-cache";
 import { PlatformApiError } from "@/services/api/platform";
 
@@ -287,6 +287,13 @@ export function useCloudCanvasPersistence(projectId: string, applyCanvas: (canva
         [applyRemote, conflictDraft, projectId],
     );
 
+    const restoreSnapshot = useCallback(async (version: number) => {
+        if (savingRef.current || latestDraftRef.current || conflictBlockedRef.current || migrationBlockedRef.current) throw new Error("请先保存当前画布，再恢复历史版本");
+        clearAutoSaveTimer();
+        readyRef.current = false;
+        try { await applyRemote(await restoreCanvasSnapshot(projectId, version, revisionRef.current)); }
+        finally { readyRef.current = true; }
+    }, [applyRemote, clearAutoSaveTimer, projectId]);
     const hasUnsavedChanges = status === "dirty" || (status === "unsynced" && Boolean(latestDraftRef.current));
 
     return {
@@ -304,6 +311,7 @@ export function useCloudCanvasPersistence(projectId: string, applyCanvas: (canva
         reopenMigration,
         conflictDraft,
         resolveConflict,
+        restoreSnapshot,
     };
 }
 

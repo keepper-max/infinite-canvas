@@ -5,7 +5,7 @@ import type { AgentAttachment } from "../agent/types.js";
 import { logger } from "../utils/logger.js";
 import { buildCanvasToolRequest, fitAttachmentNodeSize } from "./operations.js";
 import type { ToolName } from "./schemas.js";
-import { compactCanvasState, compactNode, isToolName, nextCanvasX, parseToolInput } from "./tools.js";
+import { canvasToolReply, compactCanvasState, compactNode, isToolName, nextCanvasX, parseToolInput } from "./tools.js";
 import type { CanvasSnapshot } from "./types.js";
 
 type PendingRequest = { clientId: string; resolve: (value: unknown) => void; reject: (error: Error) => void };
@@ -455,7 +455,7 @@ export class CanvasSession {
         if (name === "canvas_create_attachment_nodes") return await this.createAttachmentNodes(input as { attachmentIds: string[]; x?: number; y?: number; gap?: number; direction?: "row" | "column" });
         if (!this.clients.size) throw new Error("当前没有已连接画布");
         const request = buildCanvasToolRequest(name, input, this.canvasState);
-        return await this.requestCanvasTool(request.name, request.input);
+        return canvasToolReply(name, await this.requestCanvasTool(request.name, request.input));
     }
 
     /** 将当前 turn 的附件转换为画布图片节点。 */
@@ -482,7 +482,7 @@ export class CanvasSession {
             return node;
         });
         await this.requestCanvasTool("canvas_create_attachment_nodes", { nodes });
-        return { nodes: nodes.map(({ id, attachmentId, title }) => ({ id, attachmentId, title })) };
+        return canvasToolReply("canvas_create_attachment_nodes", { nodes: nodes.map(({ id, attachmentId, title }) => ({ id, attachmentId, title })) });
     }
 
     /** 向目标网页发送工具请求并等待调用结果。 */

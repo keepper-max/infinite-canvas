@@ -1,3 +1,4 @@
+import { KnowledgeService } from './knowledge-service.js';
 import { serve } from "@hono/node-server";
 import { Redis } from "ioredis";
 
@@ -142,6 +143,7 @@ const app = createApp(
   smsVerificationService,
   new AuthRateLimiter(verificationRedis),
   new WebsiteInquiryService(pool, verificationRedis),
+  new KnowledgeService(db, config.operations.adminEmails),
 );
 
 const server = serve({ fetch: app.fetch, port: config.port }, (info) => {

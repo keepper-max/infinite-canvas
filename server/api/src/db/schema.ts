@@ -1,3 +1,5 @@
+export * from './knowledge-schema.js';
+import * as knowledgeSchema from './knowledge-schema.js';
 import { sql } from "drizzle-orm";
 import {
   bigint,
@@ -818,6 +820,24 @@ export const teamProjects = pgTable(
   (table) => [primaryKey({ columns: [table.teamId, table.projectId] })],
 );
 
+export const canvasOperations = pgTable("canvas_operations", {
+  projectId: uuid("project_id").notNull(),
+  actorId: uuid("actor_id").notNull(),
+  operationId: uuid("operation_id").notNull(),
+  kind: text("kind").notNull(),
+  payloadHash: text("payload_hash").notNull(),
+  receipt: jsonb("receipt").notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+}, table => [primaryKey({ columns: [table.projectId, table.actorId, table.operationId] })]);
+
+export const canvasRepairArchives = pgTable("canvas_repair_archives", {
+  id: uuid("id").primaryKey(), projectId: uuid("project_id").notNull(), actorId: uuid("actor_id").notNull(),
+  operationId: uuid("operation_id").notNull(), reason: text("reason").notNull(),
+  stateHash: text("state_hash").notNull(), beforeState: jsonb("before_state").notNull(),
+  resultingRevision: integer("resulting_revision").notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+}, table => [uniqueIndex("canvas_repair_archives_project_actor_operation_idx").on(table.projectId, table.actorId, table.operationId)]);
+
 export const adminAuditLogs = pgTable("admin_audit_logs", {
   id: bigserial("id", { mode: "number" }).primaryKey(),
   actorUserId: uuid("actor_user_id").references(() => users.id, {
@@ -885,6 +905,7 @@ export const userFeedbackMessages = pgTable(
 );
 
 export const schema = {
+  ...knowledgeSchema,
   users,
   channels,
   campaigns,
@@ -898,6 +919,8 @@ export const schema = {
   canvasEdges,
   canvasSnapshots,
   canvasMigrations,
+  canvasOperations,
+  canvasRepairArchives,
   assets,
   assetVersions,
   assetLinks,

@@ -668,3 +668,13 @@
 - 首次导演台构建发现两处局部 JSX/类型问题，已修正后生产构建通过。
 - 素材库项目参数初次改动误把默认项目回退值替换成变量自身，宿主 typecheck 当场拦截；已恢复为当前工作区项目并重新通过 typecheck 与生产构建。
 - 本机 Docker Desktop 未运行且没有独立 Nginx 可执行文件，无法执行 `nginx -t`；已改用 Compose 配置解析、Git for Windows `sh -n`、前端构建和待生产 CSP 验收清单覆盖可执行部分。
+
+## 原生知识管理审计（仅设计）
+- [x] 读取前端、后端、AI、MCP 主链路并标记证据。
+- [x] 核验 Tiptap、BlockSuite、BlockNote 官方仓库、版本和许可证。
+- [x] 完成 16 项对标、数据模型、集成设计与 P0–P4 计划。
+- [x] 复核报告和工作区边界，输出关键结论；等待批准后才实施。
+- 范围：只追加审计文档，不安装依赖、不改业务/数据库/UI/MCP、不提交。
+
+## R1.1 approved production hotfix
+- 当前用户明确批准 commit、push、部署；核对远端版本、备份恢复后先API后Web，无迁移、不动Worker/MCP及付费门禁。发布过程详见 H:/CodexStorage/shoushou-r11-release。

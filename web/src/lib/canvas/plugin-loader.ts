@@ -1,10 +1,16 @@
+import i18n from "@/i18n";
 import { registerNodeDefinitions, unregisterPluginNodes } from "@/lib/canvas/node-registry";
 import { getPluginRuntime } from "@/lib/canvas/plugin-runtime";
 import { usePluginStore, type InstalledPlugin } from "@/stores/canvas/use-plugin-store";
 import type { CanvasPlugin } from "@/types/canvas-plugin";
-import i18n from "@/i18n";
 
 const cleanups = new Map<string, () => void>();
+function assertSafeMarkdownVersion(id: string, version: string) {
+    if (id !== "markdown") return;
+    const parts = /^([0-9]+)\.([0-9]+)\.([0-9]+)$/.exec(version);
+    if (!parts || Number(parts[1]) < 1 || (Number(parts[1]) === 1 && Number(parts[2]) < 1) || (Number(parts[1]) === 1 && Number(parts[2]) === 1 && Number(parts[3]) < 1))
+        throw new Error("Markdown 插件版本不安全，请刷新以加载安全版本；原启用状态已保留");
+}
 
 // A remote plugin may export CanvasPlugin directly or a factory that receives runtime and returns CanvasPlugin.
 // The factory uses runtime.React so the bundle does not need its own React copy.
@@ -26,6 +32,7 @@ function assertPlugin(plugin: unknown): asserts plugin is CanvasPlugin {
     const value = plugin as Partial<CanvasPlugin> | null;
     if (!value || typeof value !== "object") throw new Error(i18n.t("canvas.pluginErrors.invalidExport"));
     if (!value.id || !Array.isArray(value.nodes) || !value.nodes.length) throw new Error(i18n.t("canvas.pluginErrors.missingFields"));
+    assertSafeMarkdownVersion(value.id, value.version || "0.0.0");
 }
 
 export function activatePlugin(plugin: CanvasPlugin) {
@@ -79,6 +86,7 @@ export async function setPluginEnabled(record: InstalledPlugin, enabled: boolean
         return;
     }
     // Reload local plugins from their URL when enabled because the cached source may be stale.
+    assertSafeMarkdownVersion(record.id, record.version);
     const source = record.local ? await fetchPluginSource(withCacheBust(record.url)) : record.source;
     const plugin = await evaluatePluginSource(source);
     activatePlugin(plugin);
@@ -101,6 +109,7 @@ export async function ensurePluginsLoaded() {
     await Promise.all(
         records.map(async (record) => {
             try {
+                assertSafeMarkdownVersion(record.id, record.version);
                 // Local plugins use the latest output; other plugins use their cached source.
                 const source = record.local ? await fetchPluginSource(withCacheBust(record.url)) : record.source;
                 activatePlugin(await evaluatePluginSource(source));

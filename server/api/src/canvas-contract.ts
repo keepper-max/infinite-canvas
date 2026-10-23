@@ -1,6 +1,7 @@
 import { z } from "zod";
 
 import { DomainError } from "./domain.js";
+import { knowledgeReferenceSchema } from "./knowledge-reference.js";
 
 export const CANVAS_CONTRACT_VERSION = 1;
 export const MAX_CANVAS_BYTES = 4 * 1024 * 1024;
@@ -44,6 +45,7 @@ const edgeSchema = z
 const canvasWriteSchema = z
     .object({
         expectedRevision: z.number().int().min(0),
+        writeCapability: z.object({ token: z.string().min(32).max(200), deletedKnowledgeNodeIds: z.array(z.string().min(1)).default([]) }).strict().optional(),
         contractVersion: z.literal(CANVAS_CONTRACT_VERSION).default(CANVAS_CONTRACT_VERSION),
         nodes: z.array(nodeSchema).max(1_000),
         edges: z.array(edgeSchema).max(4_000),
@@ -69,7 +71,7 @@ export type CanvasDocument = {
     updatedAt: string;
 };
 
-export type CanvasWrite = Omit<CanvasDocument, "projectId" | "canvasId" | "revision" | "updatedAt"> & { expectedRevision: number };
+export type CanvasWrite = Omit<CanvasDocument, "projectId" | "canvasId" | "revision" | "updatedAt"> & { expectedRevision: number; writeCapability?: { token: string; deletedKnowledgeNodeIds: string[] } };
 
 export type CanvasMigrationReport = {
     nodeCount: number;
@@ -79,7 +81,7 @@ export type CanvasMigrationReport = {
     needsReviewEdgeIds: string[];
 };
 
-export type CanvasSnapshotSummary = { version: number; source: string; restoredFromVersion: number | null; createdAt: string };
+export type CanvasSnapshotSummary = { version: number; source: string; restoredFromVersion: number | null; createdAt: string; restorable?: boolean; restoreReason?: string };
 
 export function parseCanvasWrite(raw: unknown): { write: CanvasWrite; report: CanvasMigrationReport } {
     const encodedBytes = Buffer.byteLength(JSON.stringify(raw), "utf8");
@@ -91,6 +93,10 @@ export function parseCanvasWrite(raw: unknown): { write: CanvasWrite; report: Ca
         if (nodeIds.has(node.id)) throw new DomainError("DUPLICATE_NODE_ID", `节点 ${node.id} 重复`, 422);
         nodeIds.add(node.id);
         const metadata = sanitizeValue(node.metadata || {}, `nodes[${index}].metadata`, report) as Record<string, unknown>;
+        if (node.type === "knowledge:document") {
+            if (["content", "markdown", "prompt"].some(key => metadata[key] !== undefined)) throw new DomainError("KNOWLEDGE_REFERENCE_ONLY", "知识节点只能保存引用，正文由知识服务管理", 422);
+            if (metadata.knowledgeReference !== undefined) knowledgeReferenceSchema.parse(metadata.knowledgeReference);
+        }
         return {
             ...node,
             title: node.title || node.id,

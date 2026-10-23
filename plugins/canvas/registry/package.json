@@ -9,6 +9,8 @@
     },
     "devDependencies": {
         "@infinite-canvas/plugin-sdk": "file:../sdk",
-        "esbuild": "^0.25.0"
+        "dompurify": "3.4.17",
+        "esbuild": "^0.25.0",
+        "marked": "14.1.4"
     }
 }

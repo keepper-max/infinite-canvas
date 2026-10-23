@@ -498,7 +498,7 @@ export const CanvasNode = React.memo(function CanvasNode({
                 {!mobileMode && !referenceSelectionState && !data.locked ? <ResizeHandle corner="bottom-right" onMouseDown={handleResizeMouseDown} /> : null}
             </div>
 
-            {!mobileMode && !referenceSelectionState && !isGroup ? <ConnectionHandleDot side="left" visible={hovered || isSelected || isConnecting} onMouseDown={(event) => onConnectStart(event, data.id, "target")} /> : null}
+            {!mobileMode && !referenceSelectionState && !isGroup && (definition?.hasTargetHandle ?? true) ? <ConnectionHandleDot side="left" visible={hovered || isSelected || isConnecting} onMouseDown={(event) => onConnectStart(event, data.id, "target")} /> : null}
             {!mobileMode && !referenceSelectionState && (definition?.hasSourceHandle ?? true) && data.type !== CanvasNodeType.Config ? (
                 <ConnectionHandleDot side="right" visible={hovered || isSelected || isConnecting} onMouseDown={(event) => onConnectStart(event, data.id, "source")} />
             ) : null}
@@ -811,7 +811,10 @@ function primaryImageContent(node: CanvasNodeData) {
 
 function VideoNodeContent({ node, theme, isActive }: NodeContentRendererProps) {
     const { t } = useTranslation();
+    const [unavailable, setUnavailable] = useState(false);
+    useEffect(() => setUnavailable(false), [node.metadata?.content]);
     useSyncExternalStore(subscribeImagePreviews, getImagePreviewRevision, () => 0);
+    if (unavailable) return <div className="flex h-full flex-col items-center justify-center gap-2 p-4 text-center" style={{ color: theme.node.placeholder }}><Video className="size-7 opacity-50" /><span>素材不可用，原文件缺失或暂时无法读取</span><span className="text-xs">原始素材引用已保留</span><button type="button" onClick={() => setUnavailable(false)}>重试读取</button></div>;
     if (!node.metadata?.content)
         return (
             <div className="flex h-full w-full flex-col items-center justify-center gap-3" style={{ color: theme.node.placeholder }}>
@@ -831,6 +834,7 @@ function VideoNodeContent({ node, theme, isActive }: NodeContentRendererProps) {
             data-canvas-no-zoom
             onMouseDown={handleVideoPointerDown}
             onPointerDown={handleVideoPointerDown}
+            onError={() => setUnavailable(true)}
         />
     );
 }

@@ -27,14 +27,33 @@ export type CanvasMigrationReport = {
     needsReviewEdgeIds: string[];
 };
 
-export type CanvasSnapshotSummary = { version: number; source: string; restoredFromVersion: number | null; createdAt: string };
+export type CanvasSnapshotSummary = { version: number; source: string; restoredFromVersion: number | null; createdAt: string; restorable?: boolean; restoreReason?: string };
+const knownCanvas = new Map<string, CanvasDocument>();
+const acknowledge = (canvas: CanvasDraft) =>
+    canvas.nodes
+        .filter((n) => n.type === "knowledge:document")
+        .map((n) => ({ id: n.id, reference: n.metadata?.knowledgeReference ?? null }))
+        .sort((a, b) => a.id.localeCompare(b.id));
+async function writeCapability(projectId: string, draft: CanvasDraft, expectedRevision: number) {
+    const base = knownCanvas.get(projectId);
+    if (!draft.nodes.some((n) => n.type === "knowledge:document") && !base?.nodes.some((n) => n.type === "knowledge:document")) return undefined;
+    if (!base || base.revision !== expectedRevision) throw new Error("请先读取当前画布后再保存知识节点，原草稿仍保留");
+    const ack = acknowledge(base);
+    const issued = await platformRequest<{ token: string }>(`${canvasPath(projectId)}/write-capability`, { method: "POST", body: JSON.stringify({ expectedRevision, acknowledgedKnowledgeNodes: ack }) });
+    return { token: issued.token, deletedKnowledgeNodeIds: ack.filter((n) => !draft.nodes.some((d) => d.id === n.id)).map((n) => n.id) };
+}
 
 export async function getCanvas(projectId: string, signal?: AbortSignal) {
-    return (await platformRequest<{ canvas: CanvasDocument }>(canvasPath(projectId), { signal })).canvas;
+    const canvas = (await platformRequest<{ canvas: CanvasDocument }>(canvasPath(projectId), { signal })).canvas;
+    knownCanvas.set(projectId, structuredClone(canvas));
+    return canvas;
 }
 
 export async function saveCanvas(projectId: string, draft: CanvasDraft, expectedRevision: number) {
-    return (await platformRequest<{ canvas: CanvasDocument }>(canvasPath(projectId), { method: "PUT", body: JSON.stringify({ ...draft, expectedRevision }) })).canvas;
+    const proof = await writeCapability(projectId, draft, expectedRevision);
+    const canvas = (await platformRequest<{ canvas: CanvasDocument }>(canvasPath(projectId), { method: "PUT", body: JSON.stringify({ ...draft, expectedRevision, writeCapability: proof }) })).canvas;
+    knownCanvas.set(projectId, structuredClone(canvas));
+    return canvas;
 }
 
 export async function listCanvasSnapshots(projectId: string) {
@@ -42,14 +61,18 @@ export async function listCanvasSnapshots(projectId: string) {
 }
 
 export async function restoreCanvasSnapshot(projectId: string, version: number, expectedRevision: number) {
-    return (await platformRequest<{ canvas: CanvasDocument }>(`${canvasPath(projectId)}/snapshots/${version}/restore`, { method: "POST", body: JSON.stringify({ expectedRevision }) })).canvas;
+    const canvas = (await platformRequest<{ canvas: CanvasDocument }>(`${canvasPath(projectId)}/snapshots/${version}/restore`, { method: "POST", body: JSON.stringify({ expectedRevision }) })).canvas;
+    knownCanvas.set(projectId, structuredClone(canvas));
+    return canvas;
 }
 
 export async function migrateIndexedDbCanvas(projectId: string, migrationKey: string, draft: CanvasDraft, expectedRevision: number) {
-    return platformRequest<{ canvas: CanvasDocument; report: CanvasMigrationReport; alreadyMigrated: boolean }>(`${canvasPath(projectId)}/migrations/indexeddb`, {
+    const result = await platformRequest<{ canvas: CanvasDocument; report: CanvasMigrationReport; alreadyMigrated: boolean }>(`${canvasPath(projectId)}/migrations/indexeddb`, {
         method: "POST",
-        body: JSON.stringify({ migrationKey, ...draft, expectedRevision }),
+        body: JSON.stringify({ migrationKey, ...draft, expectedRevision, writeCapability: await writeCapability(projectId, draft, expectedRevision) }),
     });
+    knownCanvas.set(projectId, structuredClone(result.canvas));
+    return result;
 }
 
 export function createCanvasDraft(nodes: CanvasNodeData[], edges: CanvasConnection[], viewport: ViewportTransform, settings: CanvasSettings): CanvasDraft {

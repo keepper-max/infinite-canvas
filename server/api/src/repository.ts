@@ -1,10 +1,15 @@
 import { and, asc, desc, eq, gt, inArray, isNull, sql } from "drizzle-orm";
+import { randomUUID } from "node:crypto";
+import { z } from "zod";
+import { normalizeCanvasHistory } from "./canvas-compat.js";
 import type {
   NodePgDatabase,
   NodePgTransaction,
 } from "drizzle-orm/node-postgres";
 import type { ExtractTablesWithRelations } from "drizzle-orm";
 
+import { hasKnowledgeFeature, requireKnowledgeFeature } from "./knowledge-feature.js";
+import { issueWriteCapability, validateKnowledgeCanvasWrite } from "./canvas-write-capability.js";
 import {
   parseCanvasWrite,
   type CanvasDocument,
@@ -32,6 +37,17 @@ type Transaction = NodePgTransaction<
   ExtractTablesWithRelations<typeof tables>
 >;
 type Executor = Database | Transaction;
+
+export type CanvasOperationRequest = {
+  operationId: string; expectedCanvasRevision: number;
+  kind: "vibe.storyboard.create" | "vibe.video.import" | "canvas.repair" | "canvas.repair.restore" | "knowledge.reference.add";
+  payload: unknown;
+};
+export type CanvasOperationReceipt = {
+  operationId: string; projectId: string; canvasId: string; revision: number;
+  nodeIds: string[]; edgeIds: string[]; result: Record<string, unknown>; replayed: boolean;
+};
+export type CanvasMutation = { nodes: unknown[]; edges: unknown[]; viewport: CanvasViewport; settings: CanvasSettings; result: Record<string, unknown> };
 
 type LegacyAssetVersionMatch = {
   id: string;
@@ -472,7 +488,20 @@ export class PostgresPlatformRepository implements PlatformRepository {
   }
 
   async getCanvasForUser(projectId: string, userId: string) {
-    return readCanvas(this.db, projectId, userId);
+    return this.db.transaction(async tx => {
+      const value = await readCanvas(tx, projectId, userId);
+      if (value?.nodes.some(n=>n.type==='knowledge:document') && !await hasKnowledgeFeature(tx,userId,false))
+        return {...value,nodes:value.nodes.map(n=>n.type==='knowledge:document'?{...n,title:'知识文档（未开放）',metadata:{knowledgeUnavailable:true}}:n)};
+      return value;
+    }, { isolationLevel: "repeatable read", accessMode: "read only" });
+  }
+  async issueCanvasWriteCapability(projectId: string,userId: string,expectedRevision: number,acknowledgedKnowledgeNodes: unknown) {
+    return this.db.transaction(async tx=>{
+      await lockCanvasWriteContext(tx,projectId,userId);
+      const [canvas]=await tx.select().from(tables.canvases).where(eq(tables.canvases.projectId,projectId));
+      if(canvas.revision!==expectedRevision) throw new DomainError('CANVAS_REVISION_CONFLICT','画布版本已变化，请保留草稿后刷新',409);
+      return issueWriteCapability(tx,userId,projectId,expectedRevision,acknowledgedKnowledgeNodes);
+    });
   }
 
   async saveCanvasForUser(
@@ -494,6 +523,133 @@ export class PostgresPlatformRepository implements PlatformRepository {
     );
   }
 
+  async applyCanvasOperationForUser(
+    projectId: string, userId: string, input: CanvasOperationRequest,
+    mutate: (canvas: CanvasDocument, tx: Transaction) => Promise<CanvasMutation>,
+  ) {
+    z.enum(["vibe.storyboard.create", "vibe.video.import", "knowledge.reference.add"]).parse(input.kind);
+    return this.commitCanvasOperation(projectId, userId, input, mutate);
+  }
+
+  private async commitCanvasOperation(
+    projectId: string, userId: string, input: CanvasOperationRequest,
+    mutate: (canvas: CanvasDocument, tx: Transaction) => Promise<CanvasMutation>,
+    repair?: { expectedStateHash: string; reason: string },
+  ): Promise<CanvasOperationReceipt> {
+    z.string().uuid().parse(input.operationId);
+    z.number().int().nonnegative().parse(input.expectedCanvasRevision);
+    return this.db.transaction(async tx => {
+      await lockCanvasWriteContext(tx, projectId, userId, Boolean(repair), input.kind.startsWith("canvas.repair"));
+        if (input.kind === "knowledge.reference.add") await requireKnowledgeFeature(tx, userId);
+      // JSONB canonicalization is PostgreSQL's, not a second hand-written JSON serializer.
+      const digest = await tx.execute(sql`select encode(sha256(convert_to(${JSON.stringify({ kind: input.kind, expectedCanvasRevision: input.expectedCanvasRevision, payload: input.payload })}::jsonb::text,'UTF8')),'hex') as hash`);
+      const payloadHash = String(digest.rows[0].hash);
+      const [existing] = await tx.select().from(tables.canvasOperations).where(and(
+        eq(tables.canvasOperations.projectId, projectId), eq(tables.canvasOperations.actorId, userId), eq(tables.canvasOperations.operationId, input.operationId),
+      ));
+      // Authorization precedes replay, but replay precedes current-revision/health checks.
+      if (existing) {
+        if (existing.payloadHash !== payloadHash)
+          throw new DomainError("CANVAS_OPERATION_MISMATCH", "operationId 已用于不同请求", 409, false, { details: { operationId: input.operationId } });
+        return { ...(existing.receipt as CanvasOperationReceipt), replayed: true };
+      }
+      const health = await inspectCanvasConsistency(tx, projectId);
+      if (!repair) assertCanvasConsistent(health);
+      const originalState = repair ? await captureCanvasState(tx, projectId) : undefined;
+      if (repair && originalState!.hash !== repair.expectedStateHash)
+        throw new DomainError("CANVAS_REPAIR_PLAN_STALE", "旧状态已变化，请重新核查修复计划", 409);
+      if (repair && health.reasons.includes("CANVAS_MISSING"))
+        await tx.insert(tables.canvases).values({ projectId });
+      const current = (await readCanvas(tx, projectId, userId))!;
+      if (current.revision !== input.expectedCanvasRevision)
+        throw canvasRevisionConflict(current.revision);
+      let archiveId: string | undefined;
+      let baseRevision = current.revision;
+      if (repair) {
+        const state = originalState!;
+        const [member] = await tx.select({ role: tables.projectMembers.role }).from(tables.projectMembers).where(and(eq(tables.projectMembers.projectId, projectId), eq(tables.projectMembers.userId, userId)));
+        if (!["owner", "admin"].includes(member.role)) throw new DomainError("PROJECT_FORBIDDEN", "只有项目所有者或管理员可确认历史修复", 403);
+        baseRevision = Math.max(current.revision, health.maxSnapshotVersion);
+        archiveId = randomUUID();
+        await tx.insert(tables.canvasRepairArchives).values({ id: archiveId, projectId, actorId: userId, operationId: input.operationId,
+          reason: repair.reason, stateHash: state.hash, beforeState: state.state, resultingRevision: baseRevision + 1 });
+        // Forward only: historical snapshots are never renumbered or overwritten.
+        await tx.update(tables.canvases).set({ revision: baseRevision }).where(eq(tables.canvases.projectId, projectId));
+      }
+      const mutation = await mutate(current, tx);
+      const { write } = parseCanvasWrite({ expectedRevision: baseRevision, contractVersion: current.contractVersion,
+        nodes: mutation.nodes, edges: mutation.edges, viewport: mutation.viewport, settings: mutation.settings });
+      const saved = await saveCanvasInTransaction(tx, projectId, userId, write, input.kind.startsWith("canvas.repair") ? "repair" : input.kind === "knowledge.reference.add" ? "save" : "mcp", undefined, true);
+      const receipt: CanvasOperationReceipt = { operationId: input.operationId, projectId, canvasId: saved.canvasId,
+        revision: saved.revision, nodeIds: saved.nodes.map(node => node.id), edgeIds: saved.edges.map(edge => edge.id),
+        result: { ...mutation.result, ...(archiveId ? { archiveId } : {}) }, replayed: false };
+      await tx.insert(tables.canvasOperations).values({ projectId, actorId: userId, operationId: input.operationId,
+        kind: input.kind, payloadHash, receipt });
+      await tx.insert(tables.adminAuditLogs).values({ actorUserId: userId, action: "canvas.operation", targetType: "canvas", targetId: saved.canvasId,
+        metadata: { operationId: input.operationId, kind: input.kind, payloadHash, fromRevision: current.revision, revision: saved.revision, archiveId: archiveId ?? null } });
+      return receipt;
+    });
+  }
+
+  async inspectCanvasForRepair(projectId: string, userId: string) {
+    return this.db.transaction(async tx => {
+      const actor = await tx.execute(sql`select id from users where id=${userId} and account_status='active'`);
+      if (!actor.rows.length) throw new DomainError("UNAUTHENTICATED", "用户不存在或已停用", 401);
+      if (!(await hasProjectEditAccess(tx, projectId, userId))) throw new DomainError("PROJECT_FORBIDDEN", "无权核查该项目", 403);
+      const duplicates = await tx.execute(sql`select node_type,label,array_agg(id order by id) as ids from canvas_nodes
+        where project_id=${projectId} group by node_type,label,coalesce(data->'metadata'->>'content',data->>'description',data->>'narration','') having count(*)>1`);
+      return { ...(await inspectCanvasConsistency(tx, projectId)), ...(await captureCanvasState(tx, projectId)), duplicateCandidates: duplicates.rows };
+    }, { isolationLevel: "repeatable read", accessMode: "read only" });
+  }
+
+  async getCanvasOperationReceiptForUser(projectId: string, userId: string, operationId: string) {
+    z.string().uuid().parse(operationId);
+    return this.db.transaction(async tx => {
+      const actor = await tx.execute(sql`select id from users where id=${userId} and account_status='active'`);
+      if (!actor.rows.length) throw new DomainError("UNAUTHENTICATED", "用户不存在或已停用", 401);
+      if (!(await hasProjectEditAccess(tx, projectId, userId))) throw new DomainError("PROJECT_FORBIDDEN", "无权核查该操作回执", 403);
+        const [operation] = await tx.select({ receipt: tables.canvasOperations.receipt, kind: tables.canvasOperations.kind }).from(tables.canvasOperations).where(and(
+        eq(tables.canvasOperations.projectId, projectId), eq(tables.canvasOperations.actorId, userId), eq(tables.canvasOperations.operationId, operationId),
+      ));
+      if (!operation) throw new DomainError("CANVAS_OPERATION_NOT_FOUND", "该操作者在此项目下没有这项操作的已提交回执", 404);
+        if (operation.kind === "knowledge.reference.add" && !await hasKnowledgeFeature(tx, userId, false))
+          throw new DomainError("KNOWLEDGE_NOT_ENABLED", "此账号尚未开放知识功能", 403);
+      return operation.receipt as CanvasOperationReceipt;
+    }, { isolationLevel: "repeatable read", accessMode: "read only" });
+  }
+
+  async repairCanvasForUser(projectId: string, userId: string, input: {
+    operationId: string; expectedCanvasRevision: number; expectedStateHash: string; reason: string;
+  }) {
+    z.string().regex(/^[a-f0-9]{64}$/).parse(input.expectedStateHash);
+    z.string().trim().min(1).parse(input.reason);
+    return this.commitCanvasOperation(projectId, userId, { ...input, kind: "canvas.repair", payload: { expectedStateHash: input.expectedStateHash, reason: input.reason } }, async (current, tx) => {
+      const nodes = await tx.select().from(tables.canvasNodes).where(eq(tables.canvasNodes.projectId, projectId)).orderBy(asc(tables.canvasNodes.sortOrder));
+      const edges = await tx.select().from(tables.canvasEdges).where(eq(tables.canvasEdges.projectId, projectId)).orderBy(asc(tables.canvasEdges.sortOrder));
+      const assetLinks = await tx.select().from(tables.assetLinks).where(eq(tables.assetLinks.projectId, projectId));
+      const { write, report } = normalizeCanvasHistory({ ...current, nodes, edges, assetLinks, expectedRevision: current.revision });
+      return { ...write, result: { repaired: true, originalRevision: current.revision, duplicatesRemoved: 0, normalizedExclusions: report.excludedPaths } };
+    }, input);
+  }
+
+  async restoreCanvasRepairArchiveForUser(projectId: string, userId: string, input: {
+    operationId: string; expectedCanvasRevision: number; archiveId: string; reason: string;
+  }) {
+    z.string().uuid().parse(input.archiveId);
+    z.string().trim().min(1).parse(input.reason);
+    return this.commitCanvasOperation(projectId, userId, { ...input, kind: "canvas.repair.restore", payload: { archiveId: input.archiveId, reason: input.reason } }, async (current, tx) => {
+      const [member] = await tx.select({ role: tables.projectMembers.role }).from(tables.projectMembers).where(and(eq(tables.projectMembers.projectId, projectId), eq(tables.projectMembers.userId, userId)));
+      if (!["owner", "admin"].includes(member.role)) throw new DomainError("PROJECT_FORBIDDEN", "只有项目所有者或管理员可回滚历史修复", 403);
+      const archive = await tx.execute(sql`select before_state from canvas_repair_archives where id=${input.archiveId} and project_id=${projectId}
+        and state_hash=encode(sha256(convert_to(before_state::text,'UTF8')),'hex') for share`);
+      if (!archive.rows.length) throw new DomainError("CANVAS_ARCHIVE_INVALID", "修复归档不存在或完整性校验失败", 409);
+      const before = archive.rows[0].before_state as { nodes: unknown; edges: unknown; assetLinks: Array<Record<string, unknown>>; canvas: { viewport: CanvasViewport; settings: CanvasSettings } | null };
+      const { write, report } = normalizeCanvasHistory({ expectedRevision: current.revision, nodes: before.nodes, edges: before.edges,
+        viewport: before.canvas?.viewport ?? current.viewport, settings: before.canvas?.settings ?? current.settings, assetLinks: before.assetLinks });
+      return { ...write, result: { restoredArchiveId: input.archiveId, normalizedExclusions: report.excludedPaths, duplicatesRemoved: 0 } };
+    });
+  }
+
   async listCanvasSnapshots(
     projectId: string,
     userId: string,
@@ -505,15 +661,20 @@ export class PostgresPlatformRepository implements PlatformRepository {
         source: tables.canvasSnapshots.source,
         restoredFromVersion: tables.canvasSnapshots.restoredFromVersion,
         createdAt: tables.canvasSnapshots.createdAt,
+        nodes: tables.canvasSnapshots.nodes,
+        edges: tables.canvasSnapshots.edges,
+        viewport: tables.canvasSnapshots.viewport,
+        settings: tables.canvasSnapshots.settings,
       })
       .from(tables.canvasSnapshots)
       .where(eq(tables.canvasSnapshots.projectId, projectId))
       .orderBy(desc(tables.canvasSnapshots.version))
       .limit(100);
-    return rows.map((row) => ({
-      ...row,
-      createdAt: row.createdAt.toISOString(),
-    }));
+    return rows.map(({ nodes, edges, viewport, settings, ...row }) => {
+      let restorable = false;
+      try { restorable = normalizeCanvasHistory({ nodes, edges, viewport, settings, expectedRevision: 0 }).report.excludedPaths.length === 0; } catch { /* Unknown history remains immutable and cannot be restored. */ }
+      return { ...row, createdAt: row.createdAt.toISOString(), restorable, ...(!restorable ? { restoreReason: "历史版本不兼容，暂不可恢复" } : {}) };
+    });
   }
 
   async restoreCanvasSnapshot(
@@ -548,7 +709,8 @@ export class PostgresPlatformRepository implements PlatformRepository {
           "找不到该画布历史版本",
           404,
         );
-      const { write } = parseCanvasWrite({
+      let normalized;
+      try { normalized = normalizeCanvasHistory({
         expectedRevision,
         contractVersion: snapshot.contractVersion,
         nodes: snapshot.nodes,
@@ -556,6 +718,11 @@ export class PostgresPlatformRepository implements PlatformRepository {
         viewport: snapshot.viewport,
         settings: snapshot.settings,
       });
+        if (normalized.report.excludedPaths.length) throw new Error("History would lose content");
+      } catch {
+        throw new DomainError("CANVAS_SNAPSHOT_INCOMPATIBLE", "历史版本不兼容，暂不可恢复", 422);
+      }
+      const { write } = normalized;
       return saveCanvasInTransaction(
         tx,
         projectId,
@@ -834,18 +1001,88 @@ async function enrichLegacyAssetBindings(
   });
 }
 
+function canvasRevisionConflict(currentRevision: number) {
+  return new DomainError("CANVAS_REVISION_CONFLICT", "画布已更新，请重读后明确重放操作", 409, false, { details: { currentRevision } });
+}
+
+async function lockCanvasWriteContext(db: Transaction, projectId: string, userId: string, allowMissing = false, repairOperation = false) {
+  const mode = process.env.CANVAS_WRITE_MODE ?? "enabled";
+  if (mode !== "enabled" && !(mode === "repair-only" && repairOperation))
+    throw new DomainError("CANVAS_WRITES_DISABLED", "画布处于维护只读状态，草稿保留，请稍后核查回执", 503);
+  // All formal writers use actor -> canvas -> project/member, including Web saves.
+  const actor = await db.execute(sql`select id from users where id=${userId} and account_status='active' for share`);
+  if (!actor.rows.length) throw new DomainError("UNAUTHENTICATED", "用户不存在或已停用", 401);
+  if (!(await hasProjectAccess(db, projectId, userId))) throw new DomainError("PROJECT_FORBIDDEN", "无权访问该项目", 403);
+  if (allowMissing) await db.execute(sql`select pg_advisory_xact_lock(hashtextextended(${`canvas-init:${projectId}`},0))`);
+  const canvas = await db.execute(sql`select id from canvases where project_id=${projectId} for update`);
+  if (!canvas.rows.length && !allowMissing) throw new DomainError("CANVAS_NOT_INITIALIZED", "旧项目缺少画布，请先执行显式兼容核查", 409);
+  const membership = await db.execute(sql`select m.role from project_members m join projects p on p.id=m.project_id
+    where p.id=${projectId} and m.user_id=${userId} and p.deleted_at is null for share of p,m`);
+  if (!membership.rows.length) throw new DomainError("PROJECT_FORBIDDEN", "无权访问该项目", 403);
+  if (!(await hasProjectEditAccess(db, projectId, userId))) throw new DomainError("PROJECT_READ_ONLY", "当前成员只有查看权限", 403);
+}
+
+type CanvasHealth = { revision: number; maxSnapshotVersion: number; reasons: string[] };
+async function inspectCanvasConsistency(db: Transaction, projectId: string): Promise<CanvasHealth> {
+  const response = await db.execute(sql`
+    select coalesce(c.revision,0) as revision,c.id is null as missing_canvas,
+      coalesce((select max(version) from canvas_snapshots where project_id=p.id),0) as max_version,
+      s.id is not null as has_snapshot,
+      exists(select 1 from canvas_nodes n where n.project_id=p.id and (not (n.data ? 'metadata') or not (n.data ? 'type'))) as legacy_nodes,
+      exists(select 1 from canvas_edges e where e.project_id=p.id and not (e.data ? 'fromNodeId')) as legacy_edges,
+      exists(select 1 from canvas_nodes n where n.project_id=p.id) as has_nodes,
+      (coalesce((select jsonb_agg(n.data order by n.id) from canvas_nodes n where n.project_id=p.id),'[]'::jsonb)
+        is distinct from coalesce((select jsonb_agg(v order by v->>'id') from jsonb_array_elements(case when jsonb_typeof(s.nodes)='array' then s.nodes else '[]'::jsonb end) v),'[]'::jsonb)
+       or coalesce((select jsonb_agg(e.data order by e.id) from canvas_edges e where e.project_id=p.id),'[]'::jsonb)
+        is distinct from coalesce((select jsonb_agg(v order by v->>'id') from jsonb_array_elements(case when jsonb_typeof(s.edges)='array' then s.edges else '[]'::jsonb end) v),'[]'::jsonb)
+       or c.viewport is distinct from s.viewport or c.settings is distinct from s.settings) as snapshot_differs
+    from projects p left join canvases c on c.project_id=p.id
+    left join canvas_snapshots s on s.project_id=p.id and s.version=coalesce(c.revision,0)
+    where p.id=${projectId}`);
+  const row = response.rows[0];
+  const reasons: string[] = [];
+  if (row.missing_canvas) reasons.push("CANVAS_MISSING");
+  if (Number(row.max_version) > Number(row.revision)) reasons.push("SNAPSHOT_AHEAD");
+  if (!row.has_snapshot && (Number(row.revision) > 0 || row.has_nodes)) reasons.push("CURRENT_SNAPSHOT_MISSING");
+  if (row.legacy_nodes || row.legacy_edges) reasons.push("LEGACY_GRAPH_SHAPE");
+  if (row.has_snapshot && row.snapshot_differs) reasons.push("CURRENT_SNAPSHOT_DIFFERS");
+  return { revision: Number(row.revision), maxSnapshotVersion: Number(row.max_version), reasons };
+}
+
+function assertCanvasConsistent(health: CanvasHealth) {
+  if (health.reasons.length) throw new DomainError("CANVAS_REPAIR_REQUIRED", "旧画布与快照不一致，禁止自动覆盖，请核查修复计划", 409, false,
+    { details: { currentRevision: health.revision, maxSnapshotVersion: health.maxSnapshotVersion, reasons: health.reasons } });
+}
+
+async function captureCanvasState(db: Transaction, projectId: string) {
+  const result = await db.execute(sql`with state as (select jsonb_build_object(
+    'canvas',(select to_jsonb(c) from canvases c where c.project_id=${projectId}),
+    'nodes',coalesce((select jsonb_agg(to_jsonb(n) order by n.id) from canvas_nodes n where n.project_id=${projectId}),'[]'::jsonb),
+    'edges',coalesce((select jsonb_agg(to_jsonb(e) order by e.id) from canvas_edges e where e.project_id=${projectId}),'[]'::jsonb),
+    'assetLinks',coalesce((select jsonb_agg(to_jsonb(a) order by a.id) from asset_links a where a.project_id=${projectId}),'[]'::jsonb),
+    'snapshots',coalesce((select jsonb_agg(to_jsonb(s) order by s.version) from canvas_snapshots s where s.project_id=${projectId}),'[]'::jsonb)) as value)
+    select value as state,encode(sha256(convert_to(value::text,'UTF8')),'hex') as hash from state`);
+  return { state: result.rows[0].state, hash: String(result.rows[0].hash) };
+}
+
 async function saveCanvasInTransaction(
   db: Transaction,
   projectId: string,
   userId: string,
   write: CanvasWrite,
-  source: "save" | "migration" | "restore",
+  source: "save" | "migration" | "restore" | "mcp" | "repair",
   restoredFromVersion?: number,
+  contextValidated = false,
 ): Promise<CanvasDocument> {
+  if (!contextValidated) {
+    await lockCanvasWriteContext(db, projectId, userId);
+    assertCanvasConsistent(await inspectCanvasConsistency(db, projectId));
+  }
   if (!(await hasProjectAccess(db, projectId, userId)))
     throw new DomainError("PROJECT_FORBIDDEN", "无权访问该项目", 403);
   if (!(await hasProjectEditAccess(db, projectId, userId)))
     throw new DomainError("PROJECT_READ_ONLY", "当前成员只有查看权限", 403);
+  await validateKnowledgeCanvasWrite(db,userId,projectId,write,source==='mcp'||(contextValidated&&source==='save')?'append':source==='repair'||source==='restore'?'restore':false);
   const now = new Date();
   const [canvas] = await db
     .update(tables.canvases)
@@ -951,6 +1188,8 @@ async function saveCanvasInTransaction(
     .where(
       and(eq(tables.projects.id, projectId), isNull(tables.projects.deletedAt)),
     );
+  await db.insert(tables.adminAuditLogs).values({ actorUserId: userId, action: "canvas.save", targetType: "canvas", targetId: canvas.canvasId,
+    metadata: { revision: canvas.revision, source, nodeCount: write.nodes.length, edgeCount: write.edges.length } });
   return {
     projectId,
     canvasId: canvas.canvasId,
@@ -1046,6 +1285,16 @@ function collectAssetVersionReferences(
   }
   for (const [key, item] of Object.entries(value)) {
     const normalized = key.replace(/[-_\s]/g, "").toLowerCase();
+    if (normalized === "legacyassetreferences") {
+      if (!Array.isArray(item)) throw new DomainError("INVALID_ASSET_REFERENCE", "旧素材引用格式无效", 422);
+      for (const reference of item) {
+        if (!isRecord(reference) || typeof reference.assetVersionId !== "string" || !/^[0-9a-f-]{36}$/i.test(reference.assetVersionId)
+          || typeof reference.role !== "string" || !reference.role)
+          throw new DomainError("INVALID_ASSET_REFERENCE", "旧素材引用格式无效", 422);
+        output.push({ assetVersionId: reference.assetVersionId, role: reference.role });
+      }
+      continue;
+    }
     const nextRole = normalized.includes("firstframe")
       ? "first_frame"
       : normalized.includes("lastframe")
@@ -1187,6 +1436,8 @@ async function ensureCanvasForProject(
   projectId: string,
   userId: string,
 ): Promise<Workspace> {
+  // Serialize first initialization with explicit legacy repair; ordinary saves lock the existing canvas row.
+  await db.execute(sql`select pg_advisory_xact_lock(hashtextextended(${`canvas-init:${projectId}`},0))`);
   await db.insert(tables.canvases).values({ projectId }).onConflictDoNothing();
   const [row] = await db
     .select({

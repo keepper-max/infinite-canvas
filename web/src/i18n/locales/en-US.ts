@@ -927,6 +927,7 @@ export default {
         },
     },
     navigation: {
+        knowledge: "Knowledge",
         canvas: "My Canvases",
         director: "AI Drama Director",
         "director-desk": "3D Director Desk",
@@ -944,7 +945,8 @@ export default {
         openMenu: "Open navigation menu",
         menu: "Navigation menu",
         navigation: "Navigation",
-        mobileNavigation: { canvas: "Canvas", image: "Image", video: "Video", text: "Text" },
+        mobileNavigation: {
+            knowledge: "Knowledge", canvas: "Canvas", image: "Image", video: "Video", text: "Text" },
         scrollLeft: "Scroll to earlier tools",
         scrollRight: "Scroll to more tools",
         openAgent: "Open Agent",

@@ -8,12 +8,12 @@ import { useTranslation } from "react-i18next";
 import { requestEdit, requestGeneration, requestImageQuestion } from "@/services/api/image";
 import { requestAudioGeneration, storeGeneratedAudio } from "@/services/api/audio";
 import { createVideoGenerationTask, storeGeneratedVideo, waitForVideoGenerationTask } from "@/services/api/video";
-import { getManagedJob, retryManagedJob, subscribeProjectJobEvents, type ManagedJobEvent } from "@/services/api/jobs";
+import { getManagedJob, retryManagedJob, waitForManagedJob, subscribeProjectJobEvents, type ManagedJobEvent } from "@/services/api/jobs";
 import { createCanvasDraft, type CanvasDraft } from "@/services/api/canvas";
 import { currentVersion, getCloudAssetDownloadUrl, invalidateCloudAssetDownloadUrls, uploadCloudAsset } from "@/services/api/assets";
 import { useDownloadMedia } from "@/hooks/use-download-media";
 import { useGenerationRiskConfirmation } from "@/hooks/use-generation-risk-confirmation";
-import { defaultConfig, useConfigStore, useEffectiveConfig, withLocalProxy } from "@/stores/use-config-store";
+import { defaultConfig, useConfigStore, useEffectiveConfig, withLocalProxy, isServerManagedConfig } from "@/stores/use-config-store";
 import { uploadImage } from "@/services/image-storage";
 import { getMediaBlob, resolveMediaUrl, uploadMediaFile, type UploadedFile } from "@/services/file-storage";
 import { nanoid } from "nanoid";
@@ -57,7 +57,7 @@ import { useCanvasStore } from "@/stores/canvas/use-canvas-store";
 import { useAgentBridge } from "@/pages/canvas/hooks/use-agent-bridge";
 import { usePluginHost } from "@/pages/canvas/hooks/use-plugin-host";
 import { useCloudCanvasPersistence } from "@/pages/canvas/hooks/use-cloud-canvas-persistence";
-import { buildNodeMentionReferences, getGroupResourceNodes, isCanvasReferenceNode, type CanvasResourceReference } from "@/lib/canvas/canvas-resource-references";
+import { buildNodeMentionReferences, getGroupResourceNodes, getGenerationResourceNodes, isCanvasReferenceNode, type CanvasResourceReference } from "@/lib/canvas/canvas-resource-references";
 import { exportCanvasProjects } from "@/lib/canvas/canvas-export";
 import { applyNodeConfigPatch, audioMetadata, buildAudioGenerationMetadata, buildImageGenerationMetadata, createCanvasNode, imageMetadata, videoMetadata } from "@/lib/canvas/canvas-node-factory";
 import {
@@ -95,6 +95,8 @@ import {
 } from "@/lib/canvas/canvas-generation-helpers";
 import { getNodeDefinition, isBuiltinNodeType as isBuiltinType, useNodeRegistryVersion } from "@/lib/canvas/node-registry";
 import { registerBuiltinNodes } from "@/components/canvas/nodes/builtin-nodes";
+import { registerKnowledgeNodes } from "@/components/canvas/nodes/knowledge-node";
+import { knowledgeDragType, referenceSummary, type KnowledgeReference } from "@/services/api/knowledge-canvas";
 import { registerDramaNodes } from "@/components/canvas/nodes/drama-nodes";
 import { registerCameraMotionNode } from "@/components/canvas/nodes/camera-motion-node";
 import { CAMERA_MOTION_NODE_TYPE } from "@/lib/canvas/camera-motion";
@@ -143,6 +145,7 @@ import type { DepthVideoResult } from "@/lib/depth-motion/generate-depth-video";
 
 // Register built-in nodes in the shared registry once when the module loads.
 registerBuiltinNodes();
+registerKnowledgeNodes();
 registerDramaNodes();
 registerCameraMotionNode();
 
@@ -1124,6 +1127,7 @@ function InfiniteCanvasPage({ projectId }: { projectId: string }) {
     });
 
     const { pluginHost, renderPluginPanel, buildNodeToolbarItems } = usePluginHost({
+        prepareGeneration: saveCanvasBeforeGeneration,
         projectId,
         effectiveConfig,
         isAiConfigReady,
@@ -1591,6 +1595,14 @@ function InfiniteCanvasPage({ projectId }: { projectId: string }) {
         },
         [size.height, size.width],
     );
+
+    const focusedKnowledgeLink = useRef("");
+    useEffect(() => {
+        const id = searchParams.get("knowledgeNode"), key = projectId + ":" + id;
+        if (!id || !projectLoaded || focusedKnowledgeLink.current === key || !nodes.some(n => n.id === id && n.type === "knowledge:document")) return;
+        focusedKnowledgeLink.current = key;
+        focusNode(id);
+    }, [projectId, projectLoaded, nodes, searchParams, focusNode]);
 
     const focusMobileNode = useCallback(
         (nodeId: string) => {
@@ -3035,10 +3047,26 @@ function InfiniteCanvasPage({ projectId }: { projectId: string }) {
         [createAudioFileNode, createImageFileNode, createVideoFileNode, screenToCanvas, size.height, size.width],
     );
 
+    const knowledgeProject = useRef(projectId);
+    knowledgeProject.current = projectId;
     const handleDrop = useCallback(
         (event: ReactDragEvent<HTMLDivElement>) => {
             event.preventDefault();
             const assetPayload = event.dataTransfer.getData(CANVAS_ASSET_DRAG_TYPE);
+            const knowledgePayload = event.dataTransfer.getData(knowledgeDragType);
+            if (knowledgePayload) {
+                try {
+                    const raw = JSON.parse(knowledgePayload);
+                    const ref: KnowledgeReference = { spaceId: raw.spaceId, documentId: raw.documentId, mode: "latest" };
+                    const position = screenToCanvas(event.clientX, event.clientY);
+                    void referenceSummary(projectId, ref).then(value => {
+                        if (knowledgeProject.current !== projectId) return;
+                        const node = createCanvasNode("knowledge:document", position, { knowledgeReference: ref });
+                        setNodes(prev => [...prev, { ...node, title: value.title }]);
+                    }).catch(e => message.error(e.message));
+                } catch { message.error("知识拖拽标识无效"); }
+                return;
+            }
             if (assetPayload) {
                 try {
                     insertAssetAtRef.current?.(JSON.parse(assetPayload) as InsertAssetPayload, screenToCanvas(event.clientX, event.clientY));
@@ -3064,7 +3092,7 @@ function InfiniteCanvasPage({ projectId }: { projectId: string }) {
                 }
             }
         },
-        [createAudioFileNode, createImageFileNode, createVideoFileNode, message, screenToCanvas, t],
+        [createAudioFileNode, createImageFileNode, createVideoFileNode, message, screenToCanvas, t, projectId],
     );
 
     const startTitleEditing = useCallback(() => {
@@ -3093,6 +3121,8 @@ function InfiniteCanvasPage({ projectId }: { projectId: string }) {
         async (nodeId: string, mode: CanvasNodeGenerationMode, prompt: string) => {
             const sourceNode = nodesRef.current.find((node) => node.id === nodeId);
             const generationConfig = buildGenerationConfig(effectiveConfig, sourceNode, mode);
+            const knowledgeInputs = getGenerationResourceNodes(nodeId, nodesRef.current, connectionsRef.current).flatMap(n => n.type === CanvasNodeType.Group ? getGroupResourceNodes(n.id, nodesRef.current) : [n]).some(n => n.type === "knowledge:document");
+            if (knowledgeInputs && (mode !== "text" || !isServerManagedConfig(generationConfig))) { message.error("知识正文引用请使用平台文本模型或 AI 编剧节点，先生成文本后再连接媒体工作流"); return; }
             if (!isAiConfigReady(generationConfig, generationConfig.model)) {
                 openConfigDialog(true);
                 return;
@@ -3479,7 +3509,7 @@ function InfiniteCanvasPage({ projectId }: { projectId: string }) {
                                         ),
                                     );
                                 },
-                                { signal: controller.signal },
+                                { signal: controller.signal, projectId, nodeId, idempotencyKey: `canvas-text:${nodeId}:${textId}`, onJobCreated: knowledgeInputs && textId === textIds[0] ? id => setNodes(prev => prev.map(n => n.id === rootId ? { ...n, metadata: { ...n.metadata, generationJobId: id, knowledgeSourceJob: true } } : n)) : undefined },
                             );
                             const content = answer || streamed;
                             setNodes((prev) =>
@@ -3666,6 +3696,15 @@ function InfiniteCanvasPage({ projectId }: { projectId: string }) {
             try {
                 if (node.type === CanvasNodeType.Text) {
                     if (!context) return;
+                    if (node.metadata?.knowledgeSourceJob && node.metadata.generationJobId) {
+                        const previous = await getManagedJob(node.metadata.generationJobId, controller.signal);
+                        const started = previous.status === "failed" ? await retryManagedJob(previous.id) : previous;
+                        const job = await waitForManagedJob(started.id, controller.signal);
+                        const answer = String(job.artifacts?.find(a => a.text)?.text || "");
+                        if (!answer) throw new Error("知识生成任务没有可用文本结果");
+                        setNodes(prev => prev.map(item => item.id === node.id ? { ...item, metadata: { ...item.metadata, content: answer, generationJobId: job.id, status: NODE_STATUS_SUCCESS, texts: item.metadata?.texts?.map(text => text.id === item.metadata?.primaryTextId ? { ...text, content: answer, status: NODE_STATUS_SUCCESS, errorDetails: undefined } : text) } } : item));
+                        return;
+                    }
                     let streamed = "";
                     const answer = await requestImageQuestion(
                         generationConfig,
@@ -4383,6 +4422,7 @@ function InfiniteCanvasPage({ projectId }: { projectId: string }) {
                         onRunDrama={(scope) => void runDramaWorkflow(scope)}
                         dramaRunning={dramaRunning}
                         hasDramaNodes={nodes.some((node) => Boolean(node.workflowKind))}
+                        onRestoreSnapshot={async version => { if (!(await saveCanvasBeforeGeneration())) throw new Error("当前画布尚未保存，未执行历史恢复"); await canvasPersistence.restoreSnapshot(version); }}
                     />
                 )}
 

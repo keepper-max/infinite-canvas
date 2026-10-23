@@ -110,6 +110,7 @@ export interface PlatformRepository {
     projectId: string,
     userId: string,
   ): Promise<CanvasDocument | null>;
+  issueCanvasWriteCapability?(projectId: string,userId: string,expectedRevision: number,acknowledgedKnowledgeNodes: unknown): Promise<{token: string;revision: number}>;
   saveCanvasForUser(
     projectId: string,
     userId: string,

@@ -1,6 +1,7 @@
 import { nanoid } from "nanoid";
+import localforage from "localforage";
 
-import { getCurrentSession, platformRequest } from "./platform";
+import { getCurrentSession, platformRequest, PlatformApiError } from "./platform";
 
 const MANUAL_JOB_CANCEL_REASON = "manual-managed-job-cancel";
 
@@ -93,8 +94,37 @@ export function cancelManagedJobOnAbort(jobId: string, signal?: AbortSignal) {
     return () => signal.removeEventListener("abort", cancel);
 }
 
+const retryJournal = localforage.createInstance({ name: "infinite-canvas", storeName: "job_retry_operations" });
+const retryFlights = new Map<string, Promise<ManagedJob>>();
 export async function retryManagedJob(jobId: string) {
-    return (await platformRequest<{ job: ManagedJob }>(`/api/jobs/${encodeURIComponent(jobId)}/retry`, { method: "POST" })).job;
+    const actor = (await getCurrentSession()).user.id,
+        key = actor + ":" + jobId;
+    const previous = retryFlights.get(key);
+    if (previous) return previous;
+    const flight = (async () => {
+        let operationId = await retryJournal.getItem<string>(key);
+        if (operationId) {
+            try {
+                const value = await platformRequest<{ job: ManagedJob }>(`/api/jobs/${encodeURIComponent(jobId)}/retry-operations/${operationId}`);
+                await retryJournal.removeItem(key);
+                return value.job;
+            } catch (e) {
+                if (!(e instanceof PlatformApiError && e.code === "RETRY_OPERATION_NOT_FOUND")) throw e;
+            }
+        } else {
+            operationId = crypto.randomUUID();
+            await retryJournal.setItem(key, operationId);
+        }
+        const value = await platformRequest<{ job: ManagedJob }>(`/api/jobs/${encodeURIComponent(jobId)}/retry`, { method: "POST", body: JSON.stringify({ retryOperationId: operationId }) });
+        await retryJournal.removeItem(key);
+        return value.job;
+    })();
+    retryFlights.set(key, flight);
+    try {
+        return await flight;
+    } finally {
+        retryFlights.delete(key);
+    }
 }
 
 export async function waitForManagedJob(jobId: string, signal?: AbortSignal, onUpdate?: (job: ManagedJob) => void, options?: { pauseOnBillingPending?: boolean }) {
@@ -133,7 +163,22 @@ export type ManagedJobEvent = {
 
 export function subscribeProjectJobEvents(projectId: string, onEvent: (event: ManagedJobEvent) => void, onOpen?: () => void) {
     const source = new EventSource(`/api/projects/${encodeURIComponent(projectId)}/events`, { withCredentials: true });
-    const types = ["job.created", "job.queued", "job.started", "job.progress", "job.downloading", "job.persisting", "job.billing_pending", "job.payment_required", "job.completed", "job.failed", "job.retrying", "job.recovering", "job.cancel_requested", "job.cancelled"];
+    const types = [
+        "job.created",
+        "job.queued",
+        "job.started",
+        "job.progress",
+        "job.downloading",
+        "job.persisting",
+        "job.billing_pending",
+        "job.payment_required",
+        "job.completed",
+        "job.failed",
+        "job.retrying",
+        "job.recovering",
+        "job.cancel_requested",
+        "job.cancelled",
+    ];
     const listener = (message: MessageEvent<string>) => {
         try {
             onEvent(JSON.parse(message.data) as ManagedJobEvent);

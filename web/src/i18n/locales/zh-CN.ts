@@ -888,6 +888,7 @@ export default {
         },
     },
     navigation: {
+        knowledge: "知识库",
         canvas: "我的画布",
         director: "AI 漫剧导演台",
         "director-desk": "3D 导演台",
@@ -905,7 +906,8 @@ export default {
         openMenu: "打开导航菜单",
         menu: "导航菜单",
         navigation: "导航",
-        mobileNavigation: { canvas: "画布", image: "生图", video: "视频", text: "文本" },
+        mobileNavigation: {
+            knowledge: "知识库", canvas: "画布", image: "生图", video: "视频", text: "文本" },
         scrollLeft: "向左查看更多功能",
         scrollRight: "向右查看更多功能",
         openAgent: "打开 Agent",

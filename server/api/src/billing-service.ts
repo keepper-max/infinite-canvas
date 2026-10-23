@@ -3,6 +3,7 @@ import type { Pool, PoolClient } from "pg";
 import type { ProviderConfig } from "./config.js";
 import type { CreditService } from "./credit-service.js";
 import { DomainError } from "./domain.js";
+import { hasUnconfirmedSubmission } from "./provider-submission.js";
 import type { ManualBillingResolutionInput } from "./operations-contract.js";
 import { volcengineArkAmount } from "./volcengine-ark-pricing.js";
 
@@ -255,6 +256,10 @@ export class BillingService {
     );
     const job = result.rows[0];
     if (!job) return { status: "missing" };
+    if(hasUnconfirmedSubmission(job)){
+      await this.pool.query("update generation_jobs set billing_status='manual_review',billing_error='供应商提交状态不明，保留账单与预留等待核验',billing_next_check_at=null where id=$1",[jobId]);
+      return {status:'manual_review'};
+    }
     if (job.provider === "token360" && job.status === "failed") {
       if (job.provider_job_id) return this.finishManualReview(jobId);
       return this.reviewFailedWithoutProviderJob(job);
@@ -451,6 +456,10 @@ export class BillingService {
   }
 
   private async reviewFailedWithoutProviderJob(job: Record<string, unknown>) {
+    if(hasUnconfirmedSubmission(job)){
+      await this.pool.query("update generation_jobs set billing_status='manual_review',billing_error='供应商提交未确认，不推断为免费',billing_next_check_at=null where id=$1",[job.id]);
+      return {status:'manual_review'};
+    }
     const finishedAt =
       dateValue(job.finished_at) || dateValue(job.updated_at) || new Date();
     const remainingMs =

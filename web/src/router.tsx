@@ -7,6 +7,7 @@ import { useAuth } from "@/components/auth/auth-context";
 import { RouteErrorPage } from "@/components/layout/route-error-page";
 import { routeModules } from "@/lib/route-modules";
 import UserLayout from "@/layouts/user-layout";
+const KnowledgePage = lazy(routeModules.knowledge);
 const AssetsPage = lazy(routeModules.assets);
 const AuthPage = lazy(routeModules.auth);
 const CanvasPage = lazy(routeModules.canvas);
@@ -55,6 +56,7 @@ export const router = createBrowserRouter([
             { path: "/image", element: deferred(<ImagePage />) },
             { path: "/video", element: deferred(<VideoPage />) },
             { path: "/text", element: deferred(<TextWorkbenchPage />) },
+            { path: "/knowledge", element: deferred(<KnowledgePage />) },
             { path: "/assets", element: deferred(<AssetsPage />) },
             { path: "/prompts", element: deferred(<PromptsPage />) },
             { path: "/canvas", element: deferred(<CanvasPage />) },

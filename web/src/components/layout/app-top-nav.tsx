@@ -47,7 +47,7 @@ export function AppTopNav({ canvasProject, canvasVisible, onCanvasPointerEnter, 
     const togglePanel = useAgentStore((state) => state.togglePanel);
     const panelOpen = useAgentStore((state) => state.panelOpen);
     const visibleNavigationTools = navigationTools.filter((tool) => tool.slug !== "operations" || user.isAdmin);
-    const mobileNavigationTools = visibleNavigationTools.filter((tool) => ["canvas", "image", "video", "text"].includes(tool.slug));
+    const mobileNavigationTools = visibleNavigationTools.filter((tool) => ["knowledge", "canvas", "image", "video", "text"].includes(tool.slug));
     const slug = pathname.split("/").filter(Boolean)[0];
     const activeToolSlug = visibleNavigationTools.some((tool) => tool.slug === slug) ? (slug as NavigationToolSlug) : undefined;
 

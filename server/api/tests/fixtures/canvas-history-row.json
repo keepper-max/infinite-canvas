@@ -1,0 +1,139 @@
+{
+  "provenance": "Redacted shape of the backed-up 29-node/27-edge SQL history; row enums, ports, ordering and empty data retained; identities/content replaced.",
+  "nodes": [
+    {
+      "id": "history-prompt",
+      "data": {
+        "label": "固定脱敏正文",
+        "style": "固定脱敏正文",
+        "source": "codex-vibe",
+        "status": "idle",
+        "aspectRatio": "16:9",
+        "description": "固定脱敏正文",
+        "storyboardId": "00000000-0000-4000-8000-000000000002"
+      },
+      "label": "历史prompt",
+      "width": 320,
+      "height": 220,
+      "locked": false,
+      "status": "idle",
+      "group_id": null,
+      "position": {
+        "x": 80,
+        "y": 120
+      },
+      "node_type": "prompt",
+      "created_at": "2026-01-01T00:00:00+00:00",
+      "project_id": "00000000-0000-4000-8000-000000000001",
+      "sort_order": 0,
+      "updated_at": "2026-01-01T00:00:00+00:00",
+      "definition_id": "legacy",
+      "workflow_kind": "generic",
+      "definition_version": 1
+    },
+    {
+      "id": "history-scene",
+      "data": {
+        "label": "固定脱敏正文",
+        "order": 1,
+        "source": "codex-vibe",
+        "status": "idle",
+        "visual": "固定脱敏正文",
+        "narration": "固定脱敏正文",
+        "description": "固定脱敏正文",
+        "onScreenText": "固定脱敏正文",
+        "storyboardId": "00000000-0000-4000-8000-000000000002",
+        "durationSeconds": 8
+      },
+      "label": "历史scene",
+      "width": 320,
+      "height": 220,
+      "locked": false,
+      "status": "idle",
+      "group_id": null,
+      "position": {
+        "x": 420,
+        "y": 120
+      },
+      "node_type": "scene",
+      "created_at": "2026-01-01T00:00:00+00:00",
+      "project_id": "00000000-0000-4000-8000-000000000001",
+      "sort_order": 0,
+      "updated_at": "2026-01-01T00:00:00+00:00",
+      "definition_id": "legacy",
+      "workflow_kind": "generic",
+      "definition_version": 1
+    },
+    {
+      "id": "history-output",
+      "data": {
+        "label": "固定脱敏正文",
+        "output": "固定脱敏正文",
+        "source": "codex-vibe",
+        "status": "completed",
+        "assetId": "00000000-0000-4000-8000-000000000002",
+        "aspectRatio": "16:9",
+        "description": "固定脱敏正文",
+        "storyboardId": "00000000-0000-4000-8000-000000000002",
+        "assetVersionId": "00000000-0000-4000-8000-000000000002"
+      },
+      "label": "历史output",
+      "width": 320,
+      "height": 220,
+      "locked": false,
+      "status": "completed",
+      "group_id": null,
+      "position": {
+        "x": 5860,
+        "y": 120
+      },
+      "node_type": "output",
+      "created_at": "2026-01-01T00:00:00+00:00",
+      "project_id": "00000000-0000-4000-8000-000000000001",
+      "sort_order": 0,
+      "updated_at": "2026-01-01T00:00:00+00:00",
+      "definition_id": "legacy",
+      "workflow_kind": "generic",
+      "definition_version": 1
+    }
+  ],
+  "edges": [
+    {
+      "id": "history-edge-0",
+      "data": {},
+      "role": "data",
+      "edge_type": "reference",
+      "created_at": "2026-01-01T00:00:00+00:00",
+      "project_id": "00000000-0000-4000-8000-000000000001",
+      "sort_order": 0,
+      "resource_type": "asset",
+      "source_node_id": "history-prompt",
+      "source_port_id": "legacy.output",
+      "target_node_id": "history-scene",
+      "target_port_id": "legacy.input"
+    },
+    {
+      "id": "history-edge-1",
+      "data": {},
+      "role": "data",
+      "edge_type": "reference",
+      "created_at": "2026-01-01T00:00:00+00:00",
+      "project_id": "00000000-0000-4000-8000-000000000001",
+      "sort_order": 0,
+      "resource_type": "asset",
+      "source_node_id": "history-scene",
+      "source_port_id": "legacy.output",
+      "target_node_id": "history-output",
+      "target_port_id": "legacy.input"
+    }
+  ],
+  "viewport": {
+    "k": 1,
+    "x": 0,
+    "y": 0
+  },
+  "settings": {
+    "showImageInfo": false,
+    "backgroundMode": "lines"
+  }
+}

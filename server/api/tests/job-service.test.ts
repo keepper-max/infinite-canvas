@@ -544,6 +544,9 @@ test("stored asset references retain an internal storage key", async () => {
     async createDownloadUrl() {
       return "https://assets.example/reference.png";
     },
+    async stat() {
+      return { bytes: 16, mimeType: "image/png" };
+    },
   };
   const executor = new JobExecutor(
     pool as never,

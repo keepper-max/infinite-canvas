@@ -232,7 +232,14 @@ test(
         crypto.randomUUID(),
       );
       assert.equal(replenished.account.balance, "100");
-      assert.equal(replenished.lot.remaining, "100");
+      // The default 12-month top-up expires before the remaining 730-day lot,
+      // so earliest-expiry settlement consumes the new lot first.
+      assert.equal(replenished.lot.remaining, "0");
+      const remainingLots = await pool.query<{ remaining: string }>(
+        "select coalesce(sum(remaining),0)::text remaining from credit_lots where account_id=$1",
+        [replenished.account.id],
+      );
+      assert.equal(remainingLots.rows[0]!.remaining, "100");
       await credits.assertCanCreate(userId);
       await assert.rejects(
         () =>

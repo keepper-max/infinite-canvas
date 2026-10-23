@@ -103,7 +103,7 @@ type GeminiPayload = {
     promptFeedback?: { blockReason?: string };
 };
 type GeminiStreamState = { buffer: string; text: string; toolCalls: ResponseToolCall[]; error?: string };
-type RequestOptions = { signal?: AbortSignal; projectId?: string; nodeId?: string; nodeRevision?: number; idempotencyKey?: string };
+type RequestOptions = { signal?: AbortSignal; projectId?: string; nodeId?: string; nodeRevision?: number; idempotencyKey?: string; onJobCreated?: (id: string) => void };
 
 const QUALITY_BASE: Record<string, number> = {
     low: 1024,
@@ -1000,10 +1000,9 @@ export async function requestImageQuestion(config: AiConfig, messages: AiTextMes
         const prompt = withSystemMessage(requestConfig, messages)
             .map((message) => ("type" in message ? JSON.stringify(message) : `${message.role}: ${typeof message.content === "string" ? message.content : message.content.map((part) => (part.type === "text" ? part.text : part.image_url.url)).join("\n")}`))
             .join("\n\n");
-        const job = await waitForManagedJob(
-            (await createManagedJob({ model: requestConfig.model, capability: "text", mode: "chat", prompt, parameters: { reasoningEffort: requestConfig.reasoningEffort } }, { signal: options?.signal })).id,
-            options?.signal,
-        );
+        const created = await createManagedJob({ model: requestConfig.model, capability: "text", mode: "chat", prompt, parameters: { reasoningEffort: requestConfig.reasoningEffort } }, options);
+        options?.onJobCreated?.(created.id);
+        const job = await waitForManagedJob(created.id, options?.signal);
         const text = String(job.artifacts?.find((artifact) => artifact.text)?.text || apiText("noContent"));
         onDelta(text);
         return text;

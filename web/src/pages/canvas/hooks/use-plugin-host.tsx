@@ -18,6 +18,7 @@ import type { CanvasConnection, CanvasNodeData, ViewportTransform } from "@/type
 type CanvasTheme = (typeof canvasThemes)[keyof typeof canvasThemes];
 
 type PluginHostParams = {
+    prepareGeneration?: () => Promise<boolean>;
     projectId: string;
     effectiveConfig: AiConfig;
     isAiConfigReady: (config: AiConfig, model: string) => boolean;
@@ -95,6 +96,7 @@ export function usePluginHost(params: PluginHostParams) {
     const pluginHost = useMemo<CanvasPluginHost>(
         () => ({
             projectId,
+            prepareGeneration: params.prepareGeneration,
             getNode: (id) => nodesRef.current.find((node) => node.id === id) || null,
             getNodes: () => nodesRef.current,
             getConnections: () => connectionsRef.current,
@@ -123,7 +125,7 @@ export function usePluginHost(params: PluginHostParams) {
             openPanel: (nodeId) => setDialogNodeId(nodeId),
             closePanel: () => setDialogNodeId(null),
         }),
-        [applyAgentOps, pluginAi, projectId],
+        [applyAgentOps, pluginAi, projectId, params.prepareGeneration],
     );
 
     const renderPluginPanel = useCallback(
@@ -131,9 +133,9 @@ export function usePluginHost(params: PluginHostParams) {
             const Panel = getNodeDefinition(panelNode.type)?.Panel;
             if (!Panel) return null;
             const ctx = buildNodeContext(pluginHost, panelNode, theme, viewportRef.current.k);
-            return <Panel ctx={ctx} onClose={() => setDialogNodeId(null)} />;
+            return <Panel key={projectId + ":" + panelNode.id} ctx={ctx} onClose={() => setDialogNodeId(null)} />;
         },
-        [pluginHost, theme],
+        [pluginHost, theme, projectId],
     );
 
     // Build the node toolbar from plugin items and a host-provided interaction/move toggle when enabled.

@@ -1,6 +1,7 @@
-import { Box, Clapperboard, Coins, FileText, Gauge, ImagePlus, Images, Maximize2, MessageSquareText, Settings2, Video } from "lucide-react";
+import { BookOpen, Box, Clapperboard, Coins, FileText, Gauge, ImagePlus, Images, Maximize2, MessageSquareText, Settings2, Video } from "lucide-react";
 
 export const navigationTools = [
+    { slug: "knowledge", icon: BookOpen },
     {
         slug: "canvas",
         icon: Maximize2,

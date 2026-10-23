@@ -1,4 +1,5 @@
 import { artifactUrl, createManagedJob, waitForManagedJob, type ManagedJobTrace, type ManagedReference } from "@/services/api/jobs";
+import { referenceSummary } from "@/services/api/knowledge-canvas";
 import type { CanvasNodeContext } from "@/types/canvas-plugin";
 import type { CanvasConnection, CanvasNodeData } from "@/types/canvas";
 import type { DramaNodeState, DramaWorkflowKind, SeedanceSkillResult } from "@/types/drama";
@@ -24,7 +25,11 @@ const AUDIO_KINDS = new Set<DramaWorkflowKind>(["audio.voice", "audio.sfx", "aud
 export async function executeDramaNode(ctx: CanvasNodeContext) {
     const kind = ctx.node.workflowKind as DramaWorkflowKind;
     if (kind === "story.idea") return validateStoryNode(ctx);
-    const snapshot = buildDramaInputSnapshot(ctx.node, ctx.getNodes(), ctx.getConnections());
+    const hasKnowledge = ctx.getUpstream().some(n => n.type === "knowledge:document" || (n.type === "group" && ctx.getNodes().some(child => child.metadata?.groupId === n.id && child.type === "knowledge:document")));
+    if (hasKnowledge && (!ctx.prepareGeneration || !(await ctx.prepareGeneration()))) throw new Error("知识节点与执行连线尚未保存，已停止生成，请先处理画布版本冲突");
+    const knowledgeNodes = hasKnowledge ? ctx.getUpstream().flatMap(n => n.type === "group" ? ctx.getNodes().filter(child => child.metadata?.groupId === n.id) : [n]).filter(n => n.type === "knowledge:document") : [];
+    const knowledgeReferences = await Promise.all(knowledgeNodes.map(async n => { const value = await referenceSummary(ctx.projectId, n.metadata?.knowledgeReference!); return { documentId: value.reference.documentId, spaceId: value.reference.spaceId, revision: value.revision, contentHash: value.contentHash }; }));
+    const snapshot = { ...buildDramaInputSnapshot(ctx.node, ctx.getNodes(), ctx.getConnections()), ...(hasKnowledge ? { knowledgeReferences } : {}) };
     const inputHash = hashDramaInput(snapshot);
     if (ctx.node.metadata?.status === "success" && ctx.node.metadata.drama?.inputHash === inputHash && !ctx.node.metadata.drama?.stale) return;
     ctx.updateMetadata({ status: "loading", errorDetails: undefined, drama: mergeDrama(ctx.node, { inputSnapshot: snapshot, inputHash, stale: false }) });

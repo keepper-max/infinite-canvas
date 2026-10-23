@@ -59,7 +59,7 @@ test("画布写操作只发送给当前激活网页", async (t) => {
     assert.equal(first.event("tool_call"), undefined);
     assert.equal(field(call, "name"), "canvas_apply_ops");
     session.resolveResult("second", { requestId: String(field(call, "requestId")), result: { ok: true } });
-    assert.deepEqual(await result, { ok: true });
+    assert.deepEqual(await result, { ok: true, applied: true, persisted: false });
 });
 
 test("当前 turn 的图片附件可在发起标签页画布创建图片节点", async (t) => {
@@ -125,7 +125,7 @@ test("tool result is accepted only from the request client", async (t) => {
 
     assert.equal(session.resolveResult("second", { requestId, result: { client: "second" } }), false);
     assert.equal(session.resolveResult("first", { requestId, result: { client: "first" } }), true);
-    assert.deepEqual(await result, { client: "first" });
+    assert.deepEqual(await result, { client: "first", applied: true, persisted: false });
 });
 
 test("生成状态查询由当前激活网页返回", async (t) => {
@@ -350,7 +350,7 @@ test("a bound client remains the tool target while focus changes", async (t) => 
     const call = first.event("tool_call");
     assert.equal(second.event("tool_call"), undefined);
     session.resolveResult("first", { requestId: String(field(call, "requestId")), result: { ok: true } });
-    assert.deepEqual(await result, { ok: true });
+    assert.deepEqual(await result, { ok: true, applied: true, persisted: false });
 
     session.releaseClient("first");
     assert.equal(field(await session.callTool("canvas_get_state", {}), "projectId"), "canvas-second");
@@ -382,7 +382,7 @@ test("a disconnected bound client never falls back and can resume with the same 
     const call = reconnected.event("tool_call");
     assert.equal(second.event("tool_call"), undefined);
     session.resolveResult("first", { requestId: String(field(call, "requestId")), result: { ok: true } });
-    assert.deepEqual(await result, { ok: true });
+    assert.deepEqual(await result, { ok: true, applied: true, persisted: false });
 });
 
 test("新连接会回放当前运行 turn 的最新事件快照", (t) => {

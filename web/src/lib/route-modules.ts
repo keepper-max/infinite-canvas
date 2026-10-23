@@ -12,6 +12,7 @@ function cached<T>(loader: () => Promise<T>) {
 }
 
 export const routeModules = {
+    knowledge: cached(() => import("@/pages/knowledge")),
     assets: cached(() => import("@/pages/assets")),
     auth: cached(() => import("@/pages/auth")),
     canvas: cached(() => import("@/pages/canvas")),

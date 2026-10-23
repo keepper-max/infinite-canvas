@@ -190,6 +190,9 @@ function flattenGenerationInputs(inputs: NodeGenerationInput[]) {
 }
 
 function readNodeGenerationResource(node: CanvasNodeData): NodeGenerationResourceInput[] {
+    // Synchronous resource discovery reports eligibility only. The server resolves
+    // every connected knowledge reference in the asynchronous job transaction.
+    if (node.type === "knowledge:document") return [{ nodeId: node.id, type: "text", title: node.title }];
     const image = readReferenceImage(node);
     if (image) return [{ nodeId: node.id, type: "image", title: node.title, image }];
     const video = readReferenceVideo(node);

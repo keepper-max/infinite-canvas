@@ -40,6 +40,7 @@ export type CanvasNodeToolbarItem = {
 
 // Context injected while rendering each node; the primary interface between plugins and the canvas.
 export type CanvasNodeContext = {
+    prepareGeneration?: () => Promise<boolean>;
     projectId: string;
     node: CanvasNodeData;
     theme: CanvasTheme;
@@ -76,6 +77,7 @@ export type PluginStorage = {
 
 // Node-independent host capabilities constructed by the canvas page and injected into the render chain.
 export type CanvasPluginHost = {
+    prepareGeneration?: () => Promise<boolean>;
     projectId: string;
     getNode: (id: string) => CanvasNodeData | null;
     getNodes: () => CanvasNodeData[];
@@ -112,6 +114,7 @@ export type CanvasNodeDefinition = {
     minimapColor?: string;
     showInCreateMenu?: boolean; // Defaults to true.
     hasSourceHandle?: boolean; // Right-side output handle; defaults to true.
+    hasTargetHandle?: boolean; // Left-side input handle; defaults to true.
     hidePanel?: boolean; // Prevents click/create from opening a lower panel; intended for display-only nodes.
     transparentBackground?: boolean; // Makes the node card transparent so SVG or vector content blends into the canvas.
     autoOpenPanel?: boolean; // Opens a custom Panel on click; automatic opening otherwise applies only to built-ins.

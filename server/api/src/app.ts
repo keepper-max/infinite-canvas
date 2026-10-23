@@ -1,3 +1,5 @@
+import { registerKnowledgeRoutes } from './knowledge-routes.js';
+import type { KnowledgeService } from './knowledge-service.js';
 import { randomUUID } from "node:crypto";
 import { MEDIA_SANDBOX_CSP } from "./media-security.js";
 import { authAttemptInput, forwardedClientIp, type AuthRateLimiterPort } from "./auth-rate-limit.js";
@@ -97,6 +99,7 @@ export function createApp(
   smsVerificationService?: SmsVerificationServicePort,
   authRateLimiter?: AuthRateLimiterPort,
   websiteInquiryService?: WebsiteInquiryService,
+  knowledgeService?: KnowledgeService,
 ) {
   const app = new Hono<AppEnv>();
 
@@ -1639,6 +1642,12 @@ export function createApp(
     );
     return context.json(success(context, { canvas }));
   });
+  app.post("/api/projects/:projectId/canvas/write-capability", async context => {
+    const user=await requireUser(context.req.raw,repository,config);
+    const input=z.object({expectedRevision:z.number().int().nonnegative(),acknowledgedKnowledgeNodes:z.array(z.object({id:z.string().min(1),reference:z.unknown()}).strict())}).strict().parse(await readJson(context.req.raw));
+    if(!repository.issueCanvasWriteCapability) throw new DomainError('CANVAS_CAPABILITY_UNAVAILABLE','当前服务不支持知识画布写入，请升级',503);
+    return context.json(success(context,await repository.issueCanvasWriteCapability(context.req.param('projectId'),user.id,input.expectedRevision,input.acknowledgedKnowledgeNodes)));
+  });
 
   app.get("/api/projects/:projectId/canvas/snapshots", async (context) => {
     const user = await requireUser(context.req.raw, repository, config);
@@ -1873,11 +1882,20 @@ export function createApp(
     return context.json(success(context, { job }));
   });
 
+  app.get('/api/jobs/:jobId/retry-operations/:operationId',async context=>{
+    const user=await requireUser(context.req.raw,repository,config);
+    const job=await requireJobService(jobService).retryReceipt(context.req.param('jobId'),user.id,z.string().uuid().parse(context.req.param('operationId')));
+    if(!job)throw new DomainError('RETRY_OPERATION_NOT_FOUND','尚未发现该重试回执，请保留原操作ID',404);
+    return context.json(success(context,{job}));
+  });
   app.post("/api/jobs/:jobId/retry", async (context) => {
     const user = await requireUser(context.req.raw, repository, config);
+    const raw=await context.req.text();
+    const operation=raw.trim()?z.object({retryOperationId:z.string().uuid(),expectedInputFingerprint:z.string().length(64).optional()}).strict().parse(JSON.parse(raw)):undefined;
     const job = await requireJobService(jobService).retry(
       context.req.param("jobId"),
       user.id,
+      operation,
     );
     if (!job) throw new DomainError("JOB_NOT_FOUND", "找不到该任务", 404);
     return context.json(success(context, { job }), 202);
@@ -2320,6 +2338,22 @@ export function createApp(
   app.notFound((context) =>
     apiError(context, new DomainError("NOT_FOUND", "接口不存在", 404)),
   );
+  if (knowledgeService) {
+    registerKnowledgeRoutes(app, knowledgeService, request => requireUser(request, repository, config));
+    app.get('/api/features/knowledge',async c=>c.json(success(c,await knowledgeService.featureStatus((await requireUser(c.req.raw,repository,config)).id))));
+    app.get('/api/admin/features/knowledge/users/:userId',async c=>{
+      const admin=await requireUser(c.req.raw,repository,config);
+      if(!publicUser(admin,config).isAdmin)throw new DomainError('ADMIN_FORBIDDEN','需要管理员权限',403);
+      return c.json(success(c,await knowledgeService.featureStatus(uuidParam.parse(c.req.param('userId')))));
+    });
+    app.put('/api/admin/features/knowledge/users/:userId',async c=>{
+      const admin=await requireUser(c.req.raw,repository,config);
+      if(!publicUser(admin,config).isAdmin)throw new DomainError('ADMIN_FORBIDDEN','需要管理员权限',403);
+      const input=z.object({enabled:z.boolean(),reason:z.string().trim().min(1).max(1000)}).strict().parse(await readJson(c.req.raw));
+      return c.json(success(c,await knowledgeService.featureGrant(admin.id,uuidParam.parse(c.req.param('userId')),input.enabled,input.reason)));
+    });
+  }
+
   app.onError((error, context) => {
     if (error instanceof z.ZodError) {
       const fieldErrors = Object.fromEntries(

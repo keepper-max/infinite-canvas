@@ -1,4 +1,10 @@
 import { createHash, randomUUID } from "node:crypto";
+import { prepareKnowledgeJob } from "./knowledge-job-input.js";
+import { KnowledgeService } from "./knowledge-service.js";
+import { assertKnowledgeGenerationEnabled, requireKnowledgeFeaturePg } from "./knowledge-feature.js";
+import { hasUnconfirmedSubmission, canReleaseUnsubmittedReservation } from "./provider-submission.js";
+import { drizzle } from "drizzle-orm/node-postgres";
+import * as knowledgeTables from "./db/schema.js";
 import type { Pool, PoolClient } from "pg";
 
 import type { JobConfig } from "./config.js";
@@ -8,7 +14,7 @@ import { DomainError } from "./domain.js";
 import type { CreateJobInput } from "./job-contract.js";
 import { ModelGateway, type GenerationInput } from "./model-gateway.js";
 import type { ObjectStorage } from "./object-storage.js";
-import { assertProjectAccess } from "./project-access.js";
+import { assertProjectAccess, resolveActiveUser } from "./project-access.js";
 import {
   ProviderError,
   providerUserMessage,
@@ -28,6 +34,14 @@ export type JobEventPublisher = (projectId: string) => Promise<unknown>;
 export type TransferQueuePort = {
   add(jobId: string): Promise<void>;
 };
+type RetryOperation = { operationId: string; payloadHash: string };
+function assertRetrySubmissionKnown(job: Record<string, any>) {
+  const state=job.provider_submission_state ?? 'legacy';
+  if (hasUnconfirmedSubmission(job))
+    throw new DomainError('PROVIDER_SUBMISSION_UNCONFIRMED','供应商提交状态不明，已停止重试，请先核查原任务和账单',409);
+  if ((job.provider_job_id || ['accepted','resolved'].includes(state)) && !['not_billed','settled'].includes(job.billing_status))
+    throw new DomainError('JOB_BILLING_UNCONFIRMED','原任务账单尚未核验，不能发起新的付费重试',409);
+}
 
 export class JobService {
   constructor(
@@ -46,7 +60,12 @@ export class JobService {
     userId: string,
     input: CreateJobInput,
     retryOfJobId?: string,
+    retryOperation?: RetryOperation,
   ) {
+    if (!retryOfJobId && input.trace?.inputSnapshot) {
+      const { knowledgeSources: _ignored, ...snapshot } = input.trace.inputSnapshot;
+      input = { ...input, trace: { ...input.trace, inputSnapshot: snapshot } };
+    }
     if (!retryOfJobId && input.trace?.workflowKind === "director.workflow") {
       const settings = await this.directorSettings();
       if (!settings.enabled)
@@ -66,6 +85,7 @@ export class JobService {
       [projectId, input.idempotencyKey],
     );
     if (duplicate.rows[0]) {
+      if(Array.isArray(duplicate.rows[0].input_snapshot?.trace?.inputSnapshot?.knowledgeSources)&&duplicate.rows[0].input_snapshot.trace.inputSnapshot.knowledgeSources.length)await requireKnowledgeFeaturePg(this.pool,userId);
       if (duplicate.rows[0].request_fingerprint !== fingerprint)
         throw new DomainError(
           "IDEMPOTENCY_CONFLICT",
@@ -76,13 +96,37 @@ export class JobService {
     }
     if (input.capability !== "text")
       await this.storageQuota?.assertHasCapacity(userId);
-    const compiled = await this.gateway.compile(input);
+    let compiled = await this.gateway.compile(input);
     const maxAttempts = generationJobAttempts();
     const client = await this.pool.connect();
     let job: Record<string, unknown>;
     try {
       await client.query("begin");
       await assertProjectAccess(client, projectId, userId, "edit");
+      if (retryOperation && retryOfJobId) {
+        await client.query("select pg_advisory_xact_lock(hashtextextended($1,0))",[userId+':retry:'+retryOperation.operationId]);
+        const receipt=(await client.query("select * from job_retry_operations where actor_id=$1 and operation_id=$2",[userId,retryOperation.operationId])).rows[0];
+        if(receipt){
+          if(receipt.payload_hash!==retryOperation.payloadHash)throw new DomainError('RETRY_OPERATION_MISMATCH','重试操作ID已用于不同参数',409);
+          const prior=(await client.query('select * from generation_jobs where id=$1',[receipt.result_job_id])).rows[0];
+          await client.query('commit');return serializeJob(prior);
+        }
+        const ancestors = await client.query(`with recursive ancestors(id,retry_of_job_id) as (
+          select id,retry_of_job_id from generation_jobs where id=$1 and project_id=$2
+          union select j.id,j.retry_of_job_id from generation_jobs j join ancestors a on j.id=a.retry_of_job_id where j.project_id=$2
+        ) select id from ancestors where retry_of_job_id is null`, [retryOfJobId, projectId]);
+        const rootId = ancestors.rows[0]?.id;
+        if (!rootId) throw new DomainError('RETRY_HISTORY_INVALID', '重试历史不完整，请核查原任务', 409);
+        await client.query('select pg_advisory_xact_lock(hashtextextended($1,0))', ['retry-family:'+rootId]);
+        const parent=(await client.query('select * from generation_jobs where id=$1 and project_id=$2 for update',[retryOfJobId,projectId])).rows[0];
+        assertRetrySubmissionKnown(parent);
+        if(parent.status!=='failed'||!parent.retryable)throw new DomainError('JOB_NOT_RETRYABLE','当前任务不能重试',409);
+        const previousRetries = await client.query(`with recursive family(id) as (
+          select $1::uuid union select j.id from generation_jobs j join family f on j.retry_of_job_id=f.id where j.project_id=$2
+        ) select j.* from generation_jobs j join family f on f.id=j.id`, [rootId, projectId]);
+        for (const previous of previousRetries.rows) assertRetrySubmissionKnown(previous);
+        if(previousRetries.rows.some(row=>!['completed','failed','cancelled'].includes(row.status)))throw new DomainError('RETRY_ALREADY_PENDING','该任务已有进行中的重试，请查询原重试任务',409);
+      }
       if (input.nodeId) {
         const node = await client.query(
           "select 1 from canvas_nodes where project_id = $1 and id = $2",
@@ -110,6 +154,9 @@ export class JobService {
         return serializeJob(existing.rows[0]);
       }
       const jobId = randomUUID();
+      const prepared = await prepareKnowledgeJob(client, userId, projectId, input, retryOfJobId);
+      assertKnowledgeGenerationEnabled(prepared.trace?.inputSnapshot?.knowledgeSources);
+      if (prepared !== input) { input = prepared; compiled = await this.gateway.compile(input, client); }
       const inheritedBillingRule = retryOfJobId
         ? (
             await client.query(
@@ -165,6 +212,8 @@ export class JobService {
         return serializeJob(raced.rows[0]);
       }
       job = result.rows[0];
+      await client.query("update generation_jobs set provider_submission_state='not_started' where id=$1",[job.id]);
+      job.provider_submission_state='not_started';
       const reserved = await this.credits?.reserveForJob(
         client,
         userId,
@@ -187,6 +236,12 @@ export class JobService {
         0,
         "任务已创建",
       );
+      if (retryOperation && retryOfJobId) {
+        job=(await client.query('update generation_jobs set retry_operation_id=$2 where id=$1 returning *',[job.id,retryOperation.operationId])).rows[0];
+        await client.query('insert into job_retry_operations(actor_id,operation_id,original_job_id,payload_hash,result_job_id) values($1,$2,$3,$4,$5)',[userId,retryOperation.operationId,retryOfJobId,retryOperation.payloadHash,job.id]);
+        await client.query("insert into admin_audit_logs(actor_user_id,action,target_type,target_id,metadata) values($1,'job.retry','generation_job',$2,$3)",[userId,job.id,{operationId:retryOperation.operationId,originalJobId:retryOfJobId,payloadHash:retryOperation.payloadHash}]);
+        await client.query('update text_messages set generation_job_id=$2,updated_at=now() where generation_job_id=$1',[retryOfJobId,job.id]);
+      }
       await client.query("commit");
     } catch (error) {
       await client.query("rollback").catch(() => undefined);
@@ -197,7 +252,7 @@ export class JobService {
     try {
       await this.queue.add(job.id as string, Number(job.max_attempts));
       await this.pool.query(
-        "update generation_jobs set status='queued',updated_at=now() where id=$1",
+        "update generation_jobs set status='queued',updated_at=now() where id=$1 and status='pending'",
         [job.id],
       );
       await this.pool.query(
@@ -207,10 +262,15 @@ export class JobService {
       await this.publish(String(job.project_id)).catch(() => undefined);
       job.status = "queued";
     } catch (error) {
-      await this.pool.query(
-        "update generation_jobs set status='failed', user_error_code='QUEUE_UNAVAILABLE', user_error_message='任务队列暂时不可用', retryable=true, finished_at=now(), updated_at=now() where id=$1",
+      const notDispatched = await this.pool.query(
+        "update generation_jobs set status='failed', user_error_code='QUEUE_UNAVAILABLE', user_error_message='任务队列暂时不可用', retryable=true, finished_at=now(), updated_at=now() where id=$1 and status='pending' and provider_submission_state='not_started' returning id",
         [job.id],
       );
+      // An enqueue acknowledgement can be lost after a Worker has already taken
+      // the job. Preserve its execution and reservation instead of marking it free.
+      if (!notDispatched.rowCount) {
+        return serializeJob((await this.pool.query('select * from generation_jobs where id=$1', [job.id])).rows[0]);
+      }
       await this.pool.query(
         "insert into job_events(job_id,project_id,node_key,sequence,event_type,status,progress,message) select id,project_id,node_key,coalesce((select max(sequence)+1 from job_events where job_id=$1),1),'job.failed','failed',0,'任务队列暂时不可用' from generation_jobs where id=$1",
         [job.id],
@@ -298,6 +358,7 @@ export class JobService {
       "select * from generation_jobs where project_id=$1 order by created_at desc limit 200",
       [projectId],
     );
+    if(result.rows.some(r=>r.input_snapshot?.trace?.inputSnapshot?.knowledgeSources?.length))await requireKnowledgeFeaturePg(this.pool,userId);
     return result.rows.map(serializeJob);
   }
   async get(jobId: string, userId: string) {
@@ -306,6 +367,7 @@ export class JobService {
       [jobId, userId],
     );
     if (!result.rows[0]) return null;
+    if(result.rows[0].input_snapshot?.trace?.inputSnapshot?.knowledgeSources?.length)await requireKnowledgeFeaturePg(this.pool,userId);
     const artifacts = String(result.rows[0].credit_delivery_status) === "released"
       ? await this.pool.query(
           "select id,asset_id,asset_version_id,role,sort_order,mime_type,metadata from job_artifacts where job_id=$1 order by sort_order",
@@ -330,6 +392,13 @@ export class JobService {
       "select id,job_id,sequence,event_type,status,progress,message,node_key,data,created_at from job_events where project_id=$1 and id>$2 order by id asc limit 200",
       [projectId, after],
     );
+    if (result.rows.length) {
+      const knowledge = await this.pool.query(
+        "select 1 from generation_jobs where id=any($1::uuid[]) and jsonb_array_length(coalesce(input_snapshot #> '{trace,inputSnapshot,knowledgeSources}','[]'::jsonb))>0 limit 1",
+        [result.rows.map(row => row.job_id)],
+      );
+      if (knowledge.rowCount) await requireKnowledgeFeaturePg(this.pool, userId);
+    }
     return result.rows.map((row) => ({
       id: Number(row.id),
       jobId: row.job_id,
@@ -362,7 +431,16 @@ export class JobService {
     if (await this.queue.remove(jobId)) await this.markCancelled(jobId);
     return this.get(jobId, userId);
   }
-  async retry(jobId: string, userId: string) {
+  async retryReceipt(jobId: string,userId: string,operationId: string) {
+    await resolveActiveUser(this.pool,{userId});
+    if(!await this.get(jobId,userId))return null;
+    const found=await this.pool.query('select result_job_id,original_job_id from job_retry_operations where actor_id=$1 and operation_id=$2',[userId,operationId]);
+    if(!found.rows.length)return null;
+    if(found.rows[0].original_job_id!==jobId)throw new DomainError('RETRY_OPERATION_MISMATCH','重试操作属于另一任务',409);
+    return this.get(found.rows[0].result_job_id,userId);
+  }
+  async retry(jobId: string, userId: string, operation?: { retryOperationId: string; expectedInputFingerprint?: string }) {
+    await resolveActiveUser(this.pool,{userId});
     const result = await this.pool.query(
       `select j.* from generation_jobs j
          join project_members m on m.project_id=j.project_id
@@ -378,31 +456,37 @@ export class JobService {
       userId,
       "edit",
     );
-    if (current.status !== "failed" || !current.retryable)
-      throw new DomainError("JOB_NOT_RETRYABLE", "当前任务不能重试", 409);
-    await this.queue.remove(jobId);
     const snapshot = current.input_snapshot as CreateJobInput | null;
     if (!snapshot)
       throw new DomainError("JOB_SNAPSHOT_MISSING", "任务缺少可重试参数", 409);
-    const retried = await this.create(
+    const sources=snapshot.trace?.inputSnapshot?.knowledgeSources;
+    if(Array.isArray(sources)&&sources.length)await new KnowledgeService(drizzle(this.pool,{schema:knowledgeTables})).validateJobSources(userId,String(current.project_id),sources as any);
+    const operationId=operation?.retryOperationId ?? `legacy:${jobId}`;
+    const payloadHash=createHash('sha256').update(JSON.stringify({jobId,inputFingerprint:current.request_fingerprint,expectedInputFingerprint:operation?.expectedInputFingerprint??null})).digest('hex');
+    const receipt=(await this.pool.query('select * from job_retry_operations where actor_id=$1 and operation_id=$2',[userId,operationId])).rows[0];
+    if(receipt){
+      if(receipt.payload_hash!==payloadHash)throw new DomainError('RETRY_OPERATION_MISMATCH','重试操作ID已用于不同参数',409);
+      return serializeJob((await this.pool.query('select * from generation_jobs where id=$1',[receipt.result_job_id])).rows[0]);
+    }
+    if(operation?.expectedInputFingerprint && operation.expectedInputFingerprint!==current.request_fingerprint)throw new DomainError('RETRY_INPUT_CHANGED','任务输入校验不匹配',409);
+    assertRetrySubmissionKnown(current);
+    if (current.status !== "failed" || !current.retryable)throw new DomainError("JOB_NOT_RETRYABLE", "当前任务不能重试", 409);
+    return this.create(
       String(current.project_id),
       userId,
-      { ...snapshot, idempotencyKey: `retry:${jobId}:${randomUUID()}` },
+      { ...snapshot, idempotencyKey: `retry:${userId}:${operationId}:${jobId}` },
       jobId,
+      {operationId,payloadHash},
     );
-    await this.pool.query(
-      "update text_messages set generation_job_id=$2,updated_at=now() where generation_job_id=$1",
-      [jobId, retried.id],
-    );
-    return retried;
   }
   private async markCancelled(jobId: string) {
     const updated = await this.pool.query(
-      "update generation_jobs set status='cancelled',finished_at=now(),updated_at=now() where id=$1 and status='cancel_requested' returning project_id",
+      "update generation_jobs set status='cancelled',finished_at=now(),updated_at=now() where id=$1 and status='cancel_requested' returning *",
       [jobId],
     );
     if (!updated.rows[0]) return;
-    await this.credits?.releaseReservation(jobId).catch(() => undefined);
+    if(canReleaseUnsubmittedReservation(updated.rows[0]))await this.credits?.releaseReservation(jobId).catch(() => undefined);
+    else await this.billing?.finalizeProviderUsage(jobId).catch(()=>undefined);
     const result = await this.pool.query(
       "insert into job_events(job_id,project_id,node_key,sequence,event_type,status,progress,message) select id,project_id,node_key,coalesce((select max(sequence)+1 from job_events where job_id=$1),1),'job.cancelled','cancelled',progress,'任务已取消' from generation_jobs where id=$1 returning project_id",
       [jobId],
@@ -476,7 +560,13 @@ export class JobExecutor {
         .catch(() => undefined);
     }, this.config.videoPollIntervalMs);
     let activeProviderJobId = row.provider_job_id;
+    let dispatched = false;
+    let providerResponded = false;
     try {
+      const knowledgeSources = row.input_snapshot?.trace?.inputSnapshot?.knowledgeSources;
+      assertKnowledgeGenerationEnabled(knowledgeSources);
+      if (!row.provider_job_id && Array.isArray(knowledgeSources) && knowledgeSources.length)
+        await new KnowledgeService(drizzle(this.pool, { schema: knowledgeTables })).validateJobSources(String(row.created_by), String(row.project_id), knowledgeSources);
       const provider = this.providerFor(String(row.provider));
       const compiled = row.provider_job_id
         ? undefined
@@ -487,6 +577,11 @@ export class JobExecutor {
               String(row.provider),
             ),
           );
+      if(!row.provider_job_id){
+        const claimed=await this.pool.query("update generation_jobs set provider_submission_state='dispatching' where id=$1 and (provider_submission_state in ('not_started','rejected') or (provider_submission_state='legacy' and $2::int=0)) returning id",[jobId,Number(row.attempt_count||0)]);
+        if(!claimed.rowCount)throw new DomainError('PROVIDER_SUBMISSION_UNCONFIRMED','供应商提交状态不明，请核查原任务与账单，禁止盲重试',409);
+        dispatched=true;
+      }
       let result = row.provider_job_id
         ? await provider.get(
             String(row.provider_job_id),
@@ -494,6 +589,8 @@ export class JobExecutor {
             row.capability as GenerationInput["capability"],
           )
         : await provider.create(compiled!, jobId, providerSignal);
+      providerResponded=true;
+      if(dispatched)await this.pool.query("update generation_jobs set provider_submission_state=$2 where id=$1",[jobId,result.providerJobId?'accepted':'resolved']);
       if (!row.provider_job_id)
         await this.billing
           ?.recordTrace(jobId, result.billingTraceId, result.usage)
@@ -619,6 +716,11 @@ export class JobExecutor {
         activeProviderJobId ? String(activeProviderJobId) : undefined,
       );
     } catch (error) {
+      if(dispatched && !providerResponded && !activeProviderJobId){
+        const status=error instanceof ProviderError?Number(error.safeDetails.status):0;
+        const rejected=[400,401,403,404,422,429].includes(status);
+        await this.pool.query("update generation_jobs set provider_submission_state=$2 where id=$1",[jobId,rejected?'rejected':'unknown']);
+      }
       if (error instanceof ProviderError && isRecord(error.safeDetails.usage))
         await this.billing
           ?.recordMeterUsage(jobId, error.safeDetails.usage)
@@ -640,6 +742,11 @@ export class JobExecutor {
           signal,
         );
       const mapped = mapProviderError(error);
+      if ((dispatched && !activeProviderJobId && !(error instanceof ProviderError && [400,401,403,404,422,429].includes(Number(error.safeDetails.status)))) || (error instanceof DomainError && error.code==='PROVIDER_SUBMISSION_UNCONFIRMED')) {
+        mapped.retryable=false;
+        mapped.code='PROVIDER_SUBMISSION_UNCONFIRMED';
+        mapped.message='供应商提交状态不明，请先核查原任务和账单，已停止自动重试';
+      }
       await this.pool.query(
         "update job_attempts set status='failed',error_code=$3,error_sanitized=$4,finished_at=now() where job_id=$1 and attempt=$2",
         [jobId, attempt, mapped.code, mapped.details],
@@ -799,7 +906,7 @@ export class JobExecutor {
     );
     if (final)
       await this.billing?.finalizeProviderUsage(jobId).catch(() => undefined);
-    if (final && !row.provider_job_id && !this.billing)
+    if (final && !this.billing && canReleaseUnsubmittedReservation(row))
       await this.credits?.closeTerminalWithoutCharge(jobId).catch(() => undefined);
     await this.event(
       row,
@@ -822,7 +929,8 @@ export class JobExecutor {
     await this.billing
       ?.finalizeProviderUsage(String(row.id))
       .catch(() => undefined);
-    if (!row.provider_job_id)
+    const submission=(await this.pool.query('select * from generation_jobs where id=$1',[row.id])).rows[0];
+    if (submission && canReleaseUnsubmittedReservation(submission))
       await this.credits?.closeTerminalWithoutCharge(String(row.id)).catch(() => undefined);
     await this.event(
       row,
@@ -1111,6 +1219,8 @@ export class JobExecutor {
             "参考素材版本不存在或不属于当前项目",
             422,
           );
+        if (!(await this.storage.stat(version.storage_key)))
+          throw new DomainError("OBJECT_NOT_FOUND", "参考素材不可用，原文件缺失；未向供应商提交", 422);
         return {
           ...reference,
           url: await this.storage.createDownloadUrl(version.storage_key),
@@ -1172,6 +1282,8 @@ function serializeJob(row: Record<string, any>) {
     status: row.status,
     progress: row.progress,
     attemptCount: row.attempt_count,
+    retryOperationId: row.retry_operation_id,
+    providerSubmissionState: row.provider_submission_state,
     maxAttempts: row.max_attempts,
     retryable: row.retryable,
     error: row.user_error_code
@@ -1193,6 +1305,7 @@ function serializeJob(row: Record<string, any>) {
       row.billing_last_checked_at?.toISOString?.() ||
       row.billing_last_checked_at,
     outputAssetVersionIds: row.output_asset_version_ids || [],
+    knowledgeSources: (Array.isArray(row.input_snapshot?.trace?.inputSnapshot?.knowledgeSources) ? row.input_snapshot.trace.inputSnapshot.knowledgeSources : []).map(({ text, ...source }: Record<string, unknown>) => source),
     createdAt: row.created_at?.toISOString?.() || row.created_at,
     updatedAt: row.updated_at?.toISOString?.() || row.updated_at,
     startedAt: row.started_at?.toISOString?.() || row.started_at,

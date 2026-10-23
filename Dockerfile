@@ -12,6 +12,7 @@ RUN npm run build
 FROM api-build AS api-test
 
 COPY server/api/tests ./tests
+COPY server/api/scripts ./scripts
 CMD ["npm", "test"]
 
 FROM node:22-bookworm-slim AS api-prod-deps
@@ -45,6 +46,15 @@ CMD ["node", "dist/index.js"]
 
 # Build the existing Vite frontend. Keeping this after API targets avoids making
 # legacy Docker builders compile the frontend when only API tests are requested.
+FROM node:22-bookworm-slim AS plugins-build
+
+WORKDIR /app/plugins/canvas/registry
+COPY plugins/canvas/sdk /app/plugins/canvas/sdk
+COPY plugins/canvas/registry/package.json plugins/canvas/registry/package-lock.json ./
+RUN npm ci --no-audit --no-fund --registry=https://registry.npmmirror.com
+COPY plugins/canvas /app/plugins/canvas
+RUN node build.mjs
+
 FROM node:22-bookworm-slim AS web-build
 
 WORKDIR /app/web
@@ -53,6 +63,7 @@ RUN ONNXRUNTIME_NODE_INSTALL=skip npm ci --legacy-peer-deps --no-audit --no-fund
 COPY VERSION /app/VERSION
 COPY CHANGELOG.md /app/CHANGELOG.md
 COPY web ./
+COPY --from=plugins-build /app/plugins/canvas/registry/dist /app/web/public/plugins
 RUN npm run build
 
 # Same-origin entrypoint for the SPA, platform API, and managed model gateway.

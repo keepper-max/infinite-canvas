@@ -35,6 +35,7 @@ import { getNodePluginId, listNodeDefinitions, useNodeRegistryVersion } from "@/
 import { useThemeStore } from "@/stores/use-theme-store";
 import { AnimatedThemeToggler } from "@/components/ui/animated-theme-toggler";
 import { useTranslation } from "react-i18next";
+import { CanvasSnapshotHistory } from "./canvas-snapshot-history";
 
 export function CanvasToolbar({
     selectedCount,
@@ -67,6 +68,7 @@ export function CanvasToolbar({
     onRunDrama,
     dramaRunning,
     hasDramaNodes,
+    onRestoreSnapshot,
 }: {
     selectedCount: number;
     canvasTool: "select" | "pan";
@@ -98,6 +100,7 @@ export function CanvasToolbar({
     onRunDrama: (scope: "current" | "selected" | "downstream" | "all") => void;
     dramaRunning: boolean;
     hasDramaNodes: boolean;
+    onRestoreSnapshot: (version: number) => Promise<void>;
 }) {
     const wrapRef = useRef<HTMLDivElement>(null);
     const { t } = useTranslation();
@@ -114,7 +117,7 @@ export function CanvasToolbar({
     const [extPanelX, setExtPanelX] = useState(0);
     // Keep extension plugin nodes synchronized with registry changes.
     useNodeRegistryVersion();
-    const extensionDefs = listNodeDefinitions().filter((def) => def.showInCreateMenu !== false && getNodePluginId(def.type) !== "builtin");
+    const extensionDefs = listNodeDefinitions().filter((def) => def.showInCreateMenu !== false && (getNodePluginId(def.type) !== "builtin" || def.type === "knowledge:document"));
     const dockStyle = { background: theme.toolbar.panel, borderColor: theme.toolbar.border, color: theme.toolbar.item, boxShadow: colorTheme === "dark" ? "0 18px 45px rgba(0,0,0,.32)" : "0 16px 40px rgba(28,25,23,.12)" };
     const hoverStyle = { background: theme.toolbar.itemHover, color: theme.toolbar.activeText };
     const activeStyle = { background: theme.toolbar.activeBg, color: theme.toolbar.activeText };
@@ -158,6 +161,7 @@ export function CanvasToolbar({
                 <ToolbarButton id="tool-redo" label={t("canvas.redo")} disabled={!canRedo} hovered={hovered} hoverStyle={hoverStyle} wrapRef={wrapRef} onTipX={setTipX} onHover={setHovered} onClick={onRedo}>
                     <Redo2 className="size-4.5" />
                 </ToolbarButton>
+                <CanvasSnapshotHistory onRestore={onRestoreSnapshot} />
                 <ToolbarButton id="tool-layout" label={t("canvas.productivity.autoLayout")} hovered={hovered} hoverStyle={hoverStyle} wrapRef={wrapRef} onTipX={setTipX} onHover={setHovered} onClick={onAutoLayout}>
                     <LayoutDashboard className="size-4.5" />
                 </ToolbarButton>

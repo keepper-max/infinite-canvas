@@ -305,8 +305,8 @@ export class ModelGateway {
     }));
   }
 
-  async compile(input: GenerationInput): Promise<CompiledGenerationRequest> {
-    const result = await this.pool.query(
+  async compile(input: GenerationInput, executor: Pick<Pool, "query"> = this.pool): Promise<CompiledGenerationRequest> {
+    const result = await executor.query(
       `select c.id, c.display_name, c.capability, c.upstream_model, c.provider_id,c.catalog_metadata,
             p.modes, p.accepted_parameters, p.required_parameters_by_mode, p.limits, p.parameter_map
             from model_catalog c join model_capabilities p on p.model_id = c.id

@@ -11,6 +11,13 @@ export function parseToolInput(name: ToolName, input: unknown) {
     return toolInputSchemas[name].parse(input ?? {});
 }
 
+/** Browser application is not a database commit receipt; keep all existing fields. */
+export function canvasToolReply(name: ToolName, result: unknown) {
+    if (!name.startsWith("canvas_") || ["canvas_list_projects", "canvas_get_state", "canvas_get_selection", "canvas_export_snapshot"].includes(name)) return result;
+    const fields = result && typeof result === "object" && !Array.isArray(result) ? result : { result };
+    return { ...fields, applied: true, persisted: false };
+}
+
 /** 压缩画布快照，避免向 Agent 返回过长的节点内容。 */
 export function compactCanvasState(state: CanvasSnapshot | null) {
     if (!state) throw new Error("当前没有已连接画布");

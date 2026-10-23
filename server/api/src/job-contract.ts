@@ -1,4 +1,5 @@
 import { z } from "zod";
+export const MAX_GENERATION_PROMPT_CHARACTERS = 120_000;
 
 const referenceSchema = z
   .object({
@@ -73,7 +74,7 @@ export const createJobSchema = z
       "flf2v",
       "multiref",
     ]),
-    prompt: z.string().min(1).max(120_000),
+    prompt: z.string().min(1).max(MAX_GENERATION_PROMPT_CHARACTERS),
     parameters: z.record(z.string(), z.unknown()).default({}),
     references: z.array(referenceSchema).max(50).default([]),
     trace: traceSchema.optional(),

@@ -595,3 +595,21 @@
 - 导演台模式可由 React Context 管理，入口 URL 参数优先、否则读取独立偏好 key，App 根节点仅加 UI mode class；store/project schema 完全不变。
 - 接入前宿主没有 `VITE_DIRECTOR_DESK_URL`；现已在 `.env.example` 与只读前端 env 常量增加同域名路径，且不包含密钥。
 - 正式入口改为同域名 `/3d-director/`：导演台仍独立构建，Compose 只读挂载其 `dist` 到 Web 容器；该路径使用 `frame-ancestors 'self'`，主应用其余路径继续禁止被嵌入。
+
+## 原生知识管理审计
+- 正式仓库是 Vite/React 前端、Hono API、canvas-agent；不是 Next.js 应用。
+- 工作区起始存在 website/content.js 修改，保留。
+- 现有规划文件有其他任务历史，本轮仅追加。
+- 已确认节点注册 registerNodeDefinitions、DOM 视口变换、SVG 连线和 visibleNodes 裁剪可复用；服务端画布现有限制为 1000 节点、4000 边、4MiB，不能充当全库图谱。
+- Markdown 插件采用 textarea + CDN marked + innerHTML，不能作为安全知识编辑器直接复用。
+- 官方发布接口核验：Tiptap v3.32.0、BlockSuite v0.22.4、BlockNote v0.56.0；默认分支 manifest 与 release 不一定相同，须固定 tag 复核。
+- 补充：本机另有 H:/CodexStorage/shoushou-mcp/shoushou-mcp-server.cjs 私有 Vibe MCP bundle，需与仓库 canvas-agent 分开审计，不能混称同一权限链路。
+- 补充：当前 canvases.project_id 唯一；跨画布复用不能假定已有一项目多画布。资产契约没有通用文档/附件类别。
+- 错误记录：PowerShell ConvertFrom-Json 不接受 lockfile 空键，已改用 -AsHashtable；CodeMirror 官方 guide/6 页面 web 获取 403，改查官方仓库和 npm 元数据。
+- 私有 Vibe MCP bundle requireProject 只排除 viewer，未见 deleted_at 筛选；getMcpUserId 缓存身份，停用状态只在首次解析校验。create_vibe_storyboard 直接插入节点、随后单独快照，未经过正式仓库 expectedRevision 保存链。仅作本地 bundle 静态结论，线上加载版本待确认。
+- 自动保存不可直接照搬：现有云端画布 AUTO_SAVE_INTERVAL_MS 为 10 分钟；知识文档需独立保存队列和冲突语义，延迟/限制值实施前由用户确认。
+- 许可证证据有差异：BlockSuite 根 LICENSE 为 MPL-2.0，而 v0.22.4 @blocksuite/store 与 @blocksuite/affine 包声明 MIT；不得按单一宽松许可概括。
+- 最终选型：主方案 Tiptap 公共核心 + Markdown 权威源文 + 既有 CodeMirror 源码入口；备选 CodeMirror Markdown 优先，数据库/API/画布模型不变。
+- 交付 plans/native-knowledge-management-audit.md：12 章节、16 项功能矩阵、主备选、数据模型、MCP 六工具设计、风险和 82–121 人日分期估算；所有性能和兼容承诺均以原型/评测为门槛。
+
+R1.1：生产 current 仍为 r1p-c70daebd53d8，API/Web/Worker健康，43份迁移无新增。原HEAD仍6b71618，既有已上线基线未提交，本次按仓库发布规则全部提交并保留源码快照。

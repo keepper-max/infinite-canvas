@@ -1,5 +1,6 @@
 import type { DramaNodeState } from "@/types/drama";
 import type { CameraMotionState } from "@/types/camera-motion";
+import type { KnowledgeReference } from "@/services/api/knowledge-canvas";
 
 export type Position = {
     x: number;
@@ -53,6 +54,7 @@ export type CanvasNodeText = {
 };
 
 export type CanvasNodeMetadata = {
+    knowledgeReference?: KnowledgeReference;
     content?: string;
     thumbnailUrl?: string;
     composerContent?: string;
@@ -97,6 +99,7 @@ export type CanvasNodeMetadata = {
     virtualPortraitId?: string;
     generationJobId?: string;
     mimeType?: string;
+    knowledgeSourceJob?: boolean;
     bytes?: number;
     durationMs?: number;
     frameRate?: number;
