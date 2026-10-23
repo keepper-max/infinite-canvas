@@ -613,3 +613,5 @@
 - 交付 plans/native-knowledge-management-audit.md：12 章节、16 项功能矩阵、主备选、数据模型、MCP 六工具设计、风险和 82–121 人日分期估算；所有性能和兼容承诺均以原型/评测为门槛。
 
 R1.1：生产 current 仍为 r1p-c70daebd53d8，API/Web/Worker健康，43份迁移无新增。原HEAD仍6b71618，既有已上线基线未提交，本次按仓库发布规则全部提交并保留源码快照。
+
+R1.1 发布结论：Git归档必须强制LF（SQL增加专用gitattributes）；增量Web镜像COPY后必须恢复静态目录a+rX，并以nginx用户验证新JS/CSS可读，不能只看根HTML健康。最终生产制品与回滚入口记录于ops/releases/v0.16.33.md。

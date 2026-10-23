@@ -678,3 +678,4 @@
 
 ## R1.1 approved production hotfix
 - 当前用户明确批准 commit、push、部署；核对远端版本、备份恢复后先API后Web，无迁移、不动Worker/MCP及付费门禁。发布过程详见 H:/CodexStorage/shoushou-r11-release。
+- 已完成：v0.16.33生产部署与9项浏览器验收，短时会话撤销；权限修正镜像、83表/1655对象备份恢复及回滚入口已记录。停止，不开发Agent。
