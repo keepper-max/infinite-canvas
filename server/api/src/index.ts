@@ -1,4 +1,6 @@
 import { KnowledgeService } from './knowledge-service.js';
+import { KnowledgeImportService } from './knowledge-import-service.js';
+import { createImportQueue } from './knowledge-import-queue.js';
 import { serve } from "@hono/node-server";
 import { Redis } from "ioredis";
 
@@ -128,6 +130,8 @@ const channelAttributionService = new ChannelAttributionService(
   pool,
   config.operations,
 );
+const knowledgeService = new KnowledgeService(db, config.operations.adminEmails);
+const importQueue = process.env.KNOWLEDGE_IMPORT_ENABLED === 'true' ? createImportQueue(config.jobs.redisUrl) : undefined;
 const app = createApp(
   new PostgresPlatformRepository(db),
   config,
@@ -143,7 +147,8 @@ const app = createApp(
   smsVerificationService,
   new AuthRateLimiter(verificationRedis),
   new WebsiteInquiryService(pool, verificationRedis),
-  new KnowledgeService(db, config.operations.adminEmails),
+  knowledgeService,
+  importQueue ? new KnowledgeImportService(knowledgeService,objectStorage,importQueue.enqueue,config.assetStorageQuotaBytes,importQueue.assertReady) : undefined,
 );
 
 const server = serve({ fetch: app.fetch, port: config.port }, (info) => {
@@ -152,6 +157,7 @@ const server = serve({ fetch: app.fetch, port: config.port }, (info) => {
 
 async function shutdown() {
   server.close();
+  await importQueue?.queue.close();
   await jobQueue.queue.close();
   await jobQueue.connection.quit();
   await compositionQueue.queue.close();

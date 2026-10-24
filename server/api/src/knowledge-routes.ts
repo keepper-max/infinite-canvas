@@ -13,6 +13,7 @@ const document = z.object({
   folderId: uuid.nullable().default(null),
 });
 const action = z.discriminatedUnion("action", [
+  op.extend({action:z.literal('document.importConfirm'),payload:document.extend({taskId:uuid,allowDuplicate:z.boolean().default(false)}).strict()}),
   op.extend({ action: z.literal("document.linkAdd"), payload: z.object({ id: uuid, expectedRevision: revision, targetId: uuid }).strict() }),
   op.extend({ action: z.literal("document.linkRemove"), payload: z.object({ id: uuid, expectedRevision: revision, targetId: uuid }).strict() }),
   op.extend({ action: z.literal("document.copyFrom"), payload: z.object({ sourceSpaceId: uuid, sourceDocumentId: uuid, sourceRevision: revision.positive() }).strict() }),

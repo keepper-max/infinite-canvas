@@ -27,7 +27,7 @@ import { useKnowledgeDocument } from "./use-document";
 import { useKnowledgeActions } from "./use-actions";
 import { useKnowledgeBootstrap } from './use-bootstrap';
 import { useKnowledgeLayout } from './use-layout';
-import { useMarkdownImport } from './use-import';
+import ImportPanel from './import-panel';
 import KnowledgeSectionBoundary from './section-boundary';
 import KnowledgeLinkDialog from './link-dialog';
 import type { EditorHandle } from "./editor";
@@ -80,7 +80,6 @@ export default function KnowledgePage() {
         [parent, setParent] = useState<string | null>(null),
         [error, setError] = useState(""), [listLoading, setListLoading] = useState(false), [spaceDenied, setSpaceDenied] = useState(false);
     const editor = useRef<EditorHandle>(null),
-        file = useRef<HTMLInputElement>(null),
         root = useRef<HTMLDivElement>(null),
         q = useDeferredValue(query),
         theme = useThemeStore((s) => s.theme),
@@ -119,7 +118,7 @@ export default function KnowledgePage() {
         try { editor.current?.flush(); await d.prepareLeave(); protectedNavigation.current = true; queueMicrotask(() => { protectedNavigation.current = false; }); setView('document'); setParams({ space: active?.id || spaces.find(s => s.kind === 'personal')?.id || '', project, view: 'document' }); if (bootstrap.error) bootstrap.retry(); }
         catch (e) { message.error((e as Error).message); }
     };
-    const importer = useMarkdownImport(space, folder, canWrite && actions.ready && !actions.pending, async () => { editor.current?.flush(); await d.prepareLeave(); }, actions.run);
+    const [importRequest,setImportRequest] = useState(0);
     useEffect(() => {
         if (bootstrap.loading || bootstrap.error || space) return;
         const personal = spaces.find(s => s.kind === 'personal');
@@ -529,8 +528,7 @@ export default function KnowledgePage() {
                     </div>
                 </header>
                 {(error || d.error) && <Alert type="warning" showIcon title={error || d.error} action={<Button onClick={() => { reloadList(); if (d.error) d.retryLoad(); }}>重试知识请求</Button>} />}
-                {(bootstrap.error || bootstrap.projectError || importer.error) && <Alert type="warning" showIcon title={bootstrap.error || bootstrap.projectError || importer.error} action={<Button onClick={bootstrap.retry}>重试加载知识库</Button>} />}
-                {importer.reading && <Alert type="info" title={actions.busy ? '正在导入 Markdown；你可以返回知识库，原操作会保留回执' : '正在读取 Markdown 文件'} />}
+                {(bootstrap.error || bootstrap.projectError) && <Alert type="warning" showIcon title={bootstrap.error || bootstrap.projectError} action={<Button onClick={bootstrap.retry}>重试加载知识库</Button>} />}
                 {actions.pending && (
                     <Alert
                         type="warning"
@@ -687,17 +685,15 @@ export default function KnowledgePage() {
                         <Button type="text" disabled={!canWrite} icon={<FileText size={16} />} onClick={() => newForm("document")}>
                             写下第一篇文档
                         </Button>
-                        <Button type="text" disabled={!canWrite || !actions.ready || Boolean(actions.pending) || importer.reading} icon={<Upload size={16} />} onClick={() => file.current?.click()}>
-                            导入 Markdown
+                        <Button type="text" disabled={!canWrite || !actions.ready || Boolean(actions.pending)} icon={<Upload size={16} />} onClick={() => setImportRequest(n=>n+1)}>
+                            导入资料
                         </Button>
                     </div>
                 )}
-                {view === "document" && (
+                {(
                     <footer className="knowledge-page-footer">
                         <span>{d.document ? d.document.markdown.length.toLocaleString() + " 字符 · Markdown 原文" : "原生知识库"}</span>
-                        <Button type="text" size="small" disabled={!canWrite || !actions.ready || Boolean(actions.pending) || importer.reading} icon={<Upload size={13} />} onClick={() => file.current?.click()}>
-                            导入 Markdown
-                        </Button>
+                        <ImportPanel actor={user.id} space={space} spaceName={active?.name||'尚未加载'} folder={folder} folders={folders} documentId={id} canWrite={canWrite&&!actions.pending} prepareLeave={async()=>{editor.current?.flush();await d.prepareLeave();}} request={importRequest} onSaved={doc=>{reloadList();void go(doc);if(doc===id)void d.reload();}}/>
                     </footer>
                 )}
             </main>
@@ -717,17 +713,6 @@ export default function KnowledgePage() {
                 />
                 <Relations relations={spaceDenied ? null : relations} onOpen={(doc) => void go(doc)} onWiki={onWiki} onCollapse={() => setRefs(false)} />
             </div>
-            <input
-                type="file"
-                accept=".md,.markdown,text/markdown"
-                hidden
-                ref={file}
-                onChange={(e) => {
-                    const f = e.target.files?.[0];
-                    if (f) void importer.importFile(f);
-                    e.target.value = "";
-                }}
-            />
             <Modal
                 open={Boolean(form)}
                 title={form === "document" ? "新建文档" : form === "folderEdit" ? "重命名或移动文件夹" : "新建文件夹"}

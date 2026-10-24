@@ -24,8 +24,9 @@ type Props = {
     onRichDraft: (content: JSONContent) => void;
     restoredRich?: { id: string; content: JSONContent };
     locate?: { start: number; end: number; token: string };
+    initialMode?: 'source' | 'rich';
 };
-const KnowledgeEditor = forwardRef<EditorHandle, Props>(function KnowledgeEditor({ id, spaceId, source, disabled, onChange, onComposition, onWiki, onRichDraft, restoredRich, locate }, ref) {
+const KnowledgeEditor = forwardRef<EditorHandle, Props>(function KnowledgeEditor({ id, spaceId, source, disabled, onChange, onComposition, onWiki, onRichDraft, restoredRich, locate, initialMode = 'source' }, ref) {
     const sourceView = useRef<EditorView | null>(null);
     const locateSource = (view: EditorView) => { if (!locate || !view.dom.isConnected) return; const from = Math.max(0, Math.min(locate.start, view.state.doc.length)), to = Math.max(0, Math.min(locate.end, view.state.doc.length)); view.dispatch({ selection: { anchor: from, head: to }, effects: EditorView.scrollIntoView(from) }); view.focus(); };
     const dark = useThemeStore((s) => s.theme) === "dark",
@@ -183,6 +184,8 @@ const KnowledgeEditor = forwardRef<EditorHandle, Props>(function KnowledgeEditor
         setReasons([]);
         setMode("rich");
     };
+    const autoRich = useRef('');
+    useEffect(() => { if (editor && initialMode === 'rich' && autoRich.current !== id) { autoRich.current = id; enterRich(); } }, [editor, id, initialMode]);
     const sourceExtensions = useMemo(
         () => [
             markdown(),

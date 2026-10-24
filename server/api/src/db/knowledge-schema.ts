@@ -6,9 +6,20 @@ import {
   timestamp,
   jsonb,
   bigserial,
+  bigint,
 } from "drizzle-orm/pg-core";
 // SQL migration owns the partial indexes/check constraints. These exports expose
 // the native knowledge tables to the existing Drizzle database schema.
+export const knowledgeImports = pgTable('knowledge_imports', {
+  id: uuid('id').primaryKey().defaultRandom(), spaceId: uuid('space_id').notNull(), actorId: uuid('actor_id').notNull(),
+  operationId: uuid('operation_id').notNull(), payloadHash:text('payload_hash').notNull(), filename:text('filename').notNull(),
+  extension:text('extension').notNull(), mimeType:text('mime_type').notNull(), sha256:text('sha256').notNull(),
+  bytes:bigint('bytes',{mode:'number'}).notNull(), storageKey:text('storage_key').notNull(), folderId:uuid('folder_id'),
+  state:text('state').notNull(), markdown:text('markdown'), converter:text('converter'), warnings:jsonb('warnings').notNull(),
+  pages:jsonb('pages').notNull(), assets:jsonb('assets').notNull(), metrics:jsonb('metrics').notNull(), error:text('error'),
+  documentId:uuid('document_id'), documentRevision:integer('document_revision'), reparseDocumentId:uuid('reparse_document_id'), expectedRevision:integer('expected_revision'),
+  createdAt:timestamp('created_at',{withTimezone:true}).defaultNow(), updatedAt:timestamp('updated_at',{withTimezone:true}).defaultNow(),
+});
 export const knowledgeSpaces = pgTable("knowledge_spaces", {
   id: uuid("id").primaryKey().defaultRandom(),
   kind: text("kind").notNull(),

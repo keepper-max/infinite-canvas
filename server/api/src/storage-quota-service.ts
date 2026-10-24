@@ -98,7 +98,7 @@ export class StorageQuotaService {
       reserved_bytes: string;
     }>(
       `select u.email,u.is_admin,
-         coalesce((select sum(v.bytes + coalesce(v.thumbnail_bytes,0)) from asset_versions v where v.created_by=u.id),0)::text used_bytes,
+         (coalesce((select sum(v.bytes + coalesce(v.thumbnail_bytes,0)) from asset_versions v where v.created_by=u.id),0) + coalesce((select sum(i.bytes + coalesce((select sum((a->>'bytes')::bigint) from jsonb_array_elements(i.assets) a),0)) from knowledge_imports i where i.actor_id=u.id and i.state<>'cleaned'),0))::text used_bytes,
          coalesce((select sum(r.bytes) from user_storage_reservations r where r.user_id=u.id and r.expires_at > now()),0)::text reserved_bytes
        from users u where u.id=$1`,
       [userId],

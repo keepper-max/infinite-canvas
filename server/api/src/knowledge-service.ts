@@ -230,7 +230,7 @@ export class KnowledgeService {
       );
     });
   }
-  private async run<T>(
+  async run<T>(
     userId: string,
     spaceId: string,
     write: boolean,
@@ -473,6 +473,15 @@ export class KnowledgeService {
     return this.run(userId, spaceId, true, (tx) =>
       this.operation(tx, userId, spaceId, op, async () => {
         const p = { ...op.payload } as any;
+        let importTask: Row | undefined;
+        if (op.action === 'document.importConfirm') {
+          if(process.env.KNOWLEDGE_IMPORT_WRITES_ENABLED==='false')throw new DomainError('KNOWLEDGE_IMPORT_READ_ONLY','资料导入已暂停，已有文档和原件仍可读取',503);
+          importTask = (await rows(tx, sql`select * from knowledge_imports where id=${p.taskId} and space_id=${spaceId} and actor_id=${userId} for update`))[0];
+          if (!importTask || importTask.state !== 'awaiting_confirmation') fail('KNOWLEDGE_IMPORT_STATE', '导入任务不处于等待确认状态', 409);
+          const duplicate = (await rows(tx, sql`select id from knowledge_imports where space_id=${spaceId} and sha256=${importTask.sha256} and state='completed' and id<>${importTask.id} limit 1`))[0];
+          if (duplicate && !p.allowDuplicate && !importTask.reparse_document_id) fail('KNOWLEDGE_IMPORT_DUPLICATE', '此文件已导入，请明确选择再次导入为新文档', 409);
+          if (importTask.reparse_document_id) { p.id = importTask.reparse_document_id; p.expectedRevision = importTask.expected_revision; }
+        }
         let d: Row;
         let linkBinding: { ordinal: number; targetId: string } | undefined;
         let removedLinkOrdinal: number | undefined;
@@ -488,7 +497,7 @@ export class KnowledgeService {
         }
         if (
           op.action === "document.create" ||
-          op.action === "document.import" || op.action === "document.copyFrom"
+          op.action === "document.import" || op.action === "document.copyFrom" || (op.action === 'document.importConfirm' && !importTask?.reparse_document_id)
         ) {
           await this.folder(tx, spaceId, p.folderId ?? null);
           if (op.action === "document.import") {
@@ -533,7 +542,7 @@ export class KnowledgeService {
             } else {
               removedLinkOrdinal = 'occurrences' in plan ? plan.occurrences?.[0]?.ordinal : undefined;
             }
-          } else if (op.action === "document.save") {
+          } else if (op.action === "document.save" || op.action === 'document.importConfirm') {
             if (deletedAt) fail("KNOWLEDGE_DELETED", "文档已删除，请先恢复");
             title = p.title;
             markdown = p.markdown;
@@ -614,6 +623,7 @@ export class KnowledgeService {
         }
         if (linkBinding) await tx.execute(sql`update knowledge_links set bound_target_id=${linkBinding.targetId} where source_id=${d.id} and ordinal=${linkBinding.ordinal}`);
         await this.resolve(tx, spaceId, d.id);
+        if (importTask) await tx.execute(sql`update knowledge_imports set state='completed',document_id=${d.id},document_revision=${d.revision},updated_at=now() where id=${importTask.id}`);
         return doc(d);
       }),
     );

@@ -1,4 +1,6 @@
 import { registerKnowledgeRoutes } from './knowledge-routes.js';
+import { registerKnowledgeImportRoutes } from './knowledge-import-routes.js';
+import type { KnowledgeImportService } from './knowledge-import-service.js';
 import type { KnowledgeService } from './knowledge-service.js';
 import { randomUUID } from "node:crypto";
 import { MEDIA_SANDBOX_CSP } from "./media-security.js";
@@ -100,6 +102,7 @@ export function createApp(
   authRateLimiter?: AuthRateLimiterPort,
   websiteInquiryService?: WebsiteInquiryService,
   knowledgeService?: KnowledgeService,
+  knowledgeImports?: KnowledgeImportService,
 ) {
   const app = new Hono<AppEnv>();
 
@@ -2339,6 +2342,7 @@ export function createApp(
     apiError(context, new DomainError("NOT_FOUND", "接口不存在", 404)),
   );
   if (knowledgeService) {
+    registerKnowledgeImportRoutes(app,knowledgeImports,request=>requireUser(request,repository,config));
     registerKnowledgeRoutes(app, knowledgeService, request => requireUser(request, repository, config));
     app.get('/api/features/knowledge',async c=>c.json(success(c,await knowledgeService.featureStatus((await requireUser(c.req.raw,repository,config)).id))));
     app.get('/api/admin/features/knowledge/users/:userId',async c=>{

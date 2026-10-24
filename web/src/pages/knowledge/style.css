@@ -810,3 +810,6 @@
         max-width: 70px;
     }
 }
+@media (max-width: 700px) {
+  .knowledge-import-preview { grid-template-columns: minmax(0, 1fr) !important; }
+}

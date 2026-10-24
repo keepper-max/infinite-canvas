@@ -9,6 +9,7 @@
     "build": "tsc -p tsconfig.json",
     "start": "node dist/index.js",
     "worker": "node dist/worker.js",
+    "knowledge:import-worker": "node dist/knowledge-import-worker.js",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "db:migrate": "tsx src/db/migrate-cli.ts",
     "assets:backfill-video-thumbnails": "node dist/db/backfill-video-thumbnails-cli.js",
