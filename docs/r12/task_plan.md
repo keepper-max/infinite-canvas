@@ -13,3 +13,6 @@
 ## 错误记录
 - PowerShell 不支持未引用的 shell 花括号路径；改用明确文件参数。
 - 编辑器实际位置为 knowledge/editor/index.tsx，不是 components/editor.tsx。
+
+## 已批准的生产发布
+- 已完成预检、生产备份/恢复、LF迁移预演、0049、提交推送、Web/API及专用Worker部署、配额规则修正、正式浏览器和数据完整性验收。停止本轮，不开展R1.3或Agent。

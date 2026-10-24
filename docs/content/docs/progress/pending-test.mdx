@@ -5,7 +5,7 @@ description: Implemented changes that still need manual verification
 
 # Pending Tests
 
-- R1.2 多格式资料导入（仅本地，未发布）：DOCX、文字型 PDF、TXT、MD/MARKDOWN 暂存解析、预览编辑、原件下载、重解析 CAS、幂等确认和过期清理已实现。隔离验收、质量与资源实测见 docs/r12；待用户体验、真实 Office/PDF 复杂资料、Windows 中文输入法及部署审核。扫描件暂不 OCR，PDF 复杂排版/图片/表格需对照原件；不调用模型、不改积分、不部署生产。
+- R1.2 多格式资料导入已按用户授权上线v0.16.35：DOCX、文字型PDF、TXT、MD/MARKDOWN暂存解析、预览编辑、原件下载、重解析CAS、幂等确认和过期清理可用；生产备份恢复、0049及公网Word/PDF验收完成。管理员沿用既有不限额存储规则，普通账号配额不变；详见ops/releases/v0.16.35.md。待用户实际复杂资料、Windows中文输入法与物理手机验收；扫描件暂不OCR，复杂PDF仍需对照原件，不扩大付费模型权限。
 
 - R1-P v0.16.32 已生产发布：S0/P1/P1.5/P2/R1-F 同步上线，0045–0048 使用冻结 LF 制品；目标画布经原始归档与 CAS 修复、Web 保存及新版快照恢复后为 revision 7，29 节点/27 连线完整。知识功能向活跃账号默认开放并保留单独撤销；旧快照 1–4 禁止恢复，缺失素材保留引用并显示不可用。生产 HTTP、真实 MCP 0.4.0/13、双主题/手机视口、图谱 Worker 和跨账号拒绝访问已验证。真实 Windows 输入法、物理手机、真实付费模型及人民币结算未验收，知识参与生成保持关闭。当前 Codex 旧 stdio 连接已断开，需要客户端重连刷新工具缓存；普通网站使用不依赖 Codex。发布证据见 `H:/CodexStorage/shoushou-r1p-live/上线交付报告.md`；下方未发布/待批准条目均是此前阶段记录。
 
