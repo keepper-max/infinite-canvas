@@ -2,6 +2,17 @@ import type { Pool, PoolClient } from "pg";
 
 import { DomainError } from "./domain.js";
 
+export function isStorageQuotaUnlimited(
+  isAdmin: boolean,
+  email: string | null,
+  adminEmails: string[],
+) {
+  return (
+    isAdmin === true ||
+    (typeof email === "string" && adminEmails.includes(email.toLowerCase()))
+  );
+}
+
 export type StorageUsage = {
   usedBytes: number;
   reservedBytes: number;
@@ -105,8 +116,11 @@ export class StorageQuotaService {
     );
     const row = result.rows[0];
     if (!row) throw new DomainError("USER_NOT_FOUND", "找不到用户", 404);
-    const unlimited =
-      row.is_admin || this.adminEmails.includes(row.email.toLowerCase());
+    const unlimited = isStorageQuotaUnlimited(
+      row.is_admin,
+      row.email,
+      this.adminEmails,
+    );
     const usedBytes = Number(row.used_bytes);
     const reservedBytes = Number(row.reserved_bytes);
     return {

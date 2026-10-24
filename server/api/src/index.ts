@@ -148,7 +148,7 @@ const app = createApp(
   new AuthRateLimiter(verificationRedis),
   new WebsiteInquiryService(pool, verificationRedis),
   knowledgeService,
-  importQueue ? new KnowledgeImportService(knowledgeService,objectStorage,importQueue.enqueue,config.assetStorageQuotaBytes,importQueue.assertReady) : undefined,
+  importQueue ? new KnowledgeImportService(knowledgeService,objectStorage,importQueue.enqueue,config.assetStorageQuotaBytes,importQueue.assertReady,config.operations.adminEmails) : undefined,
 );
 
 const server = serve({ fetch: app.fetch, port: config.port }, (info) => {

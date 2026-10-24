@@ -219,6 +219,78 @@ test(
           });
         },
       );
+      for (const configuredAdmin of [false, true])
+        await t.test(
+          configuredAdmin
+            ? "configured admin preserves existing unlimited storage policy"
+            : "database admin preserves unlimited policy for originals and assets",
+          async () => {
+            const account = await repo.createUserWithWorkspace(
+              "r12-quota-" + randomUUID() + "@example.test",
+              "synthetic",
+            );
+            const actor = account.user.id;
+            const space = (
+              await knowledge.createSpace(actor, "personal", null, randomUUID())
+            ).id;
+            const limited = new KnowledgeImportService(
+              knowledge,
+              storage,
+              async () => {},
+              1,
+            );
+            await assert.rejects(
+              limited.upload(
+                actor,
+                space,
+                randomUUID(),
+                "limited.txt",
+                Buffer.from("中文"),
+                null,
+              ),
+              { code: "KNOWLEDGE_IMPORT_QUOTA" },
+            );
+            if (!configuredAdmin)
+              await pool.query("update users set is_admin=true where id=$1", [
+                actor,
+              ]);
+            const privileged = new KnowledgeImportService(
+              knowledge,
+              storage,
+              async () => {},
+              1,
+              undefined,
+              configuredAdmin ? [account.user.email] : [],
+            );
+            const task = await privileged.upload(
+              actor,
+              space,
+              randomUUID(),
+              "admin.txt",
+              Buffer.from("中文原件"),
+              null,
+            );
+            await privileged.process(task.id, async () => ({
+              markdown: "正文",
+              converter: "fixture",
+              warnings: [],
+              pages: [],
+              assets: [
+                {
+                  id: "0",
+                  mimeType: "image/png",
+                  body: Buffer.alloc(32).toString("base64"),
+                },
+              ],
+              metrics: {},
+            }));
+            assert.equal(
+              (await privileged.get(actor, space, task.id)).state,
+              "awaiting_confirmation",
+            );
+            await privileged.change(actor, space, task.id, "cancel");
+          },
+        );
     } finally {
       await pool.end();
     }

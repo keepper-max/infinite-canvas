@@ -4,6 +4,7 @@ import { DomainError } from "./domain.js";
 import { KnowledgeService } from "./knowledge-service.js";
 import type { ObjectStorage } from "./object-storage.js";
 import type { Conversion } from "./knowledge-import-sandbox.js";
+import { isStorageQuotaUnlimited } from "./storage-quota-service.js";
 const digest = (body: Uint8Array | string) =>
   createHash("sha256").update(body).digest("hex");
 const fail = (
@@ -27,7 +28,17 @@ export class KnowledgeImportService {
     readonly enqueue: (id: string) => Promise<unknown>,
     readonly maxStorageBytes: number,
     readonly assertAvailable: () => Promise<void> = async () => {},
+    readonly adminEmails: string[] = [],
   ) {}
+  private async unlimited(tx: any, user: string) {
+    const actor = (
+      await tx.execute(sql`select is_admin,email from users where id=${user}`)
+    ).rows[0];
+    return (
+      actor &&
+      isStorageQuotaUnlimited(actor.is_admin, actor.email, this.adminEmails)
+    );
+  }
   async list(user: string, space: string) {
     return this.knowledge.run(
       user,
@@ -145,7 +156,10 @@ export class KnowledgeImportService {
           sql`select (coalesce((select sum(i.bytes+coalesce((select sum((a->>'bytes')::bigint) from jsonb_array_elements(i.assets) a),0)) from knowledge_imports i where actor_id=${user} and state<>'cleaned'),0)+coalesce((select sum(bytes+coalesce(thumbnail_bytes,0)) from asset_versions where created_by=${user}),0)+coalesce((select sum(bytes) from user_storage_reservations where user_id=${user} and expires_at>now()),0))::bigint n`,
         )
       ).rows[0];
-      if (Number(used.n) + body.length > this.maxStorageBytes)
+      if (
+        !(await this.unlimited(tx, user)) &&
+        Number(used.n) + body.length > this.maxStorageBytes
+      )
         fail("KNOWLEDGE_IMPORT_QUOTA", "原件存储配额不足", 409);
       if (
         folderId &&
@@ -349,13 +363,14 @@ export class KnowledgeImportService {
             )
           ).rows[0];
           if (
+            !(await this.unlimited(tx, row.actor_id)) &&
             Number(used.n) -
               (row.assets as { bytes?: number }[]).reduce(
                 (n, a) => n + Number(a.bytes || 0),
                 0,
               ) +
               assetMeta.reduce((n, a) => n + a.bytes, 0) >
-            this.maxStorageBytes
+              this.maxStorageBytes
           )
             fail("KNOWLEDGE_IMPORT_QUOTA", "转换附件超出存储配额");
           return (

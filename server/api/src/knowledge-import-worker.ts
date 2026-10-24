@@ -26,6 +26,8 @@ const service = new KnowledgeImportService(
   storage,
   q.enqueue,
   config.assetStorageQuotaBytes,
+  undefined,
+  config.operations.adminEmails,
 );
 await sandboxConvert(Buffer.from("sandbox readiness"), "txt", image);
 const ready = async () => {
