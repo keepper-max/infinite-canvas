@@ -33,6 +33,30 @@ export class BillingService {
     private readonly pinhaozhan?: ProviderConfig,
   ) {}
 
+  /** Read-only: a supplier charge is not proof that the generated result was received. */
+  async inspectPinhaozhanReceipt(jobId: string, signal: AbortSignal) {
+    const job = (await this.pool.query("select * from generation_jobs where id=$1", [jobId])).rows[0];
+    if (!job || job.provider !== "pinhaozhan" || !this.pinhaozhan?.apiKey)
+      return { message: "该请求暂无可自动查询的供应商账单，任务与积分预留保持不变。" };
+    const logs = await pinhaozhanJson(this.pinhaozhan, "/api/log/token", true, signal);
+    if (logs.success !== true || !Array.isArray(logs.data))
+      throw new DomainError("AGENT_BILLING_UNCONFIRMED", "供应商账单查询失败，任务与积分预留保持不变。", 409);
+    // Never match other requests by timestamps, amount, token estimates or model alone.
+    const trace = String(job.billing_trace_id || "");
+    if (!trace || trace === jobId)
+      return { message: "已查询供应商账单，但原请求未保存供应商编号，无法可靠关联扣费记录。需管理员核对原请求；未重发模型、未改变积分预留。" };
+    const matches = logs.data.filter((row: Record<string, unknown>) => row.request_id === trace);
+    if (matches.length !== 1)
+      return { message: "原请求账单尚未唯一匹配，不能认定免费或重新生成。任务与积分预留保持不变。" };
+    const row = matches[0];
+    // Independently validate receipt identity, model, token counts and quota structure.
+    const usage = asRecord(job.billing_meter_usage);
+    const receipt = pinhaozhanReceipt(logs, trace, usage.prompt_tokens ?? row.prompt_tokens, usage.completion_tokens ?? row.completion_tokens);
+    if (job.billing_status === "settled")
+      return { message: "已查到原请求账单，积分已结算；继续检查本地结果回执，不会重复扣费或重新生成。" };
+    return { message: `已查到原请求扣费账单（输入${receipt.promptTokens}、输出${receipt.completionTokens} Token），但结果或结算尚未完整核验。保留任务与积分预留，不会自动重发。` };
+  }
+
   async resolveRuleSnapshot(
     provider: string,
     modelId: string,

@@ -113,6 +113,9 @@ export default function NativeAgentPanel() {
 
     const paidModel = !!modelId && modelId !== "native-agent-fixture";
     const [connectionVersion, setConnectionVersion] = useState(0);
+    const [receiptFeedback, setReceiptFeedback] = useState(""), [checkingReceipt, setCheckingReceipt] = useState(false);
+    const [closeReviewOpen, setCloseReviewOpen] = useState(false);
+    const receiptRequest = useRef(false);
     const cursors = useRef(new Map<string, number>());
     const pending = useRef<{ operationId: string; sessionOperationId: string; prompt: string; sessionId: string; mode: AgentMode; modelId: string; budgetCents: number; conversationVersion?: 1 } | null>(null),
         decisions = useRef(new Map<string, { operationId: string; decision: string; instruction?: string }>()),
@@ -125,6 +128,9 @@ export default function NativeAgentPanel() {
     const restoringSession = !!sessionId && !snapshot && !accessDenied;
     const latest = snapshot?.runs.at(-1),
         active = latest && !["completed", "failed", "cancelled"].includes(latest.status);
+    const receiptRun = useRef(latest?.id);
+    receiptRun.current = latest?.id;
+    useEffect(() => { setReceiptFeedback(""); setCloseReviewOpen(false); }, [sessionId, latest?.id]);
     const latestTask = snapshot?.presentation?.tasks.find((t) => t.runId === latest?.id);
     const progressVersion = latestTask?.progressItems.map((p) => p.key + ":" + p.status).join("|") ?? "";
     useEffect(() => {
@@ -503,16 +509,32 @@ export default function NativeAgentPanel() {
                 {latest && (latest.status === "awaiting_manual_review" || latest.error_code === "AGENT_BILLING_UNCONFIRMED") && (
                     <Button
                         type="text"
-                        onClick={() =>
-                            void reconcileAgentRun(latest.id)
-                                .then(refresh)
-                                .then(() => setConnectionVersion((value) => value + 1))
-                                .catch((error) => reportError(error))
-                        }
+                        loading={checkingReceipt}
+                        disabled={checkingReceipt}
+                        onClick={() => {
+                            if (receiptRequest.current) return;
+                            receiptRequest.current = true;
+                            const selected = sessionId, project = projectId, runId = latest.id;
+                            const current = () => selectedSession.current === selected && selectedProject.current === project && receiptRun.current === runId;
+                            setCheckingReceipt(true); setReceiptFeedback("");
+                            void reconcileAgentRun(latest.id).then(async (result) => {
+                                if (!current()) return;
+                                setReceiptFeedback(result.message || (result.status === "completed" ? "原操作已核验完成。" : "已找到本地结果回执，正在恢复原任务；没有重新提交模型。"));
+                                await refresh();
+                                if (current()) setConnectionVersion((value) => value + 1);
+                            }).catch((error) => {
+                                if (!current()) return;
+                                if (error instanceof PlatformApiError && error.code === "AGENT_PROVIDER_UNAVAILABLE")
+                                    setReceiptFeedback("暂时无法连接供应商账单接口。未重新生成、未改变积分预留；可稍后再次核查。");
+                                else reportError(error);
+                            }).finally(() => { receiptRequest.current = false; setCheckingReceipt(false); });
+                        }}
                     >
                         核查原模型回执
                     </Button>
                 )}
+                {receiptFeedback && <Alert type="info" title={receiptFeedback} showIcon />}
+                {latest?.status === "awaiting_manual_review" && <Button type="text" disabled={busy || checkingReceipt} onClick={() => setCloseReviewOpen(true)}>结束任务，保留核查记录</Button>}
 
                 {!!snapshot?.sources?.filter((s) => s.runId === latest?.id).length && (
                     <Collapse
@@ -627,6 +649,22 @@ export default function NativeAgentPanel() {
                 {diff?.changedNodes.map((n) => (
                     <p key={n.id}>内容有差异：{n.title}</p>
                 ))}
+            </Modal>
+            <Modal title="结束任务并保留核查记录" open={closeReviewOpen} confirmLoading={busy} okText="确认结束任务" cancelText="继续保留任务" onCancel={() => { if (!busy) setCloseReviewOpen(false); }} onOk={() => {
+                if (busy || latest?.status !== "awaiting_manual_review") return;
+                const selected = sessionId, runId = latest.id, project = projectId;
+                const current = () => selectedSession.current === selected && selectedProject.current === project && receiptRun.current === runId;
+                setBusy(true);
+                void cancelAgentRun(runId).then(async () => {
+                    if (!current()) return;
+                    setCloseReviewOpen(false);
+                    if (pending.current?.operationId === latest.operation_id) pending.current = null;
+                    await refresh();
+                    if (current()) setReceiptFeedback("任务已结束，消息和账单仍保留；未核清的积分预留仍待核查。没有重新生成或新增扣费。");
+                }).catch((error) => { if (current()) reportError(error); }).finally(() => { if (selectedSession.current === selected) setBusy(false); });
+            }}>
+                <p>只结束本次任务，保留全部消息、草稿、账单及已完成结果。未核清的积分预留不会自动释放或退款，仍需核查。</p>
+                <p className="mt-3">此操作不会重新调用模型。之后主动发送新任务属于新的独立请求，可能产生新的积分费用。</p>
             </Modal>
             <Modal
                 title="批准新预算，继续剩余计划"

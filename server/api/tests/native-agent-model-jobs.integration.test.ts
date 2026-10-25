@@ -291,6 +291,7 @@ test(
         pool,
         {
           models: () => paid.models(),
+          inspectReceipt: async () => { throw new Error("Local durable recovery must not depend on supplier network"); },
           run: async (...args) => {
             const reply = await paid.run(...args);
             if (loseReceipt) {

@@ -102,7 +102,7 @@ export function acceptAgentSnapshot(previous: AgentSnapshot | null, next: AgentS
     return next;
 }
 
-export const reconcileAgentRun = (id: string) => platformRequest(`${base}/runs/${id}/reconcile`, { method: "POST" });
+export const reconcileAgentRun = (id: string) => platformRequest<{ runId: string; status: string; message?: string }>(`${base}/runs/${id}/reconcile`, { method: "POST" });
 
 export const resumeAgentRun = (id: string, expectedRevision: number, modelId: string, additionalBudgetCents: number, operationId: string, limitsHash: string) =>
     platformRequest(`${base}/runs/${id}/resume`, { method: "POST", body: JSON.stringify({ operationId, expectedRevision, modelId, additionalBudgetCents, limitsHash }) });

@@ -675,6 +675,7 @@ export class NativeAgentService {
       this.run(tx, actorId, runId),
     );
     await this.validateSources(candidate);
+    await this.transaction((tx) => guardActor(tx, this.actor(candidate), candidate.mode === "execute"));
     if (
       candidate.status === "awaiting_manual_review" &&
       (await this.plans.reconcile(candidate))
@@ -705,6 +706,8 @@ export class NativeAgentService {
         tx,
         sql`select s.id step_id,j.id job_id from native_agent_model_jobs m join native_agent_steps s on s.id=m.step_id join generation_jobs j on j.id=m.job_id where m.run_id=${runId} and s.status in ('unknown','failed','submitting') and j.provider_submission_state='resolved' and j.billing_status='settled' and j.credit_delivery_status='released' and exists(select 1 from job_artifacts a where a.job_id=j.id and a.mime_type='application/vnd.shoushou.agent-turn+json') order by s.ordinal desc limit 1`,
       );
+      if (!job && current.status === "awaiting_manual_review" && this.driver.inspectReceipt)
+        return { runId, status: current.status };
       if (!job)
         fail(
           "AGENT_RECEIPT_NOT_READY",
@@ -724,7 +727,15 @@ export class NativeAgentService {
       });
       return { runId, status: "planning" };
     });
-    if (result.status !== "completed")
+    if (result.status === "awaiting_manual_review" && this.driver.inspectReceipt) {
+      const inspection = await this.driver.inspectReceipt(runId, AbortSignal.timeout(limitsFor(candidate).modelMs));
+      return this.transaction(async (tx) => {
+        const current = await this.run(tx, actorId, runId);
+        await guardActor(tx, this.actor(current), current.mode === "execute");
+        return { runId, status: current.status, ...(current.status === "awaiting_manual_review" ? inspection : {}) };
+      });
+    }
+    if (result.status === "planning")
       await this.enqueue(runId).catch(() => undefined);
     return result;
   }

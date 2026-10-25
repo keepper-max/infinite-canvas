@@ -51,6 +51,13 @@ export class PaidAgentModel implements AgentModelDriver {
     if (process.env.NODE_ENV === "production" && !policy)
       throw new Error("Production native agent requires database policy");
   }
+  async inspectReceipt(runId: string, signal: AbortSignal) {
+    const job = (await this.pool.query(
+      "select j.id,j.provider from native_agent_model_jobs m join generation_jobs j on j.id=m.job_id where m.run_id=$1 order by j.created_at desc,j.id desc limit 1", [runId],
+    )).rows[0];
+    if (job?.provider === "pinhaozhan") return this.billing.inspectPinhaozhanReceipt(String(job.id), signal);
+    return { message: "本地结果尚未核验完成，请管理员查询原请求账单；未发起新的模型调用。" };
+  }
   async models() {
     if (this.policy) {
       if (process.env.NATIVE_AGENT_PAID_ENABLED !== "true") return [];
@@ -202,6 +209,14 @@ export class PaidAgentModel implements AgentModelDriver {
       ).rows[0];
     let inferenceDispatched = false,
       billingTrace: string | undefined;
+    let transportPhase = "preflight";
+    const checkpoint = async (phase: string) => {
+      transportPhase = phase;
+      await this.pool.query(
+        "update native_agent_steps set input=jsonb_set(input,'{transport}',coalesce(input->'transport','{}'::jsonb)||jsonb_build_object($2::text,clock_timestamp())) where id=$1",
+        [execution.stepId, phase],
+      ).catch(() => undefined);
+    };
     const sdk = createOpenAICompatible({
       name: "platform-managed",
       baseURL:
@@ -282,10 +297,12 @@ export class PaidAgentModel implements AgentModelDriver {
               409,
             );
           if (route.providerId === "pinhaozhan") {
+            await checkpoint("pricing_started");
             const pricing = await pinhaozhanJson(config, "/api/pricing", false, init?.signal || undefined);
             pinhaozhanPrice(pricing, Number(fx), route.quoteCents, AGENT_LIMITS.contextTokens, AGENT_LIMITS.outputTokens);
             // Check ledger access before any billable submission. Missing later receipts
             // remain held for review; never infer free usage from an empty ledger.
+            await checkpoint("ledger_started");
             const ledger = await pinhaozhanJson(config, "/api/log/token", true, init?.signal || undefined);
             if (ledger.success !== true || !Array.isArray(ledger.data)) throw new DomainError("AGENT_BILLING_UNCONFIRMED", "供应商账单接口不可用，未提交推理", 409);
           } else {
@@ -373,6 +390,9 @@ export class PaidAgentModel implements AgentModelDriver {
             }),
           ],
         );
+        init?.signal?.throwIfAborted();
+        await checkpoint("submission_started");
+        init?.signal?.throwIfAborted();
         inferenceDispatched = true;
         const headers = new Headers(init?.headers);
         if (route.providerId === "pinhaozhan") headers.set("User-Agent", "Mozilla/5.0");
@@ -385,6 +405,9 @@ export class PaidAgentModel implements AgentModelDriver {
           body: JSON.stringify(request),
         });
         billingTrace = readBillingTrace(response, undefined, jobId);
+        // Keep identity even when streaming later aborts. Do not change billing state here.
+        await this.pool.query("update generation_jobs set billing_trace_id=$2,updated_at=now() where id=$1", [jobId, billingTrace]);
+        await checkpoint("response_headers_received");
         return response;
       },
     });
@@ -431,7 +454,12 @@ export class PaidAgentModel implements AgentModelDriver {
               "verified",
               providerSystem,
             );
+            await checkpoint("protocol_completed");
           } catch (error) {
+            await this.pool.query(
+              "update native_agent_steps set input=jsonb_set(input,'{transport}',coalesce(input->'transport','{}'::jsonb)||$2::jsonb) where id=$1",
+              [execution.stepId, JSON.stringify({ failedPhase: transportPhase, failureName: error instanceof Error ? error.name : "UnknownError", ...(error instanceof DomainError ? { failureCode: error.code } : {}), failedAt: new Date().toISOString(), aborted: signal.aborted })],
+            ).catch(() => undefined);
             if (!inferenceDispatched)
               throw new ProviderError(
                 "AGENT_PREFLIGHT_FAILED",
