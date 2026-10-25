@@ -12,7 +12,7 @@ function setup() {
 }
 test("pinhaozhan settles only the request-bound supplier ledger and preserves USD",async()=>{
  const original=globalThis.fetch;const s=setup();
- try{globalThis.fetch=async(input,init)=>{assert.equal(String(input),"https://example.invalid/api/log/token");assert.equal(init?.redirect,"error");assert.equal((init?.headers as any).Authorization,"Bearer synthetic-pinhaozhan-key");return Response.json({success:true,data:[{request_id:"exact",type:2,model_name:"deepseek-v4.1-flash",quota:3,prompt_tokens:311,completion_tokens:33}]});};
+ try{globalThis.fetch=async(input,init)=>{assert.equal(String(input),"https://example.invalid/api/log/token");assert.equal(init?.redirect,"error");assert.equal(typeof (init as any)?.dispatcher?.dispatch,"function");assert.equal((init?.headers as any).Authorization,"Bearer synthetic-pinhaozhan-key");return Response.json({success:true,data:[{request_id:"exact",type:2,model_name:"deepseek-v4.1-flash",quota:3,prompt_tokens:311,completion_tokens:33}]});};
  await s.service.finalizeProviderUsage("job-1");const insert=s.calls.find(x=>x.sql.includes("insert into generation_usage"))!;
  assert.ok(insert);assert.ok(insert.values?.includes("0.000006"));assert.ok(insert.values?.includes("USD"));assert.equal(s.settled(),1);
  assert.equal(JSON.stringify(s.calls).includes(config.apiKey),false);

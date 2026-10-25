@@ -1,5 +1,13 @@
 import type { ProviderConfig } from "./config.js";
 import { DomainError } from "./domain.js";
+import { Agent } from "undici";
+
+// This provider's CDN intermittently stalls on the production dual-stack path.
+// Resolve IPv4 normally: no fixed IP, TLS bypass, global dispatcher or retries.
+const dispatcher = new Agent({ connect: { family: 4 } });
+export function pinhaozhanFetch(input: Parameters<typeof fetch>[0], init?: RequestInit) {
+  return fetch(input, { ...init, dispatcher } as RequestInit);
+}
 
 const fail = (code: string, message: string): never => { throw new DomainError(code, message, 409); };
 export const PINHAOZHAN_MODEL = "deepseek-v4.1-flash";
@@ -11,7 +19,7 @@ export async function pinhaozhanJson(config: ProviderConfig, path: string, authe
   if (base.username || base.password || base.search || base.hash || base.pathname !== "/")
     fail("AGENT_PROVIDER_INVALID", "供应商地址必须为不含凭据的站点根地址");
   try {
-    const response = await fetch(new URL(path, base), {
+    const response = await pinhaozhanFetch(new URL(path, base), {
       headers: { Accept: "application/json", "User-Agent": "Mozilla/5.0", ...(authenticated ? { Authorization: "Bearer " + config.apiKey } : {}) },
       redirect: "error", signal,
     });

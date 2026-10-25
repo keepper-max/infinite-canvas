@@ -1,4 +1,4 @@
-import { pinhaozhanJson, pinhaozhanPrice } from "../pinhaozhan.js";
+import { pinhaozhanJson, pinhaozhanPrice, pinhaozhanFetch } from "../pinhaozhan.js";
 import { validateAgentSources } from "./sources.js";
 import { KnowledgeService } from "../knowledge-service.js";
 import { drizzle } from "drizzle-orm/node-postgres";
@@ -376,7 +376,7 @@ export class PaidAgentModel implements AgentModelDriver {
         if (route.providerId === "pinhaozhan") headers.set("User-Agent", "Mozilla/5.0");
         headers.set("X-Trace-ID", jobId);
         headers.set("X-Request-ID", jobId);
-        const response = await fetch(input, {
+        const response = await (route.providerId === "pinhaozhan" ? pinhaozhanFetch : fetch)(input, {
           ...init,
           ...(route.providerId === "pinhaozhan" ? { redirect: "error" as const } : {}),
           headers,
