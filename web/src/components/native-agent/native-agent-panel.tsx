@@ -480,7 +480,7 @@ export default function NativeAgentPanel() {
                             setResumeOpen(true);
                         }}
                     >
-                        继续剩余计划 / 选择模型
+                        {latest.error_code === "AGENT_INVALID_TOOL_ARGUMENTS" || latest.error_code === "AGENT_TOOL_SCOPE_MISMATCH" ? "修正调用后继续 / 选择模型" : "继续剩余计划 / 选择模型"}
                     </Button>
                 )}
                 {latest?.error_message && <Alert type="warning" title={latest.error_message} showIcon />}
@@ -650,6 +650,7 @@ export default function NativeAgentPanel() {
                     保持原目标和已保存步骤；本次明确增加 {limits.rounds} 轮模型、{limits.tools} 次工具、{limits.totalTokens} Token、{Math.round((limits.activeMs ?? 0) / 60000)}{" "}
                     分钟预算，不重新执行已完成操作。若画布变化，重新规划后需要再次审批；供应商状态不明时不允许续跑。
                 </p>
+                {(latest?.error_code === "AGENT_INVALID_TOOL_ARGUMENTS" || latest?.error_code === "AGENT_TOOL_SCOPE_MISMATCH") && <p className="mb-3 text-xs text-muted-foreground">上次是工具或参数不匹配，增加积分不能修复。确认后将携带错误反馈重新规划剩余操作，仍消耗模型积分；不会重放已完成写入，实际保存仍须审批。</p>}
                 <Select aria-label="续跑模型" className="mb-3 w-full" disabled={!modelSelectionEnabled} value={resumeModel} options={models.map((m) => ({ value: m.id, label: m.name }))} onChange={setResumeModel} />
                 <label className="flex items-center gap-2">
                     额外积分预算

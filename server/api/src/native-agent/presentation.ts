@@ -50,6 +50,8 @@ export function runControl({
 }
 export function safeTaskError(code?: string | null) {
   if (!code) return "";
+  if (code === "AGENT_INVALID_TOOL_ARGUMENTS" || code === "AGENT_TOOL_SCOPE_MISMATCH")
+    return "助手选择的工具或参数与本次操作不匹配，已停止本批次操作。增加预算或重新查询无法修复；请说明要修改画布还是知识文档后重新规划，保存前仍需确认。";
   if (code === "AGENT_ADVICE_READ_ONLY")
     return "当前是建议模式，只会分析。若要创建或修改，请切换执行模式，并重新确认计划。";
   if (code === "AGENT_BUDGET_CHANGED")

@@ -1,7 +1,9 @@
 import { CreativeDecisionService } from "./creative-decisions.js";
 import {
   parseConversationDecision,
-  READ_ONLY_TOOLS,
+  conversationTools,
+  assertConversationToolScope,
+  toolFailureRecoveryMessage,
   type ConversationDecision,
 } from "./conversation-policy.js";
 import { userPresentation, userEvent, redactTrace } from "./presentation.js";
@@ -805,6 +807,8 @@ export class NativeAgentService {
         };
       let context = current.context,
         phase = current.phase;
+      const parameterFeedback = phase === "model" ? toolFailureRecoveryMessage(current.error_code) : null;
+      if (parameterFeedback) context = [...context, { role: "user", content: parameterFeedback }];
       if (phase === "tools") {
         const unanswered = (current.pending_calls ?? []) as ToolCall[];
         if (unanswered.length)
@@ -1053,11 +1057,10 @@ export class NativeAgentService {
                 : "intent"
               : undefined;
             if (conversationStage === "intent") toolNames = [];
-            else if (
-              conversational &&
-              (r.conversation?.intent !== "action" || r.mode === "advice")
-            )
-              toolNames = READ_ONLY_TOOLS;
+            else if (conversational && r.conversation) {
+              const scoped = conversationTools(r.conversation, r.mode);
+              if (scoped) toolNames = toolNames ? toolNames.filter((n) => scoped.includes(n)) : scoped;
+            }
             const modelExecution = {
               planning:
                 r.plan_protocol === 1 &&
@@ -1253,6 +1256,7 @@ export class NativeAgentService {
                     "只读模型核验必须使用空参数{}，不会忽略或执行多余参数",
                   );
               }
+            if (conversational) assertConversationToolScope(toolNames, reply.calls);
             const calls: ToolCall[] = reply.calls.map((c) => ({
               ...c,
               input: parseTool(c.toolName, c.input),

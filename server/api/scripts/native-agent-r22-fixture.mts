@@ -57,7 +57,14 @@ export function startFixture(port = 3295) {
     if(prompt.includes("只读工具能力验证")){if(!freshResults.some(r=>typeof r.revision==="number"))call("get_canvas_state",{});else text="检查完成";}
     else if(intentStage){
       const intent=/按我们刚才|修改画布|执行/.test(prompt)?"action":/第二个|慢节奏|不同意/.test(prompt)?"compare":/开场|短视频|人设/.test(prompt)?"consult":/那个方案/.test(prompt)?"clarify":"chat";
-      text=JSON.stringify({intent,evidence:prompt,resolvedRequest:intent==="action"?"只修改当前画布《第一集剧本》文本，采用第二个缓慢悬疑方案：林岚以调查员身份到灯塔核查，先给异常声响与矛盾线索，不改职业、不揭露周可动机；知识原稿不改。":prompt,summary:{discussion:"正在讨论雾港第一集开场；用户偏好慢节奏悬疑。",proposals:[{label:"第一个方案",content:"提前爆发灯塔冲突，代价是减少氛围铺垫"},{label:"第二个方案",content:"保留缓慢节奏，但先呈现异常声响与矛盾线索，保留调查员身份"}],confirmed:userTurns.filter(m=>String(m.content).includes("第二个方案")).map(m=>({text:"选择第二个缓慢悬疑方案，保留林岚的调查员身份",evidence:m.content})),rejected:userTurns.some(m=>String(m.content).includes("不同意"))?["不要强推快节奏爆发"]:[],openQuestions:[]}});
+      text=JSON.stringify({intent,actionTarget:intent==="action"?"canvas":"unspecified",evidence:prompt,resolvedRequest:intent==="action"?"只修改当前画布《第一集剧本》文本，采用第二个缓慢悬疑方案：林岚以调查员身份到灯塔核查，先给异常声响与矛盾线索，不改职业、不揭露周可动机；知识原稿不改。":prompt,summary:{discussion:"正在讨论雾港第一集开场；用户偏好慢节奏悬疑。",proposals:[{label:"第一个方案",content:"提前爆发灯塔冲突，代价是减少氛围铺垫"},{label:"第二个方案",content:"保留缓慢节奏，但先呈现异常声响与矛盾线索，保留调查员身份"}],confirmed:userTurns.filter(m=>String(m.content).includes("第二个方案")).map(m=>({text:"选择第二个缓慢悬疑方案，保留林岚的调查员身份",evidence:m.content})),rejected:userTurns.some(m=>String(m.content).includes("不同意"))?["不要强推快节奏爆发"]:[],openQuestions:[]}});
+    } else if(prompt.includes("隔离参数错误回归")) {
+      const corrected=messages.some(m=>m.role==="user"&&String(m.content).startsWith("平台已拒绝上一批次"));
+      const state=freshResults.find(r=>Array.isArray(r.nodeIds)&&typeof r.revision==="number");
+      if(!corrected)call("create_canvas_node",{type:"text",title:"缺少正文的错误提案",position:{x:0,y:0},expectedCanvasRevision:0});
+      else if(!state)call("get_canvas_state",{});
+      else if(!freshResults.some(r=>r.proposalOnly))call("create_canvas_node",{type:"text",title:"参数修复回归",content:"隔离合成剧本；已修正参数，等待审批后保存。",position:{x:0,y:0},expectedCanvasRevision:state.revision});
+      else text="已经修正参数，准备保存画布文本，请确认平台计划。";
     } else if(prompt.includes("保留当前已保存结果"))text="已保存的画布结果保持不动。接下来可以继续比较开场与镜头节奏；如果要变更内容，我会先给你看修改计划。";
     else if(/你好/.test(prompt)) text="今天不用急着搭流程。我们可以先聊《雾港》的一个小问题：你更想看人物，还是看看第一集的开场？没有具体想法也没关系。";
     else if(/不同意|慢节奏/.test(prompt))text="慢节奏本身不是问题，我刚才把抓人等同于加快冲突了，这个判断需要收窄。可以比较两种办法：\n1. 提前爆发灯塔事件，悬疑更直接，但会削弱雾港氛围。\n2. 保持缓慢节奏，只提前给一个异常声响和一处矛盾线索。人物仍按调查节奏进入，观众却有具体疑问。\n我更推荐第二种，它保留你的审美，同时让每段铺垫有期待。";

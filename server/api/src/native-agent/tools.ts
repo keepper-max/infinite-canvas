@@ -65,7 +65,7 @@ export const registry = {
     true,
   ),
   suggest_knowledge_relation: spec(
-    "只提出知识关联建议，返回来源预览；本工具不写入文档。",
+    "仅预览两篇已有知识文档的Wiki Link关联，sourceId和targetId必须是知识文档UUID，由知识搜索/读取返回。不能使用画布nodeId或plannedNodeId；不能创建/修改画布节点，也不能用于将剧本写入画布。",
     z.object({ spaceId: uuid, sourceId: uuid, targetId: uuid }).strict(),
   ),
   get_project_context: spec(
@@ -73,7 +73,7 @@ export const registry = {
     z.object({}).strict(),
   ),
   apply_knowledge_relation: spec(
-    "仅在用户确认后，通过既有知识链接服务向来源文档追加Wiki Link。先调用suggest_knowledge_relation，使用其expectedRevision；本工具需要独立审批。",
+    "仅在用户要求修改知识文档关联并确认后，通过既有知识链接服务向来源文档追加Wiki Link。sourceId/targetId为知识文档UUID，不能使用画布nodeId。先调用suggest_knowledge_relation，使用其expectedRevision；本工具需要独立审批。",
     z
       .object({
         spaceId: uuid,
@@ -101,7 +101,7 @@ export const registry = {
     z.object(page).strict(),
   ),
   create_canvas_node: spec(
-    "创建text或knowledge:document。text必须提供title和content，不填reference；knowledge:document必须提供reference，不填title/content。知识节点只保存引用。批次必须使用同一个expectedCanvasRevision。",
+    "向画布写入新剧本/方案正文时使用此工具创建text节点；不要使用知识关联工具。创建text或knowledge:document。text必须提供title和content，不填reference；knowledge:document必须提供reference，不填title/content。知识节点只保存引用。批次必须使用同一个expectedCanvasRevision。",
     z
       .object({
         type: z.enum(["text", "knowledge:document"]),
@@ -176,7 +176,7 @@ export const registry = {
     true,
   ),
   update_canvas_node: spec(
-    "仅修改text节点的title/content/position；不覆盖其他metadata，不解锁节点。",
+    "修改已有画布剧本正文时使用此工具，nodeId使用画布返回的原始稳定字符串（不要求UUID）。仅修改text节点的title/content/position；不覆盖其他metadata，不解锁节点。",
     z
       .object({
         nodeId: name,
