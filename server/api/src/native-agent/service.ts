@@ -999,6 +999,16 @@ export class NativeAgentService {
           );
           const executionPolicy = await this.policy?.assertRun(r);
           await this.validateSources(r);
+          if (conversational && r.conversation?.intent === "action" && r.mode === "advice") {
+            await this.transaction(async (tx) => {
+              await guardActor(tx, this.actor(r!));
+              const completed = await tx.execute(sql`update native_agent_runs set status='completed',error_code=null,error_message=null,finished_at=now(),revision=revision+1,updated_at=now() where id=${runId} and not cancel_requested returning id`);
+              if (!completed.rows.length) return;
+              await tx.execute(sql`insert into native_agent_messages(session_id,run_id,turn_id,item_id,role,content) values(${r!.session_id},${runId},${runId},${runId + ":advice-mode"},'assistant',${"当前是建议模式，只能讨论，尚未修改画布或知识文档。请切换为执行模式，再发送需要落实的方案；我会先展示计划，确认后才保存。"}) on conflict(run_id,item_id) do nothing`);
+              await this.event(tx, r!, "run.completed", { mode: "advice", writeBlocked: true });
+            });
+            return;
+          }
           if (
             r.elapsed_ms >= limits.activeMs ||
             (r.phase === "model" && r.rounds >= limits.rounds) ||

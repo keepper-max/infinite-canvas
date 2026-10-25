@@ -59,3 +59,17 @@ test("real PostgreSQL: wrong tool batch stops, explicit resume receives correcti
   assert.equal((await repo.getCanvasForUser(project,actor))!.nodes.length,1);assert.equal((await service.snapshot(actor,session.id)).runs[0].status,"completed");
  }finally{await pool.end();}
 });
+
+test("real PostgreSQL: advice-mode action completes with mode guidance after classifier, no response model or tools",{skip:!url,timeout:60000},async()=>{
+ assert.equal(url,"postgres://p25@127.0.0.1:55485/r21_regression_isolated");process.env.NATIVE_AGENT_ENABLED="true";process.env.NATIVE_AGENT_DEFAULT_ENABLED="true";process.env.KNOWLEDGE_DEFAULT_ENABLED="true";
+ const {db,pool}=createDatabase(url!),repo=new PostgresPlatformRepository(db);let calls=0;
+ const driver:AgentModelDriver={models:async()=>[{id:"native-agent-fixture",name:"隔离替身",substitute:true}],run:async()=>{calls++;assert.equal(calls,1);return{text:JSON.stringify(decision),calls:[],messages:[],inputTokens:100,outputTokens:50,meterStatus:"substitute"};}};
+ const service=new NativeAgentService(new KnowledgeService(db),pool,driver,async()=>{});
+ try{const u=await repo.createUserWithWorkspace("advice-"+randomUUID()+"@example.test","synthetic"),actor=u.user.id,project=u.workspace.projectId;
+ const session=await service.createSession(actor,{projectId:project,title:"建议模式边界",mode:"advice",operationId:randomUUID()});const run=await service.start(actor,session.id,{operationId:randomUUID(),prompt:decision.evidence,mode:"advice",modelId:"native-agent-fixture",budgetCents:0,conversationVersion:1});await service.drive(run.id);await service.drive(run.id);const snap:any=await service.snapshot(actor,session.id);assert.equal(calls,1);assert.equal(snap.runs[0].status,"completed");assert.equal(snap.steps.filter((s:any)=>s.kind==="tool").length,0);assert.equal(snap.plans.length,0);assert.equal((await repo.getCanvasForUser(project,actor))!.nodes.length,0);assert.ok(snap.messages.some((m:any)=>m.content.includes("请切换为执行模式")));const view:any=await service.presentation(actor,session.id);assert.ok(JSON.stringify(view).includes("请切换为执行模式"));
+ await pool.query("update native_agent_runs set status='paused',phase='model',error_code='AGENT_INVALID_TOOL_ARGUMENTS',revision=revision+1 where id=$1",[run.id]);
+ const legacy:any=await service.snapshot(actor,session.id),feature:any=await service.feature(actor);await service.resume(actor,run.id,{operationId:randomUUID(),expectedRevision:legacy.runs[0].revision,modelId:"native-agent-fixture",additionalBudgetCents:0,limitsHash:feature.limitsHash});await service.drive(run.id);const resumed:any=await service.snapshot(actor,session.id);assert.equal(resumed.runs[0].status,"completed");assert.equal(calls,1,"legacy advice continuation must not request another model");assert.equal(resumed.runs[0].spent_cents,0);assert.equal(resumed.messages.filter((m:any)=>m.content.includes("请切换为执行模式")).length,1);
+
+ }finally{await pool.end();}
+});
+
