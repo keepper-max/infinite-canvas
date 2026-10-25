@@ -8,7 +8,7 @@ import type { ModelGateway } from "../model-gateway.js";
 import { DomainError } from "../domain.js";
 import { AGENT_LIMITS } from "./limits.js";
 import { nativeModelRoute } from "./model-job-policy.js";
-import { registry } from "./tools.js";
+import { registry, currentCanvasProbeSchema } from "./tools.js";
 const hash = (value: unknown) =>
   createHash("sha256").update(JSON.stringify(value)).digest("hex");
 const fail = (
@@ -102,6 +102,7 @@ export class NativeAgentPolicyService {
     const definitionHash = hash({
       route,
       protocol: 1,
+      currentCanvasProbeSchema: z.toJSONSchema(currentCanvasProbeSchema),
       schemas: Object.fromEntries(
         Object.entries(registry).map(([id, t]) => [
           id,

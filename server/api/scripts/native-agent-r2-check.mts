@@ -4,7 +4,7 @@ const api=async(path:string,body?:any,method=body?'POST':'GET',other=false,statu
 await api('/api/native-agent/admin/grants/'+f.otherId,{enabled:true,reason:'isolated test setup'});let admin=await api('/api/native-agent/admin/models');assert.equal(admin.hardLimits.rounds,16);checks.push('incremental migration defaults disabled and CNY1');
 await api('/api/native-agent/admin/models',undefined,'GET',true,403);checks.push('ordinary account cannot administer');
 const save=async(p:any,expected?:number)=>{const {version,...s}=(await api('/api/native-agent/admin/models')).settings;return api('/api/native-agent/admin/policy',{...s,...p,expectedVersion:expected??version,operationId:randomUUID(),reason:'R2 isolated test'},'PATCH');};
-await save({enabled:true,maxBudgetCents:200,knowledgeReasoningEnabled:true});
+await save({enabled:true,maxBudgetCents:200,knowledgeReasoningEnabled:true,allowedModelIds:[],defaultModelId:null});
 const start=async(other=false,budget=200)=>{const sess=await api('/api/native-agent/sessions',{projectId:other?f.otherProjectId:f.projectId,operationId:randomUUID(),mode:'advice',title:'R2 isolated'} ,'POST',other);const r=await api('/api/native-agent/sessions/'+sess.id+'/runs',{operationId:randomUUID(),prompt:'测试纯文本',mode:'advice',modelId:model,budgetCents:budget},'POST',other);return r;};
 const probeRequest={projectId:f.projectId,operationId:randomUUID(),modelId:model,budgetCents:200};
 const probe=await api('/api/native-agent/admin/model-verifications',probeRequest);assert.equal((await api('/api/native-agent/admin/model-verifications',probeRequest)).id,probe.id);

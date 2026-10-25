@@ -22,6 +22,7 @@ import {
 } from "./contracts.js";
 import {
   registry,
+  currentCanvasProbeSchema,
   parseTool,
   readBusinessTool,
   type ToolName,
@@ -934,6 +935,8 @@ export class NativeAgentService {
                       ? true
                       : undefined,
                   toolNames,
+                  readCurrentCanvasOnly:
+                    r.purpose === "model_probe" ? true : undefined,
                 },
               );
             } finally {
@@ -954,6 +957,16 @@ export class NativeAgentService {
                 );
             });
             // SDK validates actual tool calls; validate again against the server registry before persisting/executing.
+            if (r.purpose === "model_probe")
+              for (const call of reply.calls) {
+                if (call.toolName !== "get_canvas_state")
+                  fail("AGENT_PROBE_SCOPE_INVALID", "只读核验不能调用其他工具");
+                if (!currentCanvasProbeSchema.safeParse(call.input).success)
+                  fail(
+                    "AGENT_PROBE_ARGUMENT_INVALID",
+                    "只读模型核验必须使用空参数{}，不会忽略或执行多余参数",
+                  );
+              }
             const calls: ToolCall[] = reply.calls.map((c) => ({
               ...c,
               input: parseTool(c.toolName, c.input),

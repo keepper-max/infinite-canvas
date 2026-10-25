@@ -167,6 +167,7 @@ export class PaidAgentModel implements AgentModelDriver {
       modelId,
       planning: execution.planning,
       toolNames: execution.toolNames,
+      readCurrentCanvasOnly: execution.readCurrentCanvasOnly,
     };
     const payloadHash = nativeModelHash(body);
     const job = await this.jobs.create(

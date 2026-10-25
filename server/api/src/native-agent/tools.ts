@@ -1,4 +1,4 @@
-import { tool } from "ai";
+import { tool, type ToolSet } from "ai";
 import { z } from "zod";
 import type { KnowledgeService } from "../knowledge-service.js";
 import type { JobService } from "../job-service.js";
@@ -85,7 +85,15 @@ export const registry = {
   ),
   get_canvas_state: spec(
     "读取当前画布revision与节点ID；写入前必须读取最新状态。可查原operationId回执，结果不明不要换ID重试。",
-    z.object({ operationId: uuid.optional() }).strict(),
+    z
+      .object({
+        operationId: uuid
+          .optional()
+          .describe(
+            "仅查询已知真实操作回执时提供返回的operationId；读取当前画布时完全省略，不要构造示例或随机ID。",
+          ),
+      })
+      .strict(),
   ),
   list_canvas_nodes: spec(
     "分页获取画布节点概要和连接，避免传入全部正文。",
@@ -209,7 +217,16 @@ export function parseTool(toolName: string, input: unknown) {
     throw error;
   }
 }
-export function modelTools() {
+export const currentCanvasProbeSchema = z.object({}).strict();
+export function modelTools(readCurrentCanvasOnly = false): ToolSet {
+  if (readCurrentCanvasOnly)
+    return {
+      get_canvas_state: tool({
+        description:
+          "只读取当前画布revision与节点ID。参数必须为{}；此核验工具不查询操作回执。",
+        inputSchema: currentCanvasProbeSchema,
+      }),
+    };
   return Object.fromEntries(
     Object.entries(registry).map(([key, value]) => [
       key,
