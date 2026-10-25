@@ -58,6 +58,7 @@ export function startFixture(port = 3295) {
     else if(intentStage){
       const intent=/按我们刚才|修改画布|执行/.test(prompt)?"action":/第二个|慢节奏|不同意/.test(prompt)?"compare":/开场|短视频|人设/.test(prompt)?"consult":/那个方案/.test(prompt)?"clarify":"chat";
       text=JSON.stringify({intent,actionTarget:intent==="action"?"canvas":"unspecified",evidence:prompt,resolvedRequest:intent==="action"?"只修改当前画布《第一集剧本》文本，采用第二个缓慢悬疑方案：林岚以调查员身份到灯塔核查，先给异常声响与矛盾线索，不改职业、不揭露周可动机；知识原稿不改。":prompt,summary:{discussion:"正在讨论雾港第一集开场；用户偏好慢节奏悬疑。",proposals:[{label:"第一个方案",content:"提前爆发灯塔冲突，代价是减少氛围铺垫"},{label:"第二个方案",content:"保留缓慢节奏，但先呈现异常声响与矛盾线索，保留调查员身份"}],confirmed:userTurns.filter(m=>String(m.content).includes("第二个方案")).map(m=>({text:"选择第二个缓慢悬疑方案，保留林岚的调查员身份",evidence:m.content})),rejected:userTurns.some(m=>String(m.content).includes("不同意"))?["不要强推快节奏爆发"]:[],openQuestions:[]}});
+      if(prompt.includes("错误依据回归")){const invalid=JSON.parse(text);invalid.evidence="按此方案执行";text=JSON.stringify(invalid);}
     } else if(prompt.includes("隔离参数错误回归")) {
       const corrected=messages.some(m=>m.role==="user"&&String(m.content).startsWith("平台已拒绝上一批次"));
       const state=freshResults.find(r=>Array.isArray(r.nodeIds)&&typeof r.revision==="number");

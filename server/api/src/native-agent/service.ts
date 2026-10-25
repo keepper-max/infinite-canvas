@@ -36,7 +36,7 @@ import {
   readBusinessTool,
   type ToolName,
 } from "./tools.js";
-import type { AgentModelDriver } from "./model.js";
+import type { AgentModelDriver, ModelExecution } from "./model.js";
 import {
   compactContext,
   contextCost,
@@ -1071,7 +1071,7 @@ export class NativeAgentService {
               const scoped = conversationTools(r.conversation, r.mode);
               if (scoped) toolNames = toolNames ? toolNames.filter((n) => scoped.includes(n)) : scoped;
             }
-            const modelExecution = {
+            let modelExecution: Pick<ModelExecution, "planning" | "conversationStage" | "conversationDecision" | "currentUserMessage"> = {
               planning:
                 r.plan_protocol === 1 &&
                 r.mode === "execute" &&
@@ -1080,7 +1080,8 @@ export class NativeAgentService {
                   : undefined,
               conversationStage,
               conversationDecision: r.conversation,
-            } as const;
+              ...(conversationStage === "intent" ? { currentUserMessage: r.prompt } : {}),
+            };
             const original =
               r.phase === "receipt"
                 ? (
@@ -1101,7 +1102,7 @@ export class NativeAgentService {
                 : null;
             if (restored) {
               toolNames = restored.toolNames;
-              Object.assign(modelExecution, restored.execution);
+              modelExecution = restored.execution;
             }
             const prefix: ModelMessage[] =
               conversational && !restored
@@ -1330,7 +1331,7 @@ export class NativeAgentService {
           ].includes(error.code);
           await this.transaction(async (tx) => {
             await tx.execute(
-              sql`update native_agent_runs set status=${unknown ? "awaiting_manual_review" : r!.plan_protocol === 1 ? "paused" : "failed"},consecutive_failures=consecutive_failures+1,error_code=${error.code},error_message=${error.message},finished_at=${unknown ? sql`null` : sql`now()`},revision=revision+1,updated_at=now() where id=${runId} and not cancel_requested`,
+              sql`update native_agent_runs set status=${unknown ? "awaiting_manual_review" : error.code === "AGENT_CONVERSATION_INVALID" ? "failed" : r!.plan_protocol === 1 ? "paused" : "failed"},consecutive_failures=consecutive_failures+1,error_code=${error.code},error_message=${error.message},finished_at=${unknown ? sql`null` : sql`now()`},revision=revision+1,updated_at=now() where id=${runId} and not cancel_requested`,
             );
             await tx.execute(
               sql`update native_agent_steps set status=${unknown ? "unknown" : "failed"},error_code=${error.code},error_message=${error.message},finished_at=now() where run_id=${runId} and (status in ('pending','submitting','running') or (${r!.plan_protocol !== 1} and status='awaiting_approval'))`,

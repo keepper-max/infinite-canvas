@@ -8,6 +8,7 @@ import { NativeAgentService } from "../src/native-agent/service.js";
 import { conversationTools, assertConversationToolScope, parseConversationDecision, toolFailureRecoveryMessage } from "../src/native-agent/conversation-policy.js";
 import { parseTool } from "../src/native-agent/tools.js";
 import { safeTaskError } from "../src/native-agent/presentation.js";
+import { agentSystem } from "../src/native-agent/model.js";
 import type { AgentModelDriver, ModelReply } from "../src/native-agent/model.js";
 const decision = {intent:"action" as const,actionTarget:"canvas" as const,evidence:"按此方案执行",resolvedRequest:"将刚才讨论的剧本写入画布文本节点",summary:{discussion:"讨论剧本",proposals:[],confirmed:[],rejected:[],openQuestions:[]}};
 const nodeId="vibe-00000000-0000-4000-8000-000000000001-script";
@@ -73,3 +74,17 @@ test("real PostgreSQL: advice-mode action completes with mode guidance after cla
  }finally{await pool.end();}
 });
 
+
+test("classifier receives explicit current turn and cannot cite a historical approval",()=>{
+ const prompt="继续执行";assert.ok(agentSystem({conversationStage:"intent",currentUserMessage:prompt}).includes(JSON.stringify(prompt)));
+ assert.throws(()=>parseConversationDecision(JSON.stringify(decision),prompt,[{role:"user",content:decision.evidence}]),{code:"AGENT_CONVERSATION_INVALID"});assert.ok(safeTaskError("AGENT_CONVERSATION_INVALID").includes("可以修改指令后重新发送"));
+});
+test("real PostgreSQL: wrong-turn evidence stops once, releases run slot, and permits a fresh request",{skip:!url,timeout:60000},async()=>{
+ assert.equal(url,"postgres://p25@127.0.0.1:55485/r21_regression_isolated");process.env.NATIVE_AGENT_ENABLED="true";process.env.NATIVE_AGENT_DEFAULT_ENABLED="true";process.env.KNOWLEDGE_DEFAULT_ENABLED="true";
+ const {db,pool}=createDatabase(url!),repo=new PostgresPlatformRepository(db);let calls=0;
+ const service=new NativeAgentService(new KnowledgeService(db),pool,{models:async()=>[{id:"native-agent-fixture",name:"隔离替身",substitute:true}],run:async(_id,_m,_s,_emit,execution)=>{calls++;assert.equal(execution?.conversationStage,"intent");assert.ok(execution?.currentUserMessage);return{text:JSON.stringify({...decision,evidence:calls===1?"按此方案执行":execution!.currentUserMessage}),calls:[],messages:[],inputTokens:100,outputTokens:50,meterStatus:"substitute"};}},async()=>{});
+ try{const u=await repo.createUserWithWorkspace("evidence-"+randomUUID()+"@example.test","synthetic"),actor=u.user.id,project=u.workspace.projectId;const session=await service.createSession(actor,{projectId:project,title:"当前指令回归",mode:"advice",operationId:randomUUID()});
+ const start=(prompt:string)=>service.start(actor,session.id,{operationId:randomUUID(),prompt,mode:"advice",modelId:"native-agent-fixture",budgetCents:0,conversationVersion:1});const run=await start("继续执行");await service.drive(run.id);await service.drive(run.id);let snap:any=await service.snapshot(actor,session.id);assert.equal(snap.runs[0].status,"failed");assert.equal(snap.runs[0].error_code,"AGENT_CONVERSATION_INVALID");assert.equal(calls,1);assert.equal(snap.plans.length,0);assert.equal(snap.steps.filter((s:any)=>s.kind==="tool").length,0);
+ const next=await start("将刚才方案写入画布");await service.drive(next.id);snap=await service.snapshot(actor,session.id);assert.equal(snap.runs.find((r:any)=>r.id===next.id).status,"completed");assert.equal(calls,2);assert.equal((await repo.getCanvasForUser(project,actor))!.nodes.length,0);
+ }finally{await pool.end();}
+});

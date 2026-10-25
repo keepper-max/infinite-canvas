@@ -28,7 +28,6 @@ import {
     type AgentApproval,
     type AgentMode,
     type AgentTaskPresentation,
-    getAgentTrace,
 } from "@/services/api/native-agent";
 import { agentPanelLayout } from "@/lib/canvas/native-agent-view";
 import type { AgentCanvasDiff } from "@/stores/use-native-agent-store";
@@ -90,7 +89,6 @@ export default function NativeAgentPanel() {
     const [limits, setLimits] = useState<Record<string, number>>({}),
         [limitsHash, setLimitsHash] = useState(""),
         [newContent, setNewContent] = useState(false);
-    const [trace, setTrace] = useState<unknown>(null);
     const [freshReplies, setFreshReplies] = useState<string[]>([]);
     const [accessDenied, setAccessDenied] = useState(false);
     const selectedProject = useRef(projectId);
@@ -120,6 +118,7 @@ export default function NativeAgentPanel() {
         decisions = useRef(new Map<string, { operationId: string; decision: string; instruction?: string }>()),
         generation = useRef(0),
         bottom = useRef<HTMLDivElement>(null);
+    const preferredMode = useRef<{ sessionId: string; mode: AgentMode } | null>(null);
     const selectedSession = useRef(sessionId);
     selectedSession.current = sessionId;
     const key = `native-agent:${user.id}:${projectId}`;
@@ -171,7 +170,7 @@ export default function NativeAgentPanel() {
         syncAttempt.current = "";
         setError("");
         pending.current = null;
-        void Promise.all([listAgentSessions(projectId, controller.signal), nativeAgentStatus(controller.signal), readAgentDraft<{ sessionId: string; draft: string; pending: typeof pending.current }>(key)])
+        void Promise.all([listAgentSessions(projectId, controller.signal), nativeAgentStatus(controller.signal), readAgentDraft<{ sessionId: string; mode?: AgentMode; draft: string; pending: typeof pending.current }>(key)])
             .then(([items, status, local]) => {
                 if (generation.current !== request) return;
                 setAccessDenied(false);
@@ -183,6 +182,8 @@ export default function NativeAgentPanel() {
                 setModelSelectionEnabled(status.userModelSelectionEnabled ?? true);
                 setMaxBudgetCents(status.maxBudgetCents ?? null);
                 if (status.maxBudgetCents != null) setBudgetCents(status.maxBudgetCents);
+                preferredMode.current = local && (local.mode === "execute" || local.mode === "advice") ? { sessionId: local.sessionId, mode: local.mode } : null;
+                setMode(preferredMode.current?.mode ?? "advice");
                 setDraft(local?.draft || "");
                 pending.current = local?.pending || null;
                 setReadyKey(key);
@@ -211,7 +212,7 @@ export default function NativeAgentPanel() {
                 if (!controller.signal.aborted) {
                     setAccessDenied(false);
                     setSnapshot((previous) => acceptAgentSnapshot(previous, next));
-                    setMode(next.runs.at(-1)?.mode ?? next.session.mode);
+                    setMode(preferredMode.current?.sessionId === sessionId ? preferredMode.current.mode : next.runs.at(-1)?.mode ?? next.session.mode);
                     setSessions((items) => (items.some((item) => item.id === next.session.id) ? items : [next.session, ...items]));
                 }
             })
@@ -225,12 +226,12 @@ export default function NativeAgentPanel() {
         if (!op || !snapshot?.runs.some((r) => r.operation_id === op.operationId)) return;
         pending.current = null;
         setDraft((text) => (text === op.prompt ? "" : text));
-        void saveAgentDraft(key, { sessionId, draft: draft === op.prompt ? "" : draft, pending: null }).catch((e) => reportError(e));
+        void saveAgentDraft(key, { sessionId, mode, draft: draft === op.prompt ? "" : draft, pending: null }).catch((e) => reportError(e));
     }, [snapshot, key, sessionId, draft]);
     useEffect(() => {
         if (readyKey !== key || (!sessionId && !draft)) return;
-        void saveAgentDraft(key, { sessionId, draft, pending: pending.current }).catch((e) => reportError(e));
-    }, [key, readyKey, sessionId, draft]);
+        void saveAgentDraft(key, { sessionId, mode, draft, pending: pending.current }).catch((e) => reportError(e));
+    }, [key, readyKey, sessionId, draft, mode]);
     useEffect(() => {
         if (!latest) return;
         const controller = new AbortController(),
@@ -290,10 +291,10 @@ export default function NativeAgentPanel() {
         try {
             const op = pending.current ?? { operationId: crypto.randomUUID(), sessionOperationId: crypto.randomUUID(), prompt: draft, sessionId, mode, modelId, budgetCents: paidModel ? budgetCents : 0, conversationVersion: 1 as const };
             pending.current = op;
-            await saveAgentDraft(key, { sessionId, draft: op.prompt, pending: op });
+            await saveAgentDraft(key, { sessionId, mode: op.mode, draft: op.prompt, pending: op });
             const id = op.sessionId || (await createAgentSession(projectId, op.mode, op.sessionOperationId)).id;
             op.sessionId = id;
-            await saveAgentDraft(key, { sessionId: id, draft: op.prompt, pending: op });
+            await saveAgentDraft(key, { sessionId: id, mode: op.mode, draft: op.prompt, pending: op });
             if (generation.current === current) setSessionId(id);
             const run = await startAgentRun(id, op.prompt, op.modelId, op.mode, op.operationId, op.budgetCents ?? 0, op.conversationVersion);
             if (generation.current !== current) return;
@@ -304,7 +305,7 @@ export default function NativeAgentPanel() {
             if (generation.current !== current) return;
             setSnapshot((previous) => acceptAgentSnapshot(previous, next));
             setSessions(items);
-            await saveAgentDraft(key, { sessionId: id, draft: "", pending: null });
+            await saveAgentDraft(key, { sessionId: id, mode: op.mode, draft: "", pending: null });
             if (run.status === "awaiting_manual_review") setError("上次请求还没有确认结果，请先查询进度，不要重复创建任务");
         } catch (e) {
             if (generation.current === current) {
@@ -470,7 +471,7 @@ export default function NativeAgentPanel() {
                 {latestTask && (latestTask.plan || latestTask.result || latestTask.progressItems.length > 0 || latestTask.safeErrorMessage || latestTask.status !== "completed") && (
                     <TaskPresentation task={latestTask} canFocus={bridge?.projectId === projectId} onFocus={focusResult} />
                 )}
-                {latest?.status === "paused" && (
+                {latest?.status === "paused" && latest.error_code !== "AGENT_CONVERSATION_INVALID" && (
                     <Button
                         type="text"
                         onClick={() => {
@@ -483,7 +484,22 @@ export default function NativeAgentPanel() {
                         {latest.error_code === "AGENT_INVALID_TOOL_ARGUMENTS" || latest.error_code === "AGENT_TOOL_SCOPE_MISMATCH" ? "修正调用后继续 / 选择模型" : "继续剩余计划 / 选择模型"}
                     </Button>
                 )}
-                {latest?.error_message && <Alert type="warning" title={latest.error_message} showIcon />}
+                {latest?.error_message && !["completed", "cancelled"].includes(latest.status) && <Alert type="warning" title={latest.error_message} showIcon />}
+                {latest?.status === "paused" && <Button disabled={busy} onClick={() => {
+                    const run = latest, selected = sessionId;
+                    setBusy(true);
+                    void cancelAgentRun(run.id).then(async () => {
+                        if (selectedProject.current !== projectId || selectedSession.current !== selected) return;
+                        await refresh();
+                        if (selectedProject.current !== projectId || selectedSession.current !== selected) return;
+                        if (pending.current?.operationId === run.operation_id) pending.current = null;
+                        setDraft((text) => text || snapshot?.messages.filter((m) => m.role === "user").at(-1)?.content || "");
+                        preferredMode.current = { sessionId: selected, mode: "execute" };
+                        setMode("execute");
+                        setError("");
+                        message.info("已结束暂停任务并切换执行模式。请确认输入后发送；没有重试或新增模型费用。");
+                    }).catch(reportError).finally(() => { if (selectedSession.current === selected) setBusy(false); });
+                }}>结束暂停，切换执行模式</Button>}
                 {latest && (latest.status === "awaiting_manual_review" || latest.error_code === "AGENT_BILLING_UNCONFIRMED") && (
                     <Button
                         type="text"
@@ -521,19 +537,6 @@ export default function NativeAgentPanel() {
                     />
                 )}
                 {!accessDenied && <CreativeDecisionsPanel key={projectId} projectId={projectId} snapshot={snapshot} />}
-                {user.isAdmin && sessionId && (
-                    <Button
-                        type="text"
-                        size="small"
-                        onClick={() =>
-                            void getAgentTrace(sessionId)
-                                .then(setTrace)
-                                .catch((e) => reportError(e))
-                        }
-                    >
-                        管理员技术追踪
-                    </Button>
-                )}
                 {snapshot?.approvals
                     .filter((a) => a.status === "pending")
                     .map((a) => (
@@ -612,9 +615,7 @@ export default function NativeAgentPanel() {
                 )}
                 <div ref={bottom} />
             </main>
-            <Modal title="管理员技术追踪（已脱敏）" open={trace !== null} onCancel={() => setTrace(null)} footer={null}>
-                <pre className="max-h-[60vh] overflow-auto whitespace-pre-wrap break-all text-xs">{JSON.stringify(trace, null, 2)}</pre>
-            </Modal>
+
             <Modal title="本地草稿与服务器版本" open={!!diff} onCancel={() => setDiff(null)} footer={<Button onClick={() => setDiff(null)}>保留当前编辑并返回</Button>}>
                 <p>
                     服务器画布版本 {diff?.revision} · 本页 {diff?.localNodeCount} 节点 / 服务器 {diff?.remoteNodeCount} 节点。
@@ -663,7 +664,7 @@ export default function NativeAgentPanel() {
                     <Select
                         aria-label="执行模式"
                         value={active ? latest.mode : mode}
-                        onChange={setMode}
+                        onChange={(value) => { preferredMode.current = { sessionId, mode: value }; setMode(value); }}
                         disabled={!!active || busy || restoringSession}
                         options={[
                             { value: "advice", label: "建议模式" },

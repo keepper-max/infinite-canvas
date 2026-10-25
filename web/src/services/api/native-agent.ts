@@ -49,7 +49,7 @@ export type AgentTaskPresentation = {
     result: null | { saved: boolean; updatedNodes?: { id: string; title: string }[]; nodes: { id: string; title: string; type: string }[]; knowledgeCount: number; textCount: number; edgeCount: number; revision: number | null };
     technicalTraceRef: string;
 };
-export const getAgentTrace = (id: string) => platformRequest<unknown>(base + "/sessions/" + id + "/trace");
+export const getAgentTrace = (id: string) => platformRequest<unknown>(base + "/admin/sessions/" + id + "/trace");
 export type AgentSnapshot = {
     presentation?: { version: 1; tasks: AgentTaskPresentation[]; messages: AgentMessage[] };
     session: AgentSession;

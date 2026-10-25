@@ -168,6 +168,7 @@ export class PaidAgentModel implements AgentModelDriver {
       planning: execution.planning,
       conversationStage: execution.conversationStage,
       conversationDecision: execution.conversationDecision,
+      ...(execution.currentUserMessage === undefined ? {} : { currentUserMessage: execution.currentUserMessage }),
       toolNames: execution.toolNames,
       readCurrentCanvasOnly: execution.readCurrentCanvasOnly,
     };

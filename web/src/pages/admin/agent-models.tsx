@@ -1,11 +1,12 @@
 import { useEffect, useRef, useState } from "react";
-import { App, Alert, Button, Input, InputNumber, Select, Space, Spin, Switch, Table, Tag } from "antd";
+import { App, Alert, Button, Input, InputNumber, Select, Space, Spin, Switch, Table, Tag, Modal } from "antd";
 import { Link } from "react-router-dom";
 import { useAuth } from "@/components/auth/auth-context";
 import { getAgentAdmin, saveAgentAdmin, verifyAgentModel, type AgentAdminSnapshot, type AgentAdminPolicy } from "@/services/api/agent-admin";
-import { cancelAgentRun } from "@/services/api/native-agent";
+import { cancelAgentRun, getAgentTrace } from "@/services/api/native-agent";
 import { randomUuid } from "@/lib/utils";
 export default function AgentModels() {
+    const [trace, setTrace] = useState<unknown>(null);
     const { modal, message } = App.useApp();
     const { user, workspace } = useAuth(),
         [data, setData] = useState<AgentAdminSnapshot | null>(null),
@@ -270,8 +271,9 @@ export default function AgentModels() {
                         { title: "结算 / 待核验（元）", render: (_, run) => `${(run.spent_cents / 100).toFixed(2)} / ${(run.reserved_cents / 100).toFixed(2)}` },
                         {
                             title: "操作",
-                            render: (_, run) =>
-                                run.actor_id === user.id && !["completed", "failed", "cancelled"].includes(run.status) ? (
+                            render: (_, run) => run.actor_id === user.id ? <Space wrap>
+                                <Button onClick={() => void getAgentTrace(run.session_id).then(setTrace).catch((e) => setError(e.message))}>技术追踪</Button>
+                                {!["completed", "failed", "cancelled"].includes(run.status) ? (
                                     <Button
                                         onClick={() =>
                                             void cancelAgentRun(run.id)
@@ -281,7 +283,7 @@ export default function AgentModels() {
                                     >
                                         停止此运行
                                     </Button>
-                                ) : null,
+                                ) : null}</Space> : null,
                         },
                     ]}
                 />
@@ -290,6 +292,9 @@ export default function AgentModels() {
                     <summary>核验审计详情</summary>
                     <pre className="mt-2 max-h-80 overflow-auto whitespace-pre-wrap text-xs">{JSON.stringify(data?.verifications ?? [], null, 2)}</pre>
                 </details>
+                <Modal title="管理员技术追踪（已脱敏）" open={trace !== null} onCancel={() => setTrace(null)} footer={null}>
+                    <pre className="max-h-[60vh] overflow-auto whitespace-pre-wrap break-all text-xs">{JSON.stringify(trace, null, 2)}</pre>
+                </Modal>
             </section>
         </section>
     );

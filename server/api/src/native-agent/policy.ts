@@ -355,7 +355,7 @@ export class NativeAgentPolicyService {
     ).rows;
     const runs = (
       await this.pool.query(
-        "select id,operation_id,project_id,actor_id,model_id,status,purpose,revision,rounds,input_tokens,output_tokens,budget_cents,spent_cents,reserved_cents,error_code,created_at from native_agent_runs order by created_at desc limit 50",
+        "select id,session_id,operation_id,project_id,actor_id,model_id,status,purpose,revision,rounds,input_tokens,output_tokens,budget_cents,spent_cents,reserved_cents,error_code,created_at from native_agent_runs order by created_at desc limit 50",
       )
     ).rows;
     const verifications = (

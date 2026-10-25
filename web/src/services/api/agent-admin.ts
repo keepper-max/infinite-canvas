@@ -23,6 +23,7 @@ export type AgentAdminSnapshot = {
         operation_id: string;
         actor_id: string;
         project_id: string;
+        session_id: string;
         model_id: string;
         status: string;
         purpose: string;

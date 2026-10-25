@@ -90,7 +90,7 @@ export function registerNativeAgentRoutes(
       ),
     }),
   );
-  app.get(base + "/sessions/:id/trace", async (c) =>
+  app.get(base + "/admin/sessions/:id/trace", async (c) =>
     c.json({
       data: await service.technicalTrace(
         (await identity(c.req.raw)).id,

@@ -50,6 +50,8 @@ export function runControl({
 }
 export function safeTaskError(code?: string | null) {
   if (!code) return "";
+  if (code === "AGENT_CONVERSATION_INVALID")
+    return "助手未能准确识别本轮指令，已停止且未执行新操作。可以修改指令后重新发送；要写入画布请先切换执行模式。不会自动重试。";
   if (code === "AGENT_INVALID_TOOL_ARGUMENTS" || code === "AGENT_TOOL_SCOPE_MISMATCH")
     return "助手选择的工具或参数与本次操作不匹配，已停止本批次操作。增加预算或重新查询无法修复；请说明要修改画布还是知识文档后重新规划，保存前仍需确认。";
   if (code === "AGENT_ADVICE_READ_ONLY")
