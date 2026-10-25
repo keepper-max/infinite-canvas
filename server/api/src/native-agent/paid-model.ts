@@ -166,6 +166,8 @@ export class PaidAgentModel implements AgentModelDriver {
       mode: execution.mode,
       modelId,
       planning: execution.planning,
+      conversationStage: execution.conversationStage,
+      conversationDecision: execution.conversationDecision,
       toolNames: execution.toolNames,
       readCurrentCanvasOnly: execution.readCurrentCanvasOnly,
     };
@@ -265,7 +267,7 @@ export class PaidAgentModel implements AgentModelDriver {
           estimate = tokenData.data?.[0]?.total_tokens;
         } else {
           estimate =
-            contextCost(messages, execution.toolNames) -
+            contextCost(messages, execution.toolNames, execution) -
             AGENT_LIMITS.outputTokens;
           const fx = (await this.credits.pricing()).usdCnyRate;
           if (!fx || Number(fx) > 8.5)

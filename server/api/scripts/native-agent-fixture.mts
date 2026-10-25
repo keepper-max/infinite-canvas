@@ -54,6 +54,9 @@ export function startFixture(port = 3295) {
       return;
     }
     if(String(lastUser).includes('只读工具能力验证')){if(!results.some(r=>typeof r.revision==='number'))call('get_canvas_state',{});else text='检查完成';}
+    else if(String(lastUser).includes('你好，你能帮我做什么')) text='我可以和你讨论故事、梳理人物设定，也能在你确认后把创作思路整理到画布上。你想从哪里开始？';
+    else if(String(lastUser).includes('给我看这次任务的技术追踪')) text='技术追踪需要相应权限。请使用任务中的管理员技术追踪入口，普通任务详情可以直接展开查看。';
+    else if(String(lastUser).includes('查看这个任务的执行详情')) text='你可以展开任务卡片中的执行详情，查看阅读资料、创建节点和保存的实际状态。';
     else if (String(lastUser).includes("测试未知工具"))
       call("execute_shell", { command: "never execute" });
     else if (String(lastUser).includes("测试无效参数"))
@@ -96,7 +99,8 @@ export function startFixture(port = 3295) {
             offset: 0,
             length: 200,
           });
-      } else if (
+      } else if(String(lastUser).includes('你觉得我的雾港剧本怎么样')||String(lastUser).includes('帮我看看林岚的人设')) text='根据已读取的设定，林岚追查父亲失踪的动机很清楚。可以让她与周可对线索产生不同判断，让调查中的冲突更自然。';
+      else if (
         String(lastUser).includes("建议模式") ||
         messages.some(
           (m) =>

@@ -1,3 +1,4 @@
+import { runControl } from "./presentation.js";
 import type { Hono } from "hono";
 import { streamSSE } from "hono/streaming";
 import { z } from "zod";
@@ -9,6 +10,23 @@ export function registerNativeAgentRoutes(
   identity: (request: Request) => Promise<{ id: string }>,
 ) {
   const base = "/api/native-agent";
+  app.get(base + "/projects/:id/decisions", async (c) =>
+    c.json({
+      data: await service.decisions.list(
+        (await identity(c.req.raw)).id,
+        uuid.parse(c.req.param("id")),
+      ),
+    }),
+  );
+  app.post(base + "/projects/:id/decisions", async (c) =>
+    c.json({
+      data: await service.decisions.write(
+        (await identity(c.req.raw)).id,
+        uuid.parse(c.req.param("id")),
+        await c.req.json(),
+      ),
+    }),
+  );
   app.get(base + "/admin/models", async (c) => {
     const actor = await identity(c.req.raw);
     if (!service.policy) throw new Error("Agent policy not configured");
@@ -64,9 +82,25 @@ export function registerNativeAgentRoutes(
       ),
     }),
   );
+  app.get(base + "/sessions/:id/presentation", async (c) =>
+    c.json({
+      data: await service.presentation(
+        (await identity(c.req.raw)).id,
+        uuid.parse(c.req.param("id")),
+      ),
+    }),
+  );
+  app.get(base + "/sessions/:id/trace", async (c) =>
+    c.json({
+      data: await service.technicalTrace(
+        (await identity(c.req.raw)).id,
+        uuid.parse(c.req.param("id")),
+      ),
+    }),
+  );
   app.get(base + "/sessions/:id", async (c) =>
     c.json({
-      data: await service.snapshot(
+      data: await service.presentation(
         (await identity(c.req.raw)).id,
         uuid.parse(c.req.param("id")),
       ),
@@ -82,10 +116,12 @@ export function registerNativeAgentRoutes(
   );
   app.post(base + "/sessions/:id/runs", async (c) =>
     c.json({
-      data: await service.start(
-        (await identity(c.req.raw)).id,
-        uuid.parse(c.req.param("id")),
-        await c.req.json(),
+      data: runControl(
+        await service.start(
+          (await identity(c.req.raw)).id,
+          uuid.parse(c.req.param("id")),
+          await c.req.json(),
+        ),
       ),
     }),
   );
@@ -123,7 +159,7 @@ export function registerNativeAgentRoutes(
       ),
     }),
   );
-  app.get(base + "/runs/:id/events", async (c) => {
+  const eventHandler = async (c: any) => {
     const actor = await identity(c.req.raw),
       runId = uuid.parse(c.req.param("id")),
       after = z.coerce
@@ -131,7 +167,7 @@ export function registerNativeAgentRoutes(
         .int()
         .nonnegative()
         .parse(c.req.query("after") ?? c.req.header("last-event-id") ?? 0);
-    const events = await service.events(actor.id, runId, after);
+    const events = await service.presentationEvents(actor.id, runId, after);
     return streamSSE(c, async (stream) => {
       for (const e of events) {
         if (stream.aborted) break;
@@ -142,5 +178,7 @@ export function registerNativeAgentRoutes(
         });
       }
     });
-  });
+  };
+  app.get(base + "/runs/:id/events", eventHandler);
+  app.get(base + "/runs/:id/presentation-events", eventHandler);
 }

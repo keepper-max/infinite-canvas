@@ -21,7 +21,7 @@ test(
   "native model bridge uses real JobService/Executor and credits with HTTP vendor substitute",
   { skip: !url, timeout: 120000 },
   async () => {
-    assert.ok(["postgres://p25@127.0.0.1:55485/p25_isolated","postgres://p25@127.0.0.1:55485/p251_isolated","postgres://p25@127.0.0.1:55485/r2_isolated"].includes(url!));
+    assert.ok(["postgres://p25@127.0.0.1:55485/p25_isolated","postgres://p25@127.0.0.1:55485/p251_isolated","postgres://p25@127.0.0.1:55485/r2_isolated","postgres://p25@127.0.0.1:55485/r21_regression_isolated"].includes(url!));
     process.env.NATIVE_AGENT_ENABLED = "true";
     process.env.NATIVE_AGENT_DEFAULT_ENABLED = "true";
     process.env.NATIVE_AGENT_PAID_ENABLED = "true";

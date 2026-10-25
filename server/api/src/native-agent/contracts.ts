@@ -17,6 +17,7 @@ export const runInput = z
     modelId: z.string().min(1),
     mode,
     budgetCents: z.number().int().nonnegative().default(0),
+    conversationVersion: z.literal(1).optional(),
   })
   .strict();
 export const decisionInput = z

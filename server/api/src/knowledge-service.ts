@@ -246,12 +246,13 @@ export class KnowledgeService {
       page: number;
       pageSize: number;
     },
+    excludeMarkdownPrefix?: string,
   ) {
     return this.run(userId, spaceId, false, async (tx) => {
       const q = input.q?.trim() || "",
         tag = input.tag?.trim() || "",
         pattern = "%" + q.replace(/[\\%_]/g, "\\$&") + "%";
-      const where = sql`d.space_id=${spaceId} and ${input.deleted ? sql`d.deleted_at is not null` : sql`d.deleted_at is null`} and (${input.folderId ?? null}::uuid is null or d.folder_id=${input.folderId ?? null}::uuid)
+      const where = sql`${excludeMarkdownPrefix ? sql`left(d.markdown,${excludeMarkdownPrefix.length})<>${excludeMarkdownPrefix}` : sql`true`} and d.space_id=${spaceId} and ${input.deleted ? sql`d.deleted_at is not null` : sql`d.deleted_at is null`} and (${input.folderId ?? null}::uuid is null or d.folder_id=${input.folderId ?? null}::uuid)
     and (${tag}='' or exists(select 1 from knowledge_tags t where t.document_id=d.id and t.tag=${tag}))
     and (${q}='' or d.title ilike ${pattern} or d.markdown ilike ${pattern} or d.search_vector @@ plainto_tsquery('simple',${q}) or exists(select 1 from knowledge_tags t where t.document_id=d.id and t.tag ilike ${pattern}))`;
       const count = (

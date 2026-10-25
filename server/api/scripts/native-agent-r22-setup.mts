@@ -1,0 +1,12 @@
+import{readFile,writeFile}from"node:fs/promises";import{randomUUID}from"node:crypto";import assert from"node:assert/strict";import{createDatabase}from"../src/db/client.js";
+const root="H:/CodexStorage/shoushou-r22",f=JSON.parse(await readFile(root+"/private/local-fixture.json","utf8")),{pool}=createDatabase("postgres://p25@127.0.0.1:55485/r22_isolated");
+const api=async(path:string,body?:any,method=body?"POST":"GET")=>{const r=await fetch("http://127.0.0.1:3202"+path,{method,headers:{cookie:f.cookieName+"="+f.otherToken,origin:"http://127.0.0.1:3202",...(body?{"content-type":"application/json"}:{})},body:body?JSON.stringify(body):undefined});const p:any=await r.json();assert.ok(r.ok,JSON.stringify(p));return p.data;};
+const project=(await api("/api/projects",{name:"雾港 AI 漫剧 · R2.2",description:"隔离创作协作验收，模型为确定性替身"})).project,projectId=project.projectId;
+const space=await api("/api/knowledge/spaces",{kind:"project",projectId,operationId:randomUUID()});const docs=[];
+for(const[title,markdown]of [["雾港世界观","# 雾港\n海雾遮蔽港口，旧灯塔记录航道秘密。"],["林岚人物设定","# 林岚\n职业：调查员。为失踪父亲追查航道记录；不擅长信任陌生人。"],["周可人物设定","# 周可\n灯塔维修师。擅长机械，隐瞒一段过往。不要提前揭露动机。"],["第一集剧本","# 第一集\n开头三分钟介绍港口和雾天生活。林岚随后以调查员身份到灯塔核对父亲留下的记录，周可出场协助。\n原稿用于讨论，未经确认不修改。"]])docs.push(await api("/api/knowledge/"+space.id+"/actions",{operationId:randomUUID(),action:"document.create",payload:{title,markdown,folderId:null}}));
+const canvas=(await api("/api/projects/"+projectId+"/canvas")).canvas,nodeId=randomUUID();
+await api("/api/projects/"+projectId+"/canvas",{contractVersion:1,nodes:[{id:nodeId,type:"text",title:"第一集剧本",position:{x:120,y:100},width:540,height:400,metadata:{content:docs.at(-1)!.markdown}}],edges:[],viewport:{x:80,y:80,k:1},settings:canvas.settings,expectedRevision:canvas.revision},"PUT");
+const session=await api("/api/native-agent/sessions",{projectId,title:"雾港创作讨论 · R2.2",mode:"execute",operationId:randomUUID()});
+await writeFile(root+"/private/ui-fixture.json",JSON.stringify({...f,ownerId:f.otherId,token:f.otherToken,projectId,sessionId:session.id,spaceId:space.id,nodeId,docs,model:"volcengine_ark.text.doubao-seed-2-1-lite-260915"}));
+await writeFile(root+"/private/normal-ui-fixture.json",JSON.stringify({...f,ownerId:f.otherId,token:f.otherToken,projectId,sessionId:session.id}));
+console.log("Created isolated 雾港 project: 4 real knowledge docs,1 initial text node, empty discussion session");await pool.end();

@@ -1,3 +1,4 @@
+import { isConversationOnly } from "./conversation-intent.js";
 import { randomUUID } from "node:crypto";
 import { sql } from "drizzle-orm";
 import type { Pool } from "pg";
@@ -165,6 +166,9 @@ export class AgentPlanService {
   async reviewOrSeal(r: Row) {
     const plan = await this.latest(r.id);
     if (!plan || !plan.steps.length) {
+      if (r.conversation?.intent && r.conversation.intent !== "action")
+        return false;
+      if (!r.conversation && isConversationOnly(r.prompt)) return false;
       if (r.goal_reviewed)
         throw new DomainError(
           "AGENT_NO_EXECUTABLE_PLAN",
@@ -187,7 +191,7 @@ export class AgentPlanService {
               : "";
         const review = {
           role: "user",
-          content: `平台完成性核对（不增加授权）：原目标为「${r.prompt}」。当前数据库没有任何持久化写入提案，刚才的文字列表不是tool_calls，不能被审批或执行。你的上一条说明：${priorText}。请使用实际注册写工具提出完成原目标所需操作，继续用plannedNodeId补齐依赖和连接，然后由平台统一请求审批。不要用自然语言再次索取确认，不要声称已创建。来源版本：${JSON.stringify(r.sources ?? [])}。如果无法形成有效提案，请明确原因，平台会暂停而非标记执行完成。`,
+          content: `平台完成性核对（不增加授权）：原目标为「${r.prompt}」。当前数据库没有持久化写入提案。先区分用户意图：问候、聊天、点评、分析不需要写入，直接自然回答，不要强行生成计划。仅当原目标明确要求创建或修改业务内容时，文字列表不能被审批或执行。你的上一条说明：${priorText}。仅在确需写入时，请使用实际注册写工具提出完成原目标所需操作，继续用plannedNodeId补齐依赖和连接，然后由平台统一请求审批。不要用自然语言再次索取确认，不要声称已创建。来源版本：${JSON.stringify(r.sources ?? [])}。如果无法形成有效提案，请明确原因，平台会暂停而非标记执行完成。`,
         };
         await tx.execute(
           sql`update native_agent_runs set goal_reviewed=true,context=context||${JSON.stringify([review])}::jsonb,phase='model',revision=revision+1 where id=${r.id}`,

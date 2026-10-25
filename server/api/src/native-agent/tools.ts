@@ -1,3 +1,4 @@
+import { CREATIVE_DECISION_PREFIX } from "./creative-decisions.js";
 import { tool, type ToolSet } from "ai";
 import { z } from "zod";
 import type { KnowledgeService } from "../knowledge-service.js";
@@ -242,10 +243,21 @@ export async function readBusinessTool(
   p: any,
 ) {
   if (toolName === "search_knowledge")
-    return knowledge.list(actor.actorId, p.spaceId, p);
+    return knowledge.list(
+      actor.actorId,
+      p.spaceId,
+      p,
+      CREATIVE_DECISION_PREFIX,
+    );
   if (toolName === "read_knowledge") {
     const d = await knowledge.read(actor.actorId, p.spaceId, p.documentId);
     if (d.deletedAt) throw new Error("KNOWLEDGE_NOT_FOUND");
+    if (d.markdown.startsWith(CREATIVE_DECISION_PREFIX))
+      throw new DomainError(
+        "AGENT_DECISION_SCOPE",
+        "创作决定仅通过当前项目受控上下文读取，不能当作普通资料导入",
+        403,
+      );
     return {
       documentId: d.id,
       spaceId: d.spaceId,

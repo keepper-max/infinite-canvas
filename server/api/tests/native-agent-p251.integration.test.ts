@@ -14,7 +14,7 @@ test(
   "P251 durable full-plan approval, conflict and explicit budget recovery",
   { skip: !url, timeout: 180000 },
   async (t) => {
-    assert.ok(["postgres://p25@127.0.0.1:55485/p251_isolated","postgres://p25@127.0.0.1:55485/r2_isolated"].includes(url!));
+    assert.ok(["postgres://p25@127.0.0.1:55485/p251_isolated","postgres://p25@127.0.0.1:55485/r2_isolated","postgres://p25@127.0.0.1:55485/r21_regression_isolated"].includes(url!));
     process.env.NATIVE_AGENT_ENABLED = "true";
     process.env.NATIVE_AGENT_DEFAULT_ENABLED = "true";
     process.env.KNOWLEDGE_DEFAULT_ENABLED = "true";

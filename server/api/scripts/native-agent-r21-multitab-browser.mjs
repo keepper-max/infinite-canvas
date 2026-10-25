@@ -1,0 +1,21 @@
+import {createRequire} from 'node:module';
+import {readFile,writeFile} from 'node:fs/promises';
+import assert from 'node:assert/strict';
+const root='H:/CodexStorage/shoushou-r21',f=JSON.parse(await readFile(root+'/private/normal-ui-fixture.json','utf8'));
+const {chromium}=createRequire('H:/CodexStorage/infinite-canvas-auth-upgrade/plugins/canvas/markdown/package.json')('playwright');
+const browser=await chromium.launch({headless:true,executablePath:'H:/CodexStorage/aishenhe-playwright/chromium-1234/chrome-win64/chrome.exe'});
+const c=await browser.newContext({viewport:{width:1440,height:1000}}),checks=[],errors=[];
+await c.addCookies([{name:f.cookieName,value:f.token,domain:'127.0.0.1',path:'/'}]);
+const a=await c.newPage(),b=await c.newPage();for(const p of[a,b]){p.setDefaultTimeout(60000);p.on('pageerror',e=>errors.push(e.message));}
+const open=async p=>{await p.goto('http://127.0.0.1:5198/canvas/'+f.projectId);await p.getByRole('main').getByRole('button',{name:'原生创作助手',exact:true}).click();const panel=p.getByRole('complementary',{name:'原生创作助手面板'});await panel.getByLabel('任务结果').waitFor();return panel;};
+const base='native-agent:'+f.ownerId+':'+f.projectId;
+const persisted=async(p,text)=>{await p.waitForFunction(async({base,text})=>{const m=await import('/src/components/native-agent/draft-storage.ts');return(await m.readAgentDraft(base))?.draft===text;},{base,text});};
+try {
+ let pa=await open(a),pb=await open(b);
+ await pa.getByLabel('给创作助手的指令').fill('标签A未发送草稿，保持原操作');await persisted(a,'标签A未发送草稿，保持原操作');
+ await pb.getByLabel('给创作助手的指令').fill('标签B不同草稿，不覆盖A');await persisted(b,'标签B不同草稿，不覆盖A');
+ pa=await open(a);pb=await open(b);assert.equal(await pa.getByLabel('给创作助手的指令').inputValue(),'标签A未发送草稿，保持原操作');assert.equal(await pb.getByLabel('给创作助手的指令').inputValue(),'标签B不同草稿，不覆盖A');checks.push('same-account same-project two real tabs retain independent exact drafts after refresh');
+ const popupPromise=c.waitForEvent('page');await a.evaluate(()=>window.open(location.href,'r21-duplicate'));const d=await popupPromise;await d.waitForLoadState();await d.getByRole('main').getByRole('button',{name:'原生创作助手',exact:true}).click();const pd=d.getByRole('complementary',{name:'原生创作助手面板'});await pd.getByLabel('任务结果').waitFor();assert.equal(await pd.getByLabel('给创作助手的指令').inputValue(),'标签A未发送草稿，保持原操作');await pd.getByLabel('给创作助手的指令').fill('复制标签独立草稿');await persisted(d,'复制标签独立草稿');pa=await open(a);assert.equal(await pa.getByLabel('给创作助手的指令').inputValue(),'标签A未发送草稿，保持原操作');checks.push('duplicated tab inherits initial draft read-only and edits a new independent slot');
+ const result=await a.evaluate(async()=>{const m=await import('/src/components/native-agent/draft-storage.ts'),lf=(await import('/node_modules/.vite/deps/localforage.js')).default.createInstance({name:'infinite-canvas',storeName:'app_state'});const key='r21-draft-format-fixture:'+crypto.randomUUID();const old={sessionId:'legacy-test',draft:'原样旧草稿',pending:{operationId:'stable-logical-operation',prompt:'原指令'}};await lf.setItem(key,old);const before=JSON.stringify(await lf.getItem(key));const read=await m.readAgentDraft(key);if(!read)throw Error("Legacy test module storage mismatch");await m.saveAgentDraft(key,{...read,draft:'新槽位草稿'});const current=await m.readAgentDraft(key);let unknownRejected=false;try{m.decodeAgentDraft({version:999,value:old});}catch{unknownRejected=true;}return{before,after:JSON.stringify(await lf.getItem(key)),read,current,unknownRejected};});assert.equal(result.before,result.after);assert.equal(result.current.pending.operationId,'stable-logical-operation');assert.equal(result.read.draft,'原样旧草稿');assert.ok(result.unknownRejected);checks.push('legacy record retained byte-equivalent, pending operationId preserved, unknown storage format rejected without overwrite');
+ await a.screenshot({path:root+'/artifacts/multitab-draft.png'});assert.deepEqual(errors,[]);await writeFile(root+'/artifacts/multitab-draft-check.json',JSON.stringify({checks,errors,postgres:true,actualSupplier:false},null,2));console.log(JSON.stringify({checks,errors}));
+} finally {await c.close();await browser.close();}
