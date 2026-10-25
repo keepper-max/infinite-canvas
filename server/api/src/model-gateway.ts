@@ -188,6 +188,15 @@ export class ModelGateway {
     );
   }
 
+  async refreshPinhaozhanCatalog() {
+    const id = "pinhaozhan.text.deepseek-v4.1-flash";
+    await this.pool.query(`insert into model_catalog(id,display_name,capability,upstream_model,provider_id,discovered,enabled,healthy,catalog_metadata,discovered_at,checked_at)
+      values($1,'DeepSeek V4.1 Flash','text','deepseek-v4.1-flash','pinhaozhan',true,true,true,'{"agentOnly":true}',now(),now())
+      on conflict(id) do nothing`, [id]);
+    await this.pool.query(`insert into model_capabilities(model_id,modes,accepted_parameters,required_parameters_by_mode,limits,parameter_map)
+      values($1,'["chat"]','[]','{}','{}','{}') on conflict(model_id) do nothing`, [id]);
+  }
+
   async refreshVolcengineArkCatalog() {
     return this.replaceRunningHubCatalog(
       "volcengine_ark",

@@ -37,6 +37,8 @@ services:
       VOLCENGINE_ARK_API_KEY: ${VOLCENGINE_ARK_API_KEY:-}
       VOLCENGINE_ARK_API_BASE_URL: ${VOLCENGINE_ARK_API_BASE_URL:-https://ark.cn-beijing.volces.com/api/v3}
       VOLCENGINE_ARK_CATALOG_URL: ${VOLCENGINE_ARK_CATALOG_URL:-https://ark.cn-beijing.volces.com/api/v3/models}
+      PINHAOZHAN_API_KEY: ${PINHAOZHAN_API_KEY:-}
+      PINHAOZHAN_API_BASE_URL: ${PINHAOZHAN_API_BASE_URL:-https://pinhaozhan.vip}
     depends_on:
       db:
         condition: service_healthy

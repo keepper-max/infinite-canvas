@@ -104,7 +104,7 @@ const provider = new ProviderRouter(
   ]),
 );
 const credits = new CreditService(pool);
-const billing = new BillingService(pool, config.provider, credits);
+const billing = new BillingService(pool, config.provider, credits, config.pinhaozhan);
 const connection = new Redis(config.jobs.redisUrl, {
   maxRetriesPerRequest: null,
 });

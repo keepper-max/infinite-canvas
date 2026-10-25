@@ -1,0 +1,45 @@
+import {readFile,writeFile} from 'node:fs/promises';
+import {randomUUID} from 'node:crypto';
+import {createDatabase} from '../src/db/client.js';
+import {applyMigrations} from '../src/db/migrate.js';
+import {PostgresPlatformRepository} from '../src/repository.js';
+import {KnowledgeService} from '../src/knowledge-service.js';
+import {ModelGateway} from '../src/model-gateway.js';
+import {CreditService} from '../src/credit-service.js';
+import {BillingService} from '../src/billing-service.js';
+import {JobService} from '../src/job-service.js';
+import {S3ObjectStorage} from '../src/object-storage.js';
+import {readConfig} from '../src/config.js';
+import {NativeAgentPolicyService} from '../src/native-agent/policy.js';
+import {PaidAgentModel} from '../src/native-agent/paid-model.js';
+import {NativeAgentService} from '../src/native-agent/service.js';
+if(process.env.NODE_ENV==='production'||process.env.PINHAOZHAN_LIVE_TEST_APPROVED!=='true')throw Error('EXPLICIT_ISOLATED_APPROVAL_REQUIRED');
+const root='H:/CodexStorage/shoushou-pinhaozhan/private',attempt=process.env.PINHAOZHAN_PROBE_ATTEMPT || '1';
+if(!['1','2','3'].includes(attempt))throw Error('UNAPPROVED_TEST_ATTEMPT');
+const marker=root+'/native-probe-'+attempt+'-started.json';
+try{await readFile(marker);throw Error('ALREADY_DISPATCHED_NO_AUTOMATIC_RETRY');}catch(e:any){if(e.code!=='ENOENT')throw e;}
+const c=JSON.parse(await readFile(process.env.PINHAOZHAN_CONNECTION_FILE!,'utf8'));
+const {db,pool}=createDatabase('postgres://p25@127.0.0.1:55485/pinhaozhan_isolated');
+try{
+ await applyMigrations(pool,'H:/CodexStorage/shoushou-r22/migrations');
+ Object.assign(process.env,{NATIVE_AGENT_ENABLED:'true',NATIVE_AGENT_DEFAULT_ENABLED:'true',NATIVE_AGENT_PAID_ENABLED:'true',KNOWLEDGE_DEFAULT_ENABLED:'true'});
+ const cfg=readConfig({DATABASE_URL:'postgres://p25@127.0.0.1:55485/pinhaozhan_isolated',PINHAOZHAN_API_BASE_URL:c.url,PINHAOZHAN_API_KEY:c.key,OBJECT_STORAGE_ENDPOINT:'http://127.0.0.1:59000',OBJECT_STORAGE_BUCKET:'unused',OBJECT_STORAGE_ACCESS_KEY_ID:'synthetic',OBJECT_STORAGE_SECRET_ACCESS_KEY:'synthetic'});
+ const repo=new PostgresPlatformRepository(db),knowledge=new KnowledgeService(db),gateway=new ModelGateway(pool),credits=new CreditService(pool),billing=new BillingService(pool,cfg.provider,credits,cfg.pinhaozhan);
+ const jobs=new JobService(pool,{add:async()=>{throw Error('NORMAL_QUEUE_FORBIDDEN')},remove:async()=>false},gateway,cfg.jobs,async()=>{},credits,billing);
+ const policy=new NativeAgentPolicyService(knowledge,pool,gateway,{pinhaozhan:cfg.pinhaozhan}),paid=new PaidAgentModel(pool,gateway,jobs,credits,billing,new S3ObjectStorage(cfg.objectStorage),cfg.jobs,cfg.volcengineArk,cfg.provider,policy,cfg.pinhaozhan);
+ const agent=new NativeAgentService(knowledge,pool,paid,async()=>{},jobs,[],policy);
+ await gateway.refreshPinhaozhanCatalog();
+ const a=await repo.createUserWithWorkspace('pinhaozhan-acceptance-'+randomUUID()+'@example.test','synthetic');
+ await pool.query('update users set is_admin=true where id=$1',[a.user.id]);
+ await credits.grant(a.user.id,a.user.id,{credits:100,source:'promotion',note:'isolated live acceptance, not production credits',idempotencyKey:randomUUID()},randomUUID());
+ await credits.setUsdCnyRate(a.user.id,'7.3',randomUUID());
+ const {version,...old}=await policy.get();await policy.save(a.user.id,{...old,expectedVersion:version,operationId:randomUUID(),reason:'isolated live model probe',enabled:true});
+ const run=await agent.startProbe(a.user.id,{projectId:a.workspace.projectId,modelId:'pinhaozhan.text.deepseek-v4.1-flash',operationId:randomUUID(),budgetCents:100});
+ await writeFile(marker,JSON.stringify({runId:run.id,userId:a.user.id,projectId:a.workspace.projectId}));
+ await agent.drive(run.id);
+ const state=(await pool.query('select id,status,error_code,rounds,spent_cents,reserved_cents from native_agent_runs where id=$1',[run.id])).rows[0];
+ const verification=(await pool.query('select status,metrics,capabilities from native_agent_model_verifications where run_id=$1',[run.id])).rows[0];
+ const ledger=(await pool.query('select g.billing_status,g.credit_delivery_status,u.currency,u.total_amount,u.credit_points,u.cost_cny from generation_jobs g left join generation_usage u on u.job_id=g.id join native_agent_model_jobs m on m.job_id=g.id where m.run_id=$1',[run.id])).rows;
+ const result={state,verification,ledger};await writeFile(root+'/native-probe-'+attempt+'-result.json',JSON.stringify(result,null,2));console.log(JSON.stringify(result));
+ if(state.status!=='completed'||verification?.status!=='passed')process.exitCode=1;
+}finally{await pool.end();}

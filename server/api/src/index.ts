@@ -73,6 +73,7 @@ await modelGateway
     ),
   );
 await modelGateway.refreshVolcengineArkCatalog();
+if (config.pinhaozhan?.apiKey) await modelGateway.refreshPinhaozhanCatalog();
 const jobQueue = createQueue(config.jobs);
 const creditService = new CreditService(
   pool,
@@ -84,7 +85,7 @@ const storageQuota = new StorageQuotaService(
   config.assetStorageQuotaBytes,
   config.operations.adminEmails,
 );
-const billingService = new BillingService(pool, config.provider, creditService);
+const billingService = new BillingService(pool, config.provider, creditService, config.pinhaozhan);
 const jobService = new JobService(
   pool,
   jobQueue.port,
@@ -137,8 +138,8 @@ const channelAttributionService = new ChannelAttributionService(
 );
 const knowledgeService = new KnowledgeService(db, config.operations.adminEmails);
 const nativeAgentQueue = process.env.NATIVE_AGENT_ENABLED === 'true' ? createNativeAgentQueue(config.jobs.redisUrl) : undefined;
-const nativeAgentPolicy=new NativeAgentPolicyService(knowledgeService,pool,modelGateway,{token360:config.provider,volcengine_ark:config.volcengineArk},config.operations.adminEmails);
-const nativeAgent = nativeAgentQueue ? new NativeAgentService(knowledgeService,pool,new CompatibleAgentModel(modelGateway,new PaidAgentModel(pool,modelGateway,jobService,creditService,billingService,objectStorage,config.jobs,config.volcengineArk,config.provider,nativeAgentPolicy)),nativeAgentQueue.enqueue,jobService,config.operations.adminEmails,nativeAgentPolicy) : undefined;
+const nativeAgentPolicy=new NativeAgentPolicyService(knowledgeService,pool,modelGateway,{token360:config.provider,volcengine_ark:config.volcengineArk,pinhaozhan:config.pinhaozhan},config.operations.adminEmails);
+const nativeAgent = nativeAgentQueue ? new NativeAgentService(knowledgeService,pool,new CompatibleAgentModel(modelGateway,new PaidAgentModel(pool,modelGateway,jobService,creditService,billingService,objectStorage,config.jobs,config.volcengineArk,config.provider,nativeAgentPolicy,config.pinhaozhan)),nativeAgentQueue.enqueue,jobService,config.operations.adminEmails,nativeAgentPolicy) : undefined;
 const importQueue = process.env.KNOWLEDGE_IMPORT_ENABLED === 'true' ? createImportQueue(config.jobs.redisUrl) : undefined;
 const app = createApp(
   new PostgresPlatformRepository(db),

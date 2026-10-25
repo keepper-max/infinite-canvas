@@ -5,6 +5,8 @@ description: Implemented changes that still need manual verification
 
 # Pending Tests
 
+- 拼好站DeepSeek V4.1 Flash：独立服务端凭据与Agent专用路由、价格预检、请求ID/模型/Token三重账单绑定。隔离真实Agent两轮及只读工具通过，账本2积分、预留0；生产默认切换须经生产凭据实际核验，保留Qwen及原预算。复杂中文连续创作待用户体验。
+
 - R2 v0.16.37核验补丁：管理员只读模型探测与普通回执查询分离参数范围，严格拒绝多余参数；实际付费验收按已批准剩余预算单独记录，不把隔离替身当真实模型证明。
 
 - R2 v0.16.36发布候选：后台AI配置→Agent模型管理、服务端模型核验/范围与默认策略、每Run默认¥1上限、全用户基础权限和独立Worker。自动检查与生产状态见docs/r2；Windows真实输入法、物理手机与长期运行仍需人工，生产真实模型验收以最终发布记录为准。

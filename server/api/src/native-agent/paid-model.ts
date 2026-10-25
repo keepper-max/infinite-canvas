@@ -1,3 +1,4 @@
+import { pinhaozhanJson, pinhaozhanPrice } from "../pinhaozhan.js";
 import { validateAgentSources } from "./sources.js";
 import { KnowledgeService } from "../knowledge-service.js";
 import { drizzle } from "drizzle-orm/node-postgres";
@@ -45,6 +46,7 @@ export class PaidAgentModel implements AgentModelDriver {
     private provider: ProviderConfig,
     private tokenProvider?: ProviderConfig,
     private policy?: NativeAgentPolicyService,
+    private pinhaozhan?: ProviderConfig,
   ) {
     if (process.env.NODE_ENV === "production" && !policy)
       throw new Error("Production native agent requires database policy");
@@ -158,7 +160,7 @@ export class PaidAgentModel implements AgentModelDriver {
       assertKnowledgeGenerationEnabled(sourceRun?.sources);
     const route = nativeModelRoute(modelId),
       config =
-        route.providerId === "token360" ? this.tokenProvider! : this.provider;
+        route.providerId === "token360" ? this.tokenProvider! : route.providerId === "pinhaozhan" ? this.pinhaozhan! : this.provider;
     const body = {
       actor: execution.actor,
       stepId: execution.stepId,
@@ -203,7 +205,7 @@ export class PaidAgentModel implements AgentModelDriver {
       baseURL:
         route.providerId === "token360"
           ? config.baseUrl + "/v1"
-          : config.baseUrl,
+          : route.providerId === "pinhaozhan" ? config.baseUrl + "/v1" : config.baseUrl,
       apiKey: config.apiKey,
       fetch: async (input, init) => {
         const latestRun = (
@@ -277,6 +279,14 @@ export class PaidAgentModel implements AgentModelDriver {
               "缺少已核验的人民币结算汇率或超出报价边界，未提交推理请求",
               409,
             );
+          if (route.providerId === "pinhaozhan") {
+            const pricing = await pinhaozhanJson(config, "/api/pricing", false, init?.signal || undefined);
+            pinhaozhanPrice(pricing, Number(fx), route.quoteCents, AGENT_LIMITS.contextTokens, AGENT_LIMITS.outputTokens);
+            // Check ledger access before any billable submission. Missing later receipts
+            // remain held for review; never infer free usage from an empty ledger.
+            const ledger = await pinhaozhanJson(config, "/api/log/token", true, init?.signal || undefined);
+            if (ledger.success !== true || !Array.isArray(ledger.data)) throw new DomainError("AGENT_BILLING_UNCONFIRMED", "供应商账单接口不可用，未提交推理", 409);
+          } else {
           const pricing = await fetch(config.catalogUrl, {
             signal: init?.signal,
           });
@@ -320,6 +330,7 @@ export class PaidAgentModel implements AgentModelDriver {
               "模型价格超出已核验费用边界，未提交推理请求",
               409,
             );
+          }
         }
         if (
           !Number.isSafeInteger(estimate) ||
@@ -362,10 +373,12 @@ export class PaidAgentModel implements AgentModelDriver {
         );
         inferenceDispatched = true;
         const headers = new Headers(init?.headers);
+        if (route.providerId === "pinhaozhan") headers.set("User-Agent", "Mozilla/5.0");
         headers.set("X-Trace-ID", jobId);
         headers.set("X-Request-ID", jobId);
         const response = await fetch(input, {
           ...init,
+          ...(route.providerId === "pinhaozhan" ? { redirect: "error" as const } : {}),
           headers,
           body: JSON.stringify(request),
         });

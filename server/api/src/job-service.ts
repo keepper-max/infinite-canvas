@@ -100,6 +100,7 @@ export class JobService {
       await this.storageQuota?.assertHasCapacity(userId);
     let compiled = await this.gateway.compile(input);
     if(nativeModel && (!this.credits || !this.billing || compiled.providerId!==nativeModelRoute(nativeModel.modelId).providerId || compiled.upstreamModel!==nativeModelRoute(nativeModel.modelId).upstreamModel)) throw new DomainError("AGENT_BILLING_ROUTE_INVALID","原生推理必须使用已核验模型、积分及计费服务",409);
+    if (compiled.providerId === "pinhaozhan" && !nativeModel) throw new DomainError("AGENT_MODEL_ONLY", "该模型仅供原生Agent使用", 403);
     const maxAttempts = generationJobAttempts();
     const client = await this.pool.connect();
     let job: Record<string, unknown>;

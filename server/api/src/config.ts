@@ -11,6 +11,7 @@ export type ApiConfig = {
   runningHub: RunningHubConfig;
   runningHubGlobal: RunningHubConfig;
   volcengineArk: ProviderConfig;
+  pinhaozhan?: ProviderConfig;
   operations: OperationsConfig;
   payments: PaymentConfig;
   assetTrashRetentionDays: number;
@@ -258,6 +259,11 @@ export function readConfig(env: NodeJS.ProcessEnv = process.env): ApiConfig {
     runningHub,
     runningHubGlobal,
     volcengineArk,
+    pinhaozhan: {
+      baseUrl: (env.PINHAOZHAN_API_BASE_URL?.trim() || "https://pinhaozhan.vip").replace(/\/+$/, ""),
+      apiKey: env.PINHAOZHAN_API_KEY?.trim() || "",
+      catalogUrl: "https://pinhaozhan.vip/api/pricing",
+    },
     operations,
     payments,
     assetTrashRetentionDays,

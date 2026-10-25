@@ -1,3 +1,4 @@
+import { pinhaozhanJson, pinhaozhanReceipt } from "./pinhaozhan.js";
 import type { Pool, PoolClient } from "pg";
 
 import type { ProviderConfig } from "./config.js";
@@ -29,6 +30,7 @@ export class BillingService {
     private readonly pool: Pool,
     private readonly config: ProviderConfig,
     private readonly credits?: CreditService,
+    private readonly pinhaozhan?: ProviderConfig,
   ) {}
 
   async resolveRuleSnapshot(
@@ -264,6 +266,7 @@ export class BillingService {
       if (job.provider_job_id) return this.finishManualReview(jobId);
       return this.reviewFailedWithoutProviderJob(job);
     }
+    if (job.provider === "pinhaozhan") return this.settlePinhaozhan(job);
     if (!isDirectMeteredProvider(job.provider))
       return { status: String(job.billing_status || "pending") };
     return this.settleDirectProvider(job);
@@ -304,6 +307,7 @@ export class BillingService {
         return { status: String(existing.rows[0].billing_status) };
       throw new DomainError("BILLING_JOB_NOT_FOUND", "找不到可对账任务", 404);
     }
+    if (job.provider === "pinhaozhan") return this.settlePinhaozhan(job);
     if (isDirectMeteredProvider(job.provider))
       return this.settleDirectProvider(job);
     if (job.provider !== "token360") {
@@ -489,6 +493,23 @@ export class BillingService {
     );
   }
 
+  private async settlePinhaozhan(job: Record<string, unknown>) {
+    try {
+      if (hasUnconfirmedSubmission(job)) throw new Error("unknown submission");
+      const usage = asRecord(job.billing_meter_usage);
+      if (usage.billable === false && job.provider_submission_state === "rejected") {
+        return this.settleDirectProvider({ ...job, billing_meter_usage: { ...usage, consume_money: "0", currency: "USD" } });
+      }
+      if (!this.pinhaozhan?.apiKey) throw new Error("unconfigured");
+      const logs = await pinhaozhanJson(this.pinhaozhan, "/api/log/token", true);
+      const receipt = pinhaozhanReceipt(logs, String(job.billing_trace_id || ""), usage.prompt_tokens, usage.completion_tokens);
+      return this.settleDirectProvider({ ...job, billing_meter_usage: { ...usage, consume_money: receipt.amountUsd, currency: "USD", billing_amount_source: "new_api_request_quota", provider_request_id: receipt.requestId, provider_quota: receipt.quota } });
+    } catch {
+      await this.pool.query("update generation_jobs set billing_status='manual_review',billing_error='拼好站账单身份或用量未确认，保留预留且不自动重试推理',billing_next_check_at=null,updated_at=now() where id=$1", [job.id]);
+      return { status: "manual_review" };
+    }
+  }
+
   private async settleDirectProvider(job: Record<string, unknown>) {
     const usage = asRecord(job.billing_meter_usage);
     const compiled = asRecord(job.compiled_request);
@@ -555,7 +576,7 @@ export class BillingService {
     // Standard RunningHub generation reports consume-money in CNY. The global
     // OpenAI-compatible LLM route is priced from its official USD token catalog.
     const currency =
-      job.provider === "runninghub_global" &&
+      ["runninghub_global", "pinhaozhan"].includes(String(job.provider)) &&
       stringValue(usage.currency)?.toUpperCase() === "USD"
         ? "USD"
         : "CNY";

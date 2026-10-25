@@ -27,7 +27,7 @@ const queue = createNativeAgentQueue(config.jobs.redisUrl);
 const jobQueue = createQueue(config.jobs);
 const gateway = new ModelGateway(pool);
 const credits = new CreditService(pool, config.operations.adminEmails),
-  billing = new BillingService(pool, config.provider, credits),
+  billing = new BillingService(pool, config.provider, credits, config.pinhaozhan),
   storage = new S3ObjectStorage(config.objectStorage);
 const jobs = new JobService(
   pool,
@@ -43,7 +43,7 @@ const knowledge = new KnowledgeService(db, config.operations.adminEmails),
     knowledge,
     pool,
     gateway,
-    { token360: config.provider, volcengine_ark: config.volcengineArk },
+    { token360: config.provider, volcengine_ark: config.volcengineArk, pinhaozhan: config.pinhaozhan },
     config.operations.adminEmails,
   );
 const service = new NativeAgentService(
@@ -62,6 +62,7 @@ const service = new NativeAgentService(
       config.volcengineArk,
       config.provider,
       policy,
+      config.pinhaozhan,
     ),
   ),
   queue.enqueue,

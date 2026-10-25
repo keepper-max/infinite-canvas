@@ -37,6 +37,8 @@ export function nativeModelRoute(modelId: string) {
       quoteCents: 12,
       name: "GPT-4.1 Mini",
     };
+  if (modelId === "pinhaozhan.text.deepseek-v4.1-flash")
+    return { modelId, providerId: "pinhaozhan", upstreamModel: "deepseek-v4.1-flash", quoteCents: 12, name: "DeepSeek V4.1 Flash" };
   throw new DomainError(
     "AGENT_MODEL_UNAVAILABLE",
     "此模型尚未核验工具调用与费用边界",
