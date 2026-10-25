@@ -1,4 +1,4 @@
-import { pinhaozhanJson, pinhaozhanPrice, pinhaozhanFetch } from "../pinhaozhan.js";
+import { pinhaozhanJson, pinhaozhanPrice, pinhaozhanFetch, pinhaozhanMessages } from "../pinhaozhan.js";
 import { validateAgentSources } from "./sources.js";
 import { KnowledgeService } from "../knowledge-service.js";
 import { drizzle } from "drizzle-orm/node-postgres";
@@ -161,6 +161,7 @@ export class PaidAgentModel implements AgentModelDriver {
     const route = nativeModelRoute(modelId),
       config =
         route.providerId === "token360" ? this.tokenProvider! : route.providerId === "pinhaozhan" ? this.pinhaozhan! : this.provider;
+    if (route.providerId === "pinhaozhan") messages = pinhaozhanMessages(messages);
     const body = {
       actor: execution.actor,
       stepId: execution.stepId,
