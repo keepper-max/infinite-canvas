@@ -1,14 +1,19 @@
-import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
+import { lazy,Suspense,useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { useLocation } from "react-router-dom";
 
 import { AgentPanel } from "@/components/agent/agent-panel";
 import { AppTopNav } from "@/components/layout/app-top-nav";
 import { CODEX_AGENT_ENABLED } from "@/constant/env";
 import { cn } from "@/lib/utils";
+import { useNativeAgentStore } from "@/stores/use-native-agent-store";
+import { useAuth } from "@/components/auth/auth-context";
+const NativeAgentPanel=lazy(()=>import("@/components/native-agent/native-agent-panel"));
 
 const CANVAS_NAV_IDLE_MS = 4_000;
 
 export default function UserLayout({ children }: { children: ReactNode }) {
+    const {user}=useAuth();
+    const nativeAgentOpen=useNativeAgentStore(s=>s.open);
     const { pathname } = useLocation();
     const canvasProject = /^\/canvas\/[^/]+/.test(pathname);
     const [canvasNavVisible, setCanvasNavVisible] = useState(canvasProject);
@@ -77,6 +82,7 @@ export default function UserLayout({ children }: { children: ReactNode }) {
                 </div>
             </div>
             {CODEX_AGENT_ENABLED ? <AgentPanel /> : null}
+            {nativeAgentOpen ? <Suspense fallback={<aside className="w-80 p-5" role="status">正在载入创作助手…</aside>}><NativeAgentPanel key={user.id}/></Suspense> : null}
         </div>
     );
 }

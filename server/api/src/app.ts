@@ -1,4 +1,6 @@
 import { registerKnowledgeRoutes } from './knowledge-routes.js';
+import { registerNativeAgentRoutes } from './native-agent/routes.js';
+import type { NativeAgentService } from './native-agent/service.js';
 import { registerKnowledgeImportRoutes } from './knowledge-import-routes.js';
 import type { KnowledgeImportService } from './knowledge-import-service.js';
 import type { KnowledgeService } from './knowledge-service.js';
@@ -103,6 +105,7 @@ export function createApp(
   websiteInquiryService?: WebsiteInquiryService,
   knowledgeService?: KnowledgeService,
   knowledgeImports?: KnowledgeImportService,
+  nativeAgent?: NativeAgentService,
 ) {
   const app = new Hono<AppEnv>();
 
@@ -2341,6 +2344,7 @@ export function createApp(
   app.notFound((context) =>
     apiError(context, new DomainError("NOT_FOUND", "接口不存在", 404)),
   );
+  if (nativeAgent) registerNativeAgentRoutes(app, nativeAgent, request => requireUser(request, repository, config));
   if (knowledgeService) {
     registerKnowledgeImportRoutes(app,knowledgeImports,request=>requireUser(request,repository,config));
     registerKnowledgeRoutes(app, knowledgeService, request => requireUser(request, repository, config));

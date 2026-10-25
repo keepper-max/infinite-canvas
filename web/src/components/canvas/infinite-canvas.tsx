@@ -263,6 +263,7 @@ export function InfiniteCanvas({ containerRef, viewport, tool, touchMode = false
             <CanvasGrid viewport={viewport} mode={backgroundMode} />
             <div
                 className="absolute origin-top-left"
+                data-canvas-viewport
                 style={{
                     transform: `translate(${viewport.x}px, ${viewport.y}px) scale(${viewport.k})`,
                 }}

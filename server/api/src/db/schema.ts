@@ -1,4 +1,5 @@
 export * from './knowledge-schema.js';
+export * from './native-agent-schema.js';
 import * as knowledgeSchema from './knowledge-schema.js';
 import { sql } from "drizzle-orm";
 import {

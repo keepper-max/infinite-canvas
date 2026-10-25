@@ -7,6 +7,7 @@ import { knowledgeIndex } from "./knowledge-index.js";
 import { appendKnowledgeLink, wikiSourceRanges } from "./knowledge-link-edit.js";
 import { knowledgeReferenceSchema, type KnowledgeReference } from "./knowledge-reference.js";
 import { requireKnowledgeFeature, hasKnowledgeFeature } from "./knowledge-feature.js";
+import { grantUserFeature } from "./feature-grants.js";
 
 type Tx = Parameters<Parameters<PlatformDatabase["transaction"]>[0]>[0];
 type Row = Record<string, any>;
@@ -76,15 +77,7 @@ export class KnowledgeService {
     return this.db.transaction(async tx => ({ enabled: await hasKnowledgeFeature(tx, userId) }));
   }
   async featureGrant(actor: string, target: string, enabled: boolean, reason: string) {
-    return this.db.transaction(async tx => {
-      const admin = await tx.execute(sql`select id from users where id=${actor} and account_status='active' and (is_admin=true or lower(email) in (select jsonb_array_elements_text(${JSON.stringify(this.adminEmails)}::jsonb))) for share`);
-      if (!admin.rows.length) throw new DomainError("ADMIN_FORBIDDEN", "需要管理员权限", 403);
-      const current = await tx.execute(sql`select id,account_status from users where id=${target} for update`);
-      if (!current.rows.length || (enabled && current.rows[0].account_status !== 'active')) throw new DomainError("USER_NOT_FOUND", "用户不存在或已停用", 404);
-      await tx.execute(sql`insert into user_feature_grants(user_id,feature,enabled,updated_by,reason) values(${target},'knowledge',${enabled},${actor},${reason}) on conflict(user_id,feature) do update set enabled=excluded.enabled,updated_by=excluded.updated_by,reason=excluded.reason,updated_at=now()`);
-      await tx.execute(sql`insert into admin_audit_logs(actor_user_id,action,target_type,target_id,metadata) values(${actor},'feature.knowledge.grant','user',${target},${JSON.stringify({enabled,reason})}::jsonb)`);
-      return { userId: target, enabled };
-    });
+    return grantUserFeature(this.db,this.adminEmails,actor,target,"knowledge",enabled,reason);
   }
   private async authorize(
     tx: Tx,
@@ -469,9 +462,10 @@ export class KnowledgeService {
   async previewLink(userId: string, spaceId: string, sourceId: string, targetId: string, action: "add" | "remove") {
     return this.run(userId, spaceId, false, async tx => this.linkPlan(tx, spaceId, await this.get(tx, spaceId, sourceId), targetId, action));
   }
-  async write(userId: string, spaceId: string, op: KnowledgeOperation) {
-    return this.run(userId, spaceId, true, (tx) =>
-      this.operation(tx, userId, spaceId, op, async () => {
+  async write(userId: string, spaceId: string, op: KnowledgeOperation, guard?: (tx: Tx) => Promise<void>) {
+    return this.run(userId, spaceId, true, async (tx) => {
+      await guard?.(tx);
+      return this.operation(tx, userId, spaceId, op, async () => {
         const p = { ...op.payload } as any;
         let importTask: Row | undefined;
         if (op.action === 'document.importConfirm') {
@@ -625,8 +619,8 @@ export class KnowledgeService {
         await this.resolve(tx, spaceId, d.id);
         if (importTask) await tx.execute(sql`update knowledge_imports set state='completed',document_id=${d.id},document_revision=${d.revision},updated_at=now() where id=${importTask.id}`);
         return doc(d);
-      }),
-    );
+      });
+    });
   }
   private async resolve(tx: Tx, spaceId: string, documentId: string) {
     // Existing unique targets preserve identity across renames. Titles remain aliases;

@@ -1,4 +1,9 @@
+import {NativeAgentPolicyService} from './native-agent/policy.js';
+import { PaidAgentModel } from "./native-agent/paid-model.js";
 import { KnowledgeService } from './knowledge-service.js';
+import { NativeAgentService } from './native-agent/service.js';
+import { CompatibleAgentModel } from './native-agent/model.js';
+import { createNativeAgentQueue } from './native-agent/queue.js';
 import { KnowledgeImportService } from './knowledge-import-service.js';
 import { createImportQueue } from './knowledge-import-queue.js';
 import { serve } from "@hono/node-server";
@@ -131,6 +136,9 @@ const channelAttributionService = new ChannelAttributionService(
   config.operations,
 );
 const knowledgeService = new KnowledgeService(db, config.operations.adminEmails);
+const nativeAgentQueue = process.env.NATIVE_AGENT_ENABLED === 'true' ? createNativeAgentQueue(config.jobs.redisUrl) : undefined;
+const nativeAgentPolicy=new NativeAgentPolicyService(knowledgeService,pool,modelGateway,{token360:config.provider,volcengine_ark:config.volcengineArk},config.operations.adminEmails);
+const nativeAgent = nativeAgentQueue ? new NativeAgentService(knowledgeService,pool,new CompatibleAgentModel(modelGateway,new PaidAgentModel(pool,modelGateway,jobService,creditService,billingService,objectStorage,config.jobs,config.volcengineArk,config.provider,nativeAgentPolicy)),nativeAgentQueue.enqueue,jobService,config.operations.adminEmails,nativeAgentPolicy) : undefined;
 const importQueue = process.env.KNOWLEDGE_IMPORT_ENABLED === 'true' ? createImportQueue(config.jobs.redisUrl) : undefined;
 const app = createApp(
   new PostgresPlatformRepository(db),
@@ -149,6 +157,7 @@ const app = createApp(
   new WebsiteInquiryService(pool, verificationRedis),
   knowledgeService,
   importQueue ? new KnowledgeImportService(knowledgeService,objectStorage,importQueue.enqueue,config.assetStorageQuotaBytes,importQueue.assertReady,config.operations.adminEmails) : undefined,
+  nativeAgent,
 );
 
 const server = serve({ fetch: app.fetch, port: config.port }, (info) => {
@@ -158,6 +167,7 @@ const server = serve({ fetch: app.fetch, port: config.port }, (info) => {
 async function shutdown() {
   server.close();
   await importQueue?.queue.close();
+  await nativeAgentQueue?.close();
   await jobQueue.queue.close();
   await jobQueue.connection.quit();
   await compositionQueue.queue.close();

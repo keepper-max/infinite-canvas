@@ -9,6 +9,7 @@
     "build": "tsc -p tsconfig.json",
     "start": "node dist/index.js",
     "worker": "node dist/worker.js",
+    "native-agent:worker": "node dist/native-agent-worker.js",
     "knowledge:import-worker": "node dist/knowledge-import-worker.js",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "db:migrate": "tsx src/db/migrate-cli.ts",
@@ -17,6 +18,7 @@
     "canvas:repair": "tsx scripts/canvas-repair.ts"
   },
   "dependencies": {
+    "@ai-sdk/openai-compatible": "3.0.77",
     "@alicloud/dm20151123": "^1.11.0",
     "@alicloud/dysmsapi20170525": "^4.6.0",
     "@alicloud/openapi-client": "^0.4.15",
@@ -25,6 +27,7 @@
     "@aws-sdk/client-s3": "^3.1128.0",
     "@aws-sdk/s3-request-presigner": "^3.1128.0",
     "@hono/node-server": "2.1.1",
+    "ai": "7.0.152",
     "alipay-sdk": "4.14.0",
     "argon2": "0.45.1",
     "bullmq": "^6.3.4",
@@ -32,6 +35,7 @@
     "hono": "4.13.7",
     "ioredis": "^6.0.0",
     "ipaddr.js": "2.5.0",
+    "js-tiktoken": "1.0.21",
     "pg": "8.23.0",
     "remark-frontmatter": "5.0.0",
     "remark-gfm": "4.0.1",

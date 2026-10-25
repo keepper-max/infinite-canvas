@@ -8,6 +8,7 @@ import { canvasThemes } from "@/lib/canvas-theme";
 import { useCanvasSidePanelStore } from "@/stores/use-canvas-side-panel-store";
 import { useThemeStore } from "@/stores/use-theme-store";
 import { CODEX_AGENT_ENABLED } from "@/constant/env";
+import { NativeAgentButton } from "@/components/native-agent/native-agent-button";
 import type { CanvasSyncStatus } from "@/pages/canvas/hooks/use-cloud-canvas-persistence";
 
 export function CanvasTopBar({
@@ -145,8 +146,8 @@ export function CanvasTopBar({
 
     return (
         <>
-            <div className="pointer-events-none absolute left-0 right-0 top-0 z-50 flex h-16 items-center justify-between pl-1 pr-4">
-                <div className="pointer-events-auto flex min-w-0 items-center gap-2">
+            <div className="pointer-events-none absolute left-0 right-0 top-0 z-50 flex h-16 items-center justify-between gap-3 overflow-hidden pl-1 pr-4">
+                <div className="pointer-events-auto flex min-w-0 flex-1 items-center gap-2">
                     <Tooltip title={sidePanelOpen ? t("canvas.collapsePanel") : t("canvas.expandPanel")}>
                         <button
                             type="button"
@@ -164,7 +165,7 @@ export function CanvasTopBar({
                         </button>
                     </Dropdown>
 
-                    <div ref={titleRef} className="flex min-w-0 items-center gap-2">
+                    <div ref={titleRef} data-canvas-title className="flex min-w-0 flex-1 items-center gap-2 overflow-hidden">
                         {isTitleEditing ? (
                             <input
                                 autoFocus
@@ -175,13 +176,13 @@ export function CanvasTopBar({
                                     if (event.key === "Enter") onFinishTitleEditing();
                                     if (event.key === "Escape") onCancelTitleEditing();
                                 }}
-                                className="max-w-[280px] bg-transparent p-0 text-left text-lg font-semibold tracking-normal outline-none"
+                                className="w-full min-w-0 max-w-[280px] bg-transparent p-0 text-left text-lg font-semibold tracking-normal outline-none"
                                 style={{ color: theme.node.text }}
                             />
                         ) : (
                             <button
                                 type="button"
-                                className="max-w-[280px] truncate border-b border-dashed border-transparent text-left text-lg font-semibold tracking-normal transition hover:border-current"
+                                className="w-full min-w-0 max-w-[280px] truncate border-b border-dashed border-transparent text-left text-lg font-semibold tracking-normal transition hover:border-current"
                                 onDoubleClick={canRenameProject ? onStartTitleEditing : undefined}
                                 title={t("canvas.renameHint")}
                             >
@@ -193,7 +194,7 @@ export function CanvasTopBar({
                     <Tooltip title="保存画布">
                         <button
                             type="button"
-                            className="flex h-8 items-center gap-1.5 px-1.5 text-xs transition hover:opacity-75 disabled:cursor-not-allowed disabled:opacity-35"
+                            className="flex h-8 shrink-0 items-center gap-1.5 whitespace-nowrap px-1.5 text-xs transition hover:opacity-75 disabled:cursor-not-allowed disabled:opacity-35"
                             style={{ color: theme.node.text }}
                             disabled={!canSave || syncStatus === "loading" || syncStatus === "saving" || syncStatus === "conflict"}
                             onClick={onSave}
@@ -205,7 +206,8 @@ export function CanvasTopBar({
                     {CODEX_AGENT_ENABLED ? <CompactAgentStatus status={compactAgentStatus} onClick={onToggleAgent} /> : null}
                 </div>
 
-                <div className="pointer-events-auto flex items-center gap-1.5">
+                <div className="pointer-events-auto flex shrink-0 items-center gap-1.5">
+                    <NativeAgentButton/>
                     <UserStatusActions variant="canvas" onOpenShortcuts={() => setShortcutsOpen(true)} onOpenPlugins={onOpenPlugins} onLogoutRequest={onLogoutRequest} />
                     {CODEX_AGENT_ENABLED ? (
                         <>
@@ -251,7 +253,7 @@ function CanvasSyncIndicator({ status, onClick, compact = false }: { status: Can
     const color = status === "synced" ? "#16a34a" : status === "unsynced" || status === "conflict" ? "#dc2626" : "#d97706";
     const Icon = status === "synced" ? Cloud : status === "unsynced" || status === "conflict" ? CloudOff : LoaderCircle;
     return (
-        <button type="button" className="flex h-8 items-center gap-1.5 text-xs transition hover:opacity-75" style={{ color }} title={labels[status]} onClick={onClick}>
+        <button type="button" className="flex h-8 shrink-0 items-center gap-1.5 whitespace-nowrap text-xs transition hover:opacity-75" style={{ color }} aria-label="画布保存状态" data-sync-status={status} title={labels[status]} onClick={onClick}>
             <Icon className={`size-3.5 ${status === "loading" || status === "saving" ? "animate-spin" : ""}`} />
             {compact ? null : <span>{labels[status]}</span>}
         </button>
@@ -274,7 +276,7 @@ function CompactAgentStatus({ status, onClick }: { status: { connected: boolean;
     const label = status.connected ? t("canvas.agentConnected") : status.enabled ? t("canvas.agentConnecting", { activity: status.activity || t("canvas.connecting") }) : t("canvas.agentDisconnected");
     const dotColor = status.connected ? "#22c55e" : status.enabled ? "#f59e0b" : theme.node.muted;
     return (
-        <button type="button" className="flex h-8 items-center gap-1.5 text-xs transition hover:opacity-75" style={{ color: status.connected ? "#16a34a" : status.enabled ? "#d97706" : theme.node.muted }} onClick={onClick} title={t("canvas.openAgent")}>
+        <button type="button" className="flex h-8 shrink-0 items-center gap-1.5 whitespace-nowrap text-xs transition hover:opacity-75" style={{ color: status.connected ? "#16a34a" : status.enabled ? "#d97706" : theme.node.muted }} onClick={onClick} title={t("canvas.openAgent")}>
             <span className="size-2 rounded-full" style={{ background: dotColor }} />
             <span className="max-w-[140px] truncate">{label}</span>
         </button>

@@ -13,7 +13,7 @@ import {hashSessionToken} from '../src/auth.js';
 import type {ApiConfig} from '../src/config.js';
 const connection=process.env.P1_TEST_DATABASE_URL;
 test('P1 native knowledge real PostgreSQL and formal HTTP handlers',{skip:!connection},async t=>{
- const url=new URL(connection!);assert.equal(url.hostname,'127.0.0.1');assert.equal(url.port,'55451');assert.ok(['/p1_isolated','/p2_isolated'].includes(url.pathname));
+ const url=new URL(connection!);assert.equal(url.hostname,'127.0.0.1');assert.equal(url.port,'55451');assert.ok(['/p1_isolated','/p2_isolated','/r2_business'].includes(url.pathname));
  const {db,pool}=createDatabase(connection!),service=new KnowledgeService(db),repo=new PostgresPlatformRepository(db),passed:string[]=[];
  const run=async(name:string,fn:()=>Promise<void>)=>t.test(name,async()=>{await fn();passed.push(name)});
  try{

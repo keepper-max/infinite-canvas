@@ -9,6 +9,7 @@ import type {
 import type { ExtractTablesWithRelations } from "drizzle-orm";
 
 import { hasKnowledgeFeature, requireKnowledgeFeature } from "./knowledge-feature.js";
+import { requireNativeAgentFeature } from "./native-agent/feature.js";
 import { issueWriteCapability, validateKnowledgeCanvasWrite } from "./canvas-write-capability.js";
 import {
   parseCanvasWrite,
@@ -40,7 +41,7 @@ type Executor = Database | Transaction;
 
 export type CanvasOperationRequest = {
   operationId: string; expectedCanvasRevision: number;
-  kind: "vibe.storyboard.create" | "vibe.video.import" | "canvas.repair" | "canvas.repair.restore" | "knowledge.reference.add";
+  kind: "vibe.storyboard.create" | "vibe.video.import" | "canvas.repair" | "canvas.repair.restore" | "knowledge.reference.add" | "agent.canvas.mutate";
   payload: unknown;
 };
 export type CanvasOperationReceipt = {
@@ -527,7 +528,7 @@ export class PostgresPlatformRepository implements PlatformRepository {
     projectId: string, userId: string, input: CanvasOperationRequest,
     mutate: (canvas: CanvasDocument, tx: Transaction) => Promise<CanvasMutation>,
   ) {
-    z.enum(["vibe.storyboard.create", "vibe.video.import", "knowledge.reference.add"]).parse(input.kind);
+    z.enum(["vibe.storyboard.create", "vibe.video.import", "knowledge.reference.add", "agent.canvas.mutate"]).parse(input.kind);
     return this.commitCanvasOperation(projectId, userId, input, mutate);
   }
 
@@ -540,7 +541,8 @@ export class PostgresPlatformRepository implements PlatformRepository {
     z.number().int().nonnegative().parse(input.expectedCanvasRevision);
     return this.db.transaction(async tx => {
       await lockCanvasWriteContext(tx, projectId, userId, Boolean(repair), input.kind.startsWith("canvas.repair"));
-        if (input.kind === "knowledge.reference.add") await requireKnowledgeFeature(tx, userId);
+      if (input.kind === "agent.canvas.mutate") await requireNativeAgentFeature(tx, userId);
+      if (input.kind === "knowledge.reference.add") await requireKnowledgeFeature(tx, userId);
       // JSONB canonicalization is PostgreSQL's, not a second hand-written JSON serializer.
       const digest = await tx.execute(sql`select encode(sha256(convert_to(${JSON.stringify({ kind: input.kind, expectedCanvasRevision: input.expectedCanvasRevision, payload: input.payload })}::jsonb::text,'UTF8')),'hex') as hash`);
       const payloadHash = String(digest.rows[0].hash);
@@ -579,7 +581,7 @@ export class PostgresPlatformRepository implements PlatformRepository {
       const mutation = await mutate(current, tx);
       const { write } = parseCanvasWrite({ expectedRevision: baseRevision, contractVersion: current.contractVersion,
         nodes: mutation.nodes, edges: mutation.edges, viewport: mutation.viewport, settings: mutation.settings });
-      const saved = await saveCanvasInTransaction(tx, projectId, userId, write, input.kind.startsWith("canvas.repair") ? "repair" : input.kind === "knowledge.reference.add" ? "save" : "mcp", undefined, true);
+      const saved = await saveCanvasInTransaction(tx, projectId, userId, write, input.kind.startsWith("canvas.repair") ? "repair" : ["knowledge.reference.add", "agent.canvas.mutate"].includes(input.kind) ? "save" : "mcp", undefined, true);
       const receipt: CanvasOperationReceipt = { operationId: input.operationId, projectId, canvasId: saved.canvasId,
         revision: saved.revision, nodeIds: saved.nodes.map(node => node.id), edgeIds: saved.edges.map(edge => edge.id),
         result: { ...mutation.result, ...(archiveId ? { archiveId } : {}) }, replayed: false };
@@ -612,6 +614,7 @@ export class PostgresPlatformRepository implements PlatformRepository {
         eq(tables.canvasOperations.projectId, projectId), eq(tables.canvasOperations.actorId, userId), eq(tables.canvasOperations.operationId, operationId),
       ));
       if (!operation) throw new DomainError("CANVAS_OPERATION_NOT_FOUND", "该操作者在此项目下没有这项操作的已提交回执", 404);
+      if (operation.kind === "agent.canvas.mutate") await requireNativeAgentFeature(tx, userId, false);
         if (operation.kind === "knowledge.reference.add" && !await hasKnowledgeFeature(tx, userId, false))
           throw new DomainError("KNOWLEDGE_NOT_ENABLED", "此账号尚未开放知识功能", 403);
       return operation.receipt as CanvasOperationReceipt;
@@ -833,7 +836,7 @@ function normalizePlatformUser(user: {
   };
 }
 
-async function hasProjectAccess(
+export async function hasProjectAccess(
   db: Executor,
   projectId: string,
   userId: string,
@@ -856,7 +859,7 @@ async function hasProjectAccess(
   return Boolean(member);
 }
 
-async function hasProjectEditAccess(
+export async function hasProjectEditAccess(
   db: Executor,
   projectId: string,
   userId: string,

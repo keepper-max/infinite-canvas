@@ -1,3 +1,4 @@
+import { bindNativeModelJob, assertNativeJobVisible, nativeModelRoute, type NativeModelJobInput } from "./native-agent/model-job-policy.js";
 import { createHash, randomUUID } from "node:crypto";
 import { prepareKnowledgeJob } from "./knowledge-job-input.js";
 import { KnowledgeService } from "./knowledge-service.js";
@@ -61,6 +62,7 @@ export class JobService {
     input: CreateJobInput,
     retryOfJobId?: string,
     retryOperation?: RetryOperation,
+    nativeModel?: NativeModelJobInput,
   ) {
     if (!retryOfJobId && input.trace?.inputSnapshot) {
       const { knowledgeSources: _ignored, ...snapshot } = input.trace.inputSnapshot;
@@ -77,9 +79,9 @@ export class JobService {
       if (settings.modelId) input = { ...input, modelId: settings.modelId };
     }
     const fingerprint = createHash("sha256")
-      .update(JSON.stringify({ ...input, idempotencyKey: undefined }))
+      .update(JSON.stringify({ ...input, idempotencyKey: undefined, ...(nativeModel ? {nativeModelPayloadHash:nativeModel.payloadHash}: {}) }))
       .digest("hex");
-    await assertProjectAccess(this.pool, projectId, userId, "edit");
+    await assertProjectAccess(this.pool, projectId, userId, nativeModel?.mode==='advice'?"read":"edit");
     const duplicate = await this.pool.query(
       "select * from generation_jobs where project_id = $1 and idempotency_key = $2",
       [projectId, input.idempotencyKey],
@@ -97,12 +99,13 @@ export class JobService {
     if (input.capability !== "text")
       await this.storageQuota?.assertHasCapacity(userId);
     let compiled = await this.gateway.compile(input);
+    if(nativeModel && (!this.credits || !this.billing || compiled.providerId!==nativeModelRoute(nativeModel.modelId).providerId || compiled.upstreamModel!==nativeModelRoute(nativeModel.modelId).upstreamModel)) throw new DomainError("AGENT_BILLING_ROUTE_INVALID","原生推理必须使用已核验模型、积分及计费服务",409);
     const maxAttempts = generationJobAttempts();
     const client = await this.pool.connect();
     let job: Record<string, unknown>;
     try {
       await client.query("begin");
-      await assertProjectAccess(client, projectId, userId, "edit");
+      await assertProjectAccess(client, projectId, userId, nativeModel?.mode==='advice'?"read":"edit");
       if (retryOperation && retryOfJobId) {
         await client.query("select pg_advisory_xact_lock(hashtextextended($1,0))",[userId+':retry:'+retryOperation.operationId]);
         const receipt=(await client.query("select * from job_retry_operations where actor_id=$1 and operation_id=$2",[userId,retryOperation.operationId])).rows[0];
@@ -157,6 +160,7 @@ export class JobService {
       const prepared = await prepareKnowledgeJob(client, userId, projectId, input, retryOfJobId);
       assertKnowledgeGenerationEnabled(prepared.trace?.inputSnapshot?.knowledgeSources);
       if (prepared !== input) { input = prepared; compiled = await this.gateway.compile(input, client); }
+      if(nativeModel) compiled={...compiled,providerMetadata:{...compiled.providerMetadata,nativeAgentStepId:nativeModel.stepId}};
       const inheritedBillingRule = retryOfJobId
         ? (
             await client.query(
@@ -218,6 +222,7 @@ export class JobService {
         client,
         userId,
         input.capability,
+        nativeModel ? BigInt(nativeModel.quoteCents) : undefined,
       );
       if (reserved !== undefined) {
         const updated = await client.query(
@@ -226,6 +231,7 @@ export class JobService {
         );
         job = updated.rows[0];
       }
+      if(nativeModel) await bindNativeModelJob(client,String(job.id),nativeModel);
       await appendEvent(
         client,
         job.id as string,
@@ -249,6 +255,7 @@ export class JobService {
     } finally {
       client.release();
     }
+    if(nativeModel) return serializeJob(job);
     try {
       await this.queue.add(job.id as string, Number(job.max_attempts));
       await this.pool.query(
@@ -355,7 +362,7 @@ export class JobService {
   async list(projectId: string, userId: string) {
     await assertProjectAccess(this.pool, projectId, userId);
     const result = await this.pool.query(
-      "select * from generation_jobs where project_id=$1 order by created_at desc limit 200",
+      "select * from generation_jobs where project_id=$1 and not (coalesce(compiled_request->'providerMetadata','{}'::jsonb) ? 'nativeAgentStepId') order by created_at desc limit 200",
       [projectId],
     );
     if(result.rows.some(r=>r.input_snapshot?.trace?.inputSnapshot?.knowledgeSources?.length))await requireKnowledgeFeaturePg(this.pool,userId);
@@ -367,6 +374,7 @@ export class JobService {
       [jobId, userId],
     );
     if (!result.rows[0]) return null;
+    if(result.rows[0].compiled_request?.providerMetadata?.nativeAgentStepId) await assertNativeJobVisible(this.pool,jobId,userId);
     if(result.rows[0].input_snapshot?.trace?.inputSnapshot?.knowledgeSources?.length)await requireKnowledgeFeaturePg(this.pool,userId);
     const artifacts = String(result.rows[0].credit_delivery_status) === "released"
       ? await this.pool.query(
@@ -413,6 +421,9 @@ export class JobService {
     }));
   }
   async cancel(jobId: string, userId: string) {
+    const native=(await this.pool.query("select id from generation_jobs where id=$1 and coalesce(compiled_request->'providerMetadata','{}'::jsonb) ? 'nativeAgentStepId'",[jobId])).rows.length;
+    if(native)await assertNativeJobVisible(this.pool,jobId,userId);
+
     const result = await this.pool.query(
       `update generation_jobs j set status='cancel_requested',cancel_requested_at=now(),updated_at=now() from project_members m, projects p where j.id=$1 and m.project_id=j.project_id and p.id=j.project_id and p.deleted_at is null and m.user_id=$2 and m.role in ('owner','admin','editor') and j.status in ('pending','queued','submitting','retrying','running','downloading','persisting') returning j.*`,
       [jobId, userId],
@@ -449,6 +460,7 @@ export class JobService {
       [jobId, userId],
     );
     const current = result.rows[0];
+    if(current?.compiled_request?.providerMetadata?.nativeAgentStepId) throw new DomainError("AGENT_RETRY_RESTRICTED","原生推理请核查原Run与模型步骤，不通过普通任务重试重新收费",409);
     if (!current) return null;
     await assertProjectAccess(
       this.pool,
@@ -514,6 +526,7 @@ export class JobExecutor {
     private readonly transferQueue?: TransferQueuePort,
     private readonly storageQuota?: StorageQuotaService,
     private readonly credits?: CreditService,
+    private readonly nativeAgentExecution = false,
   ) {}
   async execute(jobId: string, attempt: number, signal?: AbortSignal) {
     const row = (
@@ -522,6 +535,7 @@ export class JobExecutor {
       ])
     ).rows[0];
     if (!row) return;
+    if (row.compiled_request?.providerMetadata?.nativeAgentStepId && !this.nativeAgentExecution) return {managedBy:"native-agent"};
     if (["completed", "failed", "cancelled", "billing_pending", "payment_required"].includes(row.status)) return;
     if (row.status === "cancel_requested") return this.cancel(row, signal);
     const submitting = await this.pool.query(

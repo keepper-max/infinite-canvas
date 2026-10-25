@@ -57,6 +57,8 @@ import { useCanvasStore } from "@/stores/canvas/use-canvas-store";
 import { useAgentBridge } from "@/pages/canvas/hooks/use-agent-bridge";
 import { usePluginHost } from "@/pages/canvas/hooks/use-plugin-host";
 import { useCloudCanvasPersistence } from "@/pages/canvas/hooks/use-cloud-canvas-persistence";
+import {mergeHydratedNodes,preserveCanvasCenter} from "@/lib/canvas/native-agent-view";
+import { useNativeAgentBridge } from "@/pages/canvas/hooks/use-native-agent-bridge";
 import { buildNodeMentionReferences, getGroupResourceNodes, getGenerationResourceNodes, isCanvasReferenceNode, type CanvasResourceReference } from "@/lib/canvas/canvas-resource-references";
 import { exportCanvasProjects } from "@/lib/canvas/canvas-export";
 import { applyNodeConfigPatch, audioMetadata, buildAudioGenerationMetadata, buildImageGenerationMetadata, createCanvasNode, imageMetadata, videoMetadata } from "@/lib/canvas/canvas-node-factory";
@@ -388,8 +390,12 @@ function InfiniteCanvasPage({ projectId }: { projectId: string }) {
     const canvasApplyVersionRef = useRef(0);
     const canvasHydrationAbortRef = useRef<AbortController | null>(null);
 
+    const programmaticViewportRef=useRef<ViewportTransform|null>(null);
+    const canvasSizeRef=useRef({width:0,height:0});
     const applyPersistedCanvas = useCallback(
-        (draft: CanvasDraft) => {
+        (draft: CanvasDraft,options?:{preserveViewport?:boolean}) => {
+            const appliedView=options?.preserveViewport?{...viewportRef.current}:draft.viewport;
+            if(options?.preserveViewport)programmaticViewportRef.current=appliedView;
             const applyVersion = ++canvasApplyVersionRef.current;
             canvasHydrationAbortRef.current?.abort();
             const hydrationController = new AbortController();
@@ -398,39 +404,35 @@ function InfiniteCanvasPage({ projectId }: { projectId: string }) {
             const placeholderNodes = prepareCanvasMediaPlaceholders(baseNodes);
             nodesRef.current = placeholderNodes;
             connectionsRef.current = draft.edges;
-            viewportRef.current = draft.viewport;
-            desktopViewportRef.current = draft.viewport;
+            viewportRef.current = appliedView;
+            desktopViewportRef.current = appliedView;
             setNodes(placeholderNodes);
             setConnections(draft.edges);
             setBackgroundMode(draft.settings.backgroundMode);
             setShowImageInfo(draft.settings.showImageInfo);
-            setViewport(draft.viewport);
+            setViewport(appliedView);
             updateProject(projectId, {
                 nodes: placeholderNodes,
                 connections: draft.edges,
                 backgroundMode: draft.settings.backgroundMode,
                 showImageInfo: draft.settings.showImageInfo,
-                viewport: draft.viewport,
+                viewport: appliedView,
             });
             historyRef.current = { past: [], future: [] };
             setHistoryState({ canUndo: false, canRedo: false });
             void hydrateCanvasImages(baseNodes, hydrationController.signal)
                 .then((restoredNodes) => {
                     if (canvasApplyVersionRef.current !== applyVersion) return;
-                    nodesRef.current = restoredNodes;
-                    if (lastHistoryRef.current) lastHistoryRef.current = { ...lastHistoryRef.current, nodes: restoredNodes };
-                    setNodes(restoredNodes);
-                    updateProject(projectId, {
-                        nodes: restoredNodes,
-                        connections: draft.edges,
-                        backgroundMode: draft.settings.backgroundMode,
-                        showImageInfo: draft.settings.showImageInfo,
-                        viewport: draft.viewport,
-                    });
+                    const merged=mergeHydratedNodes(nodesRef.current,placeholderNodes,restoredNodes);
+                    nodesRef.current = merged;
+                    if (lastHistoryRef.current) lastHistoryRef.current = { ...lastHistoryRef.current, nodes: mergeHydratedNodes(lastHistoryRef.current.nodes,placeholderNodes,restoredNodes) };
+                    setNodes(merged);
+                    updateProject(projectId, {nodes:merged});
                 })
                 .catch(() => {
                     // Placeholders remain usable when a media URL cannot be refreshed.
                 });
+            return {...draft,nodes:placeholderNodes,viewport:appliedView};
         },
         [projectId, updateProject],
     );
@@ -784,6 +786,10 @@ function InfiniteCanvasPage({ projectId }: { projectId: string }) {
     useEffect(() => {
         if (!projectLoaded || mobileMode || previousMobileModeRef.current) return;
         desktopViewportRef.current = viewportRef.current;
+        if(programmaticViewportRef.current&&JSON.stringify(programmaticViewportRef.current)===JSON.stringify(viewportRef.current)){
+            updateProject(projectId,{viewport:viewportRef.current});return;
+        }
+        programmaticViewportRef.current=null;
         if (viewportSaveTimerRef.current) clearTimeout(viewportSaveTimerRef.current);
         viewportSaveTimerRef.current = setTimeout(() => {
             updateProject(projectId, { viewport: viewportRef.current });
@@ -839,18 +845,21 @@ function InfiniteCanvasPage({ projectId }: { projectId: string }) {
 
         const updateSize = () => {
             const rect = el.getBoundingClientRect();
-            setSize({ width: rect.width, height: rect.height });
-            if (!didInitialCenterRef.current) {
-                didInitialCenterRef.current = true;
-                setViewport({ x: rect.width / 2, y: rect.height / 2, k: 1 });
+            const previous=canvasSizeRef.current,next={width:rect.width,height:rect.height};
+            canvasSizeRef.current=next;
+            setSize(next);
+            if(didInitialCenterRef.current&&previous.width>0&&previous.height>0&&(previous.width!==next.width||previous.height!==next.height)){
+                const view=preserveCanvasCenter(viewportRef.current,previous,next);programmaticViewportRef.current=view;viewportRef.current=view;setViewport(view);
             }
+            // Cloud loading mounts the drawable later; keep its restored viewport on first observation.
+            didInitialCenterRef.current = true;
         };
 
         updateSize();
         const resizeObserver = new ResizeObserver(updateSize);
         resizeObserver.observe(el);
         return () => resizeObserver.disconnect();
-    }, []);
+    }, [projectLoaded]);
 
     const screenToCanvas = useCallback((clientX: number, clientY: number) => {
         const rect = containerRef.current?.getBoundingClientRect();
@@ -1595,6 +1604,16 @@ function InfiniteCanvasPage({ projectId }: { projectId: string }) {
         },
         [size.height, size.width],
     );
+
+    const focusAgentNodes=useCallback((ids:string[])=>{
+        const found=nodesRef.current.filter(n=>ids.includes(n.id));if(!found.length)return;
+        const minX=Math.min(...found.map(n=>n.position.x)),minY=Math.min(...found.map(n=>n.position.y)),maxX=Math.max(...found.map(n=>n.position.x+n.width)),maxY=Math.max(...found.map(n=>n.position.y+n.height));
+        const k=Math.max(0.05,Math.min(1,(size.width-160)/Math.max(1,maxX-minX),(size.height-160)/Math.max(1,maxY-minY)));
+        const target={k,x:size.width/2-(minX+maxX)*k/2,y:size.height/2-(minY+maxY)*k/2};
+        if(focusAnimRef.current)cancelAnimationFrame(focusAnimRef.current);focusAnimGenerationRef.current++;
+        programmaticViewportRef.current=target;viewportRef.current=target;setViewport(target);setSelectedNodeIds(new Set(found.map(n=>n.id)));setSelectedConnectionId(null);
+    },[size.height,size.width]);
+    useNativeAgentBridge(projectId, canvasPersistence.refreshExternal, focusAgentNodes,canvasPersistence.compareExternal,canvasPersistence.keepDraft);
 
     const focusedKnowledgeLink = useRef("");
     useEffect(() => {

@@ -160,12 +160,14 @@ export class CreditService {
     client: PoolClient,
     userId: string,
     capability: string,
+    minimumPoints?: bigint,
   ) {
+    if(minimumPoints !== undefined && minimumPoints <= 0n) throw new DomainError("CREDIT_RESERVATION_INVALID", "积分预留必须大于零", 400);
     await lockCreditUser(client, userId);
     const account = await ensureAccount(client, userId, true);
     await expireLots(client, account);
     const current = await accountRow(client, userId, true);
-    const required = BigInt(
+    const required = minimumPoints ?? BigInt(
       capability === "video"
         ? (await this.guardSettings(client)).videoMinimumPoints
         : 1,

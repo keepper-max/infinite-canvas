@@ -8,7 +8,7 @@ export type CanvasSyncStatus = "loading" | "synced" | "dirty" | "saving" | "unsy
 
 const AUTO_SAVE_INTERVAL_MS = 10 * 60 * 1000;
 
-export function useCloudCanvasPersistence(projectId: string, applyCanvas: (canvas: CanvasDraft) => Promise<void> | void, onCachedCanvasApplied?: () => void) {
+export function useCloudCanvasPersistence(projectId: string, applyCanvas: (canvas: CanvasDraft, options?:{preserveViewport?:boolean}) => Promise<CanvasDraft|void> | CanvasDraft | void, onCachedCanvasApplied?: () => void) {
     const [status, setStatus] = useState<CanvasSyncStatus>("loading");
     const [migrationDraft, setMigrationDraft] = useState<CanvasDraft | null>(null);
     const [migrationReport, setMigrationReport] = useState<CanvasMigrationReport | null>(null);
@@ -58,14 +58,14 @@ export function useCloudCanvasPersistence(projectId: string, applyCanvas: (canva
     }, [clearAutoSaveTimer]);
 
     const applyRemote = useCallback(
-        async (canvas: CanvasDocument) => {
+        async (canvas: CanvasDocument,options?:{preserveViewport?:boolean}) => {
             revisionRef.current = canvas.revision;
-            lastFingerprintRef.current = fingerprint(canvas);
             lastSuccessfulRef.current = canvas;
-            await applyCanvas(canvas);
+            const applied=await applyCanvas(canvas,options);
+            lastFingerprintRef.current = fingerprint(applied??canvas);
             await recordSuccessfulCanvas(projectId, canvas);
             readyRef.current = true;
-            if (mountedRef.current) setStatus("synced");
+            if (mountedRef.current&&!latestDraftRef.current) setStatus("synced");
         },
         [applyCanvas, projectId],
     );
@@ -294,10 +294,28 @@ export function useCloudCanvasPersistence(projectId: string, applyCanvas: (canva
         try { await applyRemote(await restoreCanvasSnapshot(projectId, version, revisionRef.current)); }
         finally { readyRef.current = true; }
     }, [applyRemote, clearAutoSaveTimer, projectId]);
+    const refreshExternal = useCallback(async () => {
+        const assertClean = () => {
+            if (!readyRef.current || savingRef.current || latestDraftRef.current || conflictBlockedRef.current || migrationBlockedRef.current)
+                throw new Error("当前画布有未保存内容或冲突，请先保留草稿并处理，再同步助手结果");
+        };
+        assertClean();
+        const remote = await getCanvas(projectId);
+        assertClean(); // Edits made while the HTTP request was in flight must also survive.
+        await applyRemote(remote,{preserveViewport:true});
+        return {revision:remote.revision,nodeCount:remote.nodes.length,edgeCount:remote.edges.length};
+    }, [applyRemote, projectId]);
+    const compareExternal=useCallback(async()=>{
+        const remote=await getCanvas(projectId),local=latestDraftRef.current??lastSuccessfulRef.current;
+        return {revision:remote.revision,hasDraft:!!latestDraftRef.current,localNodeCount:local?.nodes.length??0,remoteNodeCount:remote.nodes.length,addedNodes:remote.nodes.filter(n=>!local?.nodes.some(l=>l.id===n.id)).map(({id,title,type})=>({id,title,type})),changedNodes:remote.nodes.filter(n=>local?.nodes.some(l=>l.id===n.id&&JSON.stringify(l)!==JSON.stringify(n))).map(({id,title})=>({id,title}))};
+    },[projectId]);
+    const keepDraft=useCallback(async()=>{if(latestDraftRef.current)await recordPendingCanvas(projectId,latestDraftRef.current);},[projectId]);
     const hasUnsavedChanges = status === "dirty" || (status === "unsynced" && Boolean(latestDraftRef.current));
 
     return {
         status,
+        refreshExternal,
+        compareExternal,keepDraft,
         hasUnsavedChanges,
         load,
         queueSave,

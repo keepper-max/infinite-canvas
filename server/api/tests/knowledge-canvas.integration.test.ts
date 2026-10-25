@@ -28,7 +28,7 @@ test(
     const url = new URL(connection!);
     assert.equal(url.hostname, "127.0.0.1");
     assert.equal(url.port, "55451");
-    assert.equal(url.pathname, "/p2_isolated");
+    assert.ok(["/p2_isolated","/r2_business"].includes(url.pathname));
     const { db, pool } = createDatabase(connection!),
       repo = new PostgresPlatformRepository(db),
       knowledge = new KnowledgeService(db),

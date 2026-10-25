@@ -1,0 +1,51 @@
+# P2.5.1 文件清单
+
+对比本轮开始63文件基线；完整SHA256及分类见 H:/CodexStorage/shoushou-p251/artifacts/changes.json，差量补丁p251-delta.patch。
+
+- p251-modified：CHANGELOG.md
+- p251-modified：docs/content/docs/progress/pending-test.mdx
+- p251-modified：docs/content/docs/progress/todo.mdx
+- p251-modified：web/src/components/canvas/canvas-top-bar.tsx
+- p251-added：web/src/components/canvas/infinite-canvas.tsx
+- p251-modified：web/src/pages/canvas/hooks/use-cloud-canvas-persistence.ts
+- p251-modified：web/src/pages/canvas/project.tsx
+- p251-added：docs/p251/delivery.md
+- p251-added：docs/p251/files.md
+- p251-added：docs/p251/findings.md
+- p251-added：docs/p251/progress.md
+- p251-added：docs/p251/task_plan.md
+- p251-added：docs/p251/test-report.md
+- p251-added：server/api/db/migrations/0053_native_agent_plans.sql
+- p251-modified：server/api/scripts/native-agent-fixture.mts
+- p251-modified：server/api/scripts/native-agent-lab.mts
+- p251-added：server/api/scripts/native-agent-p251-browser.mjs
+- p251-added：server/api/scripts/native-agent-p251-check.mts
+- p251-added：server/api/scripts/native-agent-p251-crash.mts
+- p251-added：server/api/scripts/native-agent-p251-draft-browser.mjs
+- p251-added：server/api/scripts/native-agent-p251-lab.mts
+- p251-added：server/api/scripts/native-agent-p251-mcp-check.mts
+- p251-added：server/api/scripts/native-agent-p251-paid-audit.mts
+- p251-added：server/api/scripts/native-agent-p251-paid-check.mts
+- p251-added：server/api/scripts/native-agent-p251-real-browser.mjs
+- p251-modified：server/api/scripts/native-agent-web.mjs
+- p251-modified：server/api/src/db/native-agent-schema.ts
+- p251-modified：server/api/src/native-agent/canvas-service.ts
+- p251-modified：server/api/src/native-agent/context.ts
+- p251-modified：server/api/src/native-agent/limits.ts
+- p251-modified：server/api/src/native-agent/model.ts
+- p251-modified：server/api/src/native-agent/paid-model.ts
+- p251-added：server/api/src/native-agent/plan-service.ts
+- p251-modified：server/api/src/native-agent/routes.ts
+- p251-modified：server/api/src/native-agent/service.ts
+- p251-modified：server/api/src/native-agent/tools.ts
+- p251-modified：server/api/tests/native-agent-model-jobs.integration.test.ts
+- p251-added：server/api/tests/native-agent-p251.integration.test.ts
+- p251-added：server/api/tests/native-agent-view.test.ts
+- p251-modified：server/api/tests/native-agent.integration.test.ts
+- p251-modified：web/src/components/native-agent/native-agent-panel.tsx
+- p251-added：web/src/lib/canvas/native-agent-view.ts
+- p251-modified：web/src/pages/canvas/hooks/use-native-agent-bridge.ts
+- p251-modified：web/src/services/api/native-agent.ts
+- p251-modified：web/src/stores/use-native-agent-store.ts
+
+本轮未新增npm依赖；原P2.5 SDK/锁文件、用户website/content.js保留。构建、恢复数据库、截图、录屏、会话配置均在H盘隔离目录，不入库。

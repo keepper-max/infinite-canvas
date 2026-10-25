@@ -15,6 +15,7 @@ import { preloadNavigationRoute } from "@/lib/route-modules";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useAgentStore } from "@/stores/use-agent-store";
 import { useAuth } from "@/components/auth/auth-context";
+import { NativeAgentButton } from "@/components/native-agent/native-agent-button";
 
 type AppTopNavProps = {
     canvasProject: boolean;
@@ -233,7 +234,9 @@ export function AppTopNav({ canvasProject, canvasVisible, onCanvasPointerEnter, 
                         </div>
                     </div>
 
+                    <div className="my-auto md:hidden"><NativeAgentButton/></div>
                     <div className="my-auto hidden h-9 shrink-0 items-center justify-end gap-2 justify-self-end whitespace-nowrap border-l border-stone-200 pl-2 md:flex dark:border-stone-800">
+                        <NativeAgentButton/>
                         <Tooltip title={t("feedback.title")}>
                             <Button
                                 type="text"

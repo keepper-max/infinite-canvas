@@ -1,3 +1,4 @@
+import AgentModels from './agent-models';
 import { ArrowLeft, Boxes, CircleDollarSign, ClipboardList, CreditCard, LayoutDashboard, MessageSquareText, ReceiptText, Share2, ShieldCheck, Users } from "lucide-react";
 import { Alert, Button, DatePicker, Drawer, Empty, Input, InputNumber, Modal, Radio, Select, Space, Spin, Switch, Table, Tag, Tooltip, message } from "antd";
 import dayjs, { type Dayjs } from "dayjs";
@@ -82,6 +83,7 @@ const sections = [
     { key: "billing", label: "计费规则", icon: ReceiptText },
     { key: "payments", label: "充值", icon: CreditCard },
     { key: "models", label: "模型", icon: Boxes },
+    { key: "ai", label: "AI 配置", icon: Boxes },
     { key: "feedback", label: "反馈", icon: MessageSquareText },
     { key: "inquiries", label: "官网咨询", icon: MessageSquareText },
     { key: "audit", label: "审计", icon: ShieldCheck },
@@ -119,6 +121,7 @@ export default function AdminPage() {
                                     <Icon className="size-4" />
                                     {item.label}
                                 </Link>
+                                {item.key==='ai'&&active==='ai'?<div className="ml-7 mt-1 border-l border-white/10 pl-3"><Link to="/admin/ai/agent-models" className="block rounded-md px-3 py-2 text-xs">Agent 模型管理</Link></div>:null}
                                 {item.key === "models" && active === "models" ? (
                                     <div className="ml-7 mt-1 space-y-1 border-l border-white/10 pl-3">
                                         {(
@@ -193,6 +196,7 @@ function AdminSection({ section, modelProvider }: { section: Section; modelProvi
     if (section === "billing") return <BillingRulesPanel />;
     if (section === "payments") return <PaymentsPanel />;
     if (section === "models") return <ModelsPanel provider={modelProvider} />;
+    if (section === "ai") return <AgentModels />;
     if (section === "feedback") return <FeedbackPanel />;
     if (section === "inquiries") return <WebsiteInquiries />;
     return <AuditPanel />;
