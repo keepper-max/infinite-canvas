@@ -5,7 +5,7 @@ description: Implemented changes that still need manual verification
 
 # Pending Tests
 
-- 拼好站DeepSeek V4.1 Flash：独立服务端凭据与Agent专用路由、价格预检、请求ID/模型/Token三重账单绑定。隔离真实Agent两轮及只读工具通过，账本2积分、预留0；生产默认切换须经生产凭据实际核验，保留Qwen及原预算。复杂中文连续创作待用户体验。
+- 拼好站DeepSeek V4.1 Flash：v0.16.45后端已发布，实际生产HTTP/Worker/只读工具及逐请求账单核验通过，已设Agent默认且Qwen保留；凭据仅服务端、积分/上下文/审批范围不变。原文、画布和历史保留；复杂连续创作及物理设备待用户体验，供应商异常仍失败即停。
 
 - R2 v0.16.37核验补丁：管理员只读模型探测与普通回执查询分离参数范围，严格拒绝多余参数；实际付费验收按已批准剩余预算单独记录，不把隔离替身当真实模型证明。
 
