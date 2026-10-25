@@ -1,12 +1,8 @@
 import type { ProviderConfig } from "./config.js";
 import { DomainError } from "./domain.js";
 import { Agent } from "undici";
-import type { ModelMessage } from "ai";
-
-/** Included before payload hashing/token admission, never used to rewrite replies. */
-export function pinhaozhanMessages(messages: ModelMessage[]): ModelMessage[] {
-  return [{ role: "system", content: "工具协议要求：function.arguments的JSON必须直接符合对应工具的parameters schema；除非schema明确声明，不能再套parameters、arguments、input或工具名称等外层。空对象schema对应的arguments必须是{}，不能写成{\"parameters\":{}}。保留所有服务端身份、权限、预算和审批要求；不得添加schema未声明的字段。" }, ...messages];
-}
+/** Fixed provider guidance: passed through the SDK's trusted system entry. */
+export const PINHAOZHAN_SYSTEM_SUFFIX = '\n工具协议要求：function.arguments的JSON必须直接符合对应工具的parameters schema；除非schema明确声明，不能再套parameters、arguments、input或工具名称等外层。空对象schema对应的arguments必须是{}，不能写成{"parameters":{}}。保留所有服务端身份、权限、预算和审批要求；不得添加schema未声明的字段。';
 
 // This provider's CDN intermittently stalls on the production dual-stack path.
 // Resolve IPv4 normally: no fixed IP, TLS bypass, global dispatcher or retries.

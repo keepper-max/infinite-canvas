@@ -1,4 +1,4 @@
-import { pinhaozhanJson, pinhaozhanPrice, pinhaozhanFetch, pinhaozhanMessages } from "../pinhaozhan.js";
+import { pinhaozhanJson, pinhaozhanPrice, pinhaozhanFetch, PINHAOZHAN_SYSTEM_SUFFIX } from "../pinhaozhan.js";
 import { validateAgentSources } from "./sources.js";
 import { KnowledgeService } from "../knowledge-service.js";
 import { drizzle } from "drizzle-orm/node-postgres";
@@ -161,8 +161,9 @@ export class PaidAgentModel implements AgentModelDriver {
     const route = nativeModelRoute(modelId),
       config =
         route.providerId === "token360" ? this.tokenProvider! : route.providerId === "pinhaozhan" ? this.pinhaozhan! : this.provider;
-    if (route.providerId === "pinhaozhan") messages = pinhaozhanMessages(messages);
+    const providerSystem = route.providerId === "pinhaozhan" ? PINHAOZHAN_SYSTEM_SUFFIX : "";
     const body = {
+      ...(providerSystem ? { providerSystem } : {}),
       actor: execution.actor,
       stepId: execution.stepId,
       messages,
@@ -271,7 +272,7 @@ export class PaidAgentModel implements AgentModelDriver {
           estimate = tokenData.data?.[0]?.total_tokens;
         } else {
           estimate =
-            contextCost(messages, execution.toolNames, execution) -
+            contextCost(messages, execution.toolNames, execution, providerSystem) -
             AGENT_LIMITS.outputTokens;
           const fx = (await this.credits.pricing()).usdCnyRate;
           if (!fx || Number(fx) > 8.5)
@@ -428,6 +429,7 @@ export class PaidAgentModel implements AgentModelDriver {
               emit,
               execution,
               "verified",
+              providerSystem,
             );
           } catch (error) {
             if (!inferenceDispatched)

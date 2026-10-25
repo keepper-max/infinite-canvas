@@ -1,11 +1,9 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { pinhaozhanPrice, pinhaozhanReceipt, pinhaozhanMessages } from "../src/pinhaozhan.js";
+import { pinhaozhanPrice, pinhaozhanReceipt, PINHAOZHAN_SYSTEM_SUFFIX } from "../src/pinhaozhan.js";
 import { currentCanvasProbeSchema } from "../src/native-agent/tools.js";
-test("provider guidance keeps original messages immutable and never accepts wrapped tool arguments",()=>{
-  const source=[{role:"user" as const,content:"读取当前画布"}];
-  const before=JSON.stringify(source),messages=pinhaozhanMessages(source);
-  assert.equal(JSON.stringify(source),before);assert.equal(messages[0].role,"system");assert.equal(messages[1],source[0]);
+test("provider guidance does not weaken strict tool argument validation",()=>{
+  assert.ok(PINHAOZHAN_SYSTEM_SUFFIX.includes('function.arguments'));
   assert.equal(currentCanvasProbeSchema.safeParse({parameters:{}}).success,false);
   assert.equal(currentCanvasProbeSchema.safeParse({}).success,true);
 });

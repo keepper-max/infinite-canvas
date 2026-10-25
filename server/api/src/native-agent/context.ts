@@ -18,11 +18,12 @@ export const contextCost = (
   messages: ModelMessage[],
   toolNames?: string[],
   execution?: Partial<ModelExecution>,
+  trustedSystemSuffix = "",
 ) => {
   const text = JSON.stringify({
-    system: execution
+    system: (execution
       ? agentSystem(execution)
-      : AGENT_SYSTEM + AGENT_PLANNING_SYSTEM,
+      : AGENT_SYSTEM + AGENT_PLANNING_SYSTEM) + trustedSystemSuffix,
     messages,
     tools: Object.fromEntries(
       Object.entries(registry)

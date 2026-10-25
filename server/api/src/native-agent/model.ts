@@ -129,8 +129,9 @@ export async function executeAgentProtocol(
   emit: (text: string) => Promise<void>,
   execution: ModelExecution | undefined,
   meterStatus: ModelReply["meterStatus"],
+  trustedSystemSuffix = "",
 ): Promise<ModelReply> {
-  const system = agentSystem(execution);
+  const system = agentSystem(execution) + trustedSystemSuffix;
   const result = streamText({
     model,
     system,
