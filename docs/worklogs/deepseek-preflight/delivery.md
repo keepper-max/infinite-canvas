@@ -1,7 +1,7 @@
 # DeepSeek专项修复交付
 
 ## 结果
-仅针对拼好站DeepSeek修复，没有切换供应商或替换为其他模型。代码在工作区，未commit/push/部署；生产仍v0.16.49，当前用户任务和费用不变。
+仅针对拼好站DeepSeek修复，没有切换供应商或替换为其他模型。已获追加发布授权，v0.16.50完成commit/push/部署；当前用户任务和费用不变，正式结果见ops/releases/v0.16.50-deepseek-preflight.md。
 
 ## 改动
 - native-agent/model-clock.ts：阶段时钟，仅DS最多预检60秒+推理60秒，仍受原Run截止时间限制；其他模型不变，重复回调不能延长。
