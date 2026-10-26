@@ -4,4 +4,4 @@
 - [x] Query original supplier ledger through the authenticated reconcile API; show loading, disable duplicate clicks, provide clear results and network recovery. Prefer local durable recovery over supplier network.
 - [x] Add explicit confirmation to end a manual-review task without releasing uncertain reservations, deleting history or restarting inference.
 - [x] Isolated PostgreSQL + HTTP supplier, regression tests, browser clicks, and second review complete.
-- [ ] Production release / any paid provider acceptance: not executed in this task. No commit or push.
+- [x] User explicitly approved commit/push/deploy; v0.16.46 is live. Production readonly browser checks passed; paid provider tests were not run.

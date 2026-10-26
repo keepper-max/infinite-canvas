@@ -18,3 +18,6 @@ Build candidate from selected task files only. Exclude unrelated website edits. 
 Stop new Agent writes before replacing services; retain original runs, supplier IDs, ledger rows and reservations. Feature/config rollback must not guess free usage or replay unknown submissions. Avoid removing trace data. No DB rollback or old direct-write MCP reopening.
 ## Remaining limitations
 The original production request has no persisted supplier identity/full response. A time-and-amount match is insufficient for automatic settlement or restoration. Ending it is a separate explicit user action and retains outstanding holds. Supplier availability and production deadline behaviour were not retested with a paid model.
+
+## Actual release result
+v0.16.46 is live at https://shoumiren.online. Code 04849e46b0700fdc7ac056db82bb7bea1b3191bc and tag pushed; detailed artifacts, backup and production verification are in progress.md. No production DB migration or paid model verification. The original uncertain task is intentionally retained for user/admin review, with explicit end-task confirmation available on the new frontend.
