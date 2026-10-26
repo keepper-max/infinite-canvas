@@ -142,6 +142,19 @@ export class NativeAgentService {
       );
     });
   }
+  async activeRun(actorId: string) {
+    return this.transaction(async (tx) => {
+      await guardActorFeature(tx, actorId);
+      const [run] = await rows(tx, sql`select id,session_id,project_id,status from native_agent_runs where actor_id=${actorId} and status not in ('completed','failed','cancelled') order by created_at desc limit 1`);
+      if (!run) return null;
+      try { await guardActor(tx, { actorId, projectId: run.project_id }); }
+      catch (error) {
+        if (error instanceof DomainError && error.code === "PROJECT_FORBIDDEN") return { accessible: false as const };
+        throw error;
+      }
+      return { accessible: true as const, runId: run.id as string, sessionId: run.session_id as string, projectId: run.project_id as string, status: run.status as string };
+    });
+  }
   async createSession(actorId: string, raw: unknown) {
     const p = sessionInput.parse(raw);
     return this.transaction(async (tx) => {

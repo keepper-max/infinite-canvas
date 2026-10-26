@@ -2,6 +2,8 @@ import { platformRequest, PlatformApiError, PLATFORM_SESSION_EXPIRED_EVENT } fro
 const base = "/api/native-agent";
 export type AgentMode = "advice" | "execute";
 export type AgentSession = { id: string; project_id: string; title: string; mode: AgentMode; closed_at: string | null };
+export type ActiveAgentRun = { accessible: false } | { accessible: true; runId: string; sessionId: string; projectId: string; status: string };
+export const getActiveAgentRun = (signal?: AbortSignal) => platformRequest<ActiveAgentRun | null>(base + "/active-run", { signal });
 export type AgentRun = {
     id: string;
     operation_id: string;

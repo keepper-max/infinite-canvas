@@ -3,7 +3,8 @@ import CreativeDecisionsPanel from "./creative-decisions";
 import { useEffect, useRef, useState } from "react";
 import { Alert, App, Button, Collapse, Input, InputNumber, Select, Modal } from "antd";
 import { ArrowUp, History, Plus, Square, X, RefreshCw } from "lucide-react";
-import { useLocation } from "react-router-dom";
+import { useLocation, useNavigate } from "react-router-dom";
+import { rejectedAgentStart, agentStartError } from "./request-recovery";
 import { useAuth } from "@/components/auth/auth-context";
 import { useNativeAgentStore } from "@/stores/use-native-agent-store";
 import { canvasThemes } from "@/lib/canvas-theme";
@@ -14,6 +15,8 @@ import {
     acceptAgentSnapshot,
     createAgentSession,
     listAgentSessions,
+    getActiveAgentRun,
+    type ActiveAgentRun,
     getAgentSession,
     startAgentRun,
     nativeAgentStatus,
@@ -34,7 +37,7 @@ import type { AgentCanvasDiff } from "@/stores/use-native-agent-store";
 import TaskPresentation from "./task-presentation";
 const friendlyError = (e: unknown) =>
     e instanceof PlatformApiError
-        ? /BUDGET|TOKEN|CONTEXT|ROUND|LIMIT/.test(e.code)
+        ? agentStartError(e.code) ?? (/BUDGET|TOKEN|CONTEXT|ROUND|LIMIT/.test(e.code)
             ? "本次任务达到已批准的执行或费用上限，完成的步骤会保留。请确认新的预算后继续。"
             : /CREDIT|BALANCE/.test(e.code)
               ? "积分余额不足，请先检查余额；尚未发起新的调用。"
@@ -48,13 +51,15 @@ const friendlyError = (e: unknown) =>
                       ? "内容或计划已变化，请重新查询并确认；未覆盖你的草稿。"
                       : e.status === 404
                         ? "所需内容已无法访问，请重新选择。"
-                        : "操作暂未完成，请重新查询状态；结果未确认前不要新建重复请求。"
+                        : "操作暂未完成，请重新查询状态；结果未确认前不要新建重复请求。")
         : e instanceof Error && /当前画布有未保存内容或冲突/.test(e.message)
           ? "本页有未保存内容或冲突，暂未载入服务器结果。请先保留草稿或查看差异。"
           : e instanceof Error && /网络|连接|草稿|审批|请求回执/.test(e.message)
             ? e.message
             : "连接或操作暂未完成，请重新查询；本地输入和原操作记录仍保留。";
+type PendingStart = { operationId: string; sessionOperationId: string; prompt: string; sessionId: string; mode: AgentMode; modelId: string; budgetCents: number; conversationVersion?: 1 };
 export default function NativeAgentPanel() {
+    const navigate = useNavigate();
     const { user, workspace } = useAuth(),
         { search, pathname } = useLocation(),
         { message } = App.useApp();
@@ -115,21 +120,26 @@ export default function NativeAgentPanel() {
     const [connectionVersion, setConnectionVersion] = useState(0);
     const [receiptFeedback, setReceiptFeedback] = useState(""), [checkingReceipt, setCheckingReceipt] = useState(false);
     const [closeReviewOpen, setCloseReviewOpen] = useState(false);
+    const [accountRun, setAccountRun] = useState<ActiveAgentRun | null>(null), [showArchived, setShowArchived] = useState(false);
     const receiptRequest = useRef(false);
     const cursors = useRef(new Map<string, number>());
-    const pending = useRef<{ operationId: string; sessionOperationId: string; prompt: string; sessionId: string; mode: AgentMode; modelId: string; budgetCents: number; conversationVersion?: 1 } | null>(null),
+    const pending = useRef<PendingStart | null>(null),
         decisions = useRef(new Map<string, { operationId: string; decision: string; instruction?: string }>()),
         generation = useRef(0),
         bottom = useRef<HTMLDivElement>(null);
     const preferredMode = useRef<{ sessionId: string; mode: AgentMode } | null>(null);
     const selectedSession = useRef(sessionId);
     selectedSession.current = sessionId;
+    const draftValue = useRef(draft);
+    draftValue.current = draft;
     const key = `native-agent:${user.id}:${projectId}`;
     const restoringSession = !!sessionId && !snapshot && !accessDenied;
     const latest = snapshot?.runs.at(-1),
         active = latest && !["completed", "failed", "cancelled"].includes(latest.status);
     const receiptRun = useRef(latest?.id);
     receiptRun.current = latest?.id;
+    const foreignPending = !!pending.current?.sessionId && pending.current.sessionId !== sessionId;
+    const unconfirmedRequest = !!pending.current;
     useEffect(() => { setReceiptFeedback(""); setCloseReviewOpen(false); }, [sessionId, latest?.id]);
     const latestTask = snapshot?.presentation?.tasks.find((t) => t.runId === latest?.id);
     const progressVersion = latestTask?.progressItems.map((p) => p.key + ":" + p.status).join("|") ?? "";
@@ -153,11 +163,14 @@ export default function NativeAgentPanel() {
     }, [saved?.revision, saved?.projectId, bridge]);
     const refresh = async () => {
         const current = generation.current;
-        if (sessionId) {
-            const next = await getAgentSession(sessionId);
-            if (generation.current === current && selectedSession.current === sessionId) {
+        const [items, ownedRun, next] = await Promise.all([listAgentSessions(projectId), getActiveAgentRun(), sessionId ? getAgentSession(sessionId) : Promise.resolve(null)]);
+        if (generation.current === current && selectedProject.current === projectId) {
+            setSessions(items); setAccountRun(ownedRun);
+            if (next) {
+            if (selectedSession.current === sessionId) {
                 setAccessDenied(false);
                 setSnapshot((previous) => acceptAgentSnapshot(previous, next));
+            }
             }
         }
     };
@@ -176,24 +189,39 @@ export default function NativeAgentPanel() {
         syncAttempt.current = "";
         setError("");
         pending.current = null;
-        void Promise.all([listAgentSessions(projectId, controller.signal), nativeAgentStatus(controller.signal), readAgentDraft<{ sessionId: string; mode?: AgentMode; draft: string; pending: typeof pending.current }>(key)])
-            .then(([items, status, local]) => {
+        setAccountRun(null); setShowArchived(false);
+        void Promise.all([listAgentSessions(projectId, controller.signal), nativeAgentStatus(controller.signal), readAgentDraft<{ sessionId: string; mode?: AgentMode; draft: string; pending: PendingStart | null }>(key), getActiveAgentRun(controller.signal)])
+            .then(async ([items, status, local, ownedRun]) => {
                 if (generation.current !== request) return;
+                let restoredPending = local?.pending || null;
+                const source = items.find((s) => s.id === (restoredPending?.sessionId || local?.sessionId));
+                if (source?.closed_at) {
+                    // Closing serializes with start: a confirmed closed session cannot accept this old request later.
+                    const history = await getAgentSession(source.id, controller.signal);
+                    if (generation.current !== request) return;
+                    if (history.session.closed_at) {
+                        restoredPending = null;
+                        setReceiptFeedback("原会话已归档，输入草稿已保留。请在新会话确认后发送；没有重发原请求。");
+                    }
+                }
                 setAccessDenied(false);
                 setSessions(items);
+                setAccountRun(ownedRun);
                 setModels(status.models);
                 setLimits(status.limits);
                 setLimitsHash(status.limitsHash);
-                setModelId(status.defaultModelId ?? status.models[0]?.id ?? "");
+                setModelId(restoredPending?.modelId ?? status.defaultModelId ?? status.models[0]?.id ?? "");
                 setModelSelectionEnabled(status.userModelSelectionEnabled ?? true);
                 setMaxBudgetCents(status.maxBudgetCents ?? null);
-                if (status.maxBudgetCents != null) setBudgetCents(status.maxBudgetCents);
-                preferredMode.current = local && (local.mode === "execute" || local.mode === "advice") ? { sessionId: local.sessionId, mode: local.mode } : null;
+                if (restoredPending) setBudgetCents(restoredPending.budgetCents);
+                else if (status.maxBudgetCents != null) setBudgetCents(status.maxBudgetCents);
+                preferredMode.current = restoredPending ? { sessionId: restoredPending.sessionId, mode: restoredPending.mode } : local && (local.mode === "execute" || local.mode === "advice") ? { sessionId: local.sessionId, mode: local.mode } : null;
                 setMode(preferredMode.current?.mode ?? "advice");
                 setDraft(local?.draft || "");
-                pending.current = local?.pending || null;
+                pending.current = restoredPending;
                 setReadyKey(key);
-                const id = items.some((s) => s.id === local?.sessionId) ? local!.sessionId : items.find((s) => !s.closed_at)?.id || "";
+                const requested = new URLSearchParams(search).get("agentSession"), preferred = restoredPending?.sessionId || local?.sessionId;
+                const id = items.some((s) => s.id === requested && !s.closed_at) ? requested! : items.some((s) => s.id === preferred && !s.closed_at) ? preferred! : items.find((s) => !s.closed_at)?.id || "";
                 setSessionId(id);
             })
             .catch((e) => {
@@ -289,8 +317,25 @@ export default function NativeAgentPanel() {
             setNewContent(false);
         } else setNewContent(true);
     }, [snapshot?.messages.length, latest?.status, progressVersion]);
+    const showActiveTask = async () => {
+        const current = generation.current;
+        setBusy(true);
+        try {
+            const owned = await getActiveAgentRun();
+            if (generation.current !== current) return;
+            setAccountRun(owned);
+            if (!owned) { setError(""); await refresh(); return; }
+            if (!owned.accessible) { setError("未结束任务所属项目已无法访问，请联系管理员核查。当前输入已保留。"); return; }
+            await saveAgentDraft(key, { sessionId, mode, draft: draftValue.current, pending: pending.current });
+            if (generation.current !== current) return;
+            setError(""); setShowArchived(false);
+            if (owned.projectId === projectId) setSessionId(owned.sessionId);
+            else navigate(`/canvas/${encodeURIComponent(owned.projectId)}?agentSession=${encodeURIComponent(owned.sessionId)}`);
+        } catch (e) { reportError(e); }
+        finally { if (generation.current === current) setBusy(false); }
+    };
     const submit = async () => {
-        if (readyKey !== key || restoringSession || accessDenied || active || snapshot?.session.closed_at || !draft.trim() || !modelId || (paidModel && budgetCents <= 0) || busy) return;
+        if (readyKey !== key || restoringSession || accessDenied || active || foreignPending || snapshot?.session.closed_at || !draft.trim() || !modelId || (paidModel && budgetCents <= 0) || busy) return;
         setBusy(true);
         setError("");
         const current = generation.current;
@@ -306,15 +351,31 @@ export default function NativeAgentPanel() {
             if (generation.current !== current) return;
             pending.current = null;
             setSessionId(id);
-            setDraft("");
+            const remainingDraft = draftValue.current === op.prompt ? "" : draftValue.current;
+            setDraft(remainingDraft);
             const [next, items] = await Promise.all([getAgentSession(id), listAgentSessions(projectId)]);
             if (generation.current !== current) return;
             setSnapshot((previous) => acceptAgentSnapshot(previous, next));
             setSessions(items);
-            await saveAgentDraft(key, { sessionId: id, mode: op.mode, draft: "", pending: null });
+            await saveAgentDraft(key, { sessionId: id, mode: op.mode, draft: remainingDraft, pending: null });
             if (run.status === "awaiting_manual_review") setError("上次请求还没有确认结果，请先查询进度，不要重复创建任务");
         } catch (e) {
             if (generation.current === current) {
+                if (e instanceof PlatformApiError && rejectedAgentStart(e.code)) {
+                    pending.current = null;
+                    await saveAgentDraft(key, { sessionId: selectedSession.current, mode, draft: draftValue.current, pending: null }).catch(reportError);
+                    if (generation.current !== current) return;
+                    if (e.code === "AGENT_SESSION_CLOSED") {
+                        setSessionId(""); setSnapshot(null);
+                        preferredMode.current = { sessionId: "", mode };
+                        void listAgentSessions(projectId).then((items) => { if (generation.current === current) setSessions(items); }).catch(reportError);
+                    }
+                    setError(friendlyError(e));
+                    void getActiveAgentRun().then((r) => { if (generation.current === current) setAccountRun(r); }).catch(reportError);
+                    return;
+                }
+                await saveAgentDraft(key, { sessionId: pending.current?.sessionId || selectedSession.current, mode: pending.current?.mode ?? mode, draft: draftValue.current, pending: pending.current }).catch(reportError);
+                if (generation.current !== current) return;
                 reportError(e);
                 setError(friendlyError(e) + "。重试会查询同一个操作，不会创建新的任务。");
             }
@@ -390,13 +451,10 @@ export default function NativeAgentPanel() {
                     className="min-w-0 flex-1"
                     placeholder="新会话"
                     value={sessionId || undefined}
+                    disabled={busy}
                     suffixIcon={<History size={14} />}
-                    options={sessions.map((s) => ({ value: s.id, label: s.title + (s.closed_at ? "（已结束）" : "") }))}
+                    options={sessions.filter((s) => showArchived || !s.closed_at).map((s) => ({ value: s.id, label: s.title + (s.closed_at ? "（已归档）" : "") }))}
                     onChange={(id) => {
-                        if (pending.current) {
-                            setError("上次操作还没有确认结果，请先查询进度");
-                            return;
-                        }
                         setSessionId(id);
                     }}
                 />
@@ -416,6 +474,7 @@ export default function NativeAgentPanel() {
                 />
             </div>
             <div className="px-5 pb-3 text-xs text-muted-foreground">当前项目 · {workspace.projectId === projectId ? workspace.projectTitle : "所选画布"}</div>
+            {sessions.some((s) => s.closed_at) && <div className="px-5 pb-2"><Button type="text" size="small" disabled={busy} onClick={() => { setShowArchived((v) => !v); if (showArchived && snapshot?.session.closed_at) { setSessionId(""); setSnapshot(null); } }}>{showArchived ? "隐藏已归档记录" : "已归档记录"}</Button></div>}
             <main
                 ref={scrollPane}
                 onScroll={(event) => {
@@ -447,6 +506,8 @@ export default function NativeAgentPanel() {
                         }
                     />
                 )}
+                {accountRun && (!accountRun.accessible || accountRun.runId !== latest?.id) && <Alert type="warning" showIcon title="你在另一个会话中还有未结束任务，当前输入已保留。" action={<Button size="small" disabled={busy} onClick={() => void showActiveTask()}>查看未结束任务</Button>} />}
+                {foreignPending && <Alert type="info" title="原请求结果尚未确认，当前可查看历史，不能在其他会话重发。" action={<Button size="small" disabled={busy} onClick={() => { if (pending.current?.sessionId) setSessionId(pending.current.sessionId); }}>返回原请求</Button>} />}
                 {restoringSession && (
                     <p className="py-5 text-sm text-muted-foreground" role="status">
                         正在载入会话记录…
@@ -703,7 +764,7 @@ export default function NativeAgentPanel() {
                         aria-label="执行模式"
                         value={active ? latest.mode : mode}
                         onChange={(value) => { preferredMode.current = { sessionId, mode: value }; setMode(value); }}
-                        disabled={!!active || busy || restoringSession}
+                        disabled={!!active || busy || restoringSession || unconfirmedRequest}
                         options={[
                             { value: "advice", label: "建议模式" },
                             { value: "execute", label: "执行模式" },
@@ -716,7 +777,7 @@ export default function NativeAgentPanel() {
                         onChange={setModelId}
                         options={models.map((m) => ({ value: m.id, label: m.name }))}
                         placeholder="当前没有可用的助手模型"
-                        disabled={!!active || busy || !modelSelectionEnabled}
+                        disabled={!!active || busy || !modelSelectionEnabled || unconfirmedRequest}
                     />
                 </div>
                 {paidModel && (
@@ -730,7 +791,7 @@ export default function NativeAgentPanel() {
                             step={1}
                             value={budgetCents}
                             onChange={(value) => setBudgetCents(Math.round(Number(value ?? 0)))}
-                            disabled={!!active || busy || restoringSession}
+                            disabled={!!active || busy || restoringSession || unconfirmedRequest}
                         />
                         <span>按实际用量扣除积分，未核验消耗保持预留{maxBudgetCents != null ? `；每次任务最高 ${maxBudgetCents} 积分` : ""}</span>
                     </label>
@@ -755,7 +816,7 @@ export default function NativeAgentPanel() {
                         type="text"
                         icon={<ArrowUp size={17} />}
                         loading={busy}
-                        disabled={readyKey !== key || restoringSession || accessDenied || !!active || !draft.trim() || !modelId || (paidModel && budgetCents <= 0) || !!snapshot?.session.closed_at}
+                        disabled={readyKey !== key || restoringSession || accessDenied || !!active || foreignPending || !draft.trim() || !modelId || (paidModel && budgetCents <= 0) || !!snapshot?.session.closed_at}
                         onClick={() => void submit()}
                     >
                         发送

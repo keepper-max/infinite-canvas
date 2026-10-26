@@ -66,6 +66,9 @@ export function registerNativeAgentRoutes(
   app.get(base + "/status", async (c) =>
     c.json({ data: await service.feature((await identity(c.req.raw)).id) }),
   );
+  app.get(base + "/active-run", async (c) =>
+    c.json({ data: await service.activeRun((await identity(c.req.raw)).id) }),
+  );
   app.get(base + "/sessions", async (c) =>
     c.json({
       data: await service.sessions(
