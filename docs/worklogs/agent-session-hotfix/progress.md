@@ -17,3 +17,6 @@
 - Final narrow real PostgreSQL/browser rerun after preserving original pending budget and latest draft passed. No paid supplier calls.
 - Test setup corrections: local PG was stopped and needed recovery; initial config lacked test storage fields. Snapshot export used incorrect sources table/model binding key and initially emitted two psql columns; fixed against actual migrations and JSON envelope before any cleanup mutation. First reload assertion ran before draft hydration; test now awaits readiness. One wrong-directory test command was rerun with the existing local runner. Errors did not pass as successful checks.
 - TODO reviewed: existing manual invoice association follow-up remains; no new unrelated tasks or UI changes. Website workspace edits retained.
+
+## Release identity
+- Parallel website release already published v0.16.47 (tag4f23198). Initial hotfix commit0d63229 remains in history without amendment; this hotfix is released as v0.16.48. Existing website/version tag and its public homepage remain intact. No force push or tag replacement.
