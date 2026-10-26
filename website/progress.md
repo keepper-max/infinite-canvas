@@ -25,3 +25,5 @@
 - 最新自动化升级：ops/publish-website-news.ps1 -Bootstrap成功，调用t-qd070dp7kz6tce8，备份/root/shoumiren-news-20261018T045232Z-6cfaad26；新首页哈希cbc2e76f9cec2956dcf0a2fb0741be6324237aeacce8be32af4d9219bbdd8d7e，snippet哈希34ac5916f38e769d18a1f6ded3b0a97a3c0d018964e3f00b64b81c48818ad22f。日常不带参数重复运行t-qd070dp8r72j6kg返回NEWS_UNCHANGED；公网current.js为200/no-store，内容哈希匹配。任务ai通过产品工具更新为ACTIVE且仍每日9点，无重复创建；编辑规则同步到既有news-editorial.md。无数据库、画布镜像或付费API变更。下一次自然调度及故障回滚待验证。
 
 P3本地视觉精修已完成：Hero锁定，服务卡片4/2/1列、真实工作台与案例界面、简化文章和生态入口；五档Chrome及既有表单模拟回归通过。没有提交、部署或生产调用，待用户视觉确认，详见p3-review.md。
+
+P3已按用户许可发布v0.16.47：独立site09与旧路由保留，13资源公网哈希及桌面/手机检查通过。新目录权限失误造成短暂404，已回退并修正为755后激活；资讯基线已同步，未触及应用容器或数据。

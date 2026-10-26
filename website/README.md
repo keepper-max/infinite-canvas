@@ -1,6 +1,6 @@
 # 守密人官网独立静态发布
 
-## 本地品牌改版候选（未发布）
+## 官网品牌改版（v0.16.47已发布）
 
 正式首页源码已收敛为index.html、brand.css、brand.js，保留content.js现有数据与/website-news/current.js自动资讯入口。新静态素材在assets/brand-v2；图片来源与精确生成提示词在该目录provenance.json及sidecar中，只有明确白名单内的图片/CSS/JS由本地preview公开。
 
@@ -33,3 +33,5 @@ P3本地精修：继续使用4415预览；Hero和导航保持原样，解决方�
 ## P3 正式发布候选
 
 用户已确认本地视觉并授权commit、push、部署。v0.16.47仅发布官网，资源统一为/website-assets/20261026-site09/；使用精确资源白名单与既有Cloud Assistant私有传输，保留所有旧静态目录和子页路由。Hero不再使用preview命名空间。部署记录、回滚与资讯基线见ops/releases/v0.16.47-website.md；前述“尚未授权发布”是本地开发阶段记录。
+
+P3已上线：https://shoumiren.online/ 。静态首页/资讯当前目录为20261026-site09，原子页继续使用site08等既有目录。公网13文件哈希、1440/390 Chrome及原子页保护/画布ready检查通过；上线中发现新目录权限导致短暂404，已恢复并修正，详见v0.16.47发布记录。
