@@ -11,6 +11,8 @@ import { modelTools } from "./tools.js";
 import { streamSink } from "./stream-sink.js";
 import type { AgentActor } from "./contracts.js";
 export type ModelExecution = {
+  /** Internal lifecycle callback; never persisted in request hashes or sent upstream. */
+  onInferenceStart?: () => void;
   actor: AgentActor;
   stepId: string;
   mode: "advice" | "execute";

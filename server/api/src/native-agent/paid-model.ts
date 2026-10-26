@@ -1,4 +1,4 @@
-import { pinhaozhanJson, pinhaozhanPrice, pinhaozhanFetch, PINHAOZHAN_SYSTEM_SUFFIX } from "../pinhaozhan.js";
+import { pinhaozhanPreflight, pinhaozhanFetch, PINHAOZHAN_SYSTEM_SUFFIX } from "../pinhaozhan.js";
 import { validateAgentSources } from "./sources.js";
 import { KnowledgeService } from "../knowledge-service.js";
 import { drizzle } from "drizzle-orm/node-postgres";
@@ -297,14 +297,19 @@ export class PaidAgentModel implements AgentModelDriver {
               409,
             );
           if (route.providerId === "pinhaozhan") {
-            await checkpoint("pricing_started");
-            const pricing = await pinhaozhanJson(config, "/api/pricing", false, init?.signal || undefined);
-            pinhaozhanPrice(pricing, Number(fx), route.quoteCents, AGENT_LIMITS.contextTokens, AGENT_LIMITS.outputTokens);
-            // Check ledger access before any billable submission. Missing later receipts
-            // remain held for review; never infer free usage from an empty ledger.
-            await checkpoint("ledger_started");
-            const ledger = await pinhaozhanJson(config, "/api/log/token", true, init?.signal || undefined);
-            if (ledger.success !== true || !Array.isArray(ledger.data)) throw new DomainError("AGENT_BILLING_UNCONFIRMED", "供应商账单接口不可用，未提交推理", 409);
+            await pinhaozhanPreflight(config, {
+              fx: Number(fx), quotePoints: route.quoteCents,
+              contextTokens: AGENT_LIMITS.contextTokens, outputTokens: AGENT_LIMITS.outputTokens,
+            }, init?.signal || signal, checkpoint);
+            // A slow read must not leave admission based on stale permissions.
+            await assertNativeJobVisible(this.pool, jobId, execution.actor.actorId);
+            const fresh = (await this.pool.query("select * from native_agent_runs where id=$1", [execution.actor.runId])).rows[0];
+            if (!fresh || fresh.cancel_requested || fresh.status !== "planning")
+              throw new DomainError("AGENT_MODEL_STOPPED", "任务已停止，未提交推理", 409);
+            const freshPolicy = await this.policy?.assertRun(fresh);
+            if (!freshPolicy?.knowledgeReasoningEnabled) assertKnowledgeGenerationEnabled(fresh.sources);
+            if (freshPolicy && Number(fresh.spent_cents) + Number(fresh.reserved_cents) > freshPolicy.maxBudgetCents)
+              throw new DomainError("AGENT_COST_LIMIT", "平台当前预算上限不足，未提交供应商", 409);
           } else {
           const pricing = await fetch(config.catalogUrl, {
             signal: init?.signal,
@@ -391,6 +396,7 @@ export class PaidAgentModel implements AgentModelDriver {
           ],
         );
         init?.signal?.throwIfAborted();
+        execution.onInferenceStart?.();
         await checkpoint("submission_started");
         init?.signal?.throwIfAborted();
         inferenceDispatched = true;

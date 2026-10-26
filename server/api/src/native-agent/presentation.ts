@@ -51,7 +51,7 @@ export function runControl({
 export function safeTaskError(code?: string | null) {
   if (!code) return "";
   if (code === "AGENT_PREFLIGHT_FAILED")
-    return "供应商连接或价格、账单预检未通过，本轮未提交模型推理。任务和输入已保留；可检查连接后明确继续，或选择其他可用模型。";
+    return "供应商连接或价格、账单预检未通过，这轮未提交模型推理。此前已完成的模型调用仍按实际用量计积分，任务和输入已保留；检查连接后可明确继续原任务。";
   if (code === "AGENT_CONVERSATION_INVALID")
     return "助手未能准确识别本轮指令，已停止且未执行新操作。可以修改指令后重新发送；需要写入时请明确说明目标，平台会先展示计划供确认。不会自动重试。";
   if (code === "AGENT_INVALID_TOOL_ARGUMENTS" || code === "AGENT_TOOL_SCOPE_MISMATCH")

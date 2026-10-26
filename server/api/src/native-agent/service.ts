@@ -1,4 +1,5 @@
 import { CreativeDecisionService } from "./creative-decisions.js";
+import { modelClock, modelTiming } from "./model-clock.js";
 import {
   parseConversationDecision,
   conversationTools,
@@ -1191,17 +1192,13 @@ export class NativeAgentService {
                 stepId,
               );
             });
-            const controller = new AbortController(),
-              timeout = setTimeout(
-                () => controller.abort(),
-                Math.max(
-                  1,
-                  Math.min(
-                    limits.modelMs,
-                    limits.activeMs - r.elapsed_ms - (Date.now() - started),
-                  ),
-                ),
-              );
+            const timing = modelTiming(r.model_id, limits.modelMs);
+            if (!original) await this.pool.query(
+              "update native_agent_steps set input=input||$2::jsonb where id=$1",
+              [stepId, JSON.stringify({ transportBudget: timing })],
+            );
+            const controller = new AbortController();
+            const clock = modelClock(controller, timing, started + limits.activeMs - r.elapsed_ms);
             const cancelPoll = setInterval(() => {
               void this.pool
                 .query(
@@ -1236,13 +1233,14 @@ export class NativeAgentService {
                   mode: r.mode,
                   budgetCents: r.budget_cents,
                   ...modelExecution,
+                  onInferenceStart: clock.beginInference,
                   toolNames,
                   readCurrentCanvasOnly:
                     r.purpose === "model_probe" ? true : undefined,
                 },
               );
             } finally {
-              clearTimeout(timeout);
+              clock.stop();
               clearInterval(cancelPoll);
             }
             await this.transaction(async (tx) => {

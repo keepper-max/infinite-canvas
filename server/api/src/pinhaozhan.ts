@@ -32,6 +32,44 @@ export async function pinhaozhanJson(config: ProviderConfig, path: string, authe
   }
 }
 
+/** Fresh independent read checks overlap; neither one can authorize a paid submission alone. */
+export async function pinhaozhanPreflight(
+  config: ProviderConfig,
+  price: { fx: number; quotePoints: number; contextTokens: number; outputTokens: number },
+  signal: AbortSignal,
+  checkpoint: (phase: string) => Promise<void>,
+) {
+  const cancelled = new AbortController();
+  const scoped = AbortSignal.any([signal, cancelled.signal]);
+  let failedCheck: string | undefined;
+  const check = async (name: string, path: string, authenticated: boolean) => {
+    await checkpoint(name + "_started");
+    try {
+      const result = await pinhaozhanJson(config, path, authenticated, scoped);
+      if (name === "pricing") pinhaozhanPrice(result, price.fx, price.quotePoints, price.contextTokens, price.outputTokens);
+      else if (result.success !== true || !Array.isArray(result.data))
+        fail("AGENT_BILLING_UNCONFIRMED", "供应商账单接口不可用，未提交推理");
+      await checkpoint(name + "_completed");
+    } catch (error) {
+      failedCheck ??= name;
+      await checkpoint(name + (scoped.aborted ? "_cancelled" : "_failed"));
+      throw error;
+    }
+  };
+  const checks = [check("pricing", "/api/pricing", false), check("ledger", "/api/log/token", true)];
+  try {
+    await Promise.all(checks);
+    scoped.throwIfAborted();
+    await checkpoint("preflight_completed");
+  } catch (error) {
+    cancelled.abort();
+    await Promise.allSettled(checks);
+    // A cancelled sibling must not replace the actual failing endpoint in diagnostics.
+    await checkpoint(failedCheck ? "preflight_failed_" + failedCheck : "preflight_cancelled");
+    throw error;
+  }
+}
+
 export function pinhaozhanPrice(payload: Record<string, any>, fx: number, quotePoints: number, contextTokens: number, outputTokens: number) {
   const rows = Array.isArray(payload.data) ? payload.data.filter((x: any) => x.model_name === PINHAOZHAN_MODEL) : [];
   const row = rows[0];
