@@ -78,8 +78,8 @@ export const nativeAgentStatus = (signal?: AbortSignal) =>
 export const listAgentSessions = (projectId: string, signal?: AbortSignal) => platformRequest<AgentSession[]>(base + "/sessions?projectId=" + encodeURIComponent(projectId), { signal });
 export const getAgentSession = (id: string, signal?: AbortSignal) => platformRequest<AgentSnapshot>(base + "/sessions/" + id + "/presentation", { signal });
 export const createAgentSession = (projectId: string, mode: AgentMode, operationId: string) => platformRequest<AgentSession>(base + "/sessions", { method: "POST", body: JSON.stringify({ projectId, mode, operationId, title: "创作助手" }) });
-export const startAgentRun = (sessionId: string, prompt: string, modelId: string, mode: AgentMode, operationId: string, budgetCents = 0, conversationVersion?: 1) =>
-    platformRequest<AgentRun>(`${base}/sessions/${sessionId}/runs`, { method: "POST", body: JSON.stringify({ prompt, modelId, mode, operationId, budgetCents, ...(conversationVersion ? { conversationVersion } : {}) }) });
+export const startAgentRun = (sessionId: string, prompt: string, modelId: string, mode: AgentMode, operationId: string, budgetCents = 0, conversationVersion?: 1, interaction?: "auto") =>
+    platformRequest<AgentRun>(`${base}/sessions/${sessionId}/runs`, { method: "POST", body: JSON.stringify({ prompt, modelId, mode, operationId, budgetCents, ...(conversationVersion ? { conversationVersion } : {}), ...(interaction ? { interaction } : {}) }) });
 export const cancelAgentRun = (id: string) => platformRequest(`${base}/runs/${id}/cancel`, { method: "POST" });
 export const closeAgentSession = (id: string) => platformRequest(`${base}/sessions/${id}/close`, { method: "POST" });
 export const decideAgentPlan = (a: AgentApproval, decision: "approve" | "revise" | "cancel", operationId: string, instruction?: string) =>

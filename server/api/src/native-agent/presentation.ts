@@ -50,12 +50,14 @@ export function runControl({
 }
 export function safeTaskError(code?: string | null) {
   if (!code) return "";
+  if (code === "AGENT_PREFLIGHT_FAILED")
+    return "供应商连接或价格、账单预检未通过，本轮未提交模型推理。任务和输入已保留；可检查连接后明确继续，或选择其他可用模型。";
   if (code === "AGENT_CONVERSATION_INVALID")
-    return "助手未能准确识别本轮指令，已停止且未执行新操作。可以修改指令后重新发送；要写入画布请先切换执行模式。不会自动重试。";
+    return "助手未能准确识别本轮指令，已停止且未执行新操作。可以修改指令后重新发送；需要写入时请明确说明目标，平台会先展示计划供确认。不会自动重试。";
   if (code === "AGENT_INVALID_TOOL_ARGUMENTS" || code === "AGENT_TOOL_SCOPE_MISMATCH")
     return "助手选择的工具或参数与本次操作不匹配，已停止本批次操作。增加预算或重新查询无法修复；请说明要修改画布还是知识文档后重新规划，保存前仍需确认。";
   if (code === "AGENT_ADVICE_READ_ONLY")
-    return "当前是建议模式，只会分析。若要创建或修改，请切换执行模式，并重新确认计划。";
+    return "此历史任务只允许分析。请结束后重新提出创建或修改要求，平台会先展示计划供确认。";
   if (code === "AGENT_BUDGET_CHANGED")
     return "平台预算配置发生了变化。请重新查看当前预算，再确认是否继续。";
   if (

@@ -18,8 +18,12 @@ export const runInput = z
     mode,
     budgetCents: z.number().int().nonnegative().default(0),
     conversationVersion: z.literal(1).optional(),
+    interaction: z.literal("auto").optional(),
   })
-  .strict();
+  .strict()
+  .refine(p => !p.interaction || (p.conversationVersion === 1 && p.mode === "advice"), {
+    message: "自动交互须从只读意图识别开始",
+  });
 export const decisionInput = z
   .object({
     operationId: uuid,

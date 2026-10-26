@@ -322,6 +322,7 @@ export class NativeAgentService {
           const snapshot = {
             ...(value.policy_snapshot ?? {}),
             conversationVersion: 1,
+            ...(p.interaction === "auto" ? { interaction: "auto" } : {}),
           };
           await tx.execute(
             sql`update native_agent_runs set policy_snapshot=${JSON.stringify(snapshot)}::jsonb where id=${value.id}`,
@@ -1023,12 +1024,24 @@ export class NativeAgentService {
           );
           const executionPolicy = await this.policy?.assertRun(r);
           await this.validateSources(r);
+          if (conversational && r.conversation?.intent === "action" && r.mode === "advice" && r.policy_snapshot?.interaction === "auto") {
+            // Only a verified current-turn action admits proposal tools. This is
+            // not approval: normal plan confirmation and write guards still apply.
+            const admitted = await this.transaction(async (tx) => {
+              await guardActor(tx, this.actor(r!), true);
+              const result = await tx.execute(sql`update native_agent_runs set mode='execute',revision=revision+1,updated_at=now() where id=${runId} and mode='advice' and status in ('pending','planning','running') and not cancel_requested returning id`);
+              if (result.rows.length) await this.event(tx, r!, "conversation.action_admitted", { approvalRequired: true });
+              return result.rows.length > 0;
+            });
+            if (!admitted) return;
+            r.mode = "execute";
+          }
           if (conversational && r.conversation?.intent === "action" && r.mode === "advice") {
             await this.transaction(async (tx) => {
               await guardActor(tx, this.actor(r!));
               const completed = await tx.execute(sql`update native_agent_runs set status='completed',error_code=null,error_message=null,finished_at=now(),revision=revision+1,updated_at=now() where id=${runId} and not cancel_requested returning id`);
               if (!completed.rows.length) return;
-              await tx.execute(sql`insert into native_agent_messages(session_id,run_id,turn_id,item_id,role,content) values(${r!.session_id},${runId},${runId},${runId + ":advice-mode"},'assistant',${"当前是建议模式，只能讨论，尚未修改画布或知识文档。请切换为执行模式，再发送需要落实的方案；我会先展示计划，确认后才保存。"}) on conflict(run_id,item_id) do nothing`);
+              await tx.execute(sql`insert into native_agent_messages(session_id,run_id,turn_id,item_id,role,content) values(${r!.session_id},${runId},${runId},${runId + ":advice-mode"},'assistant',${"此历史请求保持只读，尚未修改画布或知识文档。请重新发送需要落实的方案，无需切换模式；我会先展示计划，确认后才保存。"}) on conflict(run_id,item_id) do nothing`);
               await this.event(tx, r!, "run.completed", { mode: "advice", writeBlocked: true });
             });
             return;

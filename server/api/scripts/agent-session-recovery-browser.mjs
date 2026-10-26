@@ -76,12 +76,16 @@ export async function verifySessionRecoveryBrowser(
       input = panel.getByLabel("给创作助手的指令"),
       send = panel.getByRole("button", { name: "发送", exact: true });
     await input.waitFor();
+    assert.equal(await panel.getByLabel("执行模式", { exact: true }).count(), 0);
+    checks.push("无需建议/执行模式切换，保留模型选择");
     await panel
       .getByRole("button", { name: "查看未结束任务", exact: true })
       .waitFor();
     await input.fill("原始输入草稿");
     await send.click();
     await rejectionReturned;
+    assert.equal(submitted.at(-1).interaction, "auto");
+    assert.equal(submitted.at(-1).mode, "advice");
     await input.fill("保留这段输入草稿");
     releaseRejected();
     await panel

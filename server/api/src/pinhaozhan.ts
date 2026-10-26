@@ -1,14 +1,13 @@
 import type { ProviderConfig } from "./config.js";
 import { DomainError } from "./domain.js";
-import { Agent } from "undici";
+import { createPinhaozhanTransport } from "./pinhaozhan-transport.js";
+import { AGENT_LIMITS } from "./native-agent/limits.js";
 /** Fixed provider guidance: passed through the SDK's trusted system entry. */
 export const PINHAOZHAN_SYSTEM_SUFFIX = '\n工具协议要求：function.arguments的JSON必须直接符合对应工具的parameters schema；除非schema明确声明，不能再套parameters、arguments、input或工具名称等外层。空对象schema对应的arguments必须是{}，不能写成{"parameters":{}}。保留所有服务端身份、权限、预算和审批要求；不得添加schema未声明的字段。';
 
-// This provider's CDN intermittently stalls on the production dual-stack path.
-// Resolve IPv4 normally: no fixed IP, TLS bypass, global dispatcher or retries.
-const dispatcher = new Agent({ connect: { family: 4 } });
+const transport = createPinhaozhanTransport();
 export function pinhaozhanFetch(input: Parameters<typeof fetch>[0], init?: RequestInit) {
-  return fetch(input, { ...init, dispatcher } as RequestInit);
+  return fetch(input, { ...init, dispatcher: transport.agent } as RequestInit);
 }
 
 const fail = (code: string, message: string): never => { throw new DomainError(code, message, 409); };
@@ -21,15 +20,15 @@ export async function pinhaozhanJson(config: ProviderConfig, path: string, authe
   if (base.username || base.password || base.search || base.hash || base.pathname !== "/")
     fail("AGENT_PROVIDER_INVALID", "供应商地址必须为不含凭据的站点根地址");
   try {
-    const response = await pinhaozhanFetch(new URL(path, base), {
+    const response = await fetch(new URL(path, base), {
       headers: { Accept: "application/json", "User-Agent": "Mozilla/5.0", ...(authenticated ? { Authorization: "Bearer " + config.apiKey } : {}) },
-      redirect: "error", signal,
-    });
+      redirect: "error", signal: signal ?? AbortSignal.timeout(AGENT_LIMITS.modelMs), dispatcher: transport.readonly,
+    } as RequestInit);
     if (!response.ok) fail("AGENT_PROVIDER_UNAVAILABLE", `供应商只读接口返回HTTP ${response.status}`);
     return await response.json() as Record<string, any>;
   } catch (error) {
     if (error instanceof DomainError) throw error;
-    return fail("AGENT_PROVIDER_UNAVAILABLE", "供应商只读接口不可用，未自动重试");
+    return fail("AGENT_PROVIDER_UNAVAILABLE", "供应商只读接口连接失败，备用地址尝试后仍不可用；未提交新的推理请求");
   }
 }
 

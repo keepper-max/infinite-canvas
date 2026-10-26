@@ -57,7 +57,7 @@ const friendlyError = (e: unknown) =>
           : e instanceof Error && /网络|连接|草稿|审批|请求回执/.test(e.message)
             ? e.message
             : "连接或操作暂未完成，请重新查询；本地输入和原操作记录仍保留。";
-type PendingStart = { operationId: string; sessionOperationId: string; prompt: string; sessionId: string; mode: AgentMode; modelId: string; budgetCents: number; conversationVersion?: 1 };
+type PendingStart = { operationId: string; sessionOperationId: string; prompt: string; sessionId: string; mode: AgentMode; modelId: string; budgetCents: number; conversationVersion?: 1; interaction?: "auto" };
 export default function NativeAgentPanel() {
     const navigate = useNavigate();
     const { user, workspace } = useAuth(),
@@ -340,14 +340,14 @@ export default function NativeAgentPanel() {
         setError("");
         const current = generation.current;
         try {
-            const op = pending.current ?? { operationId: crypto.randomUUID(), sessionOperationId: crypto.randomUUID(), prompt: draft, sessionId, mode, modelId, budgetCents: paidModel ? budgetCents : 0, conversationVersion: 1 as const };
+            const op = pending.current ?? { operationId: crypto.randomUUID(), sessionOperationId: crypto.randomUUID(), prompt: draft, sessionId, mode: "advice" as const, modelId, budgetCents: paidModel ? budgetCents : 0, conversationVersion: 1 as const, interaction: "auto" as const };
             pending.current = op;
             await saveAgentDraft(key, { sessionId, mode: op.mode, draft: op.prompt, pending: op });
             const id = op.sessionId || (await createAgentSession(projectId, op.mode, op.sessionOperationId)).id;
             op.sessionId = id;
             await saveAgentDraft(key, { sessionId: id, mode: op.mode, draft: op.prompt, pending: op });
             if (generation.current === current) setSessionId(id);
-            const run = await startAgentRun(id, op.prompt, op.modelId, op.mode, op.operationId, op.budgetCents ?? 0, op.conversationVersion);
+            const run = await startAgentRun(id, op.prompt, op.modelId, op.mode, op.operationId, op.budgetCents ?? 0, op.conversationVersion, op.interaction);
             if (generation.current !== current) return;
             pending.current = null;
             setSessionId(id);
@@ -561,12 +561,12 @@ export default function NativeAgentPanel() {
                         if (selectedProject.current !== projectId || selectedSession.current !== selected) return;
                         if (pending.current?.operationId === run.operation_id) pending.current = null;
                         setDraft((text) => text || snapshot?.messages.filter((m) => m.role === "user").at(-1)?.content || "");
-                        preferredMode.current = { sessionId: selected, mode: "execute" };
-                        setMode("execute");
+                        preferredMode.current = { sessionId: selected, mode: "advice" };
+                        setMode("advice");
                         setError("");
-                        message.info("已结束暂停任务并切换执行模式。请确认输入后发送；没有重试或新增模型费用。");
+                        message.info("已结束暂停任务，输入已保留。可直接讨论或提出执行要求；本次没有重试或新增模型费用。");
                     }).catch(reportError).finally(() => { if (selectedSession.current === selected) setBusy(false); });
-                }}>结束暂停，切换执行模式</Button>}
+                }}>结束暂停，保留输入</Button>}
                 {latest && (latest.status === "awaiting_manual_review" || latest.error_code === "AGENT_BILLING_UNCONFIRMED") && (
                     <Button
                         type="text"
@@ -760,16 +760,6 @@ export default function NativeAgentPanel() {
             </Modal>
             <footer className="border-t p-4" style={{ borderColor: theme.node.stroke }}>
                 <div className="mb-3 flex gap-2">
-                    <Select
-                        aria-label="执行模式"
-                        value={active ? latest.mode : mode}
-                        onChange={(value) => { preferredMode.current = { sessionId, mode: value }; setMode(value); }}
-                        disabled={!!active || busy || restoringSession || unconfirmedRequest}
-                        options={[
-                            { value: "advice", label: "建议模式" },
-                            { value: "execute", label: "执行模式" },
-                        ]}
-                    />
                     <Select
                         aria-label="助手模型"
                         className="min-w-0 flex-1"
