@@ -244,6 +244,11 @@ test(
       assert.equal(state.billing_trace_id, trace);
       assert.equal(state.provider_submission_state, "unknown");
       assert.ok(state.step_input.transport.response_headers_received);
+      assert.equal(state.step_input.providerStream.termination, "read_error");
+      assert.ok(["UND_ERR_SOCKET", "ECONNRESET", "EPIPE"].includes(state.step_input.providerStream.readErrorCode));
+      assert.ok(state.step_input.providerStream.bytes > 0);
+      assert.equal(state.step_input.providerStream.doneSeen, false);
+      assert.equal(state.step_input.providerStream.jsonErrors, 0);
       assert.equal(
         state.step_input.transport.failedPhase,
         "response_headers_received",

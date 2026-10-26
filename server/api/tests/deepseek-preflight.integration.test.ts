@@ -94,6 +94,12 @@ test(
       }
       if (req.url === "/v1/chat/completions") {
         s.posts++;
+        let requestBody = "";
+        for await (const part of req) requestBody += part;
+        assert.equal(
+          JSON.parse(requestBody).stream_options.include_usage,
+          true,
+        );
         assert.ok(s.overlap, "both fresh checks must finish before POST");
         if (s.name === "inference-timeout") return;
         await sleep(2500);
@@ -126,18 +132,33 @@ test(
           "content-type": "text/event-stream",
           "x-oneapi-request-id": trace,
         });
-        res.end(
-          event({
-            role: "assistant",
-            content: "可以先确定影片风格，再细化脚本。",
-          }) +
-            event({}, "stop", {
-              prompt_tokens: 100,
-              completion_tokens: 10,
-              total_tokens: 110,
-            }) +
-            "data: [DONE]\n\n",
-        );
+        const content =
+          s.name === "invalid-json-terminal-open"
+            ? '{"intent":"chat","summary":"unfinished'
+            : "可以先确定影片风格，再细化脚本。";
+        const wire =
+          event({ role: "assistant", content }) +
+          event(
+            {},
+            "stop",
+            s.name === "missing-usage-open"
+              ? undefined
+              : {
+                  prompt_tokens: 100,
+                  completion_tokens: 10,
+                  total_tokens: 110,
+                },
+          ) +
+          "data: [DONE]\n\n";
+        if (
+          [
+            "valid-terminal-open",
+            "missing-usage-open",
+            "invalid-json-terminal-open",
+          ].includes(s.name)
+        )
+          res.write(wire);
+        else res.end(wire);
         return;
       }
       res.writeHead(404).end();
@@ -215,6 +236,9 @@ test(
       await gateway.refreshPinhaozhanCatalog();
       for (const name of [
         "slow-success",
+        "valid-terminal-open",
+        "missing-usage-open",
+        "invalid-json-terminal-open",
         "price-invalid",
         "ledger-forbidden",
         "cancel",
@@ -252,6 +276,12 @@ test(
             mode: "advice",
             budgetCents: 100,
             prompt: "只讨论10秒短片创意，不写画布",
+            ...(name === "invalid-json-terminal-open"
+              ? {
+                  conversationVersion: 1 as const,
+                  interaction: "auto" as const,
+                }
+              : {}),
           };
         const run = await service.start(actor, session.id, payload);
         await pool.query(
@@ -308,7 +338,7 @@ test(
         assert.equal(state.input.transportBudget.preflightMs, 5000);
         assert.equal(state.input.transportBudget.inferenceMs, 5000);
         assert.equal(state.input.transportBudget.maxRoundMs, 10000);
-        if (name === "slow-success") {
+        if (name === "slow-success" || name === "valid-terminal-open") {
           assert.equal(state.status, "completed");
           assert.equal(s.posts, 1);
           assert.ok(s.overlap);
@@ -317,6 +347,21 @@ test(
           assert.ok(state.input.transport.ledger_completed);
           assert.ok(state.input.transport.submission_started);
           assert.equal(job.billing_status, "settled");
+          assert.equal(
+            state.input.providerStream.termination,
+            "protocol_complete",
+          );
+          assert.equal(state.input.providerStream.doneSeen, true);
+          assert.equal(state.input.providerStream.usageSeen, true);
+          assert.equal(state.input.providerStream.upstreamCancelRequested, true);
+          if (name === "valid-terminal-open") {
+            assert.equal(state.input.providerStream.networkEof, false);
+            assert.ok(
+              !JSON.stringify(
+                await service.presentation(actor, session.id),
+              ).includes("providerStream"),
+            );
+          }
           assert.equal(state.spent_cents, 1);
           assert.equal(state.reserved_cents, 0);
           assert.equal(
@@ -329,8 +374,28 @@ test(
             1,
             "lost response/repeated drive cannot resubmit",
           );
-        } else if (name === "inference-timeout") {
+        } else if (name === "invalid-json-terminal-open") {
           assert.equal(s.posts, 1);
+          assert.equal(state.status, "failed");
+          assert.equal(state.error_code, "AGENT_CONVERSATION_INVALID");
+          assert.equal(state.spent_cents, 1);
+          assert.equal(job.billing_status, "settled");
+          assert.equal(
+            (await repo.getCanvasForUser(project, actor))!.nodes.length,
+            0,
+          );
+        } else if (
+          name === "inference-timeout" ||
+          name === "missing-usage-open"
+        ) {
+          assert.equal(s.posts, 1);
+          if (name === "missing-usage-open") {
+            assert.equal(
+              state.input.providerStream.termination,
+              "invalid_terminal",
+            );
+            assert.equal(state.input.providerStream.usageSeen, false);
+          }
           assert.equal(job.provider_submission_state, "unknown");
           assert.equal(state.status, "awaiting_manual_review");
           assert.equal(state.spent_cents, 0);

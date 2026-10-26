@@ -1,4 +1,5 @@
 import { pinhaozhanPreflight, pinhaozhanFetch, PINHAOZHAN_SYSTEM_SUFFIX } from "../pinhaozhan.js";
+import { observePinhaozhanStream } from "../pinhaozhan-stream.js";
 import { validateAgentSources } from "./sources.js";
 import { KnowledgeService } from "../knowledge-service.js";
 import { drizzle } from "drizzle-orm/node-postgres";
@@ -209,6 +210,7 @@ export class PaidAgentModel implements AgentModelDriver {
       ).rows[0];
     let inferenceDispatched = false,
       billingTrace: string | undefined;
+    let observation: ReturnType<typeof observePinhaozhanStream> | undefined;
     let transportPhase = "preflight";
     const checkpoint = async (phase: string) => {
       transportPhase = phase;
@@ -219,6 +221,7 @@ export class PaidAgentModel implements AgentModelDriver {
     };
     const sdk = createOpenAICompatible({
       name: "platform-managed",
+      ...(route.providerId === "pinhaozhan" ? { includeUsage: true } : {}),
       baseURL:
         route.providerId === "token360"
           ? config.baseUrl + "/v1"
@@ -414,7 +417,15 @@ export class PaidAgentModel implements AgentModelDriver {
         // Keep identity even when streaming later aborts. Do not change billing state here.
         await this.pool.query("update generation_jobs set billing_trace_id=$2,updated_at=now() where id=$1", [jobId, billingTrace]);
         await checkpoint("response_headers_received");
-        return response;
+        if (route.providerId !== "pinhaozhan") return response;
+        observation = observePinhaozhanStream(response, init?.signal || signal, async trace => {
+          const saved = await this.pool.query(
+            "update native_agent_steps set input=jsonb_set(input,'{providerStream}',$2::jsonb) where id=$1",
+            [execution.stepId, JSON.stringify(trace)],
+          );
+          if (saved.rowCount !== 1) throw new DomainError("AGENT_STREAM_TRACE_UNAVAILABLE", "流式追踪未能持久化，保留原请求等待核查", 409);
+        });
+        return observation.response;
       },
     });
     const provider: GenerationProvider = {
@@ -451,15 +462,28 @@ export class PaidAgentModel implements AgentModelDriver {
             );
           let reply: ModelReply;
           try {
-            reply = await executeAgentProtocol(
-              sdk(request.upstreamModel),
-              messages,
-              providerSignal || signal,
-              emit,
-              execution,
-              "verified",
-              providerSystem,
-            );
+            let protocolFailed = false;
+            try {
+              reply = await executeAgentProtocol(
+                sdk(request.upstreamModel),
+                messages,
+                providerSignal || signal,
+                emit,
+                execution,
+                "verified",
+                providerSystem,
+              );
+            } catch (error) {
+              protocolFailed = true;
+              throw error;
+            } finally {
+              try {
+                await observation?.flush();
+              } catch (error) {
+                // A secondary diagnostic failure must not hide the supplier failure.
+                if (!protocolFailed) throw error;
+              }
+            }
             await checkpoint("protocol_completed");
           } catch (error) {
             await this.pool.query(
