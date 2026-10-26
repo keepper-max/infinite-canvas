@@ -20,3 +20,16 @@
 
 ## Release identity
 - Parallel website release already published v0.16.47 (tag4f23198). Initial hotfix commit0d63229 remains in history without amendment; this hotfix is released as v0.16.48. Existing website/version tag and its public homepage remain intact. No force push or tag replacement.
+
+## Production delivery
+- Runtime v0.16.48, immutable code/tag958d26a5f562a69dbffa66d4c57510c726d27566. Main and tag pushed. Initial code0d63229 retained without rewrite; published website v0.16.47/tag4f23198 preserved.
+- API and Web built from git archive. Archive SHA2561f395fdd8bd035747498036db0294413019699c872b1bd324d3f0e421f12cac4.
+- API/normal Worker/Agent Worker image sha256:7f1dd03f319bb31a75c04514f51bc4440270516cfd5bf4b8a72712007009de79; Web image sha256:efb83c4f15522f273633f082b5f38eb5e90192d57922c1c1254bda51d23d8048.
+- Candidate ran on Linux Node22.23.3. Frozen LF migration replay no-op in restored PostgreSQL; production49 records unchanged. No new migrations or dependencies.
+- Formal maintenance policy and queue pause restored after API, normal Worker, Agent Worker and Web became healthy. Policy version28; defaults, model selection and all budgets unchanged. Original before images and compose retained.
+- 9 production browser/API checks passed,0 page errors: independent website SHA, backend/model/limits, no account unfinished Run, archived history retained, fresh session free of false conflict, composer enabled without submit, archives hidden by default, explicit archive navigation with draft intact, anonymous discovery denied.
+- Public homepage hash remains04f70aa9247547fdb3cd1791e08cd5f5682521f4e1e0e184d25a786cbf95eef0. No public nginx/site update or homepage replacement by this hotfix.
+- Retained14 tasks,24 messages,all10 old sessions closed (9 newly archived),0 unfinished tasks. Original cancelled task still spent1/reserved12; no ledger/job/message mutations or credit release. No paid model calls.
+- Protected canvas29 nodes/27 edges/revision7 and hashfd63cd2a088d380860adcb261d3fd7403b7b00a175f3a67cce45a9baad47eccd unchanged. Queue healthy, DB lock waits0, import service active.
+- Release record /opt/infinite-canvas-releases/session48-958d26a5f562/deployment-final.json and current/runtime-release48.json. Read-only acceptance session revoked. Isolated restore containers stopped/data retained; own local Vite and PG stopped cleanly after tests.
+- Remaining follow-up: original supplier charge still requires exact administrator association; archive does not manufacture a response, claim refund, remove12-point hold or automatically rerun anything. User must explicitly send a fresh request after reviewing retained draft.
