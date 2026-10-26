@@ -1,0 +1,369 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-10-25T13:58:35Z",
+  "title": "Design System: 守密人科技官网",
+  "extensions": {
+    "colorMeta": {
+      "navy": {
+        "role": "neutral",
+        "displayName": "深海军蓝",
+        "tonalRamp": [
+          "oklch(15% 0.04 255)",
+          "oklch(26% 0.04 255)",
+          "oklch(38% 0.04 255)",
+          "oklch(49% 0.04 255)",
+          "oklch(61% 0.04 255)",
+          "oklch(72% 0.04 255)",
+          "oklch(84% 0.04 255)",
+          "oklch(95% 0.04 255)"
+        ]
+      },
+      "navy-soft": {
+        "role": "neutral",
+        "displayName": "午夜蓝",
+        "tonalRamp": [
+          "oklch(15% 0.05 260)",
+          "oklch(26% 0.05 260)",
+          "oklch(38% 0.05 260)",
+          "oklch(49% 0.05 260)",
+          "oklch(61% 0.05 260)",
+          "oklch(72% 0.05 260)",
+          "oklch(84% 0.05 260)",
+          "oklch(95% 0.05 260)"
+        ]
+      },
+      "blue": {
+        "role": "primary",
+        "displayName": "科技蓝",
+        "tonalRamp": [
+          "oklch(15% 0.2 260)",
+          "oklch(26% 0.2 260)",
+          "oklch(38% 0.2 260)",
+          "oklch(49% 0.2 260)",
+          "oklch(61% 0.2 260)",
+          "oklch(72% 0.2 260)",
+          "oklch(84% 0.2 260)",
+          "oklch(95% 0.2 260)"
+        ]
+      },
+      "blue-hover": {
+        "role": "primary",
+        "displayName": "科技蓝悬停",
+        "tonalRamp": [
+          "oklch(15% 0.18 260)",
+          "oklch(26% 0.18 260)",
+          "oklch(38% 0.18 260)",
+          "oklch(49% 0.18 260)",
+          "oklch(61% 0.18 260)",
+          "oklch(72% 0.18 260)",
+          "oklch(84% 0.18 260)",
+          "oklch(95% 0.18 260)"
+        ]
+      },
+      "ice": {
+        "role": "primary",
+        "displayName": "冰蓝",
+        "tonalRamp": [
+          "oklch(15% 0.12 245)",
+          "oklch(26% 0.12 245)",
+          "oklch(38% 0.12 245)",
+          "oklch(49% 0.12 245)",
+          "oklch(61% 0.12 245)",
+          "oklch(72% 0.12 245)",
+          "oklch(84% 0.12 245)",
+          "oklch(95% 0.12 245)"
+        ]
+      },
+      "ink": {
+        "role": "neutral",
+        "displayName": "墨色正文",
+        "tonalRamp": [
+          "oklch(15% 0.025 260)",
+          "oklch(26% 0.025 260)",
+          "oklch(38% 0.025 260)",
+          "oklch(49% 0.025 260)",
+          "oklch(61% 0.025 260)",
+          "oklch(72% 0.025 260)",
+          "oklch(84% 0.025 260)",
+          "oklch(95% 0.025 260)"
+        ]
+      },
+      "muted": {
+        "role": "neutral",
+        "displayName": "蓝灰辅文",
+        "tonalRamp": [
+          "oklch(15% 0.035 255)",
+          "oklch(26% 0.035 255)",
+          "oklch(38% 0.035 255)",
+          "oklch(49% 0.035 255)",
+          "oklch(61% 0.035 255)",
+          "oklch(72% 0.035 255)",
+          "oklch(84% 0.035 255)",
+          "oklch(95% 0.035 255)"
+        ]
+      },
+      "line": {
+        "role": "neutral",
+        "displayName": "细线灰",
+        "tonalRamp": [
+          "oklch(15% 0.012 255)",
+          "oklch(26% 0.012 255)",
+          "oklch(38% 0.012 255)",
+          "oklch(49% 0.012 255)",
+          "oklch(61% 0.012 255)",
+          "oklch(72% 0.012 255)",
+          "oklch(84% 0.012 255)",
+          "oklch(95% 0.012 255)"
+        ]
+      },
+      "wash": {
+        "role": "neutral",
+        "displayName": "冷雾浅底",
+        "tonalRamp": [
+          "oklch(15% 0.006 255)",
+          "oklch(26% 0.006 255)",
+          "oklch(38% 0.006 255)",
+          "oklch(49% 0.006 255)",
+          "oklch(61% 0.006 255)",
+          "oklch(72% 0.006 255)",
+          "oklch(84% 0.006 255)",
+          "oklch(95% 0.006 255)"
+        ]
+      },
+      "white": {
+        "role": "neutral",
+        "displayName": "纸白",
+        "tonalRamp": [
+          "oklch(15% 0 0)",
+          "oklch(26% 0 0)",
+          "oklch(38% 0 0)",
+          "oklch(49% 0 0)",
+          "oklch(61% 0 0)",
+          "oklch(72% 0 0)",
+          "oklch(84% 0 0)",
+          "oklch(95% 0 0)"
+        ]
+      }
+    },
+    "typographyMeta": {
+      "display": {
+        "displayName": "品牌主张",
+        "purpose": "首屏两行标题；移动字号由官网断点覆盖。"
+      },
+      "headline": {
+        "displayName": "章节标题",
+        "purpose": "浅色正文及合作区域的信息层级。"
+      },
+      "title": {
+        "displayName": "模块标题",
+        "purpose": "服务、文章和项目的局部标题。"
+      },
+      "body": {
+        "displayName": "正文",
+        "purpose": "基础中文阅读与混排。"
+      },
+      "label": {
+        "displayName": "操作标签",
+        "purpose": "按钮文字，导航另有局部覆盖。"
+      }
+    },
+    "shadows": [
+      {
+        "name": "industry",
+        "value": "6px 18px 40px #0006",
+        "purpose": "行业影像面板的空间深度。"
+      },
+      {
+        "name": "industry-edge",
+        "value": "inset 1px 0 0 #9bcfff44",
+        "purpose": "行业面板冰蓝边缘。"
+      },
+      {
+        "name": "product",
+        "value": "0 24px 55px #172f4c24",
+        "purpose": "产品窗口与浅色正文分离。"
+      },
+      {
+        "name": "sticky-header",
+        "value": "0 1px 0 var(--line)",
+        "purpose": "滚动后导航边界。"
+      },
+      {
+        "name": "mobile-nav",
+        "value": "0 14px 24px #07142612",
+        "purpose": "移动展开菜单层次。"
+      }
+    ],
+    "motion": [
+      {
+        "name": "ease",
+        "value": "cubic-bezier(.16,1,.3,1)",
+        "purpose": "首屏入场与影像变化缓动。"
+      },
+      {
+        "name": "button",
+        "value": ".2s",
+        "purpose": "按钮、链接、详情图标状态变化。"
+      },
+      {
+        "name": "hero-copy",
+        "value": ".9s",
+        "purpose": "文字入场。"
+      },
+      {
+        "name": "industry-arrive",
+        "value": "1.3s .1s",
+        "purpose": "行业矩阵入场时长及延迟。"
+      },
+      {
+        "name": "industry-hover",
+        "value": ".6s",
+        "purpose": "面板侧转与上移。"
+      },
+      {
+        "name": "project-hover",
+        "value": ".5s",
+        "purpose": "项目图像轻微缩放。"
+      },
+      {
+        "name": "reduced-motion",
+        "value": "prefers-reduced-motion: reduce",
+        "purpose": "关闭过渡、入场动画与平滑滚动；移除指定空间变换。"
+      }
+    ],
+    "breakpoints": [
+      {
+        "name": "wide-min",
+        "value": "1600px"
+      },
+      {
+        "name": "desktop-max",
+        "value": "1200px"
+      },
+      {
+        "name": "nav-collapse-max",
+        "value": "1100px"
+      },
+      {
+        "name": "stack-max",
+        "value": "800px"
+      },
+      {
+        "name": "phone-max",
+        "value": "480px"
+      }
+    ],
+    "scope": "仅官网 website；工作台、画布、3D 导演台不继承。",
+    "provenance": "规范从 website/brand.css、index.html、brand.js 提取。tonalRamp 是供色板探索的合成 OKLCH 阶梯，不是运行时代码中的色阶；规范色值仅由 DESIGN.md frontmatter 定义。组件预览仅展示视觉语法，不连接表单API、不模拟业务截图、不代表生产验收。"
+  },
+  "components": [
+    {
+      "name": "主按钮",
+      "kind": "button",
+      "refersTo": "button-primary",
+      "description": "方案探索、产品体验与提交的主要操作。",
+      "html": "<button class=\"ds-primary\">探索解决方案<svg width=\"19\" height=\"19\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.5\" aria-hidden=\"true\"><path d=\"M5 12h14M13 6l6 6-6 6\"/></svg></button>",
+      "css": ".ds-primary{display:inline-flex;align-items:center;justify-content:center;gap:22px;min-height:48px;padding:12px 23px;border-radius:6px;font:500 14px/1.8 'PingFang SC','Microsoft YaHei','Noto Sans CJK SC',sans-serif;text-decoration:none;cursor:pointer;transition:background .2s,color .2s,transform .2s;border:0;background:var(--blue,#2563eb);color:var(--white,#fff)}.ds-primary:hover{background:#1c50c7;transform:translateY(-2px)}.ds-primary:focus-visible{outline:3px solid var(--ice,#65b7ff);outline-offset:5px}.ds-primary:disabled{opacity:.6;cursor:not-allowed;transform:none}@media(prefers-reduced-motion:reduce){.ds-primary{transition:none}.ds-primary:hover{transform:none}}"
+    },
+    {
+      "name": "深底次按钮",
+      "kind": "button",
+      "refersTo": "button-secondary",
+      "description": "深色区域中的次级合作操作。",
+      "html": "<div class=\"ds-dark\"><button class=\"ds-secondary\">联系合作</button></div>",
+      "css": ".ds-dark{background:var(--navy,#071426);padding:24px}.ds-secondary{display:inline-flex;align-items:center;justify-content:center;gap:22px;min-height:48px;padding:12px 23px;border-radius:6px;font:500 14px/1.8 'PingFang SC','Microsoft YaHei','Noto Sans CJK SC',sans-serif;text-decoration:none;cursor:pointer;transition:background .2s,color .2s,transform .2s;background:transparent;color:#e4ecf7;border:1px solid #657891}.ds-secondary:hover{background:#ffffff0d;border-color:#b7cde6}.ds-secondary:focus-visible{outline:3px solid var(--ice,#65b7ff);outline-offset:5px}@media(prefers-reduced-motion:reduce){.ds-secondary{transition:none}}"
+    },
+    {
+      "name": "文本链接",
+      "kind": "button",
+      "refersTo": "text-link",
+      "description": "轻量内容与产品详情入口。",
+      "html": "<a class=\"ds-link\" href=\"#product-details\">了解产品<svg width=\"19\" height=\"19\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.5\" aria-hidden=\"true\"><path d=\"M5 12h14M13 6l6 6-6 6\"/></svg></a>",
+      "css": ".ds-link{display:inline-flex;gap:16px;align-items:center;min-height:44px;color:var(--ink,#101828);font:600 14px/1.8 'PingFang SC','Microsoft YaHei','Noto Sans CJK SC',sans-serif;text-decoration:none}.ds-link:hover{color:var(--blue,#2563eb)}.ds-link:focus-visible{outline:3px solid var(--ice,#65b7ff);outline-offset:5px}"
+    },
+    {
+      "name": "咨询输入框",
+      "kind": "input",
+      "refersTo": "input",
+      "description": "带显式标签、统一描边和焦点的联系方式输入。",
+      "html": "<label class=\"ds-field\" for=\"ds-contact\">怎么联系你？<input id=\"ds-contact\" class=\"ds-input\" placeholder=\"邮箱、微信或其他联系方式\" required></label>",
+      "css": ".ds-field{display:grid;gap:12px;font:600 14px/1.8 'PingFang SC','Microsoft YaHei','Noto Sans CJK SC',sans-serif;color:var(--ink,#101828)}.ds-input{width:100%;min-height:48px;padding:13px 15px;border:1px solid #c5d0df;border-radius:6px;background:var(--white,#fff);font:400 15px/1.8 'PingFang SC','Microsoft YaHei','Noto Sans CJK SC',sans-serif;color:var(--ink,#101828);caret-color:var(--blue,#2563eb)}.ds-input::placeholder{font-size:13px;color:#68798f}.ds-input:focus-visible{outline:3px solid var(--ice,#65b7ff);outline-offset:5px}"
+    },
+    {
+      "name": "品牌导航",
+      "kind": "nav",
+      "refersTo": "navigation",
+      "description": "展示深底导航与小屏可用宽度；真实菜单行为由 brand.js 提供。",
+      "html": "<nav class=\"ds-nav\" aria-label=\"官网预览导航\"><a href=\"#home\">首页</a><a href=\"#services\">解决方案</a><a href=\"#product\">产品</a><a href=\"#projects\">项目实践</a></nav>",
+      "css": ".ds-nav{display:flex;align-items:center;flex-wrap:wrap;gap:23px;min-height:80px;padding:0 24px;background:var(--navy,#071426);color:#e6edf8;font:400 13px/1.8 'PingFang SC','Microsoft YaHei','Noto Sans CJK SC',sans-serif}.ds-nav a{padding:10px 0;color:inherit;text-decoration:none}.ds-nav a:hover{color:var(--ice,#65b7ff)}.ds-nav a:focus-visible{outline:3px solid var(--ice,#65b7ff);outline-offset:5px}"
+    },
+    {
+      "name": "知识分类标签",
+      "kind": "chip",
+      "refersTo": "knowledge-tag",
+      "description": "知识树案例的静态分类标记，不提供筛选行为。",
+      "html": "<span class=\"ds-tag\">知识图谱</span>",
+      "css": ".ds-tag{display:inline-block;background:#eef3fa;color:#405771;font:400 10px/1.8 'PingFang SC','Microsoft YaHei','Noto Sans CJK SC',sans-serif;padding:3px 8px;border-radius:4px}"
+    },
+    {
+      "name": "服务详情",
+      "kind": "card",
+      "refersTo": "service",
+      "description": "开放式服务列，用细线与原生 details 保持结构清晰。",
+      "html": "<article class=\"ds-service\"><svg class=\"ds-service-icon\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.5\" aria-hidden=\"true\"><path d=\"m12 3 9 5-9 5-9-5 9-5ZM3 12l9 5 9-5M3 16l9 5 9-5\"/></svg><h3>企业智能化升级</h3><p>将 AI 融入实际业务流程，优化信息处理、协同效率及运营能力。</p><details><summary>了解方案<svg width=\"19\" height=\"19\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.5\" aria-hidden=\"true\"><path d=\"M5 12h14M13 6l6 6-6 6\"/></svg></summary><p>从现有流程入手，选择一个可检查的小范围试点。</p></details></article>",
+      "css": ".ds-service{padding:10px 28px 4px;max-width:300px;border-right:1px solid var(--line,#e5eaf1);color:var(--ink,#101828);font:400 14px/1.8 'PingFang SC','Microsoft YaHei','Noto Sans CJK SC',sans-serif}.ds-service-icon{width:32px;height:32px;color:var(--blue,#2563eb);margin-bottom:24px}.ds-service h3{font-size:20px;font-weight:600;line-height:1.5;margin:0 0 16px}.ds-service p{color:var(--muted,#59677b);margin:0}.ds-service details{margin-top:22px;font-size:13px}.ds-service summary{display:flex;justify-content:space-between;align-items:center;min-height:44px;cursor:pointer;font-weight:600;list-style:none}.ds-service summary::-webkit-details-marker{display:none}.ds-service summary svg{color:var(--blue,#2563eb);transition:transform .2s}.ds-service details[open] summary svg{transform:rotate(90deg)}.ds-service details p{padding-top:14px}.ds-service summary:focus-visible{outline:3px solid var(--ice,#65b7ff);outline-offset:5px}@media(prefers-reduced-motion:reduce){.ds-service summary svg{transition:none}}"
+    },
+    {
+      "name": "产品窗口",
+      "kind": "custom",
+      "refersTo": "product-window",
+      "description": "画布概念视觉的展示容器；预览只展示窗口外壳，不虚构业务界面。",
+      "html": "<figure class=\"ds-window\"><div class=\"ds-window-heading\"><span class=\"ds-dots\" aria-hidden=\"true\"><i></i><i></i><i></i></span><span>守守画布 / 创作工作空间</span></div><div class=\"ds-window-preview\">既有画布概念图位置 · 本组件预览不含业务画面</div><figcaption>产品概念视觉 · 非实机界面</figcaption></figure>",
+      "css": ".ds-window{margin:0;max-width:545px;background:var(--navy,#071426);border-radius:12px;overflow:hidden;box-shadow:0 24px 55px #172f4c24;font:400 11px/1.8 'PingFang SC','Microsoft YaHei','Noto Sans CJK SC',sans-serif}.ds-window-heading{display:flex;align-items:center;gap:22px;padding:15px 18px;background:#192a40;color:#b7c7dc;font-size:10px}.ds-dots{display:flex;gap:5px}.ds-dots i{width:6px;height:6px;border-radius:50%;background:#6c7e95}.ds-window-preview{display:grid;place-items:center;min-height:140px;padding:20px;color:#b4c6dc}.ds-window figcaption{color:#b4c6dc;padding:14px 18px}"
+    },
+    {
+      "name": "研究文章",
+      "kind": "card",
+      "refersTo": "article",
+      "description": "浅灰分区中的线性文章卡片与原生阅读全文。",
+      "html": "<article class=\"ds-article\"><span class=\"ds-category\">行业 AI 应用观察</span><h3>从实际问题出发，观察 AI 的应用</h3><p>以业务场景、技术实践和产品思考组织文章内容。</p><details><summary>阅读全文</summary><p>正文在原位置展开，保持阅读上下文。</p></details></article>",
+      "css": ".ds-article{background:var(--wash,#f5f7fb);border-top:1px solid #b4c8e2;padding-top:22px;max-width:360px;font:400 13px/1.8 'PingFang SC','Microsoft YaHei','Noto Sans CJK SC',sans-serif;color:var(--ink,#101828)}.ds-category{color:#526882;font-size:11px}.ds-article h3{font-size:22px;line-height:1.5;font-weight:600;margin:12px 0 14px}.ds-article p{color:var(--muted,#59677b)}.ds-article details{margin-top:16px}.ds-article summary{font-weight:600;min-height:44px;color:#1d54c6;cursor:pointer}.ds-article summary:hover{color:var(--blue,#2563eb)}.ds-article summary:focus-visible{outline:3px solid var(--ice,#65b7ff);outline-offset:5px}"
+    },
+    {
+      "name": "项目证据说明",
+      "kind": "card",
+      "description": "项目卡片开放正文与详情边界；预览省略图片，不模拟客户案例。",
+      "html": "<article class=\"ds-project\"><span class=\"ds-type\">教育应用 × 知识可视化</span><h3>互动知识树</h3><p>把复杂知识，变成可以探索的空间。以时间、领域和关联关系组织知识，理解科技发展的脉络。</p><a class=\"ds-project-link\" href=\"/lab/polytech-tree/\">进入互动演示 ↗</a></article>",
+      "css": ".ds-project{max-width:380px;color:var(--ink,#101828);font:400 14px/1.9 'PingFang SC','Microsoft YaHei','Noto Sans CJK SC',sans-serif}.ds-type{display:block;color:#54677f;font-size:11px;margin:24px 0 8px}.ds-project h3{font-size:23px;line-height:1.5;font-weight:600;margin:0 0 12px}.ds-project p{color:var(--muted,#59677b)}.ds-project-link{display:inline-flex;align-items:center;min-height:44px;font-size:14px;font-weight:600;color:inherit;text-decoration:none}.ds-project-link:hover{color:var(--blue,#2563eb)}.ds-project-link:focus-visible{outline:3px solid var(--ice,#65b7ff);outline-offset:5px}"
+    }
+  ],
+  "narrative": {
+    "northStar": "面向真实行业的电影展窗",
+    "overview": "以深海军蓝承托统一调色的行业影像，用前后错落的纵向面板建立第一眼识别。品牌表达专业、清晰、克制；冰蓝用于边光和焦点，科技蓝指向行动。\n\n正文回到白色与浅灰分区，以留白、细分割线和明确标题承载业务信息。按钮紧凑而明确，卡片以内容和图像组织层次，深度集中在行业影像和产品展示。\n\n本规范从 `brand.css`、`index.html`、`brand.js` 及本轮截图提取，仅约束静态官网 `website/`。工作台、画布和独立 3D 导演台继续使用各自主题，不继承这里的品牌 token；首屏构图与页面顺序以 `brand-surface.md` 为准。",
+    "keyCharacteristics": [
+      "深蓝影像建立品牌识别，浅色正文保持可读性。",
+      "沿用中文系统品牌字体，以字重、尺寸和留白区分层级。",
+      "内容容器以细线组织，图片与产品窗口承担主要空间深度。",
+      "产品概念视觉保留可见说明，素材来源可追溯。"
+    ],
+    "rules": [
+      {
+        "name": "The Surface Scope Rule",
+        "body": "官网色彩只用于官网；画布和工作台使用其既有主题系统。",
+        "section": "colors"
+      }
+    ],
+    "dos": [
+      "Do 保持深蓝影像与浅色正文的阅读节奏。",
+      "Do 保留产品概念图的可见说明与素材来源记录。",
+      "Do 保留键盘焦点、移动导航状态、减少动态效果与表单禁用反馈。",
+      "Do 从官网 CSS 提取实际值；规范和实现冲突时先核查源文件。"
+    ],
+    "donts": [
+      "Don't 将官网品牌 token 注入工作台、画布或独立 3D 导演台。",
+      "Don't 添加大面积霓虹、粒子、复杂 3D、过度玻璃或全站黑底。",
+      "Don't 用概念图宣称客户交付或实机产品界面。",
+      "Don't 用预览组件或本地截图推断生产发布、真实服务器提交已验收。"
+    ]
+  }
+}

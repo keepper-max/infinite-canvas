@@ -1,6 +1,28 @@
 const http = require('node:http'), fs = require('node:fs'), path = require('node:path');
 const files = { '/': ['index.html', 'text/html'], '/website-assets/20261016-site01/fusion.css': ['fusion.css', 'text/css'], '/website-assets/20261016-site01/brand-logo.png': ['brand-logo.png', 'image/png'], '/website-assets/20261017-site02/content.css':['content.css','text/css'], '/website-assets/20261017-site02/content.js':['content.js','text/javascript'], '/website-assets/20261017-site02/cases/quality-concept-v1.png':['assets/cases/quality-concept-v1.png','image/png'], '/website-assets/20261017-site02/cases/factory-concept-v1.png':['assets/cases/factory-concept-v1.png','image/png'], '/website-assets/20261017-site02/cases/canvas-concept-v1.png':['assets/cases/canvas-concept-v1.png','image/png'] };
 files['/website-news/current.js'] = ['content.js', 'text/javascript'];
+// Preview-only Hero imagery: deliberately not mapped by production Nginx or publishers.
+files['/website-preview/hero-kit/hero.css'] = ['hero-kit.css','text/css; charset=utf-8'];
+for(const name of ['hero-desktop-v2.webp','hero-mobile-v2.webp']) files['/website-preview/hero-kit/'+name] = ['assets/hero-validation/'+name,'image/webp'];
+// Explicit public whitelist for the new homepage; never expose source or editorial files.
+files['/website-assets/brand-v2/brand.css'] = ['brand.css', 'text/css; charset=utf-8'];
+files['/website-assets/brand-v2/brand.js'] = ['brand.js', 'application/javascript; charset=utf-8'];
+for (const name of ['industries-v1.webp','canvas-concept.webp','quality-concept.webp','factory-concept.webp','canvas-interface.webp','quality-interface.webp','factory-interface.webp','service-enterprise.webp','service-industry.webp','service-agent.webp','service-knowledge.webp']) {
+  files['/website-assets/brand-v2/'+name] = ['assets/brand-v2/'+name,'image/webp'];
+}
+// Versioned P3 production URLs also available in local preview.
+files['/website-assets/20261026-site09/brand.css'] = ['brand.css','text/css'];
+files['/website-assets/20261026-site09/brand.js'] = ['brand.js','application/javascript'];
+files['/website-assets/20261026-site09/hero-kit.css'] = ['hero-kit.css','text/css'];
+files['/website-assets/20261026-site09/hero-desktop-v2.webp'] = ['assets/hero-validation/hero-desktop-v2.webp','image/webp'];
+files['/website-assets/20261026-site09/hero-mobile-v2.webp'] = ['assets/hero-validation/hero-mobile-v2.webp','image/webp'];
+files['/website-assets/20261026-site09/canvas-interface.webp'] = ['assets/brand-v2/canvas-interface.webp','image/webp'];
+files['/website-assets/20261026-site09/quality-interface.webp'] = ['assets/brand-v2/quality-interface.webp','image/webp'];
+files['/website-assets/20261026-site09/factory-interface.webp'] = ['assets/brand-v2/factory-interface.webp','image/webp'];
+files['/website-assets/20261026-site09/service-enterprise.webp'] = ['assets/brand-v2/service-enterprise.webp','image/webp'];
+files['/website-assets/20261026-site09/service-industry.webp'] = ['assets/brand-v2/service-industry.webp','image/webp'];
+files['/website-assets/20261026-site09/service-agent.webp'] = ['assets/brand-v2/service-agent.webp','image/webp'];
+files['/website-assets/20261026-site09/service-knowledge.webp'] = ['assets/brand-v2/service-knowledge.webp','image/webp'];
 const mime={'.html':'text/html; charset=utf-8','.js':'application/javascript','.mjs':'application/javascript; charset=utf-8','.css':'text/css','.webp':'image/webp','.json':'application/json','.md':'text/plain; charset=utf-8','.txt':'text/plain; charset=utf-8','.png':'image/png'};
 const port=Number(process.env.WEBSITE_PREVIEW_PORT||4405);
 const caseIds=new Set(JSON.parse(fs.readFileSync(path.join(__dirname,'ai-cases/cases.json'),'utf8')).map(item=>item.id));

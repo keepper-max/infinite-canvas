@@ -1,4 +1,13 @@
 # 进度
+
+- Hero套件局部改动完成，截图与report保存于.impeccable/review/hero-kit，1440×900/390×844和中间尺寸通过范围/资源/交互检查。其它模块HTML与导航逐字保留；素材待重做，未提交或部署。详见hero-kit-review.md。
+
+## 本轮本地品牌升级
+
+- 已完成电影级行业面板首屏、浅色业务层次与明确标注的产品概念图，保留课程/学习/知识树/资讯和咨询。用户预览后要求去掉首屏小字、将画布改回概念版图片，已落实。
+- 原创生图通过内置工具生成，压缩WebP约155KB；工具原生输出留在其指定位置，项目消费副本与测试缓存全部在H盘。另3图共约137KB，不新增运行依赖或3D引擎；弃用局部图衍生文件移入备份，原图保留。
+- 四尺寸Chrome与本地模拟咨询通过；复审P1脚本失效原生GET和P2来源文档矛盾已修复并定向复测，复审resolved/SHIP本地交付。最新两项视觉反馈也已复测并评分resolved。代码语法检查通过，官网无构建任务，不运行无关工作台构建。
+- index/preview原始副本在H:/CodexStorage/website-backups/20261025-brand-upgrade；没有commit/push/部署或生产写入。
 - 已核对正式仓库工作区：前一轮官网源码/部署脚本仍未提交，保留。
 - 用户选择画布后台查阅模式，不新增咨询邮件通知依赖。
 - 已添加公开提交、专用Redis五分钟五次滑动窗口、独立增量表、管理员查看/备注/完成状态与审计。
@@ -14,3 +23,5 @@
 - 经用户批准发布DeepSeek资讯与顶部速览，备份/root/shoumiren-news-20261018；新资源content-news-20261018.js，原content.js保持不变。Cloud Assistant t-qd070dor61x277k成功；首页SHA256为8178dee54a6d39602bd3283b547fd42de1df076a08017e0f3ec9fc0c63c0837d，新JS为bb36031cfb11dcfe006aadb4df97796ff436ece9c5bcad0fce4e93dbb11215fa，snippet为bd1b0159125ba4c069904d477e7142554d82e0d71c59f8eb28fa530a474ed72f。公网文件逐字节匹配，nginx配置检查及画布健康通过；主站配置不变，临时归档已移出公开路径。未构建、测试、commit或push；浏览器视觉仍待人工验收。
 - 记录更新首次补丁因progress.md标题匹配失败未写入，改用实际末行上下文补记；无线上影响。todo已复核，本次只是资讯内容发布，服务器采集/审核后台待办保持不变。
 - 最新自动化升级：ops/publish-website-news.ps1 -Bootstrap成功，调用t-qd070dp7kz6tce8，备份/root/shoumiren-news-20261018T045232Z-6cfaad26；新首页哈希cbc2e76f9cec2956dcf0a2fb0741be6324237aeacce8be32af4d9219bbdd8d7e，snippet哈希34ac5916f38e769d18a1f6ded3b0a97a3c0d018964e3f00b64b81c48818ad22f。日常不带参数重复运行t-qd070dp8r72j6kg返回NEWS_UNCHANGED；公网current.js为200/no-store，内容哈希匹配。任务ai通过产品工具更新为ACTIVE且仍每日9点，无重复创建；编辑规则同步到既有news-editorial.md。无数据库、画布镜像或付费API变更。下一次自然调度及故障回滚待验证。
+
+P3本地视觉精修已完成：Hero锁定，服务卡片4/2/1列、真实工作台与案例界面、简化文章和生态入口；五档Chrome及既有表单模拟回归通过。没有提交、部署或生产调用，待用户视觉确认，详见p3-review.md。

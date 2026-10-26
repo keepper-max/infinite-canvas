@@ -1,0 +1,6 @@
+{
+  "industries-v1.webp": {"origin":"Original built-in image_gen generation for this brief; exact prompt in industries-prompt.txt", "meaning":"AI application directions, not delivered customer projects", "processing":"ffmpeg resize to 1280px and WebP quality 84"},
+  "canvas-concept.webp": {"origin":"Existing generated concept assets/cases/canvas-concept-v1.png, exact prompt in website/IMAGE_PROMPTS.md; reused at user's latest request", "meaning":"Product concept, not real interface or customer acceptance evidence", "processing":"1100px WebP quality 85"},
+  "quality-concept.webp": {"origin":"Existing generated concept assets/cases/quality-concept-v1.png, prompt in website/IMAGE_PROMPTS.md", "meaning":"Product concept, not real interface or customer acceptance evidence", "processing":"900px WebP quality 83"},
+  "factory-concept.webp": {"origin":"Existing generated concept assets/cases/factory-concept-v1.png, prompt in website/IMAGE_PROMPTS.md", "meaning":"Product concept, not real interface or customer acceptance evidence", "processing":"900px WebP quality 83"}
+}

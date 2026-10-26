@@ -1,0 +1,51 @@
+[
+  {
+    "asset": "canvas-interface.webp",
+    "source": "H:/CodexStorage/shoushou-knowledge-p2/artifacts/screenshots/p2-initial-canvas.png",
+    "processing": "实际产品浏览器验收截图；测试画布数据，无客户资料；等比压缩至1100宽，不重绘UI",
+    "sha256": "8cbdab7c0559c5da33277160ef66078733b369e645990c6456ffccea4e202fe7",
+    "bytes": 37028
+  },
+  {
+    "asset": "quality-interface.webp",
+    "source": "website/assets/cases/quality-desk.jpg",
+    "processing": "已有真实隔离项目截图；WebP压缩，不修改界面",
+    "sha256": "99ee22dac1c41010bc4ac07fea7cbd1b297e78fbc8b026ab3ebd677dd257d0fa",
+    "bytes": 26978
+  },
+  {
+    "asset": "factory-interface.webp",
+    "source": "website/assets/cases/factory-copilot.jpg",
+    "processing": "已有真实产品定位输入页；WebP压缩，不表示平台官方合作",
+    "sha256": "b6ffd39d7514029e7375001a464444daec973981bdcbbb679ea606843b9c0b67",
+    "bytes": 39056
+  },
+  {
+    "asset": "service-enterprise.webp",
+    "source": "website/assets/brand-v2/industries-v1.webp",
+    "processing": "既有生成行业场景的装饰性裁切；crop=248:400:772:100，等比缩放/中心裁切为480x300；不是客户交付照片",
+    "sha256": "2b3156b107c2457680f4ac16dd76b9aec8a3cf8f68bc62a347771a04d28dba88",
+    "bytes": 20448
+  },
+  {
+    "asset": "service-industry.webp",
+    "source": "website/assets/brand-v2/industries-v1.webp",
+    "processing": "既有生成行业场景的装饰性裁切；crop=248:400:0:100，等比缩放/中心裁切为480x300；不是客户交付照片",
+    "sha256": "f20a1667a6a4e19c3862cbb9c98d93a147c7755dd3e867e9049871555049ad9f",
+    "bytes": 18852
+  },
+  {
+    "asset": "service-agent.webp",
+    "source": "website/assets/brand-v2/industries-v1.webp",
+    "processing": "既有生成行业场景的装饰性裁切；crop=248:400:1028:100，等比缩放/中心裁切为480x300；不是客户交付照片",
+    "sha256": "3ff5c35c57c2c7dabedaa8836a94ea191af541c3055772076b673d952abe4e97",
+    "bytes": 11622
+  },
+  {
+    "asset": "service-knowledge.webp",
+    "source": "website/assets/brand-v2/industries-v1.webp",
+    "processing": "既有生成行业场景的装饰性裁切；crop=248:400:259:100，等比缩放/中心裁切为480x300；不是客户交付照片",
+    "sha256": "6db45443dfd411a79570ef6515b0092bb0e49e40b4f248edc0619ab8b3a0fa5d",
+    "bytes": 10112
+  }
+]

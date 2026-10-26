@@ -1,0 +1,7 @@
+{
+  "asset": "service-knowledge.webp",
+  "source": "website/assets/brand-v2/industries-v1.webp",
+  "processing": "既有生成行业场景的装饰性裁切；crop=248:400:259:100，等比缩放/中心裁切为480x300；不是客户交付照片",
+  "sha256": "6db45443dfd411a79570ef6515b0092bb0e49e40b4f248edc0619ab8b3a0fa5d",
+  "bytes": 10112
+}

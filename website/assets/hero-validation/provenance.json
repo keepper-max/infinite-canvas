@@ -1,0 +1,4 @@
+{
+  "hero-desktop-v2.webp": {"source":"用户提供 H:/代码相关/ChatGPT 图像 2026年10月26日 01_15_11-1.png","processing":"ffmpeg等比缩放1920px宽，WebP quality 88；不修改构图内容","purpose":"本地Hero候选，非实际客户交付照片"},
+  "hero-mobile-v2.webp": {"source":"用户提供 H:/代码相关/ChatGPT 图像 2026年10月26日 01_15_12-2.png","processing":"ffmpeg等比缩放1000px宽，WebP quality 88；移动端CSS取景保留五行业面板","purpose":"本地Hero候选，非实际客户交付照片"}
+}

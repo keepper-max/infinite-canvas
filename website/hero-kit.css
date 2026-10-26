@@ -1,0 +1,69 @@
+/* Local Hero preview. User-supplied v2 imagery; production publication remains separate. */
+#home.hero-kit-validation {
+  position: relative;
+  isolation: isolate;
+  display: flex;
+  flex-direction: column;
+  min-height: 640px;
+  background: #071426;
+  overflow: hidden;
+}
+#home .hero-scene { position:absolute; inset:0; z-index:-2; pointer-events:none; }
+#home .hero-scene img { width:100%; height:100%; object-fit:cover; object-position:center; }
+#home:before { content:''; position:absolute; inset:0; z-index:-1; pointer-events:none; background:linear-gradient(90deg,rgba(5,15,31,.55),rgba(5,15,31,.16) 36%,transparent 68%); }
+#home .hero-main { display:block; min-height:0; flex:1; padding-top:70px; padding-bottom:65px; }
+#home .hero-copy { padding:0; width:min(510px,44%); }
+#home .hero-kicker { color:#9fcbff; font-size:11px; font-weight:700; letter-spacing:.14em; margin-bottom:26px; }
+#home h1 { font-size:clamp(42px,4vw,62px); line-height:1.22; font-weight:750; letter-spacing:-.025em; text-shadow:0 2px 22px #02091770; }
+#home h1 span { color:#72b5ff; }
+#home .hero-description { max-width:510px; margin:25px 0 30px; font-size:16px; line-height:1.95; color:#c9d6e7; text-shadow:0 2px 14px #061124; }
+#home .actions { gap:14px; }
+#home .button { min-height:49px; padding:12px 23px; border-radius:9px; font-size:14px; font-weight:600; }
+#home .primary { background:#2579ff; }
+#home .primary:hover { background:#1764db; }
+#home .secondary { border:1px solid #7b90ae99; background:#081831b3; }
+#home .capability-bar { position:relative; background:linear-gradient(180deg,#050f2026,#050f20f5); border-top:1px solid #86b1fc22; }
+#home .capability-grid { gap:20px; padding-block:22px 26px; }
+#home .capability-grid>a { padding:0 18px 0 0; gap:12px; background:transparent; border-color:#8cb7f229; font-size:14px; font-weight:600; }
+#home .capability-grid>a:last-child { padding-right:0; }
+#home .capability-grid>a>.icon:first-child { width:39px; height:39px; padding:8px; border:1px solid #9bc8ff4e; border-radius:50%; background:#244a7960; color:#bce1ff; }
+#home .capability-grid small { font-size:12px; font-weight:400; color:#acbdd4; }
+#home .capability-grid .arrow-icon { display:none; }
+#home .capability-grid>a:hover { color:#9fcbff; }
+@media(min-width:1600px) { #home.hero-kit-validation { min-height:690px; } #home .hero-main { padding-top:90px; } }
+@media(max-width:1100px) {
+  #home.hero-kit-validation { min-height:660px; }
+  #home .hero-copy { width:49%; }
+  #home .hero-main { padding-top:70px; padding-bottom:65px; }
+  #home h1 { font-size:clamp(34px,4vw,45px); }
+  #home .hero-description { font-size:14px; }
+  #home .capability-grid { gap:14px; }
+  #home .capability-grid>a { gap:9px; padding-right:10px; font-size:12px; }
+  #home .capability-grid small { font-size:10px; }
+}
+@media(max-width:800px) {
+  #home .hero-copy { width:min(500px,70%); }
+  #home:before { background:linear-gradient(90deg,#050f1ff0,#050f1fb3 48%,#050f1f22 85%); }
+  #home .hero-scene img { object-position:58% center; }
+  #home .capability-grid { gap:18px 24px; padding-block:22px; }
+  #home .capability-grid>a { border:0; padding:0; }
+}
+@media(max-width:560px) {
+  #home.hero-kit-validation { min-height:802px; }
+  #home .hero-scene { top:250px; bottom:100px; }
+  #home:before { background:linear-gradient(180deg,#071426 0%,#071426f2 13%,#07142699 30%,transparent 56%); }
+  #home .hero-scene img { object-position:center; }
+  #home .hero-main { padding-top:48px; padding-bottom:250px; }
+  #home .hero-copy { width:100%; }
+  #home .hero-kicker { font-size:9px; letter-spacing:.1em; margin-bottom:22px; }
+  #home h1 { font-size:38px; line-height:1.28; }
+  #home .hero-description { font-size:14px; line-height:1.8; margin:23px 0 26px; max-width:350px; }
+  #home .actions { gap:12px; }
+  #home .button { padding:12px 20px; font-size:13px; min-height:49px; }
+  #home .capability-grid { gap:17px 12px; padding-block:19px 23px; }
+  #home .capability-grid>a { gap:9px; font-size:12px; }
+  #home .capability-grid>a>.icon:first-child { width:32px; height:32px; padding:6px; }
+  #home .capability-grid small { font-size:9px; }
+}
+@media(max-width:370px) { #home h1 { font-size:33px; } #home .hero-kicker { font-size:8px; } }
+@media(prefers-reduced-motion:reduce) { #home *,#home *:before,#home *:after { animation:none!important; transition:none!important; } }
