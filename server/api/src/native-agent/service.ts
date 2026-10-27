@@ -2,6 +2,7 @@ import { CreativeDecisionService } from "./creative-decisions.js";
 import { modelClock, modelTiming } from "./model-clock.js";
 import {
   parseConversationDecision,
+  restrictReadOnlyDecision,
   conversationTools,
   assertConversationToolScope,
   toolFailureRecoveryMessage,
@@ -858,7 +859,19 @@ export class NativeAgentService {
                 "平台停止了超限或失败批次，未执行其中操作。保留既有计划，缩小片段和参数后重新提出剩余操作，不得声称先前批次已成功。",
             },
           ];
-        phase = "model";
+        // A legacy read-only answer may have been mistaken for a missing write
+        // proposal. Seal the existing answer instead of charging another round.
+        let sealReadOnly = false;
+        if (!unanswered.length && current.error_code === "AGENT_NO_EXECUTABLE_PLAN") {
+          const [classified] = await rows(tx, sql`select output->'conversation' as decision from native_agent_steps where run_id=${runId} and kind='model' and status='completed' and output ? 'conversation' order by ordinal limit 1`);
+          const [last] = await rows(tx, sql`select status,output from native_agent_steps where run_id=${runId} and kind='model' order by ordinal desc limit 1`);
+          const [writes] = await rows(tx, sql`select exists(select 1 from native_agent_plans where run_id=${runId} and jsonb_array_length(steps)>0) or exists(select 1 from native_agent_approvals where run_id=${runId}) as present`);
+          sealReadOnly = !!classified?.decision &&
+            restrictReadOnlyDecision(classified.decision, current.prompt).intent === "read" &&
+            last?.status === "completed" && typeof last.output?.text === "string" && !!last.output.text.trim() &&
+            Array.isArray(last.output.calls) && !last.output.calls.length && !writes?.present;
+        }
+        phase = sealReadOnly ? "tools" : "model";
       }
       if (phase === "plan_execute") {
         await tx.execute(
@@ -1005,8 +1018,9 @@ export class NativeAgentService {
               )
             ).rows[0]
           : null;
-        r.conversation = decisionRow?.decision as
-          ConversationDecision | undefined;
+        r.conversation = decisionRow?.decision
+          ? restrictReadOnlyDecision(decisionRow.decision as ConversationDecision, r.prompt)
+          : undefined;
         const limits = limitsFor(r);
         if (r.active_started_at)
           r.elapsed_ms = await this.transaction((tx) =>
@@ -1302,7 +1316,13 @@ export class NativeAgentService {
                     "只读模型核验必须使用空参数{}，不会忽略或执行多余参数",
                   );
               }
-            if (conversational) assertConversationToolScope(toolNames, reply.calls);
+            if (conversational) {
+              assertConversationToolScope(toolNames, reply.calls);
+              // A historical receipt can retain broader tool names; current
+              // read-only restrictions still apply before any tool is staged.
+              if (r.conversation)
+                assertConversationToolScope(conversationTools(r.conversation, r.mode), reply.calls);
+            }
             const calls: ToolCall[] = reply.calls.map((c) => ({
               ...c,
               input: parseTool(c.toolName, c.input),
