@@ -1,0 +1,190 @@
+TAP version 13
+# Subtest: Project ZIP upload stays in bounded parts, aborts failed multipart and recovers lost completion acknowledgement
+ok 1 - Project ZIP upload stays in bounded parts, aborts failed multipart and recovers lost completion acknowledgement
+  ---
+  duration_ms: 101.481887
+  type: 'test'
+  ...
+# Subtest: P1 isolated PostgreSQL: feature gate, immutable ownership, CAS save, restore and task idempotency
+ok 2 - P1 isolated PostgreSQL: feature gate, immutable ownership, CAS save, restore and task idempotency
+  ---
+  duration_ms: 292.219394
+  type: 'test'
+  ...
+# Subtest: P1 upgrade preserves source spans, separates original sound and leaves V1 unchanged
+ok 3 - P1 upgrade preserves source spans, separates original sound and leaves V1 unchanged
+  ---
+  duration_ms: 15.055641
+  type: 'test'
+  ...
+# Subtest: Split maps captions and linked source audio across the cut, then speed/reorder remains valid
+ok 4 - Split maps captions and linked source audio across the cut, then speed/reorder remains valid
+  ---
+  duration_ms: 8.46572
+  type: 'test'
+  ...
+# Subtest: Copy shifts animated time, original audio and caption anchors; deletion removes their references
+ok 5 - Copy shifts animated time, original audio and caption anchors; deletion removes their references
+  ---
+  duration_ms: 10.199424
+  type: 'test'
+  ...
+# Subtest: Transitions shorten the timeline exactly; trimming keeps source-linked captions and valid overlap
+ok 6 - Transitions shorten the timeline exactly; trimming keeps source-linked captions and valid overlap
+  ---
+  duration_ms: 3.464804
+  type: 'test'
+  ...
+# Subtest: Effects reject scripts, unknown fields, unauthorized targets, invalid bounds and unordered keyframes
+ok 7 - Effects reject scripts, unknown fields, unauthorized targets, invalid bounds and unordered keyframes
+  ---
+  duration_ms: 10.671848
+  type: 'test'
+  ...
+# Subtest: Linked audio and subtitle effects survive copy/split and leave no orphan on deletion
+ok 8 - Linked audio and subtitle effects survive copy/split and leave no orphan on deletion
+  ---
+  duration_ms: 6.412191
+  type: 'test'
+  ...
+# Subtest: Animation interpolation is deterministic with half-open effect boundaries and clipped endpoint values
+ok 9 - Animation interpolation is deterministic with half-open effect boundaries and clipped endpoint values
+  ---
+  duration_ms: 1.28192
+  type: 'test'
+  ...
+# Subtest: AI effects cannot change selected source ranges or target IDs beyond the user scope
+ok 10 - AI effects cannot change selected source ranges or target IDs beyond the user scope
+  ---
+  duration_ms: 3.136177
+  type: 'test'
+  ...
+# Subtest: Transient snippet shifts source/audio/captions without mutating the saved document
+ok 11 - Transient snippet shifts source/audio/captions without mutating the saved document
+  ---
+  duration_ms: 2.132883
+  type: 'test'
+  ...
+# Subtest: P1 synthetic filter regression renders an overlapping transition, overlay, source audio and subtitle
+ok 12 - P1 synthetic filter regression renders an overlapping transition, overlay, source audio and subtitle # SKIP
+  ---
+  duration_ms: 0.730824
+  type: 'test'
+  ...
+# Subtest: AutoCut waits through settled billing until artifacts are released, without resubmission
+ok 13 - AutoCut waits through settled billing until artifacts are released, without resubmission
+  ---
+  duration_ms: 755.716858
+  type: 'test'
+  ...
+# Subtest: AutoCut keeps payment and uncertain billing blocked
+ok 14 - AutoCut keeps payment and uncertain billing blocked
+  ---
+  duration_ms: 1.72316
+  type: 'test'
+  ...
+# Subtest: First plans have a strict source-only schema and cannot smuggle subtitles, audio or effects
+ok 15 - First plans have a strict source-only schema and cannot smuggle subtitles, audio or effects
+  ---
+  duration_ms: 22.722496
+  type: 'test'
+  ...
+# Subtest: First captions use source intersections, output order and half-open cut boundaries
+ok 16 - First captions use source intersections, output order and half-open cut boundaries
+  ---
+  duration_ms: 3.753637
+  type: 'test'
+  ...
+# Subtest: First captions resolve immutable versions independently across mixed assets
+ok 17 - First captions resolve immutable versions independently across mixed assets
+  ---
+  duration_ms: 1.812874
+  type: 'test'
+  ...
+# Subtest: Unedited real model plan-v3 compiles to measured ASR captions; real legacy model captions are rejected
+ok 18 - Unedited real model plan-v3 compiles to measured ASR captions; real legacy model captions are rejected
+  ---
+  duration_ms: 17.791401
+  type: 'test'
+  ...
+# Subtest: Resident ASR queues requests, reuses one process and cancels queued work without killing active work
+ok 19 - Resident ASR queues requests, reuses one process and cancels queued work without killing active work
+  ---
+  duration_ms: 390.328663
+  type: 'test'
+  ...
+# Subtest: Resident ASR active cancellation kills its process tree; crashes fail once and the next request reloads
+ok 20 - Resident ASR active cancellation kills its process tree; crashes fail once and the next request reloads
+  ---
+  duration_ms: 245.576289
+  type: 'test'
+  ...
+# Subtest: AutoCut PostgreSQL: ownership, persistence, version conflicts, concurrency, retries and budget gate
+ok 21 - AutoCut PostgreSQL: ownership, persistence, version conflicts, concurrency, retries and budget gate
+  ---
+  duration_ms: 780.074651
+  type: 'test'
+  ...
+# Subtest: AutoCut validates immutable asset identity and exact half-open intervals
+ok 22 - AutoCut validates immutable asset identity and exact half-open intervals
+  ---
+  duration_ms: 20.729733
+  type: 'test'
+  ...
+# Subtest: AutoCut rejects gaps, duplicate IDs, audio-as-picture and arbitrary shell/effects fields
+ok 23 - AutoCut rejects gaps, duplicate IDs, audio-as-picture and arbitrary shell/effects fields
+  ---
+  duration_ms: 2.556581
+  type: 'test'
+  ...
+# Subtest: AutoCut maps measured subtitle intersections to output, preserving text
+ok 24 - AutoCut maps measured subtitle intersections to output, preserving text
+  ---
+  duration_ms: 2.402657
+  type: 'test'
+  ...
+# Subtest: Existing text model requests are byte-for-byte unaffected by AutoCut opt-in
+ok 25 - Existing text model requests are byte-for-byte unaffected by AutoCut opt-in
+  ---
+  duration_ms: 0.429888
+  type: 'test'
+  ...
+# Subtest: Selection compiler owns IDs, arithmetic and asset resolution; subtitle scope cannot alter media
+ok 26 - Selection compiler owns IDs, arithmetic and asset resolution; subtitle scope cannot alter media
+  ---
+  duration_ms: 4.422158
+  type: 'test'
+  ...
+# Subtest: Selection revisions retain manually edited subtitles and existing audio controls
+ok 27 - Selection revisions retain manually edited subtitles and existing audio controls
+  ---
+  duration_ms: 2.490021
+  type: 'test'
+  ...
+# Subtest: Asset download streams and verifies actual SHA-256 instead of trusting object metadata
+ok 28 - Asset download streams and verifies actual SHA-256 instead of trusting object metadata
+  ---
+  duration_ms: 31.025506
+  type: 'test'
+  ...
+# Subtest: AutoCut produces an actual MP4 with source audio, image hold, extra audio and subtitles
+ok 29 - AutoCut produces an actual MP4 with source audio, image hold, extra audio and subtitles # SKIP
+  ---
+  duration_ms: 0.574026
+  type: 'test'
+  ...
+# Subtest: AutoCut cancellation kills the actual media subprocess
+ok 30 - AutoCut cancellation kills the actual media subprocess # SKIP
+  ---
+  duration_ms: 0.359956
+  type: 'test'
+  ...
+1..30
+# tests 30
+# suites 0
+# pass 27
+# fail 0
+# cancelled 0
+# skipped 3
+# todo 0
+# duration_ms 6537.348731

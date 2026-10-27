@@ -1,0 +1,17 @@
+{
+  "api": {
+    "tag": "infinite-canvas-api:autocut-p1-ae0b50ff460c",
+    "image": "sha256:eaaa2247ee67da4fab1d1e1999d524f43e0ea3147b5cd49971eb87fec35a8397",
+    "rootFsUnchangedBySealing": true
+  },
+  "web": {
+    "tag": "infinite-canvas-web:autocut-p1-ae0b50ff460c",
+    "image": "sha256:d7f8cdc25711b2fb9f0632d1a6ae01c5c59056ddce6cbefc740ea26e270c41e0",
+    "rootFsUnchangedBySealing": true
+  },
+  "cpu": {
+    "tag": "infinite-canvas-autocut-cpu:autocut-p1-ae0b50ff460c",
+    "image": "sha256:d84c3d24e797639223cb98761ac1bfb1f787c5717aa898988929c10c46a2a4a4",
+    "rootFsUnchangedBySealing": true
+  }
+}

@@ -1,0 +1,83 @@
+{
+  "commit": "ae0b50ff460c9f7c8fbc8d1ad17f97c713b9c0ec",
+  "version": "v0.16.53",
+  "images": {
+    "api": {
+      "tag": "infinite-canvas-api:autocut-p1-ae0b50ff460c",
+      "image": "sha256:eaaa2247ee67da4fab1d1e1999d524f43e0ea3147b5cd49971eb87fec35a8397",
+      "rootFsUnchangedBySealing": true
+    },
+    "web": {
+      "tag": "infinite-canvas-web:autocut-p1-ae0b50ff460c",
+      "image": "sha256:d7f8cdc25711b2fb9f0632d1a6ae01c5c59056ddce6cbefc740ea26e270c41e0",
+      "rootFsUnchangedBySealing": true
+    },
+    "cpu": {
+      "tag": "infinite-canvas-autocut-cpu:autocut-p1-ae0b50ff460c",
+      "image": "sha256:d84c3d24e797639223cb98761ac1bfb1f787c5717aa898988929c10c46a2a4a4",
+      "rootFsUnchangedBySealing": true
+    }
+  },
+  "nativeAgentRuntimeUnchanged": true,
+  "otherApiFilesPreserved": 267,
+  "ordinaryAndAgentWorkerImagesUnchanged": true,
+  "migrations": {
+    "migrations": 51,
+    "hashesMatch": true
+  },
+  "sessionsRevoked": 2,
+  "revokedSessionHttp": 401,
+  "monitorActive": true,
+  "resources": {
+    "cpuThreads": 24,
+    "MemTotal": 65359159296,
+    "MemAvailable": 61740933120,
+    "rootFreeBytes": 70990053376,
+    "workTotalBytes": 20957446144,
+    "workFreeBytes": 19855532032
+  },
+  "containers": [
+    {
+      "name": "/jingjie-studio-api-1",
+      "running": true,
+      "health": "healthy",
+      "oom": false,
+      "restarts": 0
+    },
+    {
+      "name": "/infinite-canvas",
+      "running": true,
+      "health": "healthy",
+      "oom": false,
+      "restarts": 0
+    },
+    {
+      "name": "/shoushou-autocut-worker",
+      "running": true,
+      "health": null,
+      "oom": false,
+      "restarts": 0
+    },
+    {
+      "name": "/jingjie-studio-worker-1",
+      "running": true,
+      "health": null,
+      "oom": false,
+      "restarts": 0
+    },
+    {
+      "name": "/jingjie-studio-agent-worker-1",
+      "running": true,
+      "health": "healthy",
+      "oom": false,
+      "restarts": 0
+    }
+  ],
+  "paidModelRequests": 0,
+  "backup": "/opt/infinite-canvas-backups/autocut-p1-20261027T090526Z",
+  "verifiedP1Accounts": [
+    "admin",
+    "normal"
+  ],
+  "clientEditorAcceptance": false
+}

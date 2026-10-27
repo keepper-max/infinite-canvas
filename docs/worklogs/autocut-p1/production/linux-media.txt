@@ -1,0 +1,70 @@
+TAP version 13
+# Subtest: P1 upgrade preserves source spans, separates original sound and leaves V1 unchanged
+ok 1 - P1 upgrade preserves source spans, separates original sound and leaves V1 unchanged
+  ---
+  duration_ms: 15.315193
+  type: 'test'
+  ...
+# Subtest: Split maps captions and linked source audio across the cut, then speed/reorder remains valid
+ok 2 - Split maps captions and linked source audio across the cut, then speed/reorder remains valid
+  ---
+  duration_ms: 10.390022
+  type: 'test'
+  ...
+# Subtest: Copy shifts animated time, original audio and caption anchors; deletion removes their references
+ok 3 - Copy shifts animated time, original audio and caption anchors; deletion removes their references
+  ---
+  duration_ms: 9.655992
+  type: 'test'
+  ...
+# Subtest: Transitions shorten the timeline exactly; trimming keeps source-linked captions and valid overlap
+ok 4 - Transitions shorten the timeline exactly; trimming keeps source-linked captions and valid overlap
+  ---
+  duration_ms: 3.305062
+  type: 'test'
+  ...
+# Subtest: Effects reject scripts, unknown fields, unauthorized targets, invalid bounds and unordered keyframes
+ok 5 - Effects reject scripts, unknown fields, unauthorized targets, invalid bounds and unordered keyframes
+  ---
+  duration_ms: 8.785718
+  type: 'test'
+  ...
+# Subtest: Linked audio and subtitle effects survive copy/split and leave no orphan on deletion
+ok 6 - Linked audio and subtitle effects survive copy/split and leave no orphan on deletion
+  ---
+  duration_ms: 7.293351
+  type: 'test'
+  ...
+# Subtest: Animation interpolation is deterministic with half-open effect boundaries and clipped endpoint values
+ok 7 - Animation interpolation is deterministic with half-open effect boundaries and clipped endpoint values
+  ---
+  duration_ms: 1.473845
+  type: 'test'
+  ...
+# Subtest: AI effects cannot change selected source ranges or target IDs beyond the user scope
+ok 8 - AI effects cannot change selected source ranges or target IDs beyond the user scope
+  ---
+  duration_ms: 3.307615
+  type: 'test'
+  ...
+# Subtest: Transient snippet shifts source/audio/captions without mutating the saved document
+ok 9 - Transient snippet shifts source/audio/captions without mutating the saved document
+  ---
+  duration_ms: 2.292843
+  type: 'test'
+  ...
+# Subtest: P1 synthetic filter regression renders an overlapping transition, overlay, source audio and subtitle
+ok 10 - P1 synthetic filter regression renders an overlapping transition, overlay, source audio and subtitle
+  ---
+  duration_ms: 27470.707614
+  type: 'test'
+  ...
+1..10
+# tests 10
+# suites 0
+# pass 10
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 27826.547037

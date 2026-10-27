@@ -1,0 +1,68 @@
+{
+  "admin-smoke.mp4": {
+    "programs": [],
+    "streams": [
+      {
+        "codec_name": "h264",
+        "codec_type": "video",
+        "width": 1280,
+        "height": 720,
+        "start_time": "0.000000",
+        "duration": "2.000000"
+      },
+      {
+        "codec_name": "aac",
+        "codec_type": "audio",
+        "start_time": "0.000000",
+        "duration": "2.000000"
+      }
+    ],
+    "format": {
+      "duration": "2.001000"
+    }
+  },
+  "normal-smoke.mp4": {
+    "programs": [],
+    "streams": [
+      {
+        "codec_name": "h264",
+        "codec_type": "video",
+        "width": 1280,
+        "height": 720,
+        "start_time": "0.000000",
+        "duration": "1.960000"
+      },
+      {
+        "codec_name": "aac",
+        "codec_type": "audio",
+        "start_time": "0.000000",
+        "duration": "1.975000"
+      }
+    ],
+    "format": {
+      "duration": "1.975000"
+    }
+  },
+  "public-normal-output.mp4": {
+    "programs": [],
+    "streams": [
+      {
+        "codec_name": "h264",
+        "codec_type": "video",
+        "width": 1280,
+        "height": 720,
+        "start_time": "0.000000",
+        "duration": "1.960000"
+      },
+      {
+        "codec_name": "aac",
+        "codec_type": "audio",
+        "start_time": "0.000000",
+        "duration": "1.975000"
+      }
+    ],
+    "format": {
+      "duration": "1.975000"
+    }
+  }
+}

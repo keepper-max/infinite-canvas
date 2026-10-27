@@ -1,0 +1,50 @@
+{
+  "admin": {
+    "projectId": "413fff4c-99ee-4d3a-b3c6-bc4ea5a1428e",
+    "roleVerified": true,
+    "tasks": [
+      {
+        "id": "692fb978-0864-46a6-a180-288f7bb82f4c",
+        "kind": "render",
+        "completed": true,
+        "outputBytes": 540450,
+        "assetVersionId": "6b515b21-c298-4db1-bc0b-ccd1e5c9d6b4"
+      },
+      {
+        "id": "a9d8511d-227e-40de-a8d3-74562fe000c2",
+        "kind": "export",
+        "completed": true,
+        "outputBytes": 4060544,
+        "assetVersionId": "f29ebbee-edff-4629-96a0-3ef19fcb62de"
+      }
+    ],
+    "savedRevision": "aef72a85-16d2-4716-858c-8341630d5d53"
+  },
+  "normal": {
+    "projectId": "00e25ce9-b77e-43e8-b18f-47fe0fe1b0b5",
+    "roleVerified": true,
+    "tasks": [
+      {
+        "id": "59ddc379-1750-44aa-9817-ed925f7c6955",
+        "kind": "render",
+        "completed": true,
+        "outputBytes": 551081,
+        "assetVersionId": "37ea1f4e-5012-43c8-9a63-3a50dc9d8498"
+      },
+      {
+        "id": "9f60b022-0149-4041-808d-7cb52785089a",
+        "kind": "export",
+        "completed": true,
+        "outputBytes": 4060544,
+        "assetVersionId": "58d28c36-03e9-4d8c-9bb6-13fd26a69ff9"
+      }
+    ],
+    "savedRevision": "c0d42973-ea93-4543-afad-b10c45e61238"
+  },
+  "crossAccount": {
+    "denied": 404
+  },
+  "unchangedBalances": true,
+  "paidModelRequests": 0,
+  "endpoint": "private production API on 127.0.0.1:3003"
+}

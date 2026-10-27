@@ -1,0 +1,19 @@
+{
+  "roles": {
+    "admin": {
+      "p1Enabled": true,
+      "accepting": true,
+      "v2Read": true
+    },
+    "normal": {
+      "p1Enabled": true,
+      "accepting": true,
+      "v2Read": true
+    }
+  },
+  "normalTaskId": "e5e7fb11-e849-4746-9848-f3cd65779ba4",
+  "normalTaskCompleted": true,
+  "mp4Bytes": 551081,
+  "paidModelCalls": 0,
+  "mainAndIndependentRoutesHealthy": true
+}
