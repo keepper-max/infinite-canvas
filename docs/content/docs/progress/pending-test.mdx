@@ -5,7 +5,7 @@ description: Implemented changes that still need manual verification
 
 # Pending Tests
 
-- Agent知识引用与交互简化（本地，未发布）：没有真实文档来源时只开放搜索，读取及关系查询必须匹配服务端已知的spaceId/documentId，拦截全零或猜测ID；工具执行失败与后续未执行分开记录。前台移除“已确认的创作决定”表单，不再请求对应管理API；Agent沿用当前会话讨论，既有记录保留，不自动新增长期记忆或绕过写入审批。37项专项/真实隔离PostgreSQL与HTTP回归、4项本地Playwright检查及候选前后端类型检查通过，无真实模型费用。详见docs/worklogs/agent-knowledge-discovery.md。
+- Agent知识引用与交互简化（v0.16.54已上线）：2d74e5ba5fe6已推送，API/Agent Worker/Web健康；无真实文档来源时先搜索，读取与关系查询验证真实引用，未执行步骤不再误报失败，前台手动决定表单已移除。37项本地回归、两套Linux镜像各24项、生产9项浏览器检查通过，独立API/Web构建及100表/1667对象备份恢复核验完成。原暂停任务及账单不变、零新增付费调用；AutoCut和其他工作区修改保留。详见ops/releases/v0.16.54-agent-knowledge-discovery.md。
 
 - Agent只读收尾（v0.16.52已上线）：代码7a2395fef3c1已推送；完整候选构建、43项本地检查、两套Linux镜像各19项及生产9项浏览器检查通过。100表/1662对象备份恢复核验完成；仅更新API与Agent Worker，保留AutoCut及Web。原只读暂停任务经正式HTTP/Worker完成，原回执不变，新增推理和费用均0；29节点/27连线及10张计费表不变，会话已撤销。其他待核查账单及供应商网络稳定性仍独立跟进；详见ops/releases/v0.16.52-agent-readonly.md。
 

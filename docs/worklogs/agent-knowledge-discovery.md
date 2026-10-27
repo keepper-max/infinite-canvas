@@ -22,3 +22,9 @@
 ## 修改清单
 
 4个server/api/src/native-agent模块：tools.ts、service.ts、conversation-policy.ts、presentation.ts；web/src/components/native-agent/native-agent-panel.tsx；新增server/api/tests/native-agent-knowledge-discovery.test.ts；CHANGELOG、pending-test、todo及本文。无迁移、无运行预算/超时/重试边界调整。
+
+## 后续获准发布
+
+用户明确批准commit/push/部署后，已发布v0.16.54，代码2d74e5ba5fe6。独立API/Web构建通过，两个Linux候选镜像各24项及正式浏览器9项通过；100表/1667对象备份恢复验证完成。仅更新API、Agent Worker和Web，51条迁移不变，AutoCut及其他工作区修改保留。
+
+原暂停任务保留且未重跑，6张Agent历史表和10张计费表摘要不变，新增付费模型调用0。保护画布29节点/27连线完整，生产表单已移除，验收会话撤销后401。完整哈希、制品、限制及回滚见ops/releases/v0.16.54-agent-knowledge-discovery.md；上述“未发布”描述仅对应本地开发阶段。
