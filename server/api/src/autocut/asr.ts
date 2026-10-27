@@ -1,3 +1,4 @@
+import { DomainError } from "../domain.js";
 import { access } from "node:fs/promises";
 import { resolve } from "node:path";
 import { runMedia, type AsrProvider } from "./media.js";
@@ -31,7 +32,11 @@ export class LocalFunAsrProvider implements AsrProvider {
         this.punctuation,
       ],
       signal,
-    );
+    ).catch((error: unknown) => {
+      if (error instanceof DomainError && error.code === "AUTOCUT_MEDIA_FAILED")
+        throw new DomainError("AUTOCUT_ASR_FAILED", "本地语音识别失败，已保留素材和已完成的模型结果，可安全重试", 422);
+      throw error;
+    });
     const line = output
       .split(/\r?\n/)
       .reverse()

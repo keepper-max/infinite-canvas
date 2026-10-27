@@ -268,8 +268,8 @@ export default function AutoCutPage() {
     const visual = timeline?.tracks.find((t) => t.kind === "video");
     const disabled = busy || Boolean(active);
     return (
-        <main className="mx-auto w-full max-w-[1600px] px-4 py-7 md:px-8" style={{ color: token.colorText }}>
-            <header className="mb-7 flex flex-wrap items-end justify-between gap-4">
+        <main className="mx-auto w-full max-w-[1600px] px-4 py-4 md:px-8" style={{ color: token.colorText }}>
+            <header className="mb-4 flex flex-wrap items-end justify-between gap-4">
                 <div>
                     <div className="mb-2 flex items-center gap-2 text-xs tracking-[0.18em]" style={{ color: token.colorTextSecondary }}>
                         <Scissors size={14} /> SHOUSHOU / AUTOCUT
@@ -338,9 +338,9 @@ export default function AutoCutPage() {
             {!enabled && <Alert className="mb-4" type="info" showIcon title="智能剪辑处理服务尚未启用。已保存工程仍可打开；启用后即可分析和渲染。" />}
             {error && <Alert className="mb-4" type="error" showIcon closable title={error} onClose={() => setError("")} />}
             <div className="grid items-start gap-6 xl:grid-cols-[300px_minmax(0,1fr)]">
-                <aside className="space-y-5">
-                    <section className="rounded-xl border p-4" style={{ borderColor: token.colorBorderSecondary, background: token.colorBgContainer }}>
-                        <div className="mb-3 flex items-center justify-between">
+                <aside className="space-y-4">
+                    <section className="rounded-xl border p-3" style={{ borderColor: token.colorBorderSecondary, background: token.colorBgContainer }}>
+                        <div className="mb-2 flex items-center justify-between">
                             <h2 className="font-medium">01 / 素材</h2>
                             <span className="text-xs" style={{ color: token.colorTextSecondary }}>
                                 {detail ? detail.assets.length : selected.length} / 20
@@ -352,10 +352,10 @@ export default function AutoCutPage() {
                                 上传素材
                             </Button>
                         )}
-                        <p className="my-3 text-xs leading-5" style={{ color: token.colorTextSecondary }}>
+                        <p className="my-2 text-xs leading-5" style={{ color: token.colorTextSecondary }}>
                             视频、图片、音频；每项最多 500 MB、30 分钟。可直接复用当前空间素材。
                         </p>
-                        <div className="max-h-[380px] space-y-2 overflow-auto">
+                        <div role="region" aria-label="素材列表" tabIndex={0} className="max-h-[clamp(5rem,calc(100dvh-43rem),15rem)] space-y-2 overflow-y-auto overscroll-contain">
                             {projectId
                                 ? detail?.assets.map((a) => (
                                       <div key={a.id} className="border-b py-2" style={{ borderColor: token.colorBorderSecondary }}>
@@ -368,18 +368,18 @@ export default function AutoCutPage() {
                                 : assets.map((a) => (
                                       <Checkbox
                                           key={a.id}
-                                          className="!flex py-1"
+                                          className="!flex min-w-0 py-1 [&_.ant-checkbox-label]:min-w-0 [&_.ant-checkbox-label]:flex-1"
                                           disabled={!a.currentVersionId || (!selected.includes(a.currentVersionId) && selected.length >= 20)}
                                           checked={selected.includes(a.currentVersionId || "")}
                                           onChange={(e) => setSelected((p) => (e.target.checked ? [...p, a.currentVersionId!] : p.filter((x) => x !== a.currentVersionId)))}
                                       >
-                                          <span className="break-all text-sm">{a.name}</span>
+                                          <span className="block truncate text-sm" title={a.name}>{a.name}</span>
                                       </Checkbox>
                                   ))}
                             {!assets.length && !detail && <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="从一段素材开始" />}
                         </div>
                     </section>
-                    <section className="space-y-3 rounded-xl border p-4" style={{ borderColor: token.colorBorderSecondary, background: token.colorBgContainer }}>
+                    <section className="space-y-3 rounded-xl border p-3" style={{ borderColor: token.colorBorderSecondary, background: token.colorBgContainer }}>
                         <h2 className="font-medium">02 / 创作意图</h2>
                         <Select aria-label="剪辑模式" className="w-full" value={mode} options={modes} onChange={setMode} disabled={disabled} />
                         <Input.TextArea
@@ -452,7 +452,7 @@ export default function AutoCutPage() {
                         </div>
                     </section>
                     {active && (
-                        <section className="rounded-xl border p-4" style={{ borderColor: token.colorBorderSecondary }}>
+                        <section className="rounded-xl border p-3" style={{ borderColor: token.colorBorderSecondary }}>
                             <div className="mb-2 flex items-center justify-between text-sm">
                                 <span>
                                     {stageNames[active.stage] || active.stage}

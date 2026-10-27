@@ -29,6 +29,14 @@ load_ms = round((time.perf_counter() - started) * 1000)
 
 def transcribe(path):
     result = model.generate(input=path, sentence_timestamp=True, batch_size_s=0)
+    # FunASR 1.3.22 emits this explicit shape when VAD detects no speech.
+    # Missing results or recognized text without timestamps remain failures.
+    if (isinstance(result, list) and len(result) == 1
+            and isinstance(result[0], dict)
+            and result[0].get("text") == ""
+            and result[0].get("timestamp") == []
+            and not result[0].get("sentence_info")):
+        return {"segments": []}
     if not result or "sentence_info" not in result[0]:
         raise RuntimeError("ASR must return measured sentence timestamps; interpolation is forbidden")
     segments = [{"start": int(s["start"]), "end": int(s["end"]),
