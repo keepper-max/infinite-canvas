@@ -1,3 +1,4 @@
+import { formatCreditPoints } from "@/lib/credit-display";
 import { useEffect, useRef, useState } from "react";
 import { App, Alert, Button, Input, InputNumber, Select, Space, Spin, Switch, Table, Tag, Modal } from "antd";
 import { Link } from "react-router-dom";
@@ -36,7 +37,7 @@ export default function AgentModels() {
     const verify = (model: AgentAdminSnapshot["models"][number]) =>
         modal.confirm({
             title: "实际工具调用核验",
-            content: `使用当前管理员积分账号，模型${model.display_name}，只读当前填写项目，不写画布。预算上限¥${(verifyBudget / 100).toFixed(2)}，按原人民币积分结算；提交不明保留预留并停止，不自动重试。`,
+            content: `使用当前管理员积分账号，模型${model.display_name}，只读当前填写项目，不写画布。预算上限${formatCreditPoints(verifyBudget)}，按既有积分账本结算；提交不明保留预留并停止，不自动重试。`,
             okText: "确认费用并核验",
             cancelText: "取消",
             onOk: async () => {
@@ -62,7 +63,7 @@ export default function AgentModels() {
             <header className="flex flex-wrap items-start justify-between gap-4">
                 <div>
                     <h1 className="text-xl font-semibold">AI 配置 · Agent 模型管理</h1>
-                    <p className="mt-2 text-sm text-muted-foreground">复用平台模型、服务器凭据及人民币积分；只有实际核验通过的模型可开放执行。</p>
+                    <p className="mt-2 text-sm text-muted-foreground">复用平台模型、服务器凭据及积分账本；只有实际核验通过的模型可开放执行。</p>
                 </div>
                 <Button onClick={() => void load()} loading={busy}>
                     刷新状态
@@ -96,8 +97,8 @@ export default function AgentModels() {
                             />
                         </label>
                         <label className="space-y-2">
-                            <span>每Run累计费用上限（元）</span>
-                            <InputNumber aria-label="每Run费用上限" className="!w-full" min={0} precision={2} value={draft.maxBudgetCents / 100} onChange={(v) => set("maxBudgetCents", Math.round(Number(v ?? 0) * 100))} />
+                            <span>每Run累计积分上限</span>
+                            <InputNumber aria-label="每Run积分上限" className="!w-full" min={0} precision={0} suffix="积分" value={draft.maxBudgetCents} onChange={(v) => set("maxBudgetCents", Number(v ?? 0))} />
                         </label>
                         {(
                             [
@@ -152,7 +153,7 @@ export default function AgentModels() {
                 <h2 className="mb-3 text-base font-semibold">平台文字模型与核验</h2>
                 <Space wrap className="mb-4">
                     <Input aria-label="模型核验项目ID" className="!w-80" value={projectId} onChange={(e) => setProjectId(e.target.value)} placeholder="当前管理员有权限的项目ID" />
-                    <InputNumber aria-label="模型核验费用预算" min={0.01} max={(draft?.maxBudgetCents ?? 100) / 100} precision={2} value={verifyBudget / 100} onChange={(v) => setVerifyBudget(Math.round(Number(v ?? 0) * 100))} />
+                    <InputNumber aria-label="模型核验积分预算" min={1} max={draft?.maxBudgetCents ?? 100} precision={0} suffix="积分" value={verifyBudget} onChange={(v) => setVerifyBudget(Number(v ?? 0))} />
                     <span className="text-xs text-muted-foreground">实际核验会消耗当前管理员积分；不会自动回退模型。</span>
                 </Space>
                 <Table
@@ -223,7 +224,7 @@ export default function AgentModels() {
                 />
             </section>
             <section>
-                <h2 className="mb-3 text-base font-semibold">Token、人民币费用和运行状态</h2>
+                <h2 className="mb-3 text-base font-semibold">Token、积分消耗和运行状态</h2>
                 <Table
                     size="small"
                     rowKey="model_id"
@@ -268,22 +269,34 @@ export default function AgentModels() {
                                 </>
                             ),
                         },
-                        { title: "结算 / 待核验（元）", render: (_, run) => `${(run.spent_cents / 100).toFixed(2)} / ${(run.reserved_cents / 100).toFixed(2)}` },
+                        { title: "结算 / 预留积分", render: (_, run) => `${formatCreditPoints(run.spent_cents)} / ${formatCreditPoints(run.reserved_cents)}` },
                         {
                             title: "操作",
-                            render: (_, run) => run.actor_id === user.id ? <Space wrap>
-                                <Button onClick={() => void getAgentTrace(run.session_id).then(setTrace).catch((e) => setError(e.message))}>技术追踪</Button>
-                                {!["completed", "failed", "cancelled"].includes(run.status) ? (
-                                    <Button
-                                        onClick={() =>
-                                            void cancelAgentRun(run.id)
-                                                .then(() => load())
-                                                .catch((e) => setError(e.message))
-                                        }
-                                    >
-                                        停止此运行
-                                    </Button>
-                                ) : null}</Space> : null,
+                            render: (_, run) =>
+                                run.actor_id === user.id ? (
+                                    <Space wrap>
+                                        <Button
+                                            onClick={() =>
+                                                void getAgentTrace(run.session_id)
+                                                    .then(setTrace)
+                                                    .catch((e) => setError(e.message))
+                                            }
+                                        >
+                                            技术追踪
+                                        </Button>
+                                        {!["completed", "failed", "cancelled"].includes(run.status) ? (
+                                            <Button
+                                                onClick={() =>
+                                                    void cancelAgentRun(run.id)
+                                                        .then(() => load())
+                                                        .catch((e) => setError(e.message))
+                                                }
+                                            >
+                                                停止此运行
+                                            </Button>
+                                        ) : null}
+                                    </Space>
+                                ) : null,
                         },
                     ]}
                 />

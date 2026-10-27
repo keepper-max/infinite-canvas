@@ -1,4 +1,5 @@
-import AgentModels from './agent-models';
+import { formatCreditSummary, formatCreditCharge } from "@/lib/credit-display";
+import AgentModels from "./agent-models";
 import { ArrowLeft, Boxes, CircleDollarSign, ClipboardList, CreditCard, LayoutDashboard, MessageSquareText, ReceiptText, Share2, ShieldCheck, Users } from "lucide-react";
 import { Alert, Button, DatePicker, Drawer, Empty, Input, InputNumber, Modal, Radio, Select, Space, Spin, Switch, Table, Tag, Tooltip, message } from "antd";
 import dayjs, { type Dayjs } from "dayjs";
@@ -121,7 +122,13 @@ export default function AdminPage() {
                                     <Icon className="size-4" />
                                     {item.label}
                                 </Link>
-                                {item.key==='ai'&&active==='ai'?<div className="ml-7 mt-1 border-l border-white/10 pl-3"><Link to="/admin/ai/agent-models" className="block rounded-md px-3 py-2 text-xs">Agent 模型管理</Link></div>:null}
+                                {item.key === "ai" && active === "ai" ? (
+                                    <div className="ml-7 mt-1 border-l border-white/10 pl-3">
+                                        <Link to="/admin/ai/agent-models" className="block rounded-md px-3 py-2 text-xs">
+                                            Agent 模型管理
+                                        </Link>
+                                    </div>
+                                ) : null}
                                 {item.key === "models" && active === "models" ? (
                                     <div className="ml-7 mt-1 space-y-1 border-l border-white/10 pl-3">
                                         {(
@@ -357,7 +364,7 @@ function Overview() {
                             ))}
                         </div>
                     </Panel>
-                    <Panel title="供应商原始费用" note={`${rangeLabel}与历史累计；优惠实付另见消耗流水`}>
+                    <Panel title="模型消耗积分" note={`${rangeLabel}与历史累计；已含平台计费加价及逐笔取整，未结算单独提示`}>
                         {usageCurrencies.length ? (
                             <div className="space-y-3">
                                 {usageCurrencies.map((currency) => {
@@ -366,14 +373,14 @@ function Overview() {
                                     return (
                                         <div key={currency} className="rounded-xl border border-stone-200 bg-stone-50/60 p-4 dark:border-white/10 dark:bg-white/[0.025]">
                                             <div className="flex items-center justify-between">
-                                                <b>{usageAmountLabel(currency, recent?.totalAmount || total?.totalAmount, true)}</b>
-                                                <span className="font-mono text-xl">{formatUsageAmount(currency, recent?.totalAmount || "0")}</span>
+                                                <b>{currency} 账单积分</b>
+                                                <span className="font-mono text-xl">{formatCreditSummary(recent ? recent.creditPoints : "0", recent?.pendingCreditCalls)}</span>
                                             </div>
                                             <div className="mt-3 flex items-center justify-between text-xs text-stone-600 dark:text-stone-400">
                                                 <span>
                                                     {rangeLabel} {recent?.calls || 0} 笔
                                                 </span>
-                                                <span>累计 {formatUsageAmount(currency, total?.totalAmount || "0")}</span>
+                                                <span>累计 {formatCreditSummary(total?.creditPoints, total?.pendingCreditCalls)}</span>
                                             </div>
                                         </div>
                                     );
@@ -574,11 +581,8 @@ function UsersPanel() {
                     { title: "存储", dataIndex: "storageBytes", render: formatBytes },
                     {
                         title: "实际消耗",
-                        dataIndex: "usageAmounts",
-                        render: (value: Record<string, string>) =>
-                            Object.entries(value || {})
-                                .map(([currency, amount]) => formatUsageAmount(currency, amount))
-                                .join(" · ") || "—",
+                        dataIndex: "consumedPoints",
+                        render: (value: string | undefined, record) => formatCreditSummary(value, record.pendingCreditCalls),
                     },
                     { title: "最近登录", dataIndex: "lastLoginAt", render: formatDate },
                     { title: "注册时间", dataIndex: "createdAt", render: formatDate },
@@ -792,7 +796,7 @@ function UserDrawer({ userId, onClose, onChanged }: { userId?: string; onClose: 
                             {detail.usage.length ? (
                                 detail.usage.map((item) => (
                                     <p key={item.currency} className="mb-2 font-mono">
-                                        {formatUsageAmount(item.currency, item.totalAmount)} · {item.totalTokens} Token
+                                        {formatCreditSummary(item.creditPoints, item.pendingCreditCalls)} · {item.totalTokens} Token
                                     </p>
                                 ))
                             ) : (
@@ -824,12 +828,7 @@ function UserDrawer({ userId, onClose, onChanged }: { userId?: string; onClose: 
                                     { title: "任务 ID", dataIndex: "jobId", render: copyable },
                                     { title: "项目", dataIndex: "projectName" },
                                     { title: "模型", dataIndex: "modelId" },
-                                    { title: "金额", render: (_, item) => formatUsageAmount(item.currency, item.totalAmount) },
-                                    {
-                                        title: "积分",
-                                        render: (_, item) =>
-                                            item.creditStatus === "payment_required" ? `待支付 ${formatPoints(item.creditPoints || 0)} 分` : item.creditPoints ? `${formatPoints(item.creditPoints)} 分` : creditStatusLabel(item.creditStatus),
-                                    },
+                                    { title: "积分结算", render: (_, item) => formatCreditCharge(item.creditPoints, item.creditStatus) },
                                 ]}
                             />
                         </Panel>
@@ -1007,7 +1006,7 @@ function UsagePanel() {
     const [data, setData] = useState<{
         items: AdminUsage[];
         total: number;
-        summary: Array<{ currency: string; totalAmount: string; totalTokens: string; videoDurationSeconds: string }>;
+        summary: Array<{ creditPoints?: string; pendingCreditCalls?: number; currency: string; totalAmount: string; totalTokens: string; videoDurationSeconds: string }>;
         breakdowns: UsageBreakdown;
     }>({ items: [], total: 0, summary: [], breakdowns: { model: [], project: [], capability: [], day: [] } });
     const [page, setPage] = useState(1);
@@ -1094,7 +1093,7 @@ function UsagePanel() {
     };
     return (
         <div className="space-y-5">
-            <Panel title="积分定价" note="固定 1 元 = 100 积分，原始费用加价 20%，不足 1 积分向上取整">
+            <Panel title="积分定价" note="用户计费统一显示含20%加价的整数积分；以账本实扣为准，不重复换算">
                 <div className="flex flex-wrap items-end gap-3">
                     <label className="text-sm">
                         <span className="mb-1 block text-stone-500">USD/CNY 结算汇率</span>
@@ -1152,11 +1151,11 @@ function UsagePanel() {
             </Panel>
             <div className="grid gap-4 md:grid-cols-3">
                 {data.summary.map((item) => (
-                    <Metric key={item.currency} label={usageAmountLabel(item.currency, item.totalAmount)} value={formatUsageAmount(item.currency, item.totalAmount)} note={`${item.totalTokens} Token · ${item.videoDurationSeconds} 秒`} />
+                    <Metric key={item.currency} label={`已扣积分 · ${item.currency}账单`} value={formatCreditSummary(item.creditPoints, item.pendingCreditCalls)} note={`${item.totalTokens} Token · ${item.videoDurationSeconds} 秒`} />
                 ))}
             </div>
             <UsageBreakdownGrid breakdowns={data.breakdowns} />
-            <Panel title="消耗流水" note="金额字段以字符串传输，避免浮点误差">
+            <Panel title="消耗流水" note="按后端账本逐笔积分汇总，不再对已加价积分重复换算">
                 <Table
                     rowKey="jobId"
                     loading={loading}
@@ -1176,23 +1175,8 @@ function UsagePanel() {
                         { title: "渠道", dataIndex: "provider", render: providerLabel },
                         { title: "计量", render: (_, item) => `${item.totalTokens || 0} Token · ${item.videoDurationSeconds || 0} 秒 · ${item.generatedImages || 0} 图` },
                         {
-                            title: "原始费用",
-                            render: (_, item) => <b className="font-mono">{formatUsageAmount(item.currency, item.totalAmount)}</b>,
-                        },
-                        {
-                            title: "优惠实付",
-                            render: (_, item) => (item.providerPaidAmount && item.providerPaidAmount !== item.totalAmount ? <span className="font-mono text-stone-500">{formatUsageAmount(item.currency, item.providerPaidAmount)}</span> : "—"),
-                        },
-                        {
-                            title: "扣除积分",
-                            render: (_, item) =>
-                                item.creditStatus === "payment_required" ? (
-                                    <b className="font-mono text-amber-600">待支付 {formatPoints(item.creditPoints || 0)}</b>
-                                ) : item.creditPoints ? (
-                                    <b className="font-mono">{formatPoints(item.creditPoints)}</b>
-                                ) : (
-                                    creditStatusLabel(item.creditStatus)
-                                ),
+                            title: "积分结算",
+                            render: (_, item) => <b className="font-mono">{formatCreditCharge(item.creditPoints, item.creditStatus)}</b>,
                         },
                         { title: "账单 ID", dataIndex: "billingRequestId", render: copyable },
                         { title: "对账时间", dataIndex: "reconciledAt", render: formatDate },
@@ -1224,7 +1208,7 @@ function UsageBreakdownGrid({ breakdowns, compact = false }: { breakdowns: Usage
                                         {group.key === "capability" ? capabilityLabel(item.key) : item.key}
                                     </span>
                                     <span className="shrink-0 text-right font-mono">
-                                        {formatUsageAmount(item.currency, item.totalAmount)}
+                                        {formatCreditSummary(item.creditPoints, item.pendingCreditCalls)}
                                         <small className="block text-stone-500">
                                             {item.calls} 次 · {item.totalTokens} Token
                                         </small>
@@ -1301,14 +1285,10 @@ function JobsPanel() {
             message.warning("请输入大于 0 的供应商实际扣费金额");
             return;
         }
-        const input: ManualBillingResolution = reviewResolution === "not_billed"
-            ? { resolution: "not_billed", note }
-            : { resolution: "billed", amount: reviewAmount, currency: reviewCurrency, note };
+        const input: ManualBillingResolution = reviewResolution === "not_billed" ? { resolution: "not_billed", note } : { resolution: "billed", amount: reviewAmount, currency: reviewCurrency, note };
         Modal.confirm({
             title: reviewResolution === "not_billed" ? "确认供应商未扣费？" : "确认按实际金额结算？",
-            content: reviewResolution === "not_billed"
-                ? "确认后将解除该任务的冻结积分，并标记为未出账。此操作会写入审计日志。"
-                : `确认后将按 ${reviewAmount} ${reviewCurrency} 换算并扣除积分，生成任务仍保持失败。此操作会写入审计日志。`,
+            content: reviewResolution === "not_billed" ? "确认后将解除该任务的冻结积分，并标记为未出账。此操作会写入审计日志。" : `确认后将按 ${reviewAmount} ${reviewCurrency} 换算并扣除积分，生成任务仍保持失败。此操作会写入审计日志。`,
             okText: reviewResolution === "not_billed" ? "确认未扣费并释放" : "确认扣费并结算",
             cancelText: "返回检查",
             okButtonProps: reviewResolution === "billed" ? { danger: true } : undefined,
@@ -1316,9 +1296,7 @@ function JobsPanel() {
                 setReconcilingId(reviewingJob.id);
                 try {
                     const result = await resolveAdminJobBilling(reviewingJob.id, input);
-                    setItems((current) => current.map((job) => (job.id === reviewingJob.id
-                        ? { ...job, billingStatus: result.status, billingError: undefined }
-                        : job)));
+                    setItems((current) => current.map((job) => (job.id === reviewingJob.id ? { ...job, billingStatus: result.status, billingError: undefined } : job)));
                     setReviewingJob(undefined);
                     if (result.status === "not_billed") message.success("已确认未扣费，冻结积分已释放");
                     else message.success(`已完成结算${result.points ? `，扣除 ${result.points} 积分` : ""}`);
@@ -1337,157 +1315,137 @@ function JobsPanel() {
     };
     return (
         <>
-        <Panel
-            title="全局生成任务"
-            note={createdFrom && createdTo ? `已筛选 ${createdFrom} 至 ${createdTo}；对账异常不会改写生成状态` : "对账异常不会改写生成状态"}
-            actions={
-                <Space>
-                    <Input.Search
-                        allowClear
-                        placeholder="任务 / 对账标识 / 资源 ID"
-                        defaultValue={q}
-                        onSearch={(value) => {
-                            updateSearch("q", value);
-                        }}
-                    />
-                    <Select
-                        allowClear
-                        className="w-32"
-                        placeholder="生成状态"
-                        value={status}
-                        options={["completed", "payment_required", "billing_pending", "failed", "cancelled", "running"].map((value) => ({ value, label: jobStatusLabel(value) }))}
-                        onChange={(value) => {
-                            updateSearch("status", value);
-                        }}
-                    />
-                    {createdFrom && createdTo ? <Button onClick={clearRange}>清除周期</Button> : null}
-                </Space>
-            }
-        >
-            <Table
-                rowKey="id"
-                loading={loading}
-                dataSource={items}
-                pagination={{ current: page, pageSize: 20, total, showSizeChanger: false, onChange: setPage }}
-                columns={[
-                    { title: "任务 ID", dataIndex: "id", render: copyable },
-                    {
-                        title: "用户 / 项目",
-                        render: (_, item) => (
-                            <>
-                                <span className="block">{item.userEmail || item.userPhone || item.userId || "未知用户"}</span>
-                                <small>{item.projectName}</small>
-                            </>
-                        ),
-                    },
-                    { title: "模型", dataIndex: "modelId" },
-                    { title: "生成", dataIndex: "status", render: (value) => <StatusTag value={value} kind="job" /> },
-                    { title: "对账", dataIndex: "billingStatus", render: (value) => <StatusTag value={value} kind="billing" /> },
-                    {
-                        title: "供应商标识",
-                        render: (_, item) => (
-                            <div className="max-w-52 space-y-1 text-xs">
-                                <p>对账标识：{copyable(item.billingTraceId)}</p>
-                                <p>资源标识：{copyable(item.providerJobId)}</p>
-                            </div>
-                        ),
-                    },
-                    {
-                        title: "失败原因",
-                        render: (_, item) => (
-                            <span className="block max-w-64 truncate text-red-600" title={item.error?.message || item.billingError}>
-                                {item.error?.message || item.billingError || "—"}
-                            </span>
-                        ),
-                    },
-                    {
-                        title: "操作",
-                        render: (_, item) => (
-                            <Button
-                                size="small"
-                                disabled={item.billingStatus === "mismatch" ? !item.providerJobId : !item.billingTraceId}
-                                loading={reconcilingId === item.id}
-                                onClick={async () => {
-                                    if (reconcilingId) return;
-                                    if (item.billingStatus === "mismatch") {
-                                        setReviewingJob(item);
-                                        return;
-                                    }
-                                    setReconcilingId(item.id);
-                                    try {
-                                        const result = await reconcileAdminJob(item.id);
-                                        setItems((current) => current.map((job) => (job.id === item.id ? { ...job, billingStatus: result.status } : job)));
-                                        if (result.status === "mismatch") message.warning("供应商暂未返回账单，任务继续保留为待人工核验，冻结积分不变");
-                                        else message.success(`对账状态：${billingStatusLabel(result.status)}`);
-                                    } catch (error) {
-                                        message.error(error instanceof Error ? error.message : "人工核验失败");
-                                    } finally {
-                                        setReconcilingId(undefined);
-                                    }
-                                }}
-                            >
-                                {reconcilingId === item.id ? "处理中" : item.billingStatus === "mismatch" ? "人工核验" : "重新对账"}
-                            </Button>
-                        ),
-                    },
-                ]}
-            />
-        </Panel>
-        <Modal
-            open={Boolean(reviewingJob)}
-            title="人工核验供应商扣费"
-            okText="继续确认"
-            cancelText="暂不处理"
-            confirmLoading={Boolean(reconcilingId)}
-            maskClosable={!reconcilingId}
-            closable={!reconcilingId}
-            onCancel={closeReview}
-            onOk={submitManualReview}
-        >
-            <div className="space-y-4 py-2">
-                <Alert
-                    type="warning"
-                    showIcon
-                    message="请先在供应商后台核对任务号与实际账单"
-                    description={`任务 ${reviewingJob?.id || "—"}；供应商任务号 ${reviewingJob?.providerJobId || "—"}`}
-                />
-                <Radio.Group
-                    className="flex flex-col gap-3"
-                    value={reviewResolution}
-                    onChange={(event) => setReviewResolution(event.target.value)}
-                >
-                    <Radio value="not_billed">确认未扣费，释放冻结积分</Radio>
-                    <Radio value="billed">确认已扣费，按实际金额结算积分</Radio>
-                </Radio.Group>
-                {reviewResolution === "billed" ? (
-                    <Space.Compact className="w-full">
-                        <InputNumber
-                            className="w-full"
-                            stringMode
-                            min="0.00000001"
-                            precision={8}
-                            placeholder="供应商实际扣费金额"
-                            value={reviewAmount || null}
-                            onChange={(value) => setReviewAmount(value === null ? "" : String(value))}
+            <Panel
+                title="全局生成任务"
+                note={createdFrom && createdTo ? `已筛选 ${createdFrom} 至 ${createdTo}；对账异常不会改写生成状态` : "对账异常不会改写生成状态"}
+                actions={
+                    <Space>
+                        <Input.Search
+                            allowClear
+                            placeholder="任务 / 对账标识 / 资源 ID"
+                            defaultValue={q}
+                            onSearch={(value) => {
+                                updateSearch("q", value);
+                            }}
                         />
                         <Select
-                            className="w-28"
-                            value={reviewCurrency}
-                            options={[{ value: "CNY", label: "CNY" }, { value: "USD", label: "USD" }]}
-                            onChange={setReviewCurrency}
+                            allowClear
+                            className="w-32"
+                            placeholder="生成状态"
+                            value={status}
+                            options={["completed", "payment_required", "billing_pending", "failed", "cancelled", "running"].map((value) => ({ value, label: jobStatusLabel(value) }))}
+                            onChange={(value) => {
+                                updateSearch("status", value);
+                            }}
                         />
-                    </Space.Compact>
-                ) : null}
-                <Input.TextArea
-                    rows={3}
-                    maxLength={500}
-                    showCount
-                    placeholder="必填：记录核验依据，例如供应商后台查询时间、账单结果"
-                    value={reviewNote}
-                    onChange={(event) => setReviewNote(event.target.value)}
+                        {createdFrom && createdTo ? <Button onClick={clearRange}>清除周期</Button> : null}
+                    </Space>
+                }
+            >
+                <Table
+                    rowKey="id"
+                    loading={loading}
+                    dataSource={items}
+                    pagination={{ current: page, pageSize: 20, total, showSizeChanger: false, onChange: setPage }}
+                    columns={[
+                        { title: "任务 ID", dataIndex: "id", render: copyable },
+                        {
+                            title: "用户 / 项目",
+                            render: (_, item) => (
+                                <>
+                                    <span className="block">{item.userEmail || item.userPhone || item.userId || "未知用户"}</span>
+                                    <small>{item.projectName}</small>
+                                </>
+                            ),
+                        },
+                        { title: "模型", dataIndex: "modelId" },
+                        { title: "生成", dataIndex: "status", render: (value) => <StatusTag value={value} kind="job" /> },
+                        { title: "对账", dataIndex: "billingStatus", render: (value) => <StatusTag value={value} kind="billing" /> },
+                        {
+                            title: "供应商标识",
+                            render: (_, item) => (
+                                <div className="max-w-52 space-y-1 text-xs">
+                                    <p>对账标识：{copyable(item.billingTraceId)}</p>
+                                    <p>资源标识：{copyable(item.providerJobId)}</p>
+                                </div>
+                            ),
+                        },
+                        {
+                            title: "失败原因",
+                            render: (_, item) => (
+                                <span className="block max-w-64 truncate text-red-600" title={item.error?.message || item.billingError}>
+                                    {item.error?.message || item.billingError || "—"}
+                                </span>
+                            ),
+                        },
+                        {
+                            title: "操作",
+                            render: (_, item) => (
+                                <Button
+                                    size="small"
+                                    disabled={item.billingStatus === "mismatch" ? !item.providerJobId : !item.billingTraceId}
+                                    loading={reconcilingId === item.id}
+                                    onClick={async () => {
+                                        if (reconcilingId) return;
+                                        if (item.billingStatus === "mismatch") {
+                                            setReviewingJob(item);
+                                            return;
+                                        }
+                                        setReconcilingId(item.id);
+                                        try {
+                                            const result = await reconcileAdminJob(item.id);
+                                            setItems((current) => current.map((job) => (job.id === item.id ? { ...job, billingStatus: result.status } : job)));
+                                            if (result.status === "mismatch") message.warning("供应商暂未返回账单，任务继续保留为待人工核验，冻结积分不变");
+                                            else message.success(`对账状态：${billingStatusLabel(result.status)}`);
+                                        } catch (error) {
+                                            message.error(error instanceof Error ? error.message : "人工核验失败");
+                                        } finally {
+                                            setReconcilingId(undefined);
+                                        }
+                                    }}
+                                >
+                                    {reconcilingId === item.id ? "处理中" : item.billingStatus === "mismatch" ? "人工核验" : "重新对账"}
+                                </Button>
+                            ),
+                        },
+                    ]}
                 />
-            </div>
-        </Modal>
+            </Panel>
+            <Modal
+                open={Boolean(reviewingJob)}
+                title="人工核验供应商扣费"
+                okText="继续确认"
+                cancelText="暂不处理"
+                confirmLoading={Boolean(reconcilingId)}
+                maskClosable={!reconcilingId}
+                closable={!reconcilingId}
+                onCancel={closeReview}
+                onOk={submitManualReview}
+            >
+                <div className="space-y-4 py-2">
+                    <Alert type="warning" showIcon message="请先在供应商后台核对任务号与实际账单" description={`任务 ${reviewingJob?.id || "—"}；供应商任务号 ${reviewingJob?.providerJobId || "—"}`} />
+                    <Radio.Group className="flex flex-col gap-3" value={reviewResolution} onChange={(event) => setReviewResolution(event.target.value)}>
+                        <Radio value="not_billed">确认未扣费，释放冻结积分</Radio>
+                        <Radio value="billed">确认已扣费，按实际金额结算积分</Radio>
+                    </Radio.Group>
+                    {reviewResolution === "billed" && <p className="text-xs text-stone-500">供应商原币核账输入（非用户报价）；提交后由服务端换算为含平台加价的积分。</p>}
+                    {reviewResolution === "billed" ? (
+                        <Space.Compact className="w-full">
+                            <InputNumber className="w-full" stringMode min="0.00000001" precision={8} placeholder="供应商实际扣费金额" value={reviewAmount || null} onChange={(value) => setReviewAmount(value === null ? "" : String(value))} />
+                            <Select
+                                className="w-28"
+                                value={reviewCurrency}
+                                options={[
+                                    { value: "CNY", label: "CNY" },
+                                    { value: "USD", label: "USD" },
+                                ]}
+                                onChange={setReviewCurrency}
+                            />
+                        </Space.Compact>
+                    ) : null}
+                    <Input.TextArea rows={3} maxLength={500} showCount placeholder="必填：记录核验依据，例如供应商后台查询时间、账单结果" value={reviewNote} onChange={(event) => setReviewNote(event.target.value)} />
+                </div>
+            </Modal>
         </>
     );
 }
@@ -1591,9 +1549,7 @@ function BillingRulesPanel() {
                     </div>
                     <div>
                         <p className="text-xs font-medium text-stone-500">示例</p>
-                        <p className="mt-1.5 text-stone-700 dark:text-stone-300">
-                            实际扣费 8 元、折扣率 80%：原价为 8 ÷ 80% = 10 元，用户扣除 ⌈10 × 1.2 × 100⌉ = <b className="font-mono text-stone-950 dark:text-white">1,200 积分</b>。
-                        </p>
+                        <p className="mt-1.5 text-stone-700 dark:text-stone-300">用户消费以服务端还原计费基数后、包含20%加价的实扣积分为准；供应商优惠不直接作为用户价格，积分逐笔取整。</p>
                     </div>
                 </div>
                 <Table<ProviderBillingRule>
@@ -2515,36 +2471,11 @@ function formatOverviewRangeLabel(from: string, to: string) {
 function formatPoints(value: string | number) {
     return new Intl.NumberFormat("zh-CN").format(BigInt(String(value || 0)));
 }
-function creditStatusLabel(value?: string) {
-    const labels: Record<string, string> = {
-        pending: "待计费",
-        pending_rate: "待设置汇率",
-        pending_currency: "待确认币种",
-        payment_required: "待支付",
-        unsupported_currency: "币种不支持",
-        unavailable: "无实际金额",
-        free: "0 分",
-    };
-    return labels[value || ""] || "—";
-}
 function formatBytes(value: number) {
     if (!value) return "0 B";
     const units = ["B", "KB", "MB", "GB", "TB"];
     const index = Math.min(units.length - 1, Math.floor(Math.log(value) / Math.log(1024)));
     return `${(value / 1024 ** index).toFixed(index ? 1 : 0)} ${units[index]}`;
-}
-function isAmountMissing(amount?: string) {
-    return amount === undefined || amount === null || amount === "";
-}
-function formatUsageAmount(currency?: string, amount?: string) {
-    if (isAmountMissing(amount)) return "金额未返回";
-    return !currency || currency === "UNKNOWN" ? `币种未确认 ${amount}` : `${currency === "CNY" ? "人民币" : currency} ${amount}`;
-}
-function usageAmountLabel(currency?: string, amount?: string, compact = false) {
-    if (isAmountMissing(amount)) return compact ? "待计费" : "待计费金额";
-    if (!currency || currency === "UNKNOWN") return compact ? "币种未确认" : "币种未确认的原始费用";
-    const label = currency === "CNY" ? "人民币" : currency;
-    return compact ? label : `${label}原始费用`;
 }
 function copyable(value?: string) {
     if (!value) return "—";

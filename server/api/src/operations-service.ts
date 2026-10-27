@@ -1282,6 +1282,8 @@ export class OperationsService implements OperationsServicePort {
         (select coalesce(sum(v.bytes),0)::bigint from asset_versions v where v.created_by=u.id) storage_bytes,
         (select count(*)::int from sessions s where s.user_id=u.id and s.expires_at>now()) active_sessions,
         (select balance from credit_accounts ca where ca.user_id=u.id) credit_balance,
+        (select coalesce(sum(gu.credit_points),0)::text from generation_usage gu where gu.user_id=u.id and gu.credit_status='charged') consumed_points,
+        (select count(*)::int from generation_usage gu where gu.user_id=u.id and coalesce(gu.credit_status,'pending') not in ('charged','free')) pending_credit_calls,
         (select coalesce(jsonb_object_agg(x.currency,x.amount),'{}'::jsonb) from
           (select ${usageCurrencySql("gu")} currency,sum(coalesce(gu.total_amount,gu.amount_final,0))::text amount
            from generation_usage gu where gu.user_id=u.id group by ${usageCurrencySql("gu")}) x) usage_amounts
@@ -1306,6 +1308,8 @@ export class OperationsService implements OperationsServicePort {
         (select coalesce(sum(v.bytes),0)::bigint from asset_versions v where v.created_by=u.id) storage_bytes,
         (select count(*)::int from sessions s where s.user_id=u.id and s.expires_at>now()) active_sessions,
         (select balance from credit_accounts ca where ca.user_id=u.id) credit_balance,
+        (select coalesce(sum(gu.credit_points),0)::text from generation_usage gu where gu.user_id=u.id and gu.credit_status='charged') consumed_points,
+        (select count(*)::int from generation_usage gu where gu.user_id=u.id and coalesce(gu.credit_status,'pending') not in ('charged','free')) pending_credit_calls,
         (select coalesce(jsonb_object_agg(x.currency,x.amount),'{}'::jsonb) from
           (select ${usageCurrencySql("gu")} currency,sum(coalesce(gu.total_amount,gu.amount_final,0))::text amount
            from generation_usage gu where gu.user_id=u.id group by ${usageCurrencySql("gu")}) x) usage_amounts
@@ -1642,7 +1646,9 @@ export class OperationsService implements OperationsServicePort {
         coalesce(sum(generated_images),0)::bigint generated_images,
         coalesce(sum(video_duration_seconds),0)::text video_duration_seconds,
         coalesce(sum(audio_duration_seconds),0)::text audio_duration_seconds,
-        coalesce(sum(coalesce(total_amount,amount_final,0)),0)::text total_amount
+        coalesce(sum(coalesce(total_amount,amount_final,0)),0)::text total_amount,
+        coalesce(sum(gu.credit_points) filter(where gu.credit_status='charged'),0)::text credit_points,
+        count(*) filter(where coalesce(gu.credit_status,'pending') not in ('charged','free'))::int pending_credit_calls
        from generation_usage gu where ($1::uuid is null or gu.user_id=$1)
         and ($2::int is null or gu.reconciled_at>=now()-($2::int*interval '1 day'))
         and ($3::date is null or gu.reconciled_at>=(($3::date)::timestamp at time zone 'Asia/Shanghai'))
@@ -1658,6 +1664,9 @@ export class OperationsService implements OperationsServicePort {
       videoDurationSeconds: row.video_duration_seconds,
       audioDurationSeconds: row.audio_duration_seconds,
       totalAmount: row.total_amount,
+      creditPoints:
+        row.credit_points === undefined ? undefined : String(row.credit_points),
+      pendingCreditCalls: row.pending_credit_calls,
     }));
   }
 
@@ -1705,7 +1714,9 @@ export class OperationsService implements OperationsServicePort {
         const result = await this.pool.query(
           `select ${expression} key,${usageCurrencySql("gu")} currency,count(*)::int calls,
             coalesce(sum(gu.total_tokens),0)::text total_tokens,
-            coalesce(sum(coalesce(gu.total_amount,gu.amount_final,0)),0)::text total_amount
+            coalesce(sum(coalesce(gu.total_amount,gu.amount_final,0)),0)::text total_amount,
+            coalesce(sum(gu.credit_points) filter(where gu.credit_status='charged'),0)::text credit_points,
+            count(*) filter(where coalesce(gu.credit_status,'pending') not in ('charged','free'))::int pending_credit_calls
            from generation_usage gu join projects p on p.id=gu.project_id
            where ($1::uuid is null or gu.user_id=$1)
            group by ${expression},${usageCurrencySql("gu")} order by sum(coalesce(gu.total_amount,gu.amount_final,0)) desc limit 100`,
@@ -1719,6 +1730,11 @@ export class OperationsService implements OperationsServicePort {
             calls: row.calls,
             totalTokens: row.total_tokens,
             totalAmount: row.total_amount,
+            creditPoints:
+              row.credit_points === undefined
+                ? undefined
+                : String(row.credit_points),
+            pendingCreditCalls: row.pending_credit_calls,
           })),
         ];
       }),
@@ -1987,6 +2003,11 @@ function serializeAdminUser(row: Record<string, unknown>) {
     storageBytes: Number(row.storage_bytes || 0),
     activeSessions: Number(row.active_sessions || 0),
     usageAmounts: row.usage_amounts || {},
+    consumedPoints:
+      row.consumed_points === undefined
+        ? undefined
+        : String(row.consumed_points),
+    pendingCreditCalls: row.pending_credit_calls,
     creditBalance: String(row.credit_balance || 0),
   };
 }

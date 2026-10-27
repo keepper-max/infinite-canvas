@@ -47,7 +47,7 @@ export class AutoCutService {
     if (budget > 1000)
       throw new DomainError(
         "AUTOCUT_BUDGET_LIMIT",
-        "单任务预算最高人民币10元",
+        "单任务预算最高1000积分",
         422,
       );
     const counts = (
@@ -197,7 +197,7 @@ export class AutoCutService {
     const calls = (
       await this.pool.query(
         `select c.task_id,c.call_key,c.quote_cents,c.generation_job_id,j.model_id,j.status,j.billing_status,j.billing_meter_usage,j.started_at,j.finished_at,
-      u.cost_cny::text from autocut_model_calls c join autocut_tasks t on t.id=c.task_id
+      u.cost_cny::text,u.credit_points::text,u.credit_status from autocut_model_calls c join autocut_tasks t on t.id=c.task_id
       left join generation_jobs j on j.id=c.generation_job_id left join generation_usage u on u.job_id=j.id
       where t.project_id=$1 and t.actor_id=$2`,
         [id, actor],
@@ -446,7 +446,7 @@ export class AutoCutService {
     if (["edit", "effects"].includes(input.kind) && !input.confirmed)
       throw new DomainError(
         "AUTOCUT_BUDGET_CONFIRM",
-        "请先确认本次人民币预算上限",
+        "请先确认本次积分预算上限",
         409,
       );
     if (["prepare", "export", "effects"].includes(input.kind) || input.p1) {

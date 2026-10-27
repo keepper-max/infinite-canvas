@@ -476,3 +476,5 @@ The Chinese version contains the complete item-by-item acceptance checklist.
 - AutoCut V1.0 已正式全账号公开测试：Linux CPU 镜像/31权重/ASR/FFmpeg实跑，管理员与指定普通账号真实成片、HTTPS播放下载、保存、画布回填、隔离与取消恢复通过；公开入口无名单。已确认2CPU/10GiB/20GiB、每用户2/全局20/预算10元及独立停收监控，后台保留实际失败和账单。新增结算收尾回归及准入PG测试通过；真实供应商5次共¥0.00278113，平台按原规则5积分¥0.05。普通首轮零时长候选被拒，明确新任务后成功；四类实拍、长期压力及复杂语义质量仍待反馈验证，详见 docs/worklogs/autocut-production/README.md。
 
 - AutoCut P1 已部署 v0.16.53（ae0b50ff460c），全正常账号开启；Linux核心27项与独立媒体10项通过，CPU ASR、两账号线上MP4/剪映ZIP和普通账号公开HTTPS任务通过，新增模型费0，验收会话已撤销。CapCut禁用；浏览器交互、目标客户端和实拍质量仍未充分验收，详见ops/releases/v0.16.53-autocut-p1.md。
+
+- 全站积分计费展示修复（本地未提交/未部署）：AutoCut/精修台/画布节点/Agent管理预算改整数积分，实际费用取已加价的credit_points，后台概览、用户消耗、流水和分组汇总按逐笔charged积分展示，待支付/待结算单独提示；充值支付、汇率与人工原币核账输入保留真实资金单位。项目AGENTS.md已写入必须规则，扣费倍率/账本/额度边界不变。

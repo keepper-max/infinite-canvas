@@ -48,7 +48,7 @@ export type AutoCutDetail = {
         }
     >;
     revisions: { id: string; parent_id: string | null; created_at: string }[];
-    calls: { task_id: string; quote_cents: number; cost_cny: string | null; billing_status: string; model_id: string }[];
+    calls: { task_id: string; quote_cents: number; credit_points?: string | null; credit_status?: string | null; billing_status: string; model_id: string }[];
 };
 export type AutoCutRequest = {
     operationId: string;

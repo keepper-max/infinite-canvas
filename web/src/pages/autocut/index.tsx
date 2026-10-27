@@ -1,3 +1,4 @@
+import { formatCreditPoints } from "@/lib/credit-display";
 import { createFeedback } from "@/services/api/operations";
 import { App, Alert, Button, Checkbox, Empty, Input, InputNumber, Progress, Select, Slider, Tag, theme } from "antd";
 import { ArrowDown, ArrowUp, Download, Film, LoaderCircle, Plus, RotateCcw, Save, Scissors, Sparkles, Trash2, Upload, Volume2 } from "lucide-react";
@@ -197,7 +198,7 @@ export default function AutoCutPage() {
                 mode,
                 targetDurationMs: Math.round(duration * 1000),
                 aspectRatio: aspect,
-                budgetCents: kind === "edit" ? Math.round((budget || 0) * 100) : 0,
+                budgetCents: kind === "edit" ? budget || 0 : 0,
                 confirmed: true,
                 scope: subtitleOnly ? "subtitles" : "all",
             });
@@ -242,7 +243,7 @@ export default function AutoCutPage() {
     function confirmEdit() {
         modal.confirm({
             title: "开始 AI 智能剪辑",
-            content: `关键帧和转写将提交现有模型分析，请确认你有素材使用权并允许此处理。本次模型预算上限 ¥${(budget || 0).toFixed(2)}。素材分析会复用缓存，失败后不会自动重复付费调用。`,
+            content: `关键帧和转写将提交现有模型分析，请确认你有素材使用权并允许此处理。本次积分预算上限 ${formatCreditPoints(budget ?? 0)}。素材分析会复用缓存，失败后不会自动重复付费调用。`,
             okText: "确认并开始",
             onOk: () => run("edit"),
         });
@@ -400,8 +401,8 @@ export default function AutoCutPage() {
                             <Select aria-label="成片比例" value={aspect} onChange={setAspect} options={["9:16", "16:9", "1:1"].map((value) => ({ value, label: value }))} disabled={disabled} />
                         </div>
                         <label className="flex items-center justify-between gap-3 text-xs">
-                            本次模型预算（元）
-                            <InputNumber aria-label="人民币预算" max={10} min={0.01} precision={2} value={budget} onChange={setBudget} placeholder="请填写" disabled={disabled} />
+                            本次积分预算
+                            <InputNumber aria-label="积分预算" max={1000} min={1} precision={0} suffix="积分" value={budget} onChange={setBudget} placeholder="请填写" disabled={disabled} />
                         </label>
                         <Button type="primary" block icon={<Sparkles size={16} />} loading={busy} disabled={!enabled || Boolean(active) || !budget || (!projectId && !selected.length)} onClick={confirmEdit}>
                             {timeline ? "按要求修改并生成初稿" : "直接帮我剪"}
@@ -472,7 +473,7 @@ export default function AutoCutPage() {
                             </div>
                             <Progress percent={active.progress} size="small" />
                             <p className="text-xs" style={{ color: token.colorTextSecondary }}>
-                                预算上限 ¥{(active.budget_cents / 100).toFixed(2)} · 已为模型步骤预留 ¥{(active.reserved_cents / 100).toFixed(2)}
+                                预算上限 {formatCreditPoints(active.budget_cents)} · 模型步骤报价占用 {formatCreditPoints(active.reserved_cents)}（非实际扣费）
                             </p>
                         </section>
                     )}

@@ -74,7 +74,7 @@ export type PaymentOrder = {
 export type ActivationCodeRecord = { id: string; codeHint: string; credits: string; expiresAt: string; createdAt: string; redeemedAt?: string; revokedAt?: string };
 export type Team = { id: string; name: string; ownerId: string; role: string; createdAt: string; updatedAt: string };
 export type TeamMember = { userId: string; email: string; role: "owner" | "admin" | "editor" | "viewer"; createdAt: string };
-export type UsageSummary = { currency: string; calls: number; totalTokens: string; generatedImages: string; videoDurationSeconds: string; audioDurationSeconds: string; totalAmount: string };
+export type UsageSummary = { creditPoints?: string; pendingCreditCalls?: number; currency: string; calls: number; totalTokens: string; generatedImages: string; videoDurationSeconds: string; audioDurationSeconds: string; totalAmount: string };
 export type AdminOverview = {
     users: number;
     range: { from: string; to: string };
@@ -125,6 +125,8 @@ export type AdminUser = {
     storageBytes: number;
     activeSessions: number;
     usageAmounts: Record<string, string>;
+    consumedPoints?: string;
+    pendingCreditCalls?: number;
     creditBalance: string;
 };
 export type AdminUsage = {
@@ -200,7 +202,7 @@ export type FeedbackReply = {
     createdAt: string;
 };
 export type PageResult<T> = { items: T[]; total: number; page: number; pageSize: number };
-export type UsageBreakdown = Record<"model" | "project" | "capability" | "day", Array<{ key: string; currency: string; calls: number; totalTokens: string; totalAmount: string }>>;
+export type UsageBreakdown = Record<"model" | "project" | "capability" | "day", Array<{ creditPoints?: string; pendingCreditCalls?: number; key: string; currency: string; calls: number; totalTokens: string; totalAmount: string }>>;
 export type AdminUserDetail = {
     user: AdminUser;
     projects: Array<{ id: string; name: string; description: string; jobCount: number; assetCount: number; createdAt: string; updatedAt: string }>;
@@ -264,10 +266,12 @@ export async function getAdminPaymentSettings(signal?: AbortSignal) {
     return (await platformRequest<{ settings: AdminPaymentSettings }>("/api/admin/payments/settings", { signal })).settings;
 }
 export async function setAdminPaymentSettings(publicRechargeEnabled: boolean) {
-    return (await platformRequest<{ settings: AdminPaymentSettings }>("/api/admin/payments/settings", {
-        method: "PATCH",
-        body: JSON.stringify({ publicRechargeEnabled }),
-    })).settings;
+    return (
+        await platformRequest<{ settings: AdminPaymentSettings }>("/api/admin/payments/settings", {
+            method: "PATCH",
+            body: JSON.stringify({ publicRechargeEnabled }),
+        })
+    ).settings;
 }
 export async function createAdminPaymentPlan(input: PaymentPlanInput) {
     return (await platformRequest<{ plan: BillingPlan }>("/api/admin/payments/plans", { method: "POST", body: JSON.stringify(input) })).plan;
@@ -382,14 +386,9 @@ export function getAdminJobs(input: Record<string, string | number | boolean | u
 export function reconcileAdminJob(jobId: string) {
     return platformRequest<{ status: string; requestId?: string }>(`/api/admin/jobs/${encodeURIComponent(jobId)}/reconcile`, { method: "POST" });
 }
-export type ManualBillingResolution =
-    | { resolution: "not_billed"; note: string }
-    | { resolution: "billed"; amount: string; currency: "CNY" | "USD"; note: string };
+export type ManualBillingResolution = { resolution: "not_billed"; note: string } | { resolution: "billed"; amount: string; currency: "CNY" | "USD"; note: string };
 export function resolveAdminJobBilling(jobId: string, input: ManualBillingResolution) {
-    return platformRequest<{ status: string; released?: boolean; points?: string; amount?: string; currency?: string }>(
-        `/api/admin/jobs/${encodeURIComponent(jobId)}/billing-resolution`,
-        { method: "POST", body: JSON.stringify(input) },
-    );
+    return platformRequest<{ status: string; released?: boolean; points?: string; amount?: string; currency?: string }>(`/api/admin/jobs/${encodeURIComponent(jobId)}/billing-resolution`, { method: "POST", body: JSON.stringify(input) });
 }
 export function getAdminAuditLogs(input: Record<string, string | number | boolean | undefined> = {}, signal?: AbortSignal) {
     return platformRequest<PageResult<AdminAuditLog>>(`/api/admin/audit-logs${adminQuery(input)}`, { signal });

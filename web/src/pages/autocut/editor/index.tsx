@@ -1,3 +1,4 @@
+import { summarizeCreditCalls } from "@/lib/credit-display";
 import { App, Alert, Button, Checkbox, Empty, Input, InputNumber, Progress, Select, Tag, theme } from "antd";
 import { ArrowLeft, Copy, Download, Film, Plus, Redo2, Save, Scissors, Sparkles, Trash2, Undo2, Upload } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -272,7 +273,7 @@ export default function AutoCutEditorPage() {
             okText: "确认预算并生成",
             content: (
                 <div className="space-y-3">
-                    <p>不会改写粗剪选段或自动重试付费请求；选中片段元数据与指令将交给现有模型，费用按现有人民币账本结算。</p>
+                    <p>不会改写粗剪选段或自动重试付费请求；选中片段元数据与指令将交给现有模型，按已包含平台计费加价的整数积分结算。</p>
                     <Input.TextArea
                         defaultValue={prompt}
                         onChange={(e) => {
@@ -280,11 +281,11 @@ export default function AutoCutEditorPage() {
                         }}
                     />
                     <InputNumber
-                        min={0.01}
-                        max={10}
-                        precision={2}
-                        prefix="¥"
-                        placeholder="预算上限"
+                        min={1}
+                        max={1000}
+                        precision={0}
+                        suffix="积分"
+                        placeholder="积分预算上限"
                         onChange={(v) => {
                             budget = v;
                         }}
@@ -293,7 +294,7 @@ export default function AutoCutEditorPage() {
             ),
             onOk: () => {
                 if (!budget) return Promise.reject(new Error("请填写预算上限"));
-                const cents = Math.round(budget * 100);
+                const cents = budget;
                 return action(() => run("effects", { clipIds: selected, budget: cents, prompt }));
             },
         });
@@ -586,9 +587,7 @@ export default function AutoCutEditorPage() {
                             {t.input?.kind === "export" ? "工程 ZIP" : t.input?.p1?.previewClipId ? "低清预览" : "MP4"} · {t.id.slice(0, 6)}
                         </Button>
                     ))}
-                <span className="ml-auto opacity-50">
-                    模型费用记录 {detail?.calls.length ?? 0} 条 · {detail?.calls.some((c) => c.cost_cny === null) ? "部分结算中" : `¥${(detail?.calls.reduce((sum, c) => sum + Number(c.cost_cny ?? 0), 0) ?? 0).toFixed(4)}`}
-                </span>
+                <span className="ml-auto opacity-50">{detail ? summarizeCreditCalls(detail.calls) : "正在读取积分账单…"}</span>
                 <Button
                     type="link"
                     size="small"
