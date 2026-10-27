@@ -1,3 +1,4 @@
+import { AssetThumbnail } from "./asset-thumbnail";
 import { formatCreditPoints } from "@/lib/credit-display";
 import { createFeedback } from "@/services/api/operations";
 import { App, Alert, Button, Checkbox, Empty, Input, InputNumber, Progress, Select, Slider, Tag, theme } from "antd";
@@ -358,10 +359,13 @@ export default function AutoCutPage() {
                         <div role="region" aria-label="素材列表" tabIndex={0} className="max-h-[clamp(5rem,calc(100dvh-43rem),15rem)] space-y-2 overflow-y-auto overscroll-contain">
                             {projectId
                                 ? detail?.assets.map((a) => (
-                                      <div key={a.id} className="border-b py-2" style={{ borderColor: token.colorBorderSecondary }}>
-                                          <div className="truncate text-sm">{a.name}</div>
-                                          <div className="mt-1 text-xs" style={{ color: token.colorTextSecondary }}>
-                                              {detail.analyses[a.id] ? `${seconds(detail.analyses[a.id].durationMs)} 秒 · 已分析` : "等待分析"}
+                                      <div key={a.id} className="flex min-w-0 items-center gap-2 border-b py-2" style={{ borderColor: token.colorBorderSecondary }}>
+                                          <AssetThumbnail version={assets.find((item) => item.id === a.assetId)?.versions.find((v) => v.id === a.id)} mimeType={a.mimeType} name={a.name} />
+                                          <div className="min-w-0 flex-1">
+                                              <div className="truncate text-sm" title={a.name}>{a.name}</div>
+                                              <div className="mt-1 text-xs" style={{ color: token.colorTextSecondary }}>
+                                                  {detail.analyses[a.id] ? `${seconds(detail.analyses[a.id].durationMs)} 秒 · 已分析` : "等待分析"}
+                                              </div>
                                           </div>
                                       </div>
                                   ))
@@ -373,7 +377,10 @@ export default function AutoCutPage() {
                                           checked={selected.includes(a.currentVersionId || "")}
                                           onChange={(e) => setSelected((p) => (e.target.checked ? [...p, a.currentVersionId!] : p.filter((x) => x !== a.currentVersionId)))}
                                       >
-                                          <span className="block truncate text-sm" title={a.name}>{a.name}</span>
+                                          <span className="flex min-w-0 items-center gap-2">
+                                              <AssetThumbnail version={a.versions.find((v) => v.id === a.currentVersionId)} mimeType={a.kind === "audio" ? "audio/" : a.kind === "image" ? "image/" : "video/"} name={a.name} />
+                                              <span className="min-w-0 flex-1 truncate text-sm" title={a.name}>{a.name}</span>
+                                          </span>
                                       </Checkbox>
                                   ))}
                             {!assets.length && !detail && <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="从一段素材开始" />}
@@ -401,8 +408,8 @@ export default function AutoCutPage() {
                             <Select aria-label="成片比例" value={aspect} onChange={setAspect} options={["9:16", "16:9", "1:1"].map((value) => ({ value, label: value }))} disabled={disabled} />
                         </div>
                         <label className="flex items-center justify-between gap-3 text-xs">
-                            本次积分预算
-                            <InputNumber aria-label="积分预算" max={1000} min={1} precision={0} suffix="积分" value={budget} onChange={setBudget} placeholder="请填写" disabled={disabled} />
+                            积分预算上限
+                            <InputNumber aria-label="积分预算" max={1000} min={1} precision={0} suffix="积分" value={budget} onChange={setBudget} placeholder="填写积分" disabled={disabled} />
                         </label>
                         <Button type="primary" block icon={<Sparkles size={16} />} loading={busy} disabled={!enabled || Boolean(active) || !budget || (!projectId && !selected.length)} onClick={confirmEdit}>
                             {timeline ? "按要求修改并生成初稿" : "直接帮我剪"}

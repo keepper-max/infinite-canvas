@@ -65,7 +65,7 @@ function Panel({ ctx }: { ctx: CanvasNodeContext }) {
         <div className="space-y-3 p-4">
             <Input.TextArea aria-label="智能剪辑要求" rows={3} value={ctx.node.metadata?.prompt || ""} onChange={(e) => ctx.updateMetadata({ prompt: e.target.value })} placeholder="不填也可以直接帮我剪。素材连接后将导入独立剪辑工程。" />
             <label className="flex items-center justify-between text-xs">
-                本次积分预算
+                积分预算上限
                 <InputNumber aria-label="剪辑积分预算" max={1000} min={1} precision={0} suffix="积分" value={state?.budgetCents || null} onChange={(v) => ctx.updateMetadata({ autocut: { ...state, budgetCents: v || 0 } })} />
             </label>
             <div className="flex gap-2">

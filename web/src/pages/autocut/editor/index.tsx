@@ -270,7 +270,7 @@ export default function AutoCutEditorPage() {
             prompt = "为选中片段添加克制的基础运镜或淡入淡出";
         modal.confirm({
             title: "AI 效果规划 · 仅选中范围",
-            okText: "确认预算并生成",
+            okText: "确认积分预算并生成",
             content: (
                 <div className="space-y-3">
                     <p>不会改写粗剪选段或自动重试付费请求；选中片段元数据与指令将交给现有模型，按已包含平台计费加价的整数积分结算。</p>
@@ -281,6 +281,7 @@ export default function AutoCutEditorPage() {
                         }}
                     />
                     <InputNumber
+                        aria-label="AI效果积分预算上限"
                         min={1}
                         max={1000}
                         precision={0}
@@ -293,7 +294,7 @@ export default function AutoCutEditorPage() {
                 </div>
             ),
             onOk: () => {
-                if (!budget) return Promise.reject(new Error("请填写预算上限"));
+                if (!budget) return Promise.reject(new Error("请填写积分预算上限"));
                 const cents = budget;
                 return action(() => run("effects", { clipIds: selected, budget: cents, prompt }));
             },
