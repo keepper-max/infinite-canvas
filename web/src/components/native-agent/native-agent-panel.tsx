@@ -1,5 +1,4 @@
 import VerifiedReply from "./verified-reply";
-import CreativeDecisionsPanel from "./creative-decisions";
 import { useEffect, useRef, useState } from "react";
 import { Alert, App, Button, Collapse, Input, InputNumber, Select, Modal } from "antd";
 import { ArrowUp, History, Plus, Square, X, RefreshCw } from "lucide-react";
@@ -619,7 +618,6 @@ export default function NativeAgentPanel() {
                         ]}
                     />
                 )}
-                {!accessDenied && <CreativeDecisionsPanel key={projectId} projectId={projectId} snapshot={snapshot} />}
                 {snapshot?.approvals
                     .filter((a) => a.status === "pending")
                     .map((a) => (

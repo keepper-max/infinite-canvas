@@ -78,6 +78,8 @@ export function safeTaskError(code?: string | null) {
     )
   )
     return "上次请求的结果或费用仍需核查。请先核查原请求，暂时不要重新提交。";
+  if (code === "AGENT_KNOWLEDGE_REFERENCE_UNVERIFIED")
+    return "助手尚未取得有效的文档引用，本批次未执行。继续时需先搜索资料，再读取实际找到的文档。";
   if (/FORBIDDEN|PERMISSION|NOT_ENABLED|UNAUTHENTICATED|USER|SOURCE/.test(code))
     return "当前账号或资料权限已变化，暂时无法继续。请检查登录状态及项目、资料访问权限。";
   if (/NOT_FOUND/.test(code))
@@ -342,11 +344,13 @@ export function userPresentation(
           key: s.id,
           title:
             s.tool_name === "read_knowledge"
-              ? `阅读《${title(s.input?.documentId, "授权资料")}》`
+              ? `阅读《${title(s.input?.documentId, "待核验文档")}》`
               : (actions[s.tool_name] ?? "处理任务"),
           status: s.status,
           statusLabel:
-            s.status === "awaiting_approval"
+            s.error_code === "AGENT_BATCH_NOT_EXECUTED"
+              ? "未执行（前序步骤失败）"
+              : s.status === "awaiting_approval"
               ? "等待计划执行"
               : (taskStates[s.status] ?? "等待处理"),
         })),

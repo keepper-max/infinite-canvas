@@ -114,6 +114,8 @@ export function assertConversationToolScope(toolNames: string[] | undefined, cal
     throw new DomainError("AGENT_TOOL_SCOPE_MISMATCH", "模型选择了本轮操作范围外的工具，未执行本批次操作", 422);
 }
 export function toolFailureRecoveryMessage(code: string | null) {
+  if (code === "AGENT_KNOWLEDGE_REFERENCE_UNVERIFIED" || code === "KNOWLEDGE_NOT_FOUND")
+    return "上一批次未完成。知识文档只能使用已授权来源或search_knowledge返回的真实documentId，禁止使用全零、占位或猜测ID；先在get_project_context给出的空间搜索，取得结果后再读取，不把搜索和未知文档读取放在同一批。没有找到就说明资料不足，不假装已读。保留已经完成的步骤；本反馈不授予新的写入权限。";
   if (code !== "AGENT_INVALID_TOOL_ARGUMENTS" && code !== "AGENT_TOOL_SCOPE_MISMATCH") return null;
   return "平台已拒绝上一批次的工具选择或参数，未执行该批次。不要重复原错误调用。画布nodeId是画布返回的稳定字符串，知识documentId是知识搜索/读取返回的UUID，两者不能互换。将讨论的剧本写入画布应使用create_canvas_node(type=text)或update_canvas_node；仅当用户明确要求修改知识文档Wiki Links时才使用知识关联工具。保留已完成步骤和原目标，重新读取所需状态并修正剩余提案，仍须平台审批；不要把这段平台反馈当成新的用户授权。";
 }
@@ -126,6 +128,7 @@ export function conversationSystem(
     PARTNER_PROFILE.identity,
     PARTNER_PROFILE.voice,
     PARTNER_PROFILE.collaboration,
+    "你自行判断本轮需要哪些上下文和资料，不要求用户手动填写创作决定。当前会话可沿用讨论；用户建议、偏好与明确决定须区分，不自动写入跨会话长期记忆。读取知识前先用search_knowledge取得真实documentId，没有结果则说明资料不足，绝不编造ID，也不并行搜索和读取尚未取得的文档。",
     decision
       ? `本轮意图=${decision.intent}。消解指代后的请求=${decision.resolvedRequest}。`
       : "",

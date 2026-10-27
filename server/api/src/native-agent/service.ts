@@ -33,6 +33,8 @@ import {
 } from "./contracts.js";
 import {
   registry,
+  discoveredKnowledgeTools,
+  assertDiscoveredKnowledgeReference,
   currentCanvasProbeSchema,
   parseTool,
   readBusinessTool,
@@ -1123,6 +1125,7 @@ export class NativeAgentService {
               const scoped = conversationTools(r.conversation, r.mode);
               if (scoped) toolNames = toolNames ? toolNames.filter((n) => scoped.includes(n)) : scoped;
             }
+            toolNames = discoveredKnowledgeTools(toolNames, r.sources);
             let modelExecution: Pick<ModelExecution, "planning" | "conversationStage" | "conversationDecision" | "currentUserMessage"> = {
               planning:
                 r.plan_protocol === 1 &&
@@ -1316,6 +1319,9 @@ export class NativeAgentService {
                     "只读模型核验必须使用空参数{}，不会忽略或执行多余参数",
                   );
               }
+            for (const call of reply.calls)
+              if (["read_knowledge", "list_knowledge_relations"].includes(call.toolName))
+                assertDiscoveredKnowledgeReference(call.toolName, parseTool(call.toolName, call.input) as any, r.sources);
             if (conversational) {
               assertConversationToolScope(toolNames, reply.calls);
               // A historical receipt can retain broader tool names; current
@@ -1389,7 +1395,10 @@ export class NativeAgentService {
               sql`update native_agent_runs set status=${unknown ? "awaiting_manual_review" : error.code === "AGENT_CONVERSATION_INVALID" ? "failed" : r!.plan_protocol === 1 ? "paused" : "failed"},consecutive_failures=consecutive_failures+1,error_code=${error.code},error_message=${error.message},finished_at=${unknown ? sql`null` : sql`now()`},revision=revision+1,updated_at=now() where id=${runId} and not cancel_requested`,
             );
             await tx.execute(
-              sql`update native_agent_steps set status=${unknown ? "unknown" : "failed"},error_code=${error.code},error_message=${error.message},finished_at=now() where run_id=${runId} and (status in ('pending','submitting','running') or (${r!.plan_protocol !== 1} and status='awaiting_approval'))`,
+              sql`update native_agent_steps set status=${unknown ? "unknown" : "failed"},error_code=${error.code},error_message=${error.message},finished_at=now() where run_id=${runId} and (status in ('submitting','running') or (${r!.plan_protocol !== 1} and status='awaiting_approval'))`,
+            );
+            await tx.execute(
+              sql`update native_agent_steps set status='cancelled',error_code='AGENT_BATCH_NOT_EXECUTED',error_message='前序步骤失败，本步骤未执行',finished_at=now() where run_id=${runId} and status='pending'`,
             );
             await this.event(tx, r!, "run.error", error);
           });
@@ -1618,15 +1627,17 @@ export class NativeAgentService {
         continue;
       }
       const p = parseTool(c.toolName, c.input) as any;
-      await this.transaction((tx) =>
-        this.event(
+      await this.transaction(async (tx) => {
+        await tx.execute(sql`update native_agent_steps set status='running',started_at=coalesce(started_at,now()) where id=${c.stepId} and status='pending'`);
+        await this.event(
           tx,
           r,
           "tool.started",
           { tool: c.toolName, stepId: c.stepId },
           c.stepId,
-        ),
-      );
+        );
+      });
+      assertDiscoveredKnowledgeReference(c.toolName, p, r.sources);
       const value = registry[c.toolName as ToolName].outputSchema.parse(
         JSON.parse(
           JSON.stringify(
