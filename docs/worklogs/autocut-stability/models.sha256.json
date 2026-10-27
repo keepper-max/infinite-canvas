@@ -1,0 +1,173 @@
+{
+  "schemaVersion": 1,
+  "scope": "Locally provisioned, separately licensed model bytes; not an upstream revision claim",
+  "models": {
+    "asr": {
+      "files": [
+        {
+          "path": ".gitattributes",
+          "bytes": 1506,
+          "sha256": "250c7e711fdc0cb21d71417b4dd84fe42790c67f6e34003b9e53795b2655983b"
+        },
+        {
+          "path": "am.mvn",
+          "bytes": 11203,
+          "sha256": "29b3c740a2c0cfc6b308126d31d7f265fa2be74f3bb095cd2f143ea970896ae5"
+        },
+        {
+          "path": "asr_example_hotword.wav",
+          "bytes": 253642,
+          "sha256": "51792bc95be33075c1a8abb9afb76ad9f72943e84cd723cc8825b2678799b004"
+        },
+        {
+          "path": "config.yaml",
+          "bytes": 3477,
+          "sha256": "6602efa95e4c7248e1d1030f7ff454a3c9af0f57c335ed87f35260cd7faec35d"
+        },
+        {
+          "path": "configuration.json",
+          "bytes": 478,
+          "sha256": "1acac324430b5a4680ef5ee2947575443ab2039a92c8a0551665f6bc9a606b41"
+        },
+        {
+          "path": "example/asr_example.wav",
+          "bytes": 144770,
+          "sha256": "2ffa478de2cd570dd54e8762008cd6bbde9871fd79757f1cdbbec7d6b7b49274"
+        },
+        {
+          "path": "example/hotword.txt",
+          "bytes": 7,
+          "sha256": "c16dbde81120bb4be3a3a0838ec692da0ab4f0b6503aea9348bf318186e5a452"
+        },
+        {
+          "path": "fig/res.png",
+          "bytes": 196655,
+          "sha256": "1f59ebc6a86733896b2b84110e2aae5625754382762bf1324e017d89a152c2fb"
+        },
+        {
+          "path": "fig/seaco.png",
+          "bytes": 170780,
+          "sha256": "6886864eb6bcc6487a17111b5e3353bd72e7c78fda98c27cf47faa35eafbdcaf"
+        },
+        {
+          "path": "model.pt",
+          "bytes": 989763045,
+          "sha256": "3d491689244ec5dfbf9170ef3827c358aa10f1f20e42a7c59e15e688647946d1"
+        },
+        {
+          "path": "README.md",
+          "bytes": 13677,
+          "sha256": "c92fa06ad63cc9962b9515eb23872f8ed8052fecb4f2df90ec7d0cdbaf916b9f"
+        },
+        {
+          "path": "seg_dict",
+          "bytes": 8287834,
+          "sha256": "59a2ef803a3f1648ad03a2e1480db1c1ee0c0d7dc4ef4dbd16cea33944329022"
+        },
+        {
+          "path": "tokens.json",
+          "bytes": 93676,
+          "sha256": "2b20c2b12572d682afff84ce1c8d560f67b8b32a4c1f21567411d141ed352127"
+        }
+      ]
+    },
+    "vad": {
+      "files": [
+        {
+          "path": ".gitattributes",
+          "bytes": 1414,
+          "sha256": "f3d04437c926962476701a7939d22f21400b4eb0bdd31a15f0012576f2d00932"
+        },
+        {
+          "path": "am.mvn",
+          "bytes": 8040,
+          "sha256": "6820fef9687708c4fc3fab2530179c8fcea6262daa25514380056cd8f6eb1754"
+        },
+        {
+          "path": "config.yaml",
+          "bytes": 1215,
+          "sha256": "486861ca26ddb79081663b6179cb204c6bfae71c52f04aafc48a9e9d8dde1e93"
+        },
+        {
+          "path": "configuration.json",
+          "bytes": 365,
+          "sha256": "7bce8867e37d55c3dd8f672695ced18077a2be199ea529a5d432d5350fc0acba"
+        },
+        {
+          "path": "example/vad_example.wav",
+          "bytes": 2261722,
+          "sha256": "a7431f0169ef76ef630c945a1d2c3675d8c8c2df2ae4a6b16f8a88ba1bccfbbb"
+        },
+        {
+          "path": "fig/struct.png",
+          "bytes": 27914,
+          "sha256": "c745bcc2fd4952fb1fe5a0f7f9fdabda510c3771e7a47dd22be605e26db4ee2c"
+        },
+        {
+          "path": "model.pt",
+          "bytes": 1721366,
+          "sha256": "b3be75be477f0780277f3bae0fe489f48718f585f3a6e45d7dd1fbb1a4255fc5"
+        },
+        {
+          "path": "README.md",
+          "bytes": 11567,
+          "sha256": "42377011603a186fc2bae41a5cc5e548ebf98d8ec307bbae9dd405f82567f543"
+        }
+      ]
+    },
+    "punctuation": {
+      "files": [
+        {
+          "path": ".gitattributes",
+          "bytes": 1458,
+          "sha256": "bc7177460104c4a1b762899a2c158fed192e0c4db70c974f169b5136cdf17acc"
+        },
+        {
+          "path": "config.yaml",
+          "bytes": 812,
+          "sha256": "c5ffb25cd063ed366cb26283908dca05a08ecfef8e90bef1d498ef9ffacd7552"
+        },
+        {
+          "path": "configuration.json",
+          "bytes": 450,
+          "sha256": "7043245e6264cea789404e498a6f55a330a18585a4690d35dfe71741e6982237"
+        },
+        {
+          "path": "example/punc_example.txt",
+          "bytes": 863,
+          "sha256": "1905542a6e78e344504a3b56cbc772eb391a20eb7eac71830f837852b558dd0c"
+        },
+        {
+          "path": "fig/struct.png",
+          "bytes": 154534,
+          "sha256": "90e5bdca14b00d4bbcafcbb1e9e2ca0e3905afb2b3b3129e5fd85d49b059812c"
+        },
+        {
+          "path": "jieba.c.dict",
+          "bytes": 41536866,
+          "sha256": "eb0a68f8bfa65e6956d59e8f9652b49f5c91952273e24737bc9a8c5e23055221"
+        },
+        {
+          "path": "jieba_usr_dict",
+          "bytes": 11280857,
+          "sha256": "059aa2af152734d5fd011a4d69cbab171f62347074db0db5157c17b5649010f5"
+        },
+        {
+          "path": "model.pt",
+          "bytes": 1125507622,
+          "sha256": "7176cae922a872e130e6b88aef9a1153581711baf79c9124c7c95be383cd6f81"
+        },
+        {
+          "path": "README.md",
+          "bytes": 11561,
+          "sha256": "d1f2f3c30db716fb995208608d4305b045f6ef7b7b46a84e7e2d200160df50e0"
+        },
+        {
+          "path": "tokens.json",
+          "bytes": 8280697,
+          "sha256": "89951fe0669380ed33298ee048c4a2b0ebcaaf6ee8f332d85c281c41d0f38392"
+        }
+      ]
+    }
+  }
+}

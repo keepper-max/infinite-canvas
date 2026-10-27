@@ -1,0 +1,11 @@
+{
+  "controlledCreationAudits": 3,
+  "preciselyCorrelatedSessions": 3,
+  "revokedKnownAndCorrelated": 3,
+  "remainingControlledSessions": 0,
+  "otherSessionsUntouched": true,
+  "httpsSessionResponses": {
+    "admin": 401,
+    "normal": 401
+  }
+}

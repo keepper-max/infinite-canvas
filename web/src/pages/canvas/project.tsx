@@ -1,3 +1,5 @@
+import { useAutoCutBridge } from "@/pages/canvas/hooks/use-autocut-bridge";
+import { registerAutoCutNode } from "@/components/canvas/nodes/autocut-node";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { ChangeEvent as ReactChangeEvent, DragEvent as ReactDragEvent, MouseEvent as ReactMouseEvent, PointerEvent as ReactPointerEvent } from "react";
 import { flushSync } from "react-dom";
@@ -149,6 +151,7 @@ import type { DepthVideoResult } from "@/lib/depth-motion/generate-depth-video";
 registerBuiltinNodes();
 registerKnowledgeNodes();
 registerDramaNodes();
+registerAutoCutNode();
 registerCameraMotionNode();
 
 type CanvasClipboard = {
@@ -1613,6 +1616,7 @@ function InfiniteCanvasPage({ projectId }: { projectId: string }) {
         if(focusAnimRef.current)cancelAnimationFrame(focusAnimRef.current);focusAnimGenerationRef.current++;
         programmaticViewportRef.current=target;viewportRef.current=target;setViewport(target);setSelectedNodeIds(new Set(found.map(n=>n.id)));setSelectedConnectionId(null);
     },[size.height,size.width]);
+    useAutoCutBridge(projectId, projectLoaded, nodes, nodesRef, setNodes);
     useNativeAgentBridge(projectId, canvasPersistence.refreshExternal, focusAgentNodes,canvasPersistence.compareExternal,canvasPersistence.keepDraft);
 
     const focusedKnowledgeLink = useRef("");

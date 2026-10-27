@@ -12,6 +12,8 @@ function cached<T>(loader: () => Promise<T>) {
 }
 
 export const routeModules = {
+    autocutEditor: cached(() => import("@/pages/autocut/editor")),
+    autocut: cached(() => import("@/pages/autocut")),
     knowledge: cached(() => import("@/pages/knowledge")),
     assets: cached(() => import("@/pages/assets")),
     auth: cached(() => import("@/pages/auth")),

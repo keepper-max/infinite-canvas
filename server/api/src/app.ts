@@ -1,3 +1,5 @@
+import { registerAutoCutRoutes } from "./autocut/routes.js";
+import type { AutoCutService } from "./autocut/service.js";
 import { registerKnowledgeRoutes } from './knowledge-routes.js';
 import { registerNativeAgentRoutes } from './native-agent/routes.js';
 import type { NativeAgentService } from './native-agent/service.js';
@@ -106,6 +108,7 @@ export function createApp(
   knowledgeService?: KnowledgeService,
   knowledgeImports?: KnowledgeImportService,
   nativeAgent?: NativeAgentService,
+  autoCut?: AutoCutService,
 ) {
   const app = new Hono<AppEnv>();
 
@@ -2344,6 +2347,7 @@ export function createApp(
   app.notFound((context) =>
     apiError(context, new DomainError("NOT_FOUND", "接口不存在", 404)),
   );
+  if (autoCut) registerAutoCutRoutes(app, autoCut, request => requireUser(request, repository, config));
   if (nativeAgent) registerNativeAgentRoutes(app, nativeAgent, request => requireUser(request, repository, config));
   if (knowledgeService) {
     registerKnowledgeImportRoutes(app,knowledgeImports,request=>requireUser(request,repository,config));

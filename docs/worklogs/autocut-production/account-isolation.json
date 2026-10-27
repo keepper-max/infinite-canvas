@@ -1,0 +1,10 @@
+{
+  "normalIdentityVerifiedNotAdmin": true,
+  "normalFeatureEnabled": true,
+  "normalTaskAdmissionOpen": true,
+  "anonymousDenied401": true,
+  "otherAccountAutoCutDenied404": true,
+  "otherAccountAssetDenied404": true,
+  "otherAccountCanvasDenied403": true,
+  "noRoleOrBalanceAdjustment": true
+}

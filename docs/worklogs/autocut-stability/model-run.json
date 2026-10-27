@@ -1,0 +1,311 @@
+{
+  "source": "existing authorized TTS/graphics test MP4; not real filmed quality acceptance",
+  "newStageBudgetCny": 1,
+  "sourceAnalysis": "unchanged measured cached ASR and vision analyses from original successful PoC",
+  "projectId": "42b414d3-662b-433e-85e5-6d0e4993cbda",
+  "taskId": "088849e3-dc71-4a79-a2de-c84b023ee6b8",
+  "task": {
+    "id": "088849e3-dc71-4a79-a2de-c84b023ee6b8",
+    "project_id": "42b414d3-662b-433e-85e5-6d0e4993cbda",
+    "actor_id": "86182497-2172-47ea-bd81-f4df9d36c451",
+    "operation_id": "8d0ab609-2d3a-4d74-9715-131acdc58e84",
+    "fingerprint": "8e5f80f1f9d67f87ec5595aa804d7f5c2b553838b16f765e10fc8d245a701037",
+    "input": {
+      "kind": "edit",
+      "mode": "speech",
+      "scope": "all",
+      "prompt": "去掉长停顿，保留完整意思，生成字幕；不重复凑时长。",
+      "confirmed": true,
+      "aspectRatio": "16:9",
+      "budgetCents": 100,
+      "operationId": "8d0ab609-2d3a-4d74-9715-131acdc58e84",
+      "plannerVersion": 3,
+      "expectedRevision": null,
+      "targetDurationMs": 30000
+    },
+    "base_revision_id": null,
+    "status": "completed",
+    "stage": "completed",
+    "progress": 100,
+    "cancel_requested": false,
+    "attempts": 1,
+    "budget_cents": 100,
+    "reserved_cents": 25,
+    "output_revision_id": "56ecf2a1-1f26-44f9-99ec-05e5bae04e94",
+    "output_asset_version_id": "4396a4dd-84ec-4cff-96ec-d1b47fc009f3",
+    "error_code": null,
+    "error_message": null,
+    "metrics": {
+      "wallMs": 33774,
+      "renderMs": 25155,
+      "attemptMs": 33694,
+      "analysisMs": 8,
+      "inputBytes": 1466700,
+      "planningMs": 7073,
+      "sourceDurationMs": 15280
+    },
+    "created_at": "2026-10-26T18:03:20.005Z",
+    "started_at": "2026-10-26T18:03:20.607Z",
+    "finished_at": "2026-10-26T18:03:54.249Z"
+  },
+  "timeline": {
+    "fps": 25,
+    "tracks": [
+      {
+        "id": "7671b13c-8c63-4bd9-a2e5-150a58f37f04",
+        "kind": "video",
+        "clips": [
+          {
+            "id": "02550a5a-e647-473f-a0f0-a510cfc5acd8",
+            "effects": {
+              "muted": false,
+              "volume": 1
+            },
+            "asset_id": "e6221114-beec-4aec-9cd5-6ec51ab0eed9",
+            "source_in": 150,
+            "source_out": 2125,
+            "transitions": {
+              "type": "cut",
+              "duration": 0
+            },
+            "timeline_start": 0,
+            "asset_version_id": "12d5a564-4aa2-4102-862a-5c6f7711c15d"
+          },
+          {
+            "id": "26538e12-4329-428a-b777-e0bb9b1b048a",
+            "effects": {
+              "muted": false,
+              "volume": 1
+            },
+            "asset_id": "e6221114-beec-4aec-9cd5-6ec51ab0eed9",
+            "source_in": 4770,
+            "source_out": 6290,
+            "transitions": {
+              "type": "cut",
+              "duration": 0
+            },
+            "timeline_start": 1975,
+            "asset_version_id": "12d5a564-4aa2-4102-862a-5c6f7711c15d"
+          },
+          {
+            "id": "8506e7de-a5f2-4403-8100-3e2774d2e51e",
+            "effects": {
+              "muted": false,
+              "volume": 1
+            },
+            "asset_id": "e6221114-beec-4aec-9cd5-6ec51ab0eed9",
+            "source_in": 6690,
+            "source_out": 7975,
+            "transitions": {
+              "type": "cut",
+              "duration": 0
+            },
+            "timeline_start": 3495,
+            "asset_version_id": "12d5a564-4aa2-4102-862a-5c6f7711c15d"
+          },
+          {
+            "id": "e691b9b9-d410-422a-b753-bc1315f7bba4",
+            "effects": {
+              "muted": false,
+              "volume": 1
+            },
+            "asset_id": "e6221114-beec-4aec-9cd5-6ec51ab0eed9",
+            "source_in": 10360,
+            "source_out": 12895,
+            "transitions": {
+              "type": "cut",
+              "duration": 0
+            },
+            "timeline_start": 4780,
+            "asset_version_id": "12d5a564-4aa2-4102-862a-5c6f7711c15d"
+          }
+        ]
+      }
+    ],
+    "warnings": [
+      "实际选段 7.315 秒，短于目标 30.000 秒；未重复素材或补造内容。"
+    ],
+    "subtitles": [
+      {
+        "id": "5573e685-10b4-43de-bb13-c53a019776f9",
+        "end": 1975,
+        "text": "今天测试智能剪辑，",
+        "start": 0
+      },
+      {
+        "id": "51c1743d-eceb-40ea-ae6a-312c50616cab",
+        "end": 3495,
+        "text": "请保留完整意思，",
+        "start": 1975
+      },
+      {
+        "id": "2e70edda-27cb-47d4-8e8b-a8af5f1e80b4",
+        "end": 4780,
+        "text": "并生成字幕，",
+        "start": 3495
+      },
+      {
+        "id": "1a476ca7-4769-4181-b0d0-3a32756894b0",
+        "end": 7315,
+        "text": "最后检查音画是否同步。",
+        "start": 4780
+      }
+    ],
+    "project_id": "42b414d3-662b-433e-85e5-6d0e4993cbda",
+    "revision_id": "56ecf2a1-1f26-44f9-99ec-05e5bae04e94",
+    "aspect_ratio": "16:9",
+    "audio_settings": {
+      "master_volume": 1
+    },
+    "schema_version": 1,
+    "export_settings": {
+      "codec": "h264",
+      "format": "mp4",
+      "resolution": 720
+    },
+    "target_duration": 7315
+  },
+  "calls": [
+    {
+      "task_id": "088849e3-dc71-4a79-a2de-c84b023ee6b8",
+      "call_key": "plan-v3",
+      "quote_cents": 25,
+      "generation_job_id": "912ce1d4-b4b2-4906-b999-38f6475ff9bd",
+      "model_id": "catalog.text.qwen3.5-flash",
+      "status": "completed",
+      "billing_status": "settled",
+      "billing_meter_usage": {
+        "total_tokens": 1318,
+        "prompt_tokens": 1152,
+        "completion_tokens": 166,
+        "provider_request_id": "chatcmpl-d1392f112b9d9d6e7709eabb"
+      },
+      "started_at": "2026-10-26T18:03:22.561Z",
+      "finished_at": "2026-10-26T18:03:26.524Z",
+      "cost_cny": "0.00055114"
+    }
+  ],
+  "analyses": {
+    "12d5a564-4aa2-4102-862a-5c6f7711c15d": {
+      "version": 1,
+      "durationMs": 15280,
+      "width": 640,
+      "height": 360,
+      "fps": 25,
+      "hasAudio": true,
+      "kind": "video",
+      "silences": [
+        {
+          "start": 2035,
+          "end": 4780
+        },
+        {
+          "start": 7822,
+          "end": 10389
+        },
+        {
+          "start": 12547,
+          "end": 13367
+        }
+      ],
+      "scenes": [
+        {
+          "start": 0,
+          "end": 15280
+        }
+      ],
+      "transcript": {
+        "segments": [
+          {
+            "start": 150,
+            "end": 2125,
+            "text": "今天测试智能剪辑，",
+            "confidence": null
+          },
+          {
+            "start": 4770,
+            "end": 6290,
+            "text": "请保留完整意思，",
+            "confidence": null
+          },
+          {
+            "start": 6690,
+            "end": 7975,
+            "text": "并生成字幕，",
+            "confidence": null
+          },
+          {
+            "start": 10360,
+            "end": 12895,
+            "text": "最后检查音画是否同步。",
+            "confidence": null
+          }
+        ]
+      },
+      "candidates": [
+        {
+          "start": 150,
+          "end": 2125,
+          "summary": "视频开头部分，介绍智能剪辑功能测试",
+          "evidence": "转写segment start:150 end:2125 text:'今天测试智能剪辑，'",
+          "confidence": 0.9
+        },
+        {
+          "start": 4770,
+          "end": 6290,
+          "summary": "中段内容，说明保留完整意思的要求",
+          "evidence": "转写segment start:4770 end:6290 text:'请保留完整意思，'",
+          "confidence": 0.9
+        },
+        {
+          "start": 6690,
+          "end": 7975,
+          "summary": "中段后续，提到生成字幕的任务",
+          "evidence": "转写segment start:6690 end:7975 text:'并生成字幕，'",
+          "confidence": 0.9
+        },
+        {
+          "start": 10360,
+          "end": 12895,
+          "summary": "后段内容，说明最后检查音画同步",
+          "evidence": "转写segment start:10360 end:12895 text:'最后检查音画是否同步。', keyframe_times:[7640]",
+          "confidence": 0.85
+        }
+      ]
+    }
+  },
+  "ledger": [
+    {
+      "task_id": "088849e3-dc71-4a79-a2de-c84b023ee6b8",
+      "call_key": "plan-v3",
+      "generation_job_id": "912ce1d4-b4b2-4906-b999-38f6475ff9bd",
+      "quote_cents": 25,
+      "created_at": "2026-10-26T18:03:21.093Z",
+      "status": "completed",
+      "billing_meter_usage": {
+        "total_tokens": 1318,
+        "prompt_tokens": 1152,
+        "completion_tokens": 166,
+        "provider_request_id": "chatcmpl-d1392f112b9d9d6e7709eabb"
+      },
+      "billing_status": "settled",
+      "cost_cny": "0.00055114",
+      "credit_points": "1"
+    }
+  ],
+  "output": {
+    "version": 1,
+    "durationMs": 7320,
+    "width": 1280,
+    "height": 720,
+    "fps": 25,
+    "hasAudio": true,
+    "kind": "video",
+    "silences": [],
+    "scenes": [],
+    "transcript": {
+      "segments": []
+    },
+    "candidates": []
+  }
+}

@@ -927,6 +927,7 @@ export default {
         },
     },
     navigation: {
+        autocut: "AI 智能剪辑",
         knowledge: "Knowledge",
         canvas: "My Canvases",
         director: "AI Drama Director",

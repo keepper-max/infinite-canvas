@@ -1,3 +1,6 @@
+import { AutoCutService } from "./autocut/service.js";
+import { createAutoCutQueue } from "./autocut/queue.js";
+import { readAutoCutModelConfig } from "./autocut/model.js";
 import {NativeAgentPolicyService} from './native-agent/policy.js';
 import { PaidAgentModel } from "./native-agent/paid-model.js";
 import { KnowledgeService } from './knowledge-service.js';
@@ -141,6 +144,9 @@ const nativeAgentQueue = process.env.NATIVE_AGENT_ENABLED === 'true' ? createNat
 const nativeAgentPolicy=new NativeAgentPolicyService(knowledgeService,pool,modelGateway,{token360:config.provider,volcengine_ark:config.volcengineArk,pinhaozhan:config.pinhaozhan},config.operations.adminEmails);
 const nativeAgent = nativeAgentQueue ? new NativeAgentService(knowledgeService,pool,new CompatibleAgentModel(modelGateway,new PaidAgentModel(pool,modelGateway,jobService,creditService,billingService,objectStorage,config.jobs,config.volcengineArk,config.provider,nativeAgentPolicy,config.pinhaozhan)),nativeAgentQueue.enqueue,jobService,config.operations.adminEmails,nativeAgentPolicy) : undefined;
 const importQueue = process.env.KNOWLEDGE_IMPORT_ENABLED === 'true' ? createImportQueue(config.jobs.redisUrl) : undefined;
+const autoCutModelConfig = readAutoCutModelConfig();
+const autoCutQueue = autoCutModelConfig ? createAutoCutQueue(config.jobs.redisUrl) : undefined;
+const autoCutService = new AutoCutService(pool, autoCutQueue?.port ?? { add: async () => { throw new Error("AUTOCUT_DISABLED"); }, remove: async () => false }, Boolean(autoCutModelConfig));
 const app = createApp(
   new PostgresPlatformRepository(db),
   config,
@@ -159,6 +165,7 @@ const app = createApp(
   knowledgeService,
   importQueue ? new KnowledgeImportService(knowledgeService,objectStorage,importQueue.enqueue,config.assetStorageQuotaBytes,importQueue.assertReady,config.operations.adminEmails) : undefined,
   nativeAgent,
+  autoCutService,
 );
 
 const server = serve({ fetch: app.fetch, port: config.port }, (info) => {
@@ -167,6 +174,7 @@ const server = serve({ fetch: app.fetch, port: config.port }, (info) => {
 
 async function shutdown() {
   server.close();
+  await autoCutQueue?.close();
   await importQueue?.queue.close();
   await nativeAgentQueue?.close();
   await jobQueue.queue.close();

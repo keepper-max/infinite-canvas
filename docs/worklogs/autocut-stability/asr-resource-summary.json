@@ -1,0 +1,10 @@
+{
+  "sampleCount": 643,
+  "maxSampledCpuPercentOfOneCore": 239.6462298060198,
+  "sampledCpuSeconds": 189.046875,
+  "asrEvidenceDirectoryBytes": 4061013,
+  "residentIdleTreeRssBytes": 4052516864,
+  "maxSampledTreeRssBytes": 5562044416,
+  "maxSampledTreePrivateBytes": 6068527104,
+  "limits": "Windows samples with 200ms sleep, not exact peaks or production load"
+}

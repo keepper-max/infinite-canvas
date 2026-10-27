@@ -1,0 +1,44 @@
+{
+  "admin": {
+    "durationSeconds": "9.960000",
+    "streams": [
+      {
+        "type": "video",
+        "codec": "h264",
+        "startTime": "0.000000",
+        "duration": "9.960000",
+        "width": 1280,
+        "height": 720
+      },
+      {
+        "type": "audio",
+        "codec": "aac",
+        "startTime": "0.000000",
+        "duration": "9.960000",
+        "width": null,
+        "height": null
+      }
+    ]
+  },
+  "normal": {
+    "durationSeconds": "7.320000",
+    "streams": [
+      {
+        "type": "video",
+        "codec": "h264",
+        "startTime": "0.000000",
+        "duration": "7.320000",
+        "width": 1280,
+        "height": 720
+      },
+      {
+        "type": "audio",
+        "codec": "aac",
+        "startTime": "0.000000",
+        "duration": "7.315000",
+        "width": null,
+        "height": null
+      }
+    ]
+  }
+}

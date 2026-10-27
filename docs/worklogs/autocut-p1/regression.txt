@@ -1,0 +1,38 @@
+✔ Project ZIP upload stays in bounded parts, aborts failed multipart and recovers lost completion acknowledgement (60.9251ms)
+✔ P1 isolated PostgreSQL: feature gate, immutable ownership, CAS save, restore and task idempotency (942.5932ms)
+✔ P1 upgrade preserves source spans, separates original sound and leaves V1 unchanged (6.1343ms)
+✔ Split maps captions and linked source audio across the cut, then speed/reorder remains valid (3.3004ms)
+✔ Copy shifts animated time, original audio and caption anchors; deletion removes their references (4.5482ms)
+✔ Transitions shorten the timeline exactly; trimming keeps source-linked captions and valid overlap (1.2035ms)
+✔ Effects reject scripts, unknown fields, unauthorized targets, invalid bounds and unordered keyframes (2.9603ms)
+✔ Linked audio and subtitle effects survive copy/split and leave no orphan on deletion (2.481ms)
+✔ Animation interpolation is deterministic with half-open effect boundaries and clipped endpoint values (0.5893ms)
+✔ AI effects cannot change selected source ranges or target IDs beyond the user scope (1.3362ms)
+✔ Transient snippet shifts source/audio/captions without mutating the saved document (0.6853ms)
+✔ P1 synthetic filter regression renders an overlapping transition, overlay, source audio and subtitle (11703.875ms)
+✔ AutoCut waits through settled billing until artifacts are released, without resubmission (760.885ms)
+✔ AutoCut keeps payment and uncertain billing blocked (0.8407ms)
+✔ First plans have a strict source-only schema and cannot smuggle subtitles, audio or effects (8.4368ms)
+✔ First captions use source intersections, output order and half-open cut boundaries (2.1312ms)
+✔ First captions resolve immutable versions independently across mixed assets (0.6803ms)
+✔ Unedited real model plan-v3 compiles to measured ASR captions; real legacy model captions are rejected (7.117ms)
+✔ Resident ASR queues requests, reuses one process and cancels queued work without killing active work (633.7691ms)
+✔ Resident ASR active cancellation kills its process tree; crashes fail once and the next request reloads (721.4912ms)
+✔ AutoCut PostgreSQL: ownership, persistence, version conflicts, concurrency, retries and budget gate (5590.4933ms)
+✔ AutoCut validates immutable asset identity and exact half-open intervals (9.7154ms)
+✔ AutoCut rejects gaps, duplicate IDs, audio-as-picture and arbitrary shell/effects fields (0.847ms)
+✔ AutoCut maps measured subtitle intersections to output, preserving text (0.3664ms)
+✔ Existing text model requests are byte-for-byte unaffected by AutoCut opt-in (0.1821ms)
+✔ Selection compiler owns IDs, arithmetic and asset resolution; subtitle scope cannot alter media (1.8431ms)
+✔ Selection revisions retain manually edited subtitles and existing audio controls (0.9526ms)
+✔ Asset download streams and verifies actual SHA-256 instead of trusting object metadata (18.6703ms)
+﹣ AutoCut produces an actual MP4 with source audio, image hold, extra audio and subtitles (0.2344ms) # SKIP
+﹣ AutoCut cancellation kills the actual media subprocess (0.1074ms) # SKIP
+ℹ tests 30
+ℹ suites 0
+ℹ pass 28
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 2
+ℹ todo 0
+ℹ duration_ms 24078.0533

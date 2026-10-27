@@ -1,0 +1,273 @@
+{
+  "source": "H:/CodexStorage/autocut/poc/speech.wav",
+  "sourceKind": "existing self-created TTS sample; not real filmed footage",
+  "operations": [
+    {
+      "phase": "oneshot",
+      "wallMs": 44353.2871,
+      "transcript": {
+        "segments": [
+          {
+            "start": 150,
+            "end": 2125,
+            "text": "今天测试智能剪辑，",
+            "confidence": null
+          },
+          {
+            "start": 4770,
+            "end": 6270,
+            "text": "请保留完整意思，",
+            "confidence": null
+          },
+          {
+            "start": 6710,
+            "end": 7955,
+            "text": "并生成字幕，",
+            "confidence": null
+          },
+          {
+            "start": 10360,
+            "end": 12915,
+            "text": "最后检查音画是否同步。",
+            "confidence": null
+          }
+        ]
+      }
+    },
+    {
+      "phase": "resident-first",
+      "wallMs": 43294.163,
+      "diagnostics": {
+        "pid": 49248,
+        "busy": false,
+        "loads": 1,
+        "loadMs": 41370,
+        "recognitionMs": 1772
+      },
+      "transcript": {
+        "segments": [
+          {
+            "start": 150,
+            "end": 2125,
+            "text": "今天测试智能剪辑，",
+            "confidence": null
+          },
+          {
+            "start": 4770,
+            "end": 6270,
+            "text": "请保留完整意思，",
+            "confidence": null
+          },
+          {
+            "start": 6710,
+            "end": 7955,
+            "text": "并生成字幕，",
+            "confidence": null
+          },
+          {
+            "start": 10360,
+            "end": 12915,
+            "text": "最后检查音画是否同步。",
+            "confidence": null
+          }
+        ]
+      }
+    },
+    {
+      "phase": "resident-hot",
+      "wallMs": 1309.007700000002,
+      "diagnostics": {
+        "pid": 49248,
+        "busy": false,
+        "loads": 1,
+        "loadMs": 41370,
+        "recognitionMs": 1308
+      },
+      "transcript": {
+        "segments": [
+          {
+            "start": 150,
+            "end": 2125,
+            "text": "今天测试智能剪辑，",
+            "confidence": null
+          },
+          {
+            "start": 4770,
+            "end": 6270,
+            "text": "请保留完整意思，",
+            "confidence": null
+          },
+          {
+            "start": 6710,
+            "end": 7955,
+            "text": "并生成字幕，",
+            "confidence": null
+          },
+          {
+            "start": 10360,
+            "end": 12915,
+            "text": "最后检查音画是否同步。",
+            "confidence": null
+          }
+        ]
+      }
+    },
+    {
+      "phase": "resident-queue",
+      "wallMs": 3463.5282000000007,
+      "order": [
+        0,
+        1
+      ],
+      "diagnostics": {
+        "pid": 49248,
+        "busy": false,
+        "loads": 1,
+        "loadMs": 41370,
+        "recognitionMs": 1693
+      }
+    },
+    {
+      "phase": "resident-after-crash",
+      "wallMs": 44407.7454,
+      "diagnostics": {
+        "pid": 58168,
+        "busy": false,
+        "loads": 2,
+        "loadMs": 42538,
+        "recognitionMs": 1728
+      },
+      "transcript": {
+        "segments": [
+          {
+            "start": 150,
+            "end": 2125,
+            "text": "今天测试智能剪辑，",
+            "confidence": null
+          },
+          {
+            "start": 4770,
+            "end": 6270,
+            "text": "请保留完整意思，",
+            "confidence": null
+          },
+          {
+            "start": 6710,
+            "end": 7955,
+            "text": "并生成字幕，",
+            "confidence": null
+          },
+          {
+            "start": 10360,
+            "end": 12915,
+            "text": "最后检查音画是否同步。",
+            "confidence": null
+          }
+        ]
+      }
+    },
+    {
+      "phase": "resident-after-cancel",
+      "wallMs": 41797.49280000001,
+      "diagnostics": {
+        "pid": 57856,
+        "busy": false,
+        "loads": 3,
+        "loadMs": 40022,
+        "recognitionMs": 1650
+      },
+      "transcript": {
+        "segments": [
+          {
+            "start": 150,
+            "end": 2125,
+            "text": "今天测试智能剪辑，",
+            "confidence": null
+          },
+          {
+            "start": 4770,
+            "end": 6270,
+            "text": "请保留完整意思，",
+            "confidence": null
+          },
+          {
+            "start": 6710,
+            "end": 7955,
+            "text": "并生成字幕，",
+            "confidence": null
+          },
+          {
+            "start": 10360,
+            "end": 12915,
+            "text": "最后检查音画是否同步。",
+            "confidence": null
+          }
+        ]
+      }
+    },
+    {
+      "phase": "active-cancel-and-next-request",
+      "totalMs": 42411.45259999999,
+      "diagnostics": {
+        "pid": 57856,
+        "busy": false,
+        "loads": 3,
+        "loadMs": 40022,
+        "recognitionMs": 1650
+      }
+    }
+  ],
+  "samples": {
+    "oneshot": {
+      "count": 159,
+      "maxSampledTreeRssBytes": 5562007552,
+      "maxSampledTreePrivateBytes": 6067470336
+    },
+    "resident-first": {
+      "count": 156,
+      "maxSampledTreeRssBytes": 5562044416,
+      "maxSampledTreePrivateBytes": 6067200000
+    },
+    "resident-hot": {
+      "count": 4,
+      "maxSampledTreeRssBytes": 4051427328,
+      "maxSampledTreePrivateBytes": 4387291136
+    },
+    "resident-idle": {
+      "count": 3,
+      "maxSampledTreeRssBytes": 4052516864,
+      "maxSampledTreePrivateBytes": 4386635776
+    },
+    "resident-queue": {
+      "count": 10,
+      "maxSampledTreeRssBytes": 4051959808,
+      "maxSampledTreePrivateBytes": 4386045952
+    },
+    "resident-crash": {
+      "count": 1,
+      "maxSampledTreeRssBytes": 2341396480,
+      "maxSampledTreePrivateBytes": 2531889152
+    },
+    "resident-after-crash": {
+      "count": 154,
+      "maxSampledTreeRssBytes": 5352525824,
+      "maxSampledTreePrivateBytes": 6067617792
+    },
+    "resident-active-cancel": {
+      "count": 1,
+      "maxSampledTreeRssBytes": 3132391424,
+      "maxSampledTreePrivateBytes": 3454488576
+    },
+    "resident-after-cancel": {
+      "count": 155,
+      "maxSampledTreeRssBytes": 5305626624,
+      "maxSampledTreePrivateBytes": 6068527104
+    }
+  },
+  "processModelLoads": 3,
+  "activeCancelTreeExitMs": 497.7278000000224,
+  "sampledCpuSeconds": 189.046875,
+  "sampleCount": 643,
+  "sourceBytes": 589512,
+  "resourceScope": "200ms process-tree samples on local host; sampled working/private set, not exact peak or production load test"
+}

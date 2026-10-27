@@ -1,0 +1,191 @@
+{
+  "provenance": {
+    "source": "Actual unedited model responses, no manually corrected selection",
+    "newGenerationJobId": "912ce1d4-b4b2-4906-b999-38f6475ff9bd",
+    "rawTextSha256": "fe72298a45a033fa2f24c50052f2d40b812c279cb16581bc77096376ada595c5"
+  },
+  "newPlan": {
+    "clips": [
+      {
+        "asset_index": 0,
+        "source_in": 150,
+        "source_out": 2125
+      },
+      {
+        "asset_index": 0,
+        "source_in": 4770,
+        "source_out": 6290
+      },
+      {
+        "asset_index": 0,
+        "source_in": 6690,
+        "source_out": 7975
+      },
+      {
+        "asset_index": 0,
+        "source_in": 10360,
+        "source_out": 12895
+      }
+    ]
+  },
+  "oldRejectedPlan": {
+    "clips": [
+      {
+        "asset_index": 0,
+        "source_in": 150,
+        "source_out": 2125
+      },
+      {
+        "asset_index": 0,
+        "source_in": 4770,
+        "source_out": 6290
+      },
+      {
+        "asset_index": 0,
+        "source_in": 6690,
+        "source_out": 7975
+      },
+      {
+        "asset_index": 0,
+        "source_in": 10360,
+        "source_out": 12895
+      }
+    ],
+    "audio": [],
+    "subtitles": [
+      {
+        "start": 150,
+        "end": 2125,
+        "text": "今天测试智能剪辑，"
+      },
+      {
+        "start": 4770,
+        "end": 6290,
+        "text": "请保留完整意思，"
+      },
+      {
+        "start": 6690,
+        "end": 7975,
+        "text": "并生成字幕，"
+      },
+      {
+        "start": 10360,
+        "end": 12895,
+        "text": "最后检查音画是否同步。"
+      }
+    ],
+    "warnings": [
+      "素材总时长约11.4秒，未达目标30秒，已按指令保留完整语句并去除长停顿，无法继续扩充。",
+      "原视频存在多处长停顿（2035-4780ms, 7822-10389ms, 12547-13367ms），已在片段间跳过。"
+    ]
+  },
+  "projectId": "42b414d3-662b-433e-85e5-6d0e4993cbda",
+  "assets": [
+    {
+      "id": "12d5a564-4aa2-4102-862a-5c6f7711c15d",
+      "assetId": "e6221114-beec-4aec-9cd5-6ec51ab0eed9",
+      "mimeType": "video/mp4",
+      "bytes": 1466700,
+      "sha256": "cbbe20daf74294611252d5f37fcaa5a6a59b16f4bb0a8daca2bd9014cb08e076",
+      "name": "授权自制口播测试.mp4",
+      "asset_index": 0
+    }
+  ],
+  "analyses": {
+    "12d5a564-4aa2-4102-862a-5c6f7711c15d": {
+      "version": 1,
+      "durationMs": 15280,
+      "width": 640,
+      "height": 360,
+      "fps": 25,
+      "hasAudio": true,
+      "kind": "video",
+      "silences": [
+        {
+          "start": 2035,
+          "end": 4780
+        },
+        {
+          "start": 7822,
+          "end": 10389
+        },
+        {
+          "start": 12547,
+          "end": 13367
+        }
+      ],
+      "scenes": [
+        {
+          "start": 0,
+          "end": 15280
+        }
+      ],
+      "transcript": {
+        "segments": [
+          {
+            "start": 150,
+            "end": 2125,
+            "text": "今天测试智能剪辑，",
+            "confidence": null
+          },
+          {
+            "start": 4770,
+            "end": 6290,
+            "text": "请保留完整意思，",
+            "confidence": null
+          },
+          {
+            "start": 6690,
+            "end": 7975,
+            "text": "并生成字幕，",
+            "confidence": null
+          },
+          {
+            "start": 10360,
+            "end": 12895,
+            "text": "最后检查音画是否同步。",
+            "confidence": null
+          }
+        ]
+      },
+      "candidates": [
+        {
+          "start": 150,
+          "end": 2125,
+          "summary": "视频开头部分，介绍智能剪辑功能测试",
+          "evidence": "转写segment start:150 end:2125 text:'今天测试智能剪辑，'",
+          "confidence": 0.9
+        },
+        {
+          "start": 4770,
+          "end": 6290,
+          "summary": "中段内容，说明保留完整意思的要求",
+          "evidence": "转写segment start:4770 end:6290 text:'请保留完整意思，'",
+          "confidence": 0.9
+        },
+        {
+          "start": 6690,
+          "end": 7975,
+          "summary": "中段后续，提到生成字幕的任务",
+          "evidence": "转写segment start:6690 end:7975 text:'并生成字幕，'",
+          "confidence": 0.9
+        },
+        {
+          "start": 10360,
+          "end": 12895,
+          "summary": "后段内容，说明最后检查音画同步",
+          "evidence": "转写segment start:10360 end:12895 text:'最后检查音画是否同步。', keyframe_times:[7640]",
+          "confidence": 0.85
+        }
+      ]
+    }
+  },
+  "expectedSubtitleText": [
+    "今天测试智能剪辑，",
+    "请保留完整意思，",
+    "并生成字幕，",
+    "最后检查音画是否同步。"
+  ],
+  "expectedDuration": 7315,
+  "rawText": "{\n  \"clips\": [\n    {\n      \"asset_index\": 0,\n      \"source_in\": 150,\n      \"source_out\": 2125\n    },\n    {\n      \"asset_index\": 0,\n      \"source_in\": 4770,\n      \"source_out\": 6290\n    },\n    {\n      \"asset_index\": 0,\n      \"source_in\": 6690,\n      \"source_out\": 7975\n    },\n    {\n      \"asset_index\": 0,\n      \"source_in\": 10360,\n      \"source_out\": 12895\n    }\n  ]\n}"
+}

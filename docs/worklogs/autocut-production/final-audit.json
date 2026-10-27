@@ -1,0 +1,526 @@
+{
+  "tasks": [
+    {
+      "id": "d9137c77-8613-4304-a996-bf1c5293af2d",
+      "project_id": "2c69ebe3-3644-4043-b2f0-8fd8dd1623c9",
+      "actor_id": "59d64001-a479-4d10-853d-f389ebbd6967",
+      "status": "completed",
+      "stage": "completed",
+      "attempts": 2,
+      "input": {
+        "kind": "edit",
+        "mode": "speech",
+        "scope": "all",
+        "prompt": "去掉长停顿，保留四句话完整意思，生成字幕，不重复凑时长。",
+        "confirmed": true,
+        "aspectRatio": "16:9",
+        "budgetCents": 100,
+        "operationId": "884b3a6d-56f0-40ff-8724-c87a4496d8e2",
+        "plannerVersion": 3,
+        "expectedRevision": null,
+        "targetDurationMs": 10000
+      },
+      "budget_cents": 100,
+      "reserved_cents": 50,
+      "output_asset_version_id": "f990bc2d-674f-4e28-a44f-ff0f84819bfe",
+      "error_code": null,
+      "metrics": {
+        "wallMs": 426097,
+        "renderMs": 9838,
+        "attemptMs": 10036,
+        "analysisMs": 30,
+        "inputBytes": 1466700,
+        "planningMs": 40,
+        "sourceAsrMs": 77347,
+        "sourceDurationMs": 15280
+      },
+      "started_at": "2026-10-26T19:18:49.207Z",
+      "finished_at": "2026-10-26T19:25:55.293Z",
+      "elapsed_wall_ms": "426085.898000"
+    },
+    {
+      "id": "cd7c1bac-dd7a-43ba-b801-a5b1edaf8bf1",
+      "project_id": "2c69ebe3-3644-4043-b2f0-8fd8dd1623c9",
+      "actor_id": "59d64001-a479-4d10-853d-f389ebbd6967",
+      "status": "completed",
+      "stage": "completed",
+      "attempts": 2,
+      "input": {
+        "kind": "render",
+        "mode": "speech",
+        "scope": "all",
+        "prompt": "",
+        "confirmed": true,
+        "aspectRatio": "16:9",
+        "budgetCents": 0,
+        "operationId": "4b950ecb-bd8f-405b-8555-a1017826feb4",
+        "plannerVersion": 3,
+        "expectedRevision": "fe845063-3347-462e-8abf-1baa79072245",
+        "targetDurationMs": 10000
+      },
+      "budget_cents": 0,
+      "reserved_cents": 0,
+      "output_asset_version_id": "3e366c1d-0a96-479c-bb39-f4514741fab9",
+      "error_code": null,
+      "metrics": {
+        "wallMs": 10683,
+        "renderMs": 9402,
+        "attemptMs": 9614,
+        "analysisMs": 30,
+        "inputBytes": 1466700,
+        "sourceAsrMs": 77347,
+        "sourceDurationMs": 15280
+      },
+      "started_at": "2026-10-26T19:27:14.341Z",
+      "finished_at": "2026-10-26T19:27:24.959Z",
+      "elapsed_wall_ms": "10617.785000"
+    },
+    {
+      "id": "c80391e0-7ea7-4ba2-9a0a-99c5208e304e",
+      "project_id": "c179b629-2f05-4221-a599-14688345dfc1",
+      "actor_id": "ca2bc27e-30ae-40a5-a96e-34032ce4e31d",
+      "status": "failed",
+      "stage": "billing",
+      "attempts": 1,
+      "input": {
+        "kind": "edit",
+        "mode": "speech",
+        "scope": "all",
+        "prompt": "去掉长停顿，保留四句话完整意思，生成字幕，不重复凑时长。",
+        "confirmed": true,
+        "aspectRatio": "16:9",
+        "budgetCents": 100,
+        "operationId": "ccea61a4-a424-47d3-9b97-0094714e30fe",
+        "plannerVersion": 3,
+        "expectedRevision": null,
+        "targetDurationMs": 10000
+      },
+      "budget_cents": 100,
+      "reserved_cents": 25,
+      "output_asset_version_id": null,
+      "error_code": "AUTOCUT_ANALYSIS_INVALID",
+      "metrics": {},
+      "started_at": "2026-10-26T19:38:28.778Z",
+      "finished_at": "2026-10-26T19:40:13.827Z",
+      "elapsed_wall_ms": "105048.458000"
+    },
+    {
+      "id": "8db3c2b2-f64b-4677-b8a0-dc58ecb0286b",
+      "project_id": "c179b629-2f05-4221-a599-14688345dfc1",
+      "actor_id": "ca2bc27e-30ae-40a5-a96e-34032ce4e31d",
+      "status": "completed",
+      "stage": "completed",
+      "attempts": 1,
+      "input": {
+        "kind": "edit",
+        "mode": "speech",
+        "scope": "all",
+        "prompt": "保留四句话的完整意思，去掉长停顿并生成字幕，不重复素材。",
+        "confirmed": true,
+        "aspectRatio": "16:9",
+        "budgetCents": 100,
+        "operationId": "0d04d6a9-ebff-4fca-be2e-68f7ce38eb98",
+        "plannerVersion": 3,
+        "expectedRevision": null,
+        "targetDurationMs": 10000
+      },
+      "budget_cents": 100,
+      "reserved_cents": 50,
+      "output_asset_version_id": "1659deae-ef55-41ab-9722-b6d5131857d2",
+      "error_code": null,
+      "metrics": {
+        "wallMs": 73858,
+        "renderMs": 7526,
+        "attemptMs": 73856,
+        "analysisMs": 35950,
+        "inputBytes": 1466700,
+        "planningMs": 30243,
+        "sourceAsrMs": 76440,
+        "sourceDurationMs": 15280
+      },
+      "started_at": "2026-10-26T19:42:31.355Z",
+      "finished_at": "2026-10-26T19:43:45.183Z",
+      "elapsed_wall_ms": "73827.675000"
+    }
+  ],
+  "calls": [
+    {
+      "task_id": "d9137c77-8613-4304-a996-bf1c5293af2d",
+      "call_key": "analysis-07bc44ee-f7f8-4b5a-9df9-638f14a4b858",
+      "generation_job_id": "3915a0d8-ef04-4e11-b466-7c8a4d8c4f10",
+      "quote_cents": 25,
+      "provider": "token360",
+      "model_id": "catalog.text.qwen3.5-flash",
+      "status": "completed",
+      "billing_status": "settled",
+      "credit_delivery_status": "released",
+      "cost_cny": "0.00037590",
+      "credit_points": "1"
+    },
+    {
+      "task_id": "d9137c77-8613-4304-a996-bf1c5293af2d",
+      "call_key": "plan-v3",
+      "generation_job_id": "9743ad3f-13c7-4f54-a591-9d6531d8bc20",
+      "quote_cents": 25,
+      "provider": "token360",
+      "model_id": "catalog.text.qwen3.5-flash",
+      "status": "completed",
+      "billing_status": "settled",
+      "credit_delivery_status": "released",
+      "cost_cny": "0.00045431",
+      "credit_points": "1"
+    },
+    {
+      "task_id": "c80391e0-7ea7-4ba2-9a0a-99c5208e304e",
+      "call_key": "analysis-f215a066-ddb7-49b3-8924-885e15353193",
+      "generation_job_id": "30bebd24-16bf-42f2-be19-9b25d7f835b2",
+      "quote_cents": 25,
+      "provider": "token360",
+      "model_id": "catalog.text.qwen3.5-flash",
+      "status": "completed",
+      "billing_status": "settled",
+      "credit_delivery_status": "released",
+      "cost_cny": "0.00044458",
+      "credit_points": "1"
+    },
+    {
+      "task_id": "8db3c2b2-f64b-4677-b8a0-dc58ecb0286b",
+      "call_key": "analysis-f215a066-ddb7-49b3-8924-885e15353193",
+      "generation_job_id": "1da0ce62-c140-4769-b7fb-fc33aab362fe",
+      "quote_cents": 25,
+      "provider": "token360",
+      "model_id": "catalog.text.qwen3.5-flash",
+      "status": "completed",
+      "billing_status": "settled",
+      "credit_delivery_status": "released",
+      "cost_cny": "0.00093643",
+      "credit_points": "1"
+    },
+    {
+      "task_id": "8db3c2b2-f64b-4677-b8a0-dc58ecb0286b",
+      "call_key": "plan-v3",
+      "generation_job_id": "ae95ff6d-8775-489a-a50a-a5f84168ff2f",
+      "quote_cents": 25,
+      "provider": "token360",
+      "model_id": "catalog.text.qwen3.5-flash",
+      "status": "completed",
+      "billing_status": "settled",
+      "credit_delivery_status": "released",
+      "cost_cny": "0.00056991",
+      "credit_points": "1"
+    }
+  ],
+  "migrations": [
+    {
+      "name": "0006_platform_api_auth.sql",
+      "sha256": "791191c40c2308daeaa8d5e5102caaac57779267bd0b64d7cb2b92ef3f97deff"
+    },
+    {
+      "name": "0007_canvas_persistence.sql",
+      "sha256": "2cb9b6d08632ebc1018564b8e66fada099e250a0d4ca7a8ddb6dd10949906f6e"
+    },
+    {
+      "name": "0008_asset_versions.sql",
+      "sha256": "2f5d0b6a43e8ab18c409d47a5b1031c4b12759836619abef82eb867f5b12d855"
+    },
+    {
+      "name": "0009_jobs_and_model_gateway.sql",
+      "sha256": "577e3006d5851e1c3d89b7da995c87e38dd0d17a2bd9f327a2dd809298ff4e28"
+    },
+    {
+      "name": "0010_composition_jobs.sql",
+      "sha256": "93e3ce77ca4b387035f7226c3037824232387294f64ddb3d9d8f9f46844fd984"
+    },
+    {
+      "name": "0011_operations_boundaries.sql",
+      "sha256": "3615e07848a30ff014ceaa221d271238725937f70375fb14faefcc95d70d6f5c"
+    },
+    {
+      "name": "0012_project_lifecycle.sql",
+      "sha256": "3c14079802f7225baf97a1bbe06121d75de075516eb00bd001cbf857d00ab976"
+    },
+    {
+      "name": "0013_text_workbench.sql",
+      "sha256": "46e5752eefba69fd0cc1ba31433e9e6ee5f24eb0bf2fef8b361970a0e56d7425"
+    },
+    {
+      "name": "0014_generation_job_provider_id.sql",
+      "sha256": "a720a43e2d3e1adbdc01da5e451ffce6e20169d162147763b7491eccf8fffcae"
+    },
+    {
+      "name": "0015_virtual_portraits.sql",
+      "sha256": "fff40a6275e1ad75361ee1b508520eeba92928c520919190c5ff27700f7c036d"
+    },
+    {
+      "name": "0016_admin_billing.sql",
+      "sha256": "3b3d5c314ad9b38e0d205533cdbd268a01f2c865e507bb2eec17eb694a948c78"
+    },
+    {
+      "name": "0017_reconcile_incomplete_bills.sql",
+      "sha256": "eb63fcf06104e5d3634402601837c4a8ef59358ac2267748c6e0b9e5041168a2"
+    },
+    {
+      "name": "0018_managed_providers.sql",
+      "sha256": "0ae5672390b53ad52d9cf0e9522c3f6e19c483a0078a4f20358719501fcc5b86"
+    },
+    {
+      "name": "0019_runninghub_global.sql",
+      "sha256": "af7d16a4043a278d4ee1386cae984c286ee86e415de5768fb331f1b7be6a9f20"
+    },
+    {
+      "name": "0020_credit_consumption.sql",
+      "sha256": "ed4c23358470370bde7695f6a9995d3714d75ac43b8ae3d173969a27d5f641d2"
+    },
+    {
+      "name": "0021_activation_codes.sql",
+      "sha256": "409528a08137534284a0df32ab64547b193df3ded6baea4434682a349156237f"
+    },
+    {
+      "name": "0022_asset_purge_jobs.sql",
+      "sha256": "2c951a55843e556701b82793f95d6f39417dbe00fdb77b654dc0c5f37be1a554"
+    },
+    {
+      "name": "0023_alipay_payments.sql",
+      "sha256": "2aef55fa68b0ba8404830727d8493b377a6484831c5a54f2a0d0d1ca27b651f8"
+    },
+    {
+      "name": "0024_alipay_order_plans.sql",
+      "sha256": "89638a552eeb041fc67609ddcff684237288d967755ee542332eef819e4a0bdd"
+    },
+    {
+      "name": "0025_alipay_published_plans.sql",
+      "sha256": "999ca0b5e3bdf68440f612b461e941cf33163086ea3e207916219dbd0b9c1a82"
+    },
+    {
+      "name": "0026_public_recharge_settings.sql",
+      "sha256": "b6c79ec2d3a56ec9d30489f8e543ad6ed729e5791b83e084237e20e1c3f14ea5"
+    },
+    {
+      "name": "0027_versioned_provider_billing_rules.sql",
+      "sha256": "5106da3a358552d31b5e4196c0930d162f530d35c45ac573d94df174c4176e5a"
+    },
+    {
+      "name": "0028_user_storage_quota.sql",
+      "sha256": "1fb27e05fca30224fc4750c5d1da5a5659f17ec1ebbbb27bc513cda6efd9e932"
+    },
+    {
+      "name": "0029_email_verification.sql",
+      "sha256": "2282cf546037596271c561b896b6632f72c10dee2f182a2206ef0f8f8e47b84d"
+    },
+    {
+      "name": "0030_password_reset.sql",
+      "sha256": "ea15beba3b48dcdd500af910879a70b7fff4adc025064c2b77f151f19d93bc72"
+    },
+    {
+      "name": "0031_runninghub_global_llm.sql",
+      "sha256": "76cd3951373a9cfd7b56068231e462a436218876e597fa2f5ea9991dbbc58f4e"
+    },
+    {
+      "name": "0032_user_feedback.sql",
+      "sha256": "68060234b2539950f4c27502748f24d5bd6dd9d9075426d7341e775b99e750ed"
+    },
+    {
+      "name": "0033_feedback_conversations.sql",
+      "sha256": "2b8ba77290a463c981e3c4826ccd11326895a5d8bfcba6439cae961464e2759c"
+    },
+    {
+      "name": "0034_feedback_read_state.sql",
+      "sha256": "3ab4f344bef4cd8af0caaf7d17362dec31201d46b091a3486cf3841b48d5d58c"
+    },
+    {
+      "name": "0035_credit_delivery_guard.sql",
+      "sha256": "541c7a16d3a158b788551d52db9233151f2d3d181bf63a1a504558627deca9d6"
+    },
+    {
+      "name": "0036_channel_attribution.sql",
+      "sha256": "3716ebb61207e39152ebc350800acb0872af843703d00271be34ad987348180e"
+    },
+    {
+      "name": "0037_generation_job_credit_reservation.sql",
+      "sha256": "0c8ed0abbfe54cf5d3dec2950063439351bed108dc421df3248ebcb4ba160bfe"
+    },
+    {
+      "name": "0038_settle_token360_billing_id_mismatches.sql",
+      "sha256": "13d557979018274f91ba47bd2652a42e98939eec2be03884df381b5dd5609120"
+    },
+    {
+      "name": "0039_volcengine_ark_provider.sql",
+      "sha256": "776724de2bc91db6d2f9e5e2674f6af6482ee95c33fe4a79c6b974f59cbd9141"
+    },
+    {
+      "name": "0040_text_context_compaction.sql",
+      "sha256": "e1bda2a48384973d929aaf34167ea5af26f373901fdad8b3fe3b3f85b9c012f8"
+    },
+    {
+      "name": "0041_release_terminal_no_bill_reservations.sql",
+      "sha256": "b52705517511500bbd667b86d374b9c00bc3b928d4cefec8e60087534d1424c4"
+    },
+    {
+      "name": "0042_dual_channel_auth.sql",
+      "sha256": "f2a1119567d8db69eb38fa06d8dea4015e01a9ac6f21286ee73cc06a16172818"
+    },
+    {
+      "name": "0043_seedance_25_video_extension.sql",
+      "sha256": "a9d264e83d7d588c20d30beee55a23ddc0741569bf41a0d1590b5836320e80aa"
+    },
+    {
+      "name": "0044_website_inquiries.sql",
+      "sha256": "59c483259b3f926ca19097536903fbd59f13bd7e204085f827742f063c074149"
+    },
+    {
+      "name": "0045_canvas_operations.sql",
+      "sha256": "00c32daf5740467f4fd8611662777686fe5140b444ab870f8c90e9a771332c64"
+    },
+    {
+      "name": "0046_native_knowledge.sql",
+      "sha256": "81b45d8d9877c8ff4f86ced4ee90bc17aad9fef3c8eef5464f7d8b9422553eaa"
+    },
+    {
+      "name": "0047_knowledge_copy_sources.sql",
+      "sha256": "5ce826fde67f68e4490fc59f6feeaa190107d701b04f82dc9ea5e373ff2abf38"
+    },
+    {
+      "name": "0048_release_write_guards.sql",
+      "sha256": "15e72183536ab412d06ae26223477d53c42866bf4305a9759abda6c5ad0fde79"
+    },
+    {
+      "name": "0049_knowledge_imports.sql",
+      "sha256": "42073acb4ecf43d5c1eb60858c19d06457019067c524d42ebd6b371db3debdef"
+    },
+    {
+      "name": "0050_native_agent.sql",
+      "sha256": "7b792fc6758280f38ab7713a39ceb2d6816392c6f2517d2d7dae87c2cf8813af"
+    },
+    {
+      "name": "0051_native_agent_active_clock.sql",
+      "sha256": "eece259a4984ada12b65e2232c45c360634b6dba03367fff97e8d0f7b4ceb09e"
+    },
+    {
+      "name": "0052_native_agent_model_jobs.sql",
+      "sha256": "4097dc1f945aafc639d70788b92ab73bdee955d3b1570ade39d11eaa864749d3"
+    },
+    {
+      "name": "0053_native_agent_plans.sql",
+      "sha256": "32bc90d11461f8b560471c7052810d9b0d12261eb3c1917692868421f7458e0e"
+    },
+    {
+      "name": "0054_native_agent_policy.sql",
+      "sha256": "4863f2a4a86e73ffcc3036d016bfc60e4b226af2651b8461f93c3c699ffa0a2c"
+    },
+    {
+      "name": "0055_autocut.sql",
+      "sha256": "4d269853e21d14c142aaea9da5eb5d28abd8069d0bacc25b59d73450bef79c50"
+    },
+    {
+      "name": "0056_autocut_archive.sql",
+      "sha256": "2ccb5848fd257985d4625bd82b26010d9fa7113658c510907d38a7cb62abcefa"
+    }
+  ],
+  "admission": {
+    "reason": "admin_production_acceptance_passed_all_active_accounts",
+    "accepting": true
+  },
+  "queue": {
+    "concurrency": 1,
+    "paused": false,
+    "counts": {
+      "active": 0,
+      "waiting": 0,
+      "failed": 0,
+      "delayed": 0
+    }
+  },
+  "totalModelCostCny": "0.00278113",
+  "platformCreditPoints": 5,
+  "distinctPaidJobs": 5,
+  "services": [
+    {
+      "name": "/jingjie-studio-api-1",
+      "image": "sha256:92c761db2890527c41fdfc5445885d72d6a3834472657c7ec3822981106609b1",
+      "running": true,
+      "health": "healthy",
+      "privileged": false,
+      "nanoCpus": 0,
+      "memoryLimit": 0,
+      "memorySwap": 0,
+      "restarts": 0
+    },
+    {
+      "name": "/jingjie-studio-worker-1",
+      "image": "sha256:92c761db2890527c41fdfc5445885d72d6a3834472657c7ec3822981106609b1",
+      "running": true,
+      "health": null,
+      "privileged": false,
+      "nanoCpus": 0,
+      "memoryLimit": 0,
+      "memorySwap": 0,
+      "restarts": 0
+    },
+    {
+      "name": "/jingjie-studio-agent-worker-1",
+      "image": "sha256:d59570b4b416c5346916f7b859875aae5b160ce22581cb4fc05cdef6e44d6173",
+      "running": true,
+      "health": "healthy",
+      "privileged": false,
+      "nanoCpus": 0,
+      "memoryLimit": 0,
+      "memorySwap": 0,
+      "restarts": 0
+    },
+    {
+      "name": "/infinite-canvas",
+      "image": "sha256:1bc99470e7dd3f819c1a50e198f085cbb5d71439520c7f4e70d1e3c995c89178",
+      "running": true,
+      "health": "healthy",
+      "privileged": false,
+      "nanoCpus": 0,
+      "memoryLimit": 0,
+      "memorySwap": 0,
+      "restarts": 0
+    },
+    {
+      "name": "/shoushou-autocut-worker",
+      "image": "sha256:06b926a76ae8708f94caf4fb6901d214e5818dfd65ed11b9fa70042f72c2db75",
+      "running": true,
+      "health": null,
+      "privileged": false,
+      "nanoCpus": 2000000000,
+      "memoryLimit": 10737418240,
+      "memorySwap": 10737418240,
+      "restarts": 0
+    }
+  ],
+  "host": {
+    "cpuThreads": 24,
+    "loadAverage": [
+      0.33642578125,
+      0.40283203125,
+      0.58154296875
+    ],
+    "memory": {
+      "MemTotalBytes": 65359159296,
+      "MemAvailableBytes": 61874450432
+    },
+    "rootDisk": {
+      "total": 292535705600,
+      "used": 198216314880,
+      "free": 81295089664
+    },
+    "boundedWorkDisk": {
+      "total": 20957446144,
+      "used": 11395072,
+      "free": 19855532032
+    }
+  },
+  "workerMemoryPeakBytes": 6648672256,
+  "captureTimeUtc": "2026-10-26T19:51:12Z",
+  "sealedRelease": {
+    "sourceManifestSha256": "7a4f244e2139674917f9b44f5c57e5e263e48479ef83089c4ae2089f5e0a63b2",
+    "images": {
+      "api": "sha256:92c761db2890527c41fdfc5445885d72d6a3834472657c7ec3822981106609b1",
+      "web": "sha256:1bc99470e7dd3f819c1a50e198f085cbb5d71439520c7f4e70d1e3c995c89178",
+      "worker": "sha256:06b926a76ae8708f94caf4fb6901d214e5818dfd65ed11b9fa70042f72c2db75"
+    },
+    "runtimeLayersUnchanged": true
+  }
+}

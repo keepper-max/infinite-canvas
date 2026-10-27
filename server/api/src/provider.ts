@@ -1,3 +1,4 @@
+import { autoCutTextPayload } from "./autocut/model.js";
 import type { ProviderConfig } from "./config.js";
 import type { CompiledGenerationRequest } from "./model-gateway.js";
 
@@ -86,6 +87,7 @@ export class Token360Provider implements GenerationProvider {
           model: request.upstreamModel,
           messages: [{ role: "user", content: request.prompt }],
           ...request.upstreamParameters,
+          ...autoCutTextPayload(request),
         },
         requestSignal,
         "POST",

@@ -1,0 +1,11 @@
+{
+  "generationJobId": "912ce1d4-b4b2-4906-b999-38f6475ff9bd",
+  "rawText": "{\n  \"clips\": [\n    {\n      \"asset_index\": 0,\n      \"source_in\": 150,\n      \"source_out\": 2125\n    },\n    {\n      \"asset_index\": 0,\n      \"source_in\": 4770,\n      \"source_out\": 6290\n    },\n    {\n      \"asset_index\": 0,\n      \"source_in\": 6690,\n      \"source_out\": 7975\n    },\n    {\n      \"asset_index\": 0,\n      \"source_in\": 10360,\n      \"source_out\": 12895\n    }\n  ]\n}",
+  "usage": {
+    "total_tokens": 1318,
+    "prompt_tokens": 1152,
+    "completion_tokens": 166,
+    "provider_request_id": "chatcmpl-d1392f112b9d9d6e7709eabb"
+  },
+  "costCny": "0.00055114"
+}

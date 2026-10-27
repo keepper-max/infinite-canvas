@@ -40,6 +40,7 @@ COPY --from=api-build /app/package.json /app/package-lock.json ./
 COPY --from=api-prod-deps /app/node_modules ./node_modules
 COPY --from=api-build /app/dist ./dist
 COPY --from=api-build /app/db ./db
+COPY server/api/scripts/autocut-asr.py server/api/scripts/autocut-p1-export.py ./scripts/
 
 EXPOSE 3002
 CMD ["node", "dist/index.js"]
@@ -63,6 +64,7 @@ RUN ONNXRUNTIME_NODE_INSTALL=skip npm ci --legacy-peer-deps --no-audit --no-fund
 COPY VERSION /app/VERSION
 COPY CHANGELOG.md /app/CHANGELOG.md
 COPY web ./
+COPY server/api/src/autocut/p1/runtime.ts /app/server/api/src/autocut/p1/runtime.ts
 COPY --from=plugins-build /app/plugins/canvas/registry/dist /app/web/public/plugins
 RUN npm run build
 

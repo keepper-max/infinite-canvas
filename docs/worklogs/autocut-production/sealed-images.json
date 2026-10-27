@@ -1,0 +1,9 @@
+{
+  "sourceManifestSha256": "7a4f244e2139674917f9b44f5c57e5e263e48479ef83089c4ae2089f5e0a63b2",
+  "images": {
+    "api": "sha256:92c761db2890527c41fdfc5445885d72d6a3834472657c7ec3822981106609b1",
+    "web": "sha256:1bc99470e7dd3f819c1a50e198f085cbb5d71439520c7f4e70d1e3c995c89178",
+    "worker": "sha256:06b926a76ae8708f94caf4fb6901d214e5818dfd65ed11b9fa70042f72c2db75"
+  },
+  "runtimeLayersUnchanged": true
+}

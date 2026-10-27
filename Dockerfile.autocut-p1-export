@@ -1,0 +1,15 @@
+# Optional derivative of a reviewed immutable CPU Worker image; not built/deployed automatically.
+ARG AUTOCUT_CPU_IMAGE
+FROM ${AUTOCUT_CPU_IMAGE}
+ARG AUTOCUT_CPU_IMAGE
+RUN echo "$AUTOCUT_CPU_IMAGE" | grep -Eq '(^sha256:[0-9a-f]{64}$|@sha256:[0-9a-f]{64}$)' \
+    && apt-get update && apt-get install -y --no-install-recommends git libmediainfo0v5 \
+    && rm -rf /var/lib/apt/lists/*
+COPY server/api/requirements-autocut-export.lock /app/
+COPY server/api/scripts/autocut-p1-export.py /app/scripts/
+RUN python3 -m venv /opt/autocut-export \
+    && /opt/autocut-export/bin/pip install --no-cache-dir -r /app/requirements-autocut-export.lock \
+    && /opt/autocut-export/bin/python -c "import opentimelineio,pyJianYingDraft; assert 'fcp_xml' in opentimelineio.adapters.available_adapter_names()"
+# AUTOCUT_P1_ENABLED remains absent/off. API and Worker must be enabled together after a separate release review.
+ENV AUTOCUT_P1_EXPORT_PYTHON=/opt/autocut-export/bin/python \
+    AUTOCUT_P1_EXPORT_SCRIPT=/app/scripts/autocut-p1-export.py

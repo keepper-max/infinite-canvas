@@ -1,0 +1,51 @@
+# Opt-in overlay. Review limits and ASR image before enabling; no production changes are made by this file.
+x-autocut-model: &autocut-model
+  AUTOCUT_ENABLED: "true"
+  AUTOCUT_MODEL_ID: ${AUTOCUT_MODEL_ID:?set a verified vision-capable catalog model}
+  AUTOCUT_MODEL_QUOTE_CENTS: ${AUTOCUT_MODEL_QUOTE_CENTS:?set conservative per-call RMB ceiling in cents}
+  AUTOCUT_MODEL_MAX_OUTPUT_TOKENS: ${AUTOCUT_MODEL_MAX_OUTPUT_TOKENS:?set verified output token bound}
+  AUTOCUT_MODEL_VISION_VERIFIED: ${AUTOCUT_MODEL_VISION_VERIFIED:?set true only after actual image-input verification}
+  AUTOCUT_ANALYSIS_VERSION: ${AUTOCUT_ANALYSIS_VERSION:?set an analyzer/model version}
+  AUTOCUT_MODEL_DISABLE_THINKING: ${AUTOCUT_MODEL_DISABLE_THINKING:-false}
+services:
+  api:
+    environment:
+      <<: *autocut-model
+  worker:
+    environment:
+      <<: *autocut-model
+  autocut-worker:
+    extends:
+      file: docker-compose.yml
+      service: worker
+    image: ${AUTOCUT_WORKER_IMAGE:?set an API-compatible CPU ASR worker image}
+    command: ["/app/scripts/autocut-worker-entrypoint.sh"]
+    cpus: ${AUTOCUT_CPU_LIMIT:?set reviewed container CPU quota}
+    mem_limit: ${AUTOCUT_MEMORY_LIMIT:?set reviewed container memory limit}
+    environment:
+      <<: *autocut-model
+      AUTOCUT_TEMP_ROOT: /var/lib/autocut/tmp
+      AUTOCUT_ASR_PYTHON: ${AUTOCUT_ASR_PYTHON:?set the provisioned Python interpreter}
+      AUTOCUT_ASR_MODE: ${AUTOCUT_ASR_MODE:-oneshot}
+      AUTOCUT_MODEL_MANIFEST: /models/manifest.json
+      AUTOCUT_ASR_MODEL: /models/asr
+      AUTOCUT_ASR_VAD: /models/vad
+      AUTOCUT_ASR_PUNCTUATION: /models/punctuation
+      HF_HOME: /var/lib/autocut/cache/huggingface
+      MODELSCOPE_CACHE: /var/lib/autocut/cache/modelscope
+      TORCH_HOME: /var/lib/autocut/cache/torch
+      TMPDIR: /var/lib/autocut/tmp
+      PYTHONDONTWRITEBYTECODE: "1"
+      TOKEN360_API_KEY: ""
+      RH_API_KEY: ""
+      RH_GLOBAL_API_KEY: ""
+      VOLCENGINE_ARK_API_KEY: ""
+      PINHAOZHAN_API_KEY: ""
+    volumes:
+      - autocut_work:/var/lib/autocut
+      - ${AUTOCUT_MODEL_MANIFEST_HOST:?generate and verify the local weight manifest}:/models/manifest.json:ro
+      - ${AUTOCUT_ASR_MODEL_HOST:?provision reviewed model weights}:/models/asr:ro
+      - ${AUTOCUT_ASR_VAD_HOST:?provision VAD weights}:/models/vad:ro
+      - ${AUTOCUT_ASR_PUNCTUATION_HOST:?provision punctuation weights}:/models/punctuation:ro
+volumes:
+  autocut_work:

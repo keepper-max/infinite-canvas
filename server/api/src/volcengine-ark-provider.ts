@@ -1,3 +1,4 @@
+import { autoCutTextPayload } from "./autocut/model.js";
 import type { ProviderConfig } from "./config.js";
 import type { CompiledGenerationRequest } from "./model-gateway.js";
 import type { ObjectStorage } from "./object-storage.js";
@@ -110,6 +111,7 @@ export class VolcengineArkProvider implements GenerationProvider {
           model: request.upstreamModel,
           messages: [{ role: "user", content: request.prompt }],
           ...request.upstreamParameters,
+          ...autoCutTextPayload(request),
         }),
       },
     );

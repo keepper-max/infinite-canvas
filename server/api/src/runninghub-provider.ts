@@ -1,3 +1,4 @@
+import { autoCutTextPayload } from "./autocut/model.js";
 import type { RunningHubConfig } from "./config.js";
 import type { CompiledGenerationRequest } from "./model-gateway.js";
 import type { ObjectStorage } from "./object-storage.js";
@@ -112,6 +113,7 @@ export class RunningHubProvider
           model: request.upstreamModel,
           messages: [{ role: "user", content: request.prompt }],
           ...parameters,
+          ...autoCutTextPayload(request),
         }),
         headers: { "content-type": "application/json" },
         signal,

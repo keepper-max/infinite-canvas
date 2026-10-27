@@ -55,6 +55,7 @@ export type CloudStorageUsage = {
 };
 
 type UploadOptions = {
+    streamHash?: boolean;
     assetId?: string;
     kind?: CloudAssetKind;
     name?: string;
@@ -75,7 +76,7 @@ export async function getCloudStorageUsage(signal?: AbortSignal) {
 
 export async function uploadCloudAsset(projectId: string, file: Blob & { name?: string }, options: UploadOptions = {}) {
     const metadata = await readMediaMetadata(file);
-    const sha256 = await digestSha256(file);
+    const sha256 = await digestSha256(file, options.streamHash);
     const thumbnail = file.type.startsWith("image/") ? await createImageThumbnail(file) : file.type.startsWith("video/") ? await createVideoThumbnail(file).catch(() => undefined) : undefined;
     const input = {
         assetId: options.assetId,
@@ -299,10 +300,10 @@ function waitForMediaEvent(media: HTMLMediaElement, eventName: "loadedmetadata" 
     });
 }
 
-async function digestSha256(blob: Blob) {
+async function digestSha256(blob: Blob, stream = false) {
     try {
         const subtle = globalThis.crypto?.subtle;
-        if (subtle) return bytesToHex(new Uint8Array(await subtle.digest("SHA-256", await blob.arrayBuffer())));
+        if (subtle && !stream) return bytesToHex(new Uint8Array(await subtle.digest("SHA-256", await blob.arrayBuffer())));
 
         const { sha256 } = await import("@noble/hashes/sha2.js");
         const hasher = sha256.create();

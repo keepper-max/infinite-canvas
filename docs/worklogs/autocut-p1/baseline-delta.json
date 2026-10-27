@@ -1,0 +1,25 @@
+{
+  "baseline": "H:/CodexStorage/autocut/p1/baseline",
+  "changedBaselineFiles": [
+    "server/api/src/autocut/contract.ts",
+    "server/api/src/autocut/executor.ts",
+    "server/api/src/autocut/media.ts",
+    "server/api/src/autocut/routes.ts",
+    "server/api/src/autocut/service.ts",
+    "web/src/pages/autocut/index.tsx",
+    "web/src/services/api/autocut.ts",
+    "web/vite.config.ts"
+  ],
+  "unchangedBaselineFiles": [
+    "server/api/src/autocut/asr.ts",
+    "server/api/src/autocut/maintenance.ts",
+    "server/api/src/autocut/model.ts",
+    "server/api/src/autocut/planner.ts",
+    "server/api/src/autocut/queue.ts",
+    "server/api/src/autocut/resident-asr.ts",
+    "web/src/pages/autocut/timeline.ts",
+    "server/api/src/autocut-worker.ts",
+    "server/api/package.json",
+    "server/api/package-lock.json"
+  ]
+}

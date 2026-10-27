@@ -1,0 +1,9 @@
+# Linux x86_64 / CPython3.11 offline release wheelhouse.
+# pyjianyingdraft wheel built from reviewed source commit 1e228479dda361e312e85f6037002346cf6dca9a
+imageio==2.38.1 --hash=sha256:36d23eb7423d2fb63f637098758edb3d2df3687f7125e0a5ce8596572022dcf9
+numpy==2.4.6 --hash=sha256:89cd468399cfd2504718f0ba50e410dca55a170b61a02ad92bb18c8a65186e93
+opentimelineio==0.18.1 --hash=sha256:e45fe3164c6e559e660b7e1cce6c87ef0b5d634743114823c6e1fb5f56f8601e
+otio-fcp-adapter==1.0.0 --hash=sha256:6a425e3020be590e10c9076ac2aada22c1d5d7799abae9f3fbd51f08e07ffdeb
+pillow==13.0.0 --hash=sha256:a625df9a2a5597fa5e5266e01aefc82604bb85d291e3547981e863560d75da6c
+pyjianyingdraft==0.3.1 --hash=sha256:71ba2fbd2f960afac6f65dc29c72fab9c68a7eec36d0c78302a7977b4a0d0557
+pymediainfo==7.0.1 --hash=sha256:cde98112f1ce486589b17a12e5da42085faea996224f7c67fa45b8c1dca719c6

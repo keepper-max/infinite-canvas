@@ -1,5 +1,10 @@
+import { open } from "node:fs/promises";
 import {
   CreateBucketCommand,
+  CreateMultipartUploadCommand,
+  UploadPartCommand,
+  CompleteMultipartUploadCommand,
+  AbortMultipartUploadCommand,
   DeleteObjectCommand,
   GetObjectCommand,
   HeadBucketCommand,
@@ -28,6 +33,13 @@ const DOWNLOAD_URL_TTL_SECONDS = 15 * 60;
 const DOWNLOAD_CACHE_MAX_AGE_SECONDS = DOWNLOAD_URL_TTL_SECONDS - 60;
 
 export interface ObjectStorage {
+  putFile?(
+    key: string,
+    path: string,
+    mimeType: string,
+    sha256: string,
+    signal?: AbortSignal,
+  ): Promise<StoredObject>;
   ensureReady(): Promise<void>;
   createUploadUrl(
     storageKey: string,
@@ -38,6 +50,7 @@ export interface ObjectStorage {
   openDownload(
     storageKey: string,
     range?: string,
+    signal?: AbortSignal,
   ): Promise<StoredObjectDownload>;
   stat(storageKey: string): Promise<StoredObject | null>;
   get(storageKey: string): Promise<Uint8Array>;
@@ -47,6 +60,7 @@ export interface ObjectStorage {
     body: Uint8Array,
     mimeType: string,
     sha256: string,
+    signal?: AbortSignal,
   ): Promise<StoredObject>;
 }
 
@@ -125,7 +139,7 @@ export class S3ObjectStorage implements ObjectStorage {
     );
   }
 
-  async openDownload(storageKey: string, range?: string) {
+  async openDownload(storageKey: string, range?: string, signal?: AbortSignal) {
     try {
       const result = await this.internalClient.send(
         new GetObjectCommand({
@@ -133,6 +147,7 @@ export class S3ObjectStorage implements ObjectStorage {
           Key: storageKey,
           ...(range ? { Range: range } : {}),
         }),
+        { abortSignal: signal },
       );
       if (!result.Body)
         throw new DomainError("OBJECT_NOT_FOUND", "素材文件不存在", 404);
@@ -199,11 +214,100 @@ export class S3ObjectStorage implements ObjectStorage {
     );
   }
 
+  async putFile(
+    storageKey: string,
+    path: string,
+    mimeType: string,
+    sha256: string,
+    signal?: AbortSignal,
+  ): Promise<StoredObject> {
+    const file = await open(path, "r"),
+      bytes = (await file.stat()).size;
+    let uploadId: string | undefined,
+      completing = false;
+    try {
+      const started = await this.internalClient.send(
+        new CreateMultipartUploadCommand({
+          Bucket: this.config.bucket,
+          Key: storageKey,
+          ContentType: mimeType,
+          Metadata: { sha256 },
+        }),
+        { abortSignal: signal },
+      );
+      uploadId = started.UploadId;
+      if (!uploadId) throw new Error("Multipart upload did not return an ID");
+      const parts: { PartNumber: number; ETag: string }[] = [];
+      let offset = 0;
+      while (offset < bytes) {
+        signal?.throwIfAborted();
+        const buffer = Buffer.allocUnsafe(
+          Math.min(8 * 1024 ** 2, bytes - offset),
+        );
+        let filled = 0;
+        while (filled < buffer.length) {
+          const r = await file.read(
+            buffer,
+            filled,
+            buffer.length - filled,
+            offset + filled,
+          );
+          if (!r.bytesRead) throw new Error("Export file truncated");
+          filled += r.bytesRead;
+        }
+        const part = await this.internalClient.send(
+          new UploadPartCommand({
+            Bucket: this.config.bucket,
+            Key: storageKey,
+            UploadId: uploadId,
+            PartNumber: parts.length + 1,
+            Body: buffer,
+            ContentLength: buffer.length,
+          }),
+          { abortSignal: signal },
+        );
+        if (!part.ETag) throw new Error("Multipart ETag missing");
+        parts.push({ PartNumber: parts.length + 1, ETag: part.ETag });
+        offset += buffer.length;
+      }
+      completing = true;
+      await this.internalClient.send(
+        new CompleteMultipartUploadCommand({
+          Bucket: this.config.bucket,
+          Key: storageKey,
+          UploadId: uploadId,
+          MultipartUpload: { Parts: parts },
+        }),
+        { abortSignal: signal },
+      );
+      return { bytes, mimeType, sha256 };
+    } catch (error) {
+      if (completing) {
+        const persisted = await this.stat(storageKey).catch(() => null);
+        if (persisted?.bytes === bytes && persisted.sha256 === sha256)
+          return persisted;
+      }
+      if (uploadId)
+        await this.internalClient
+          .send(
+            new AbortMultipartUploadCommand({
+              Bucket: this.config.bucket,
+              Key: storageKey,
+              UploadId: uploadId,
+            }),
+          )
+          .catch(() => undefined);
+      throw error;
+    } finally {
+      await file.close();
+    }
+  }
   async put(
     storageKey: string,
     body: Uint8Array,
     mimeType: string,
     sha256: string,
+    signal?: AbortSignal,
   ) {
     await this.internalClient.send(
       new PutObjectCommand({
@@ -213,6 +317,7 @@ export class S3ObjectStorage implements ObjectStorage {
         ContentType: mimeType,
         Metadata: { sha256 },
       }),
+      { abortSignal: signal },
     );
     return { bytes: body.byteLength, mimeType, sha256 };
   }

@@ -1,0 +1,2 @@
+-- Rollback is deliberately non-destructive. Back up tables before reverting application code.
+-- Keep autocut_* tables and their assets for later re-enablement; no existing table was altered.

@@ -1,0 +1,25 @@
+{
+    "programs": [
+
+    ],
+    "stream_groups": [
+
+    ],
+    "streams": [
+        {
+            "codec_type": "video",
+            "width": 1280,
+            "height": 720,
+            "start_time": "0.000000",
+            "duration": "7.320000"
+        },
+        {
+            "codec_type": "audio",
+            "start_time": "0.000000",
+            "duration": "7.315000"
+        }
+    ],
+    "format": {
+        "duration": "7.320000"
+    }
+}

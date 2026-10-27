@@ -1,0 +1,12 @@
+# Separate opt-in Python environment; never install into the ASR venv.
+# The SDK is pinned to reviewed source, not an unreviewed application or client automation.
+pyjianyingdraft @ git+https://github.com/GuanYixuan/pyJianYingDraft.git@1e228479dda361e312e85f6037002346cf6dca9a
+OpenTimelineIO==0.18.1
+otio-fcp-adapter==1.0.0
+pymediainfo==7.0.1
+ImageIO==2.38.1
+numpy==2.4.6; python_version < '3.12'
+numpy==2.5.4; python_version >= '3.12'
+pillow==13.0.0
+uiautomation==2.0.29; sys_platform == 'win32'
+comtypes==1.4.17; sys_platform == 'win32'

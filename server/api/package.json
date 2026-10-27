@@ -9,6 +9,7 @@
     "build": "tsc -p tsconfig.json",
     "start": "node dist/index.js",
     "worker": "node dist/worker.js",
+    "autocut:worker": "node dist/autocut-worker.js",
     "native-agent:worker": "node dist/native-agent-worker.js",
     "knowledge:import-worker": "node dist/knowledge-import-worker.js",
     "typecheck": "tsc -p tsconfig.json --noEmit",

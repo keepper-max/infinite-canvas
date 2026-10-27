@@ -1,4 +1,4 @@
-import { BookOpen, Box, Clapperboard, Coins, FileText, Gauge, ImagePlus, Images, Maximize2, MessageSquareText, Settings2, Video } from "lucide-react";
+import { BookOpen, Box, Clapperboard, Coins, FileText, Gauge, ImagePlus, Images, Maximize2, MessageSquareText, Settings2, Scissors, Video } from "lucide-react";
 
 export const navigationTools = [
     { slug: "knowledge", icon: BookOpen },
@@ -22,6 +22,7 @@ export const navigationTools = [
         slug: "video",
         icon: Video,
     },
+    { slug: "autocut", icon: Scissors },
     {
         slug: "text",
         icon: MessageSquareText,

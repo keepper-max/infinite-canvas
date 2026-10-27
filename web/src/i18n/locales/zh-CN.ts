@@ -888,6 +888,7 @@ export default {
         },
     },
     navigation: {
+        autocut: "AI 智能剪辑",
         knowledge: "知识库",
         canvas: "我的画布",
         director: "AI 漫剧导演台",

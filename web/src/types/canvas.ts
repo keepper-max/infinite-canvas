@@ -54,6 +54,7 @@ export type CanvasNodeText = {
 };
 
 export type CanvasNodeMetadata = {
+    autocut?: { projectId?: string; taskId?: string; revisionId?: string; budgetCents?: number };
     knowledgeReference?: KnowledgeReference;
     content?: string;
     thumbnailUrl?: string;

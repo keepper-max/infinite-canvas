@@ -1,0 +1,4 @@
+# Pinned source-wheel build toolchain (jieba and several FunASR transitive packages are sdist-only).
+pip==25.3
+setuptools==80.9.0
+wheel==0.45.1
