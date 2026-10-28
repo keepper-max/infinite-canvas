@@ -5,6 +5,8 @@ description: Implemented changes that still need manual verification
 
 # Pending Tests
 
+- AutoCut v0.16.58：关键帧时间分桶、JSON兜底解析与分析版本隔离已在前一轮独立制品部署；本次合并归档并修复零时长分析提示、移除前后端固定积分预算上限。27项定向测试通过，真实模型与客户音频卡点需求不纳入本次补丁验收；生产部署结果另附发布记录。
+
 - Agent知识引用与交互简化（v0.16.54已上线）：2d74e5ba5fe6已推送，API/Agent Worker/Web健康；无真实文档来源时先搜索，读取与关系查询验证真实引用，未执行步骤不再误报失败，前台手动决定表单已移除。37项本地回归、两套Linux镜像各24项、生产9项浏览器检查通过，独立API/Web构建及100表/1667对象备份恢复核验完成。原暂停任务及账单不变、零新增付费调用；AutoCut和其他工作区修改保留。详见ops/releases/v0.16.54-agent-knowledge-discovery.md。
 
 - Agent只读收尾（v0.16.52已上线）：代码7a2395fef3c1已推送；完整候选构建、43项本地检查、两套Linux镜像各19项及生产9项浏览器检查通过。100表/1662对象备份恢复核验完成；仅更新API与Agent Worker，保留AutoCut及Web。原只读暂停任务经正式HTTP/Worker完成，原回执不变，新增推理和费用均0；29节点/27连线及10张计费表不变，会话已撤销。其他待核查账单及供应商网络稳定性仍独立跟进；详见ops/releases/v0.16.52-agent-readonly.md。

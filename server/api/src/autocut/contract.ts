@@ -4,6 +4,7 @@ import { DomainError } from "../domain.js";
 // All times are integer milliseconds. Source and timeline intervals are [in, out).
 export const AUTOCUT_LIMITS = {
   assets: 20,
+  keyframes: 20,
   fileBytes: 500 * 1024 * 1024,
   durationMs: 30 * 60_000,
   runtimeMs: 30 * 60_000,

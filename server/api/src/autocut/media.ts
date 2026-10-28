@@ -194,6 +194,32 @@ export async function probeMedia(
   };
 }
 
+/** Source milliseconds; buckets are half-open and empty buckets remain empty. */
+export function selectKeyframeTimes(
+  info: Pick<Analysis, "kind" | "durationMs" | "scenes">,
+  keyframes: number = limits.keyframes,
+): number[] {
+  if (info.kind === "audio") return [];
+  if (info.kind === "image") return [0];
+  if (!info.scenes.length) return [];
+  const duration = info.durationMs;
+  if (!Number.isSafeInteger(duration) || duration <= 0 || duration > limits.durationMs ||
+      !Number.isSafeInteger(keyframes) || keyframes <= 0 || keyframes > limits.keyframes)
+    throw new DomainError("AUTOCUT_INVALID_MEDIA", "素材时长或关键帧上限无效", 422);
+  const n = Math.min(keyframes, info.scenes.length);
+  const buckets = new Map<number, { at: number; duration: number }>();
+  for (const { start, end } of info.scenes) {
+    if (!Number.isSafeInteger(start) || !Number.isSafeInteger(end) ||
+        start < 0 || end <= start || end > duration)
+      throw new DomainError("AUTOCUT_INVALID_MEDIA", "场景时间范围无效", 422);
+    const bucket = Math.min(n - 1, Math.floor(((start + end) * n) / (2 * duration)));
+    const candidate = { at: Math.floor((start + end) / 2), duration: end - start };
+    const previous = buckets.get(bucket);
+    if (!previous || candidate.duration > previous.duration) buckets.set(bucket, candidate);
+  }
+  return [...new Set([...buckets.values()].map((s) => s.at))].sort((a, b) => a - b);
+}
+
 export async function preprocess(
   ffmpeg: string,
   path: string,
@@ -259,14 +285,9 @@ export async function preprocess(
             .map((s, i) => ({ start: s, end: boundaries[i + 1] }));
   const frames: { at: number; dataUrl: string }[] = [];
   if (info.kind !== "audio") {
-    // A coarse pass samples up to one frame per input slot (20); all measured boundaries remain available to planning.
-    const selected = info.scenes.filter(
-      (_, i, all) =>
-        i % Math.max(1, Math.ceil(all.length / limits.assets)) === 0,
-    );
-    for (const [i, scene] of selected.entries()) {
-      const at = Math.floor((scene.start + scene.end) / 2),
-        output = join(dir, `frame-${i}.jpg`);
+    const selected = selectKeyframeTimes(info);
+    for (const [i, at] of selected.entries()) {
+      const output = join(dir, `frame-${i}.jpg`);
       await runMedia(
         ffmpeg,
         [

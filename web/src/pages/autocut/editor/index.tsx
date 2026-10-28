@@ -283,7 +283,6 @@ export default function AutoCutEditorPage() {
                     <InputNumber
                         aria-label="AI效果积分预算上限"
                         min={1}
-                        max={1000}
                         precision={0}
                         suffix="积分"
                         placeholder="积分预算上限"

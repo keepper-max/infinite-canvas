@@ -409,7 +409,7 @@ export default function AutoCutPage() {
                         </div>
                         <label className="flex items-center justify-between gap-3 text-xs">
                             积分预算上限
-                            <InputNumber aria-label="积分预算" max={1000} min={1} precision={0} suffix="积分" value={budget} onChange={setBudget} placeholder="填写积分" disabled={disabled} />
+                            <InputNumber aria-label="积分预算" min={1} precision={0} suffix="积分" value={budget} onChange={setBudget} placeholder="填写积分" disabled={disabled} />
                         </label>
                         <Button type="primary" block icon={<Sparkles size={16} />} loading={busy} disabled={!enabled || Boolean(active) || !budget || (!projectId && !selected.length)} onClick={confirmEdit}>
                             {timeline ? "按要求修改并生成初稿" : "直接帮我剪"}

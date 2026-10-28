@@ -15,13 +15,14 @@ import {
   type Timeline,
 } from "../src/autocut/contract.js";
 import {
+  selectKeyframeTimes,
   probeMedia,
   downloadAsset,
   preprocess,
   renderTimeline,
   runMedia,
 } from "../src/autocut/media.js";
-import { autoCutTextPayload } from "../src/autocut/model.js";
+import { autoCutTextPayload, parseModelJson, readAutoCutModelConfig } from "../src/autocut/model.js";
 import { compileSelectionPlan } from "../src/autocut/planner.js";
 
 test("AutoCut validates immutable asset identity and exact half-open intervals", () => {
@@ -171,6 +172,13 @@ test(
     assert.ok(prepared.frames[0].dataUrl.startsWith("data:image/jpeg;base64,"));
     const imageInfo = await probeMedia(ffmpeg, picture, signal);
     assert.equal(imageInfo.kind, "image");
+    const imageDir = join(dir, "image-preprocess");
+    await mkdir(imageDir);
+    const imagePrepared = await preprocess(ffmpeg, picture, imageDir, signal, undefined, imageInfo);
+    assert.equal(imagePrepared.frames.length, 1, "Cached images with no scenes still produce one frame");
+    assert.equal(imagePrepared.frames[0].at, 0);
+    const audioPrepared = await preprocess(ffmpeg, source, dir, signal, undefined, { ...probed, kind: "audio", scenes: [] });
+    assert.deepEqual(audioPrepared.frames, []);
     const image: MediaAsset = {
       ...asset,
       id: randomUUID(),
@@ -282,3 +290,83 @@ test(
     );
   },
 );
+
+
+test("Time buckets select at most 20 unique increasing source midpoints, including nonempty boundary buckets", () => {
+  const uniform = (count: number) => ({ kind: "video" as const, durationMs: count * 100,
+    scenes: Array.from({ length: count }, (_, i) => ({ start: i * 100, end: (i + 1) * 100 })) });
+  for (const [count, expected] of [[0, 0], [1, 1], [21, 20], [39, 20], [40, 20]]) {
+    const info = uniform(count), times = selectKeyframeTimes(info);
+    assert.equal(times.length, expected);
+    assert.ok(times.length <= AUTOCUT_LIMITS.keyframes);
+    assert.deepEqual(times, selectKeyframeTimes(info));
+    for (const [i, at] of times.entries()) {
+      assert.ok(Number.isSafeInteger(at) && at >= 0 && at < info.durationMs);
+      assert.ok(!i || at > times[i - 1]);
+      assert.ok(info.scenes.some(s => Math.floor((s.start + s.end) / 2) === at));
+    }
+    if (count) {
+      const n = Math.min(20, count), bucket = (t: number) => Math.floor(t * n / info.durationMs);
+      assert.equal(bucket(times[0]), 0);
+      assert.equal(bucket(times.at(-1)!), n - 1);
+    }
+  }
+});
+
+test("Time buckets keep the longest scene and original-order ties, leave empty buckets, and never insert endpoints", () => {
+  const info = { kind: "video" as const, durationMs: 4000,
+    scenes: [{ start: 0, end: 100 }, { start: 100, end: 400 }, { start: 400, end: 700 }, { start: 3000, end: 4000 }] };
+  assert.deepEqual(selectKeyframeTimes(info), [250, 3500]);
+  assert.deepEqual(selectKeyframeTimes({ ...info, scenes: [info.scenes[2], info.scenes[1], info.scenes[0], info.scenes[3]] }), [550, 3500]);
+  const boundary = { kind: "video" as const, durationMs: 1000,
+    scenes: [{ start: 100, end: 900 }, { start: 0, end: 100 }] };
+  assert.deepEqual(selectKeyframeTimes(boundary), [50, 500]);
+  assert.deepEqual(selectKeyframeTimes({ ...boundary, scenes: [{ start: 0, end: 1000 }] }), [500]);
+  assert.deepEqual(selectKeyframeTimes({ kind: "video", durationMs: 7,
+    scenes: [{start:0,end:1},{start:1,end:2},{start:2,end:7}] }), [0, 4]);
+});
+
+test("Dense scenes are selected by time and output timestamps are deduplicated without fabricated times", () => {
+  const scenes = Array.from({ length: 20 }, (_, i) => ({ start: i, end: i + 1 }));
+  scenes.push({ start: 900, end: 1000 });
+  assert.deepEqual(selectKeyframeTimes({kind:"video",durationMs:1000,scenes}), [0,950]);
+  const tiny = [{start:0,end:1},{start:0,end:2},{start:1,end:2},{start:2,end:4}];
+  assert.deepEqual(selectKeyframeTimes({kind:"video",durationMs:4,scenes:[...tiny,...tiny]}), [0,1,3]);
+});
+
+test("Image/audio behavior, invalid scene rejection and independence from assets", () => {
+  assert.deepEqual(selectKeyframeTimes({kind:"image",durationMs:0,scenes:[]}),[0]);
+  assert.deepEqual(selectKeyframeTimes({kind:"audio",durationMs:1000,scenes:[]}),[]);
+  for (const scene of [{start:-1,end:20},{start:20,end:20},{start:30,end:20},{start:0,end:101},{start:0.5,end:20},{start:0,end:NaN}])
+    assert.throws(()=>selectKeyframeTimes({kind:"video",durationMs:100,scenes:[scene]}));
+  assert.throws(()=>selectKeyframeTimes({kind:"video",durationMs:AUTOCUT_LIMITS.durationMs+1,scenes:[{start:0,end:1}]}));
+  const info = {kind:"video" as const,durationMs:4000,scenes:Array.from({length:40},(_,i)=>({start:i*100,end:(i+1)*100}))};
+  const expected=selectKeyframeTimes(info), old=AUTOCUT_LIMITS.assets;
+  try { (AUTOCUT_LIMITS as {assets:number}).assets=2;assert.deepEqual(selectKeyframeTimes(info),expected); }
+  finally { (AUTOCUT_LIMITS as {assets:number}).assets=old; }
+});
+
+test("parseModelJson preserves valid JSON types and extracts only the first balanced object", () => {
+  const object={clips:[], nested:{text:'quoted " { } '+String.raw`\\`}}, json=JSON.stringify(object);
+  const forms=[json,`\x60\x60\x60json\n${json}\n\x60\x60\x60`,`  \x60\x60\x60 JSON  \n${json}\n\x60\x60\x60  `,
+    `说明 ${json}`,`${json} 说明`,`说明：(${json})，完毕。`,`${json} {"second":true}`];
+  for(const text of forms){assert.deepEqual(parseModelJson(text),object);assert.deepEqual(parseModelJson(text),parseModelJson(text));}
+  assert.equal(parseModelJson("null"),null);
+  for(const value of [[],[1,{x:2}],false,0,"text"])assert.deepEqual(parseModelJson(JSON.stringify(value)),value);
+  for(const value of ['quote"','one\\','two\\\\','three\\\\\\','{inside}','x\nnewline']) {
+    const raw=JSON.stringify({text:value,nested:{ok:true}});
+    assert.deepEqual(parseModelJson(`prefix ${raw} suffix`),JSON.parse(raw));
+  }
+});
+
+test("parseModelJson rejects empty, truncated and malformed first objects instead of scanning later objects", () => {
+  for(const text of ["","  ","说明",'{"clips":','{"a":"unfinished}', '{"a":1,}', '{bad} {"valid":true}', '{"a":"line\ntext"}', String.raw`{"a":"\q"}`, '{"a": {"b":1}'])
+    assert.equal(parseModelJson(text),undefined,text);
+});
+
+test("Timebucket configuration requires an explicit new analysis identity without changing quotes", () => {
+  const env={AUTOCUT_ENABLED:"true",AUTOCUT_MODEL_ID:"fixture",AUTOCUT_MODEL_QUOTE_CENTS:"25",AUTOCUT_MODEL_MAX_OUTPUT_TOKENS:"4096",AUTOCUT_MODEL_VISION_VERIFIED:"true",AUTOCUT_ANALYSIS_VERSION:"cpu-v1-qwen35flash-20261027-timebucket-v2"};
+  assert.equal(readAutoCutModelConfig(env)?.analysisVersion,env.AUTOCUT_ANALYSIS_VERSION);
+  assert.equal(readAutoCutModelConfig(env)?.quoteCents,25);
+  assert.throws(()=>readAutoCutModelConfig({...env,AUTOCUT_ANALYSIS_VERSION:"cpu-v1-qwen35flash-20261027"}));
+});

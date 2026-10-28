@@ -23,6 +23,16 @@ export function compileAnalysisResult(raw: unknown, info: Analysis): Analysis {
       "素材理解结果格式不合法，已保留原请求；安全重试不会重复调用已完成模型",
       422,
     );
+  for (const c of result.data.candidates) {
+    if (info.kind !== "image" && c.start === c.end)
+      throw new DomainError(
+        "AUTOCUT_ANALYSIS_INVALID",
+        "模型把关键帧时间点作为片段返回，片段时长为0；已保留原结果，重试不会自动重新调用模型",
+        422,
+      );
+    if (c.end < c.start || c.end > info.durationMs || (info.kind === "image" && (c.start !== 0 || c.end !== 0)))
+      throw new DomainError("AUTOCUT_ANALYSIS_INVALID", "模型分析返回越界片段，已保留原结果", 422);
+  }
   return analysisSchema.parse({
     ...info,
     candidates: result.data.candidates.map((c) => ({

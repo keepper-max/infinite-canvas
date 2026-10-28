@@ -25,6 +25,7 @@ export class AutoCutService {
     readonly pool: Pool,
     private queue: AutoCutQueue,
     readonly enabled: boolean,
+    private analysisVersion = process.env.AUTOCUT_ANALYSIS_VERSION?.trim(),
   ) {}
   async acceptingTasks(db: Db = this.pool) {
     if (!this.enabled || process.env.AUTOCUT_ACCEPT_NEW_TASKS === "false")
@@ -34,7 +35,7 @@ export class AutoCutService {
     );
     return result.rows[0]?.value?.accepting !== false;
   }
-  private async admit(db: Db, actor: string, budget: number) {
+  private async admit(db: Db, actor: string) {
     await db.query(
       "select pg_advisory_xact_lock(hashtextextended('autocut:admission',0))",
     );
@@ -43,12 +44,6 @@ export class AutoCutService {
         "AUTOCUT_PAUSED",
         "智能剪辑暂停接收新任务，已有工程和费用记录保留",
         503,
-      );
-    if (budget > 1000)
-      throw new DomainError(
-        "AUTOCUT_BUDGET_LIMIT",
-        "单任务预算最高1000积分",
-        422,
       );
     const counts = (
       await db.query(
@@ -160,17 +155,36 @@ export class AutoCutService {
     version?: string,
     db: Db = this.pool,
   ): Promise<Record<string, Analysis>> {
-    const rows = (
-      await db.query(
-        `select distinct on(asset_version_id) asset_version_id,document from autocut_analyses
-      where asset_version_id=any($1::uuid[]) and ($2::text is null or analyzer_version=$2) order by asset_version_id,created_at desc`,
-        [p.asset_version_ids, version ?? null],
-      )
-    ).rows;
-    return Object.fromEntries(
-      rows.map((r) => [r.asset_version_id, analysisSchema.parse(r.document)]),
-    );
+    const rows = (await db.query(
+      `select asset_version_id,analyzer_version,document from autocut_analyses
+       where asset_version_id=any($1::uuid[]) and ($2::text is null or analyzer_version=$2)`,
+      [p.asset_version_ids, version ?? null],
+    )).rows;
+    if (version !== undefined)
+      return Object.fromEntries(rows.map((r) => [r.asset_version_id, analysisSchema.parse(r.document)]));
+
+    // Historical timelines own their selections/subtitles. Do not choose a newer model's decisions.
+    const result: Record<string, Analysis> = {};
+    for (const id of p.asset_version_ids) {
+      const sources = rows.filter((r) => r.asset_version_id === id);
+      const measured = sources.find((r) => r.analyzer_version === "preprocess-v1") ??
+        sources.find((r) => r.analyzer_version === "p1-media-v1");
+      if (measured) {
+        result[id] = { ...analysisSchema.parse(measured.document), candidates: [] };
+        continue;
+      }
+      // Older caches can supply unanimously matching media facts, never an inferred analysis version.
+      const facts = sources.map((r) => {
+        const v = analysisSchema.parse(r.document);
+        return { version: v.version, durationMs: v.durationMs, width: v.width, height: v.height,
+          fps: v.fps, hasAudio: v.hasAudio, kind: v.kind };
+      });
+      if (facts.length && facts.every((v) => JSON.stringify(v) === JSON.stringify(facts[0])))
+        result[id] = { ...facts[0], scenes: [], silences: [], transcript: { segments: [] }, candidates: [] };
+    }
+    return result;
   }
+
   async get(id: string, actor: string) {
     const p = await this.owner(id, actor);
     const assets = await this.assets(p.project_id, actor, p.asset_version_ids);
@@ -573,7 +587,10 @@ export class AutoCutService {
       )
         throw new DomainError("AUTOCUT_BUSY", "工程已有运行中的任务", 409);
       await this.assets(p.project_id, actor, p.asset_version_ids, client);
-      await this.admit(client, actor, input.budgetCents);
+      const analysisVersion = input.kind === "edit" ? this.analysisVersion : null;
+      if (input.kind === "edit" && !analysisVersion?.endsWith("-timebucket-v2"))
+        throw new DomainError("AUTOCUT_ANALYSIS_VERSION_CHANGED", "分析版本与时间分桶实现不匹配，请先核对服务配置", 409);
+      await this.admit(client, actor);
       row = (
         await client.query(
           "insert into autocut_tasks(project_id,actor_id,operation_id,fingerprint,input,base_revision_id,budget_cents) values($1,$2,$3,$4,$5,$6,$7) returning *",
@@ -582,7 +599,7 @@ export class AutoCutService {
             actor,
             input.operationId,
             hash,
-            { ...input, plannerVersion: 3 },
+            { ...input, plannerVersion: 3, analysisVersion },
             input.expectedRevision,
             input.budgetCents,
           ],
@@ -640,7 +657,7 @@ export class AutoCutService {
           "任务不处于可重试状态",
           409,
         );
-      await this.admit(client, actor, prior.budget_cents);
+      await this.admit(client, actor);
       row = (
         await client.query(
           "update autocut_tasks set status='queued',cancel_requested=false,error_code=null,error_message=null,finished_at=null where id=$1 returning *",

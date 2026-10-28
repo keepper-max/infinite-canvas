@@ -4,6 +4,30 @@ import { DomainError } from "../domain.js";
 import type { JobService } from "../job-service.js";
 import type { CompiledGenerationRequest } from "../model-gateway.js";
 
+/** Syntax extraction only. A malformed first object never falls through to a later object. */
+export function parseModelJson(text: string): unknown {
+  const source = text.trim().replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/, "");
+  try { return JSON.parse(source); } catch { /* Inspect the first balanced object only. */ }
+  const start = source.indexOf("{");
+  if (start < 0) return undefined;
+  let depth = 0, inString = false, escaped = false;
+  for (let i = start; i < source.length; i++) {
+    const char = source[i];
+    if (inString) {
+      if (escaped) escaped = false;
+      else if (char === "\\") escaped = true;
+      else if (char === '"') inString = false;
+      continue;
+    }
+    if (char === '"') inString = true;
+    else if (char === "{") depth++;
+    else if (char === "}" && --depth === 0) {
+      try { return JSON.parse(source.slice(start, i + 1)); } catch { return undefined; }
+    }
+  }
+  return undefined;
+}
+
 export type AutoCutModelConfig = {
   modelId: string;
   quoteCents: number;
@@ -24,11 +48,11 @@ export function readAutoCutModelConfig(
     quoteCents <= 0 ||
     !Number.isSafeInteger(maxOutputTokens) ||
     maxOutputTokens <= 0 ||
-    !analysisVersion ||
+    !analysisVersion?.endsWith("-timebucket-v2") ||
     env.AUTOCUT_MODEL_VISION_VERIFIED !== "true"
   )
     throw new Error(
-      "AutoCut requires a verified vision model, conservative per-call CNY ceiling, output token bound and analyzer version",
+      "AutoCut requires a verified vision model, conservative per-call CNY ceiling, output token bound and analyzer version ending in -timebucket-v2",
     );
   return { modelId, quoteCents, maxOutputTokens, analysisVersion };
 }
@@ -181,20 +205,14 @@ export class ManagedAutoCutModel implements AutoCutModelProvider {
           const text = job.artifacts
             .map((a) => String((a as { text?: unknown }).text || ""))
             .join("\n");
-          try {
-            return JSON.parse(
-              text
-                .trim()
-                .replace(/^```(?:json)?\s*/i, "")
-                .replace(/\s*```$/, ""),
-            );
-          } catch {
+          const parsed = parseModelJson(text);
+          if (parsed === undefined)
             throw new DomainError(
               "AUTOCUT_MODEL_INVALID_JSON",
               "模型未返回合法JSON；已保留原请求，不会自动收费重试",
               422,
             );
-          }
+          return parsed;
         }
         if (
           job.status === "billing_pending" &&
