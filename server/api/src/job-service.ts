@@ -65,7 +65,7 @@ export class JobService {
     nativeModel?: NativeModelJobInput,
     autocutQuoteCents?: number,
   ) {
-    if (autocutQuoteCents !== undefined && (nativeModel || input.trace?.workflowKind !== "autocut" || input.capability !== "text" || !Number.isSafeInteger(autocutQuoteCents) || autocutQuoteCents <= 0 || !this.credits || !this.billing))
+    if (autocutQuoteCents !== undefined && (nativeModel || input.trace?.workflowKind !== "autocut" || (input.capability !== "text" && !(input.capability === "audio" && input.mode === "tts")) || !Number.isSafeInteger(autocutQuoteCents) || autocutQuoteCents <= 0 || !this.credits || !this.billing))
       throw new DomainError("AUTOCUT_RESERVATION_INVALID", "智能剪辑必须使用已确认报价和现有积分计费服务", 409);
     if (!retryOfJobId && input.trace?.inputSnapshot) {
       const { knowledgeSources: _ignored, ...snapshot } = input.trace.inputSnapshot;

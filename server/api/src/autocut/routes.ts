@@ -21,6 +21,10 @@ export function registerAutoCutRoutes(
       },
     });
   });
+  app.get(root + "/narration-models", async (c) => {
+    await identity(c.req.raw);
+    return c.json({ data: { models: await service.narrationModels(), quotePoints: Number(process.env.AUTOCUT_MODEL_QUOTE_CENTS) || null } });
+  });
   app.get(root + "/p1/capabilities", async (c) => {
     await identity(c.req.raw);
     return c.json({

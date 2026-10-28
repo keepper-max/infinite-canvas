@@ -2,6 +2,7 @@ import { validateDocument, requireP1 } from "./p1/contract.js";
 import type { P1Timeline } from "./p1/runtime.js";
 import type { Timeline } from "./contract.js";
 import { createHash, randomUUID } from "node:crypto";
+import { ModelGateway } from "../model-gateway.js";
 import type { Pool, PoolClient } from "pg";
 import { DomainError } from "../domain.js";
 import { assertProjectAccess, resolveActiveUser } from "../project-access.js";
@@ -27,6 +28,19 @@ export class AutoCutService {
     readonly enabled: boolean,
     private analysisVersion = process.env.AUTOCUT_ANALYSIS_VERSION?.trim(),
   ) {}
+  async narrationModels() {
+    return (await new ModelGateway(this.pool).listPublicModels()).filter((m) => m.capability === "audio" && m.modes.includes("tts"));
+  }
+  async mediaVersionIds(p: { id?: string; asset_version_ids: string[] }, db: Db = this.pool) {
+    if (!p.id) return p.asset_version_ids;
+    const rows = (await db.query(`select distinct a.asset_version_id from autocut_model_calls c
+      join autocut_tasks t on t.id=c.task_id join autocut_projects cp on cp.id=t.project_id
+      join generation_jobs j on j.id=c.generation_job_id and j.project_id=cp.project_id and j.created_by=t.actor_id
+      join job_artifacts a on a.job_id=j.id and a.project_id=cp.project_id
+      where t.project_id=$1 and c.call_key='narration' and j.status='completed'
+      and j.credit_delivery_status='released' and a.mime_type like 'audio/%' and a.asset_version_id is not null order by a.asset_version_id`, [p.id])).rows;
+    return [...new Set([...p.asset_version_ids, ...rows.map((r) => r.asset_version_id as string)])];
+  }
   async acceptingTasks(db: Db = this.pool) {
     if (!this.enabled || process.env.AUTOCUT_ACCEPT_NEW_TASKS === "false")
       return false;
@@ -151,21 +165,22 @@ export class AutoCutService {
     ).rows;
   }
   async analyses(
-    p: { asset_version_ids: string[] },
+    p: { id?: string; asset_version_ids: string[] },
     version?: string,
     db: Db = this.pool,
   ): Promise<Record<string, Analysis>> {
+    const ids = await this.mediaVersionIds(p, db);
     const rows = (await db.query(
       `select asset_version_id,analyzer_version,document from autocut_analyses
        where asset_version_id=any($1::uuid[]) and ($2::text is null or analyzer_version=$2)`,
-      [p.asset_version_ids, version ?? null],
+      [ids, version ?? null],
     )).rows;
     if (version !== undefined)
       return Object.fromEntries(rows.map((r) => [r.asset_version_id, analysisSchema.parse(r.document)]));
 
     // Historical timelines own their selections/subtitles. Do not choose a newer model's decisions.
     const result: Record<string, Analysis> = {};
-    for (const id of p.asset_version_ids) {
+    for (const id of ids) {
       const sources = rows.filter((r) => r.asset_version_id === id);
       const measured = sources.find((r) => r.analyzer_version === "preprocess-v1") ??
         sources.find((r) => r.analyzer_version === "p1-media-v1");
@@ -187,7 +202,7 @@ export class AutoCutService {
 
   async get(id: string, actor: string) {
     const p = await this.owner(id, actor);
-    const assets = await this.assets(p.project_id, actor, p.asset_version_ids);
+    const assets = await this.assets(p.project_id, actor, await this.mediaVersionIds(p));
     const revisions = (
       await this.pool.query(
         "select id,parent_id,created_at from autocut_revisions where project_id=$1 order by created_at desc",
@@ -319,7 +334,7 @@ export class AutoCutService {
       const t = validateDocument(
         raw,
         id,
-        await this.assets(p.project_id, actor, p.asset_version_ids, client),
+        await this.assets(p.project_id, actor, await this.mediaVersionIds(p, client), client),
         await this.analyses(p, undefined, client),
       );
       t.revision_id = randomUUID();
@@ -455,8 +470,10 @@ export class AutoCutService {
         "智能剪辑 Worker 或模型尚未配置",
         503,
       );
-    const input = taskSchema.parse(raw),
-      hash = createHash("sha256").update(JSON.stringify(input)).digest("hex");
+    const input = taskSchema.parse(raw);
+    if ((input.narration || input.originalVolume !== undefined) && (input.kind !== "edit" || input.scope === "subtitles"))
+      throw new DomainError("AUTOCUT_AUDIO_SCOPE", "配音与原声设置只能用于完整剪辑，不能用于字幕修改或重新渲染", 422);
+    const hash = createHash("sha256").update(JSON.stringify(input)).digest("hex");
     if (["edit", "effects"].includes(input.kind) && !input.confirmed)
       throw new DomainError(
         "AUTOCUT_BUDGET_CONFIRM",
@@ -524,6 +541,12 @@ export class AutoCutService {
         await client.query("commit");
         return prior;
       }
+      if (input.narration) {
+        if (!(await this.narrationModels()).some((m) => m.id === input.narration!.modelId))
+          throw new DomainError("AUTOCUT_NARRATION_MODEL_UNAVAILABLE", "所选配音模型当前不可用，请重新选择", 422);
+        await new ModelGateway(this.pool).compile({ modelId: input.narration.modelId, capability: "audio", mode: "tts", prompt: input.narration.text, parameters: input.narration.parameters, references: [] }, client);
+      }
+
       const current = (
         await client.query(
           "select current_revision_id from autocut_projects where id=$1",
@@ -546,6 +569,7 @@ export class AutoCutService {
           "请先生成并保存时间线",
           422,
         );
+      const mediaVersionIds = [...p.asset_version_ids];
       if (current.current_revision_id) {
         const doc = (
           await client.query(
@@ -553,6 +577,9 @@ export class AutoCutService {
             [current.current_revision_id, id],
           )
         ).rows[0]?.document;
+        const usedVersions = new Set<string>((doc?.tracks ?? []).flatMap((tr: { clips: { asset_version_id: string }[] }) => tr.clips.map((c) => c.asset_version_id)));
+        for (const version of await this.mediaVersionIds(p, client))
+          if (usedVersions.has(version) && !mediaVersionIds.includes(version)) mediaVersionIds.push(version);
         if (
           input.kind === "export" &&
           !input.p1?.acceptLossy &&
@@ -599,7 +626,7 @@ export class AutoCutService {
             actor,
             input.operationId,
             hash,
-            { ...input, plannerVersion: 3, analysisVersion },
+            { ...input, plannerVersion: 3, analysisVersion, mediaVersionIds },
             input.expectedRevision,
             input.budgetCents,
           ],

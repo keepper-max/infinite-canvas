@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { MAX_GENERATION_PROMPT_CHARACTERS } from "../job-contract.js";
 import { DomainError } from "../domain.js";
 
 // All times are integer milliseconds. Source and timeline intervals are [in, out).
@@ -135,6 +136,13 @@ export const createProjectSchema = z
       .max(AUTOCUT_LIMITS.assets),
   })
   .strict();
+export const narrationSchema = z.object({
+  text: z.string().trim().min(1).max(MAX_GENERATION_PROMPT_CHARACTERS),
+  modelId: z.string().min(1).max(200),
+  parameters: z.record(z.string(), z.unknown()).default({}),
+}).strict();
+export type Narration = z.infer<typeof narrationSchema>;
+
 export const taskSchema = z
   .object({
     operationId: z.string().uuid(),
@@ -156,6 +164,8 @@ export const taskSchema = z
       .max(AUTOCUT_LIMITS.durationMs),
     aspectRatio: z.enum(["16:9", "9:16", "1:1"]),
     budgetCents: z.number().int().nonnegative(),
+    narration: narrationSchema.optional(),
+    originalVolume: z.number().min(0).max(2).optional(),
     confirmed: z.boolean(),
     scope: z.enum(["all", "subtitles"]).default("all"),
     p1: z

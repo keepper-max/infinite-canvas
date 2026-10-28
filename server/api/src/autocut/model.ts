@@ -1,5 +1,6 @@
 import { setTimeout as delay } from "node:timers/promises";
 import type { Pool } from "pg";
+import type { Narration } from "./contract.js";
 import { DomainError } from "../domain.js";
 import type { JobService } from "../job-service.js";
 import type { CompiledGenerationRequest } from "../model-gateway.js";
@@ -99,6 +100,7 @@ export function autoCutTextPayload(
 }
 
 export interface AutoCutModelProvider {
+  narrate?(taskId: string, input: Narration, signal: AbortSignal): Promise<string>;
   complete(
     taskId: string,
     callKey: string,
@@ -113,12 +115,19 @@ export class ManagedAutoCutModel implements AutoCutModelProvider {
     private jobs: JobService,
     private config: AutoCutModelConfig,
   ) {}
-  async complete(
+  async complete(taskId: string, callKey: string, prompt: string, images: string[], signal: AbortSignal) {
+    return this.run(taskId, callKey, prompt, images, signal);
+  }
+  async narrate(taskId: string, input: Narration, signal: AbortSignal): Promise<string> {
+    return await this.run(taskId, "narration", input.text, [], signal, input) as string;
+  }
+  private async run(
     taskId: string,
     callKey: string,
     prompt: string,
     images: string[],
     signal: AbortSignal,
+    narration?: Narration,
   ) {
     signal.throwIfAborted();
     const client = await this.pool.connect();
@@ -168,12 +177,12 @@ export class ManagedAutoCutModel implements AutoCutModelProvider {
       signal.throwIfAborted();
       // JobService owns account reservation, submission receipts and RMB settlement. Its idempotency key also closes a crash between submit and binding.
       const job = await this.jobs.create(task.workspace_id, task.actor_id, {
-        modelId: this.config.modelId,
-        capability: "text",
-        mode: "chat",
+        modelId: narration?.modelId ?? this.config.modelId,
+        capability: narration ? "audio" : "text",
+        mode: narration ? "tts" : "chat",
         nodeRevision: 0,
         prompt,
-        parameters: {},
+        parameters: narration?.parameters ?? {},
         references: images.map((dataUrl) => ({
           role: "composition_reference",
           dataUrl,
@@ -202,6 +211,11 @@ export class ManagedAutoCutModel implements AutoCutModelProvider {
           job.status === "completed" &&
           job.creditDeliveryStatus === "released"
         ) {
+          if (narration) {
+            const audio = job.artifacts.find((a) => a.assetVersionId && a.mimeType?.startsWith("audio/"));
+            if (!audio?.assetVersionId) throw new DomainError("AUTOCUT_NARRATION_MISSING", "配音结果缺少已放行的音频资产，已保留原请求", 422);
+            return audio.assetVersionId;
+          }
           const text = job.artifacts
             .map((a) => String((a as { text?: unknown }).text || ""))
             .join("\n");

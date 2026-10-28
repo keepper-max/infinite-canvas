@@ -87,3 +87,16 @@ test('AutoCut accepts budgets above previous ceilings while admission and queue 
   total=0;accepting=false;await assert.rejects((service as any).admit(db,'actor'),(e:any)=>e.code==='AUTOCUT_PAUSED');
  }finally{if(old===undefined)delete process.env.AUTOCUT_ACCEPT_NEW_TASKS;else process.env.AUTOCUT_ACCEPT_NEW_TASKS=old;}
 });
+
+
+test('Narration keeps both billing gates and reuses released audio without a new submission',async()=>{
+ const states=[{status:'completed',creditDeliveryStatus:'billing_pending',artifacts:[]},
+ {status:'completed',creditDeliveryStatus:'released',artifacts:[{mimeType:'audio/mpeg',assetVersionId:'voice-version'}]}];
+ const p=provider(states),input={text:'测试配音',modelId:'audio-model',parameters:{voice:'Cherry'}};
+ assert.equal(await p.model.narrate('task',input,AbortSignal.timeout(5000)),'voice-version');
+ assert.equal(await p.model.narrate('task',input,AbortSignal.timeout(5000)),'voice-version');
+ assert.equal(p.submissions(),0);
+ const bad=provider([{status:'completed',creditDeliveryStatus:'released',artifacts:[{text:'not audio'}]}]);
+ await assert.rejects(bad.model.narrate('task',input,AbortSignal.timeout(5000)),(e:any)=>e.code==='AUTOCUT_NARRATION_MISSING');
+ assert.equal(bad.submissions(),0);
+});

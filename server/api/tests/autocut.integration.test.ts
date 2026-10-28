@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { readFile, mkdir, mkdtemp } from "node:fs/promises";
 import { join } from "node:path";
-import { probeMedia, selectKeyframeTimes } from "../src/autocut/media.js";
+import { probeMedia, selectKeyframeTimes, runMedia } from "../src/autocut/media.js";
 import { createHash, randomUUID } from "node:crypto";
 import { createDatabase } from "../src/db/client.js";
 import { applyMigrations } from "../src/db/migrate.js";
@@ -315,6 +315,11 @@ test(
         25,
       );
       assert.equal(held.creditsReserved, "25");
+      const audioInput = { ...jobInput, modelId: "fixture-audio", capability: "audio" as const, mode: "tts" as const, idempotencyKey: randomUUID() };
+      const audioHeld = await jobs.create(workspace, actor, audioInput, undefined, undefined, undefined, 25);
+      assert.equal(audioHeld.creditsReserved, "25");
+      assert.equal((await jobs.create(workspace, actor, audioInput, undefined, undefined, undefined, 25)).id, audioHeld.id);
+      assert.equal((await pool.query("select reserved::text from credit_accounts where user_id=$1", [actor])).rows[0].reserved, "50");
       const legacy = await jobs.create(workspace, actor, {
         ...jobInput,
         trace: undefined,
@@ -536,5 +541,48 @@ test("Bound released job parsing failure leaves persisted billing and ledger fac
   const model=new ManagedAutoCutModel(pool,jobs as any,{modelId:'fixture',quoteCents:25,maxOutputTokens:4096,analysisVersion:samplingVersion});
   for(let i=0;i<2;i++)await assert.rejects(model.complete(task.id,'parse-fixture','',[],AbortSignal.timeout(5000)),(e:any)=>e.code==='AUTOCUT_MODEL_INVALID_JSON');
   assert.equal(submissions,0);assert.deepEqual(await snapshot(),before);
+ }finally{await pool.end()}
+});
+
+
+test("Narration PostgreSQL: public model validation, measured audio, asset isolation and immutable rerender", {skip:!databaseUrl||!process.env.AUTOCUT_MEDIA_TEST}, async()=>{
+ const {pool}=createDatabase(databaseUrl!);
+ try{
+  const f=await cacheFixture(pool),modelId='narration-fixture-'+randomUUID();
+  await pool.query("insert into model_catalog(id,display_name,capability,upstream_model,provider_id,enabled,healthy)values($1,'QA voice','audio','fixture','token360',true,true)",[modelId]);
+  await pool.query("insert into model_capabilities(model_id,modes,accepted_parameters,required_parameters_by_mode,limits,parameter_map)values($1,'[\"tts\"]','[\"voice\"]','{}',$2,'{}')",[modelId,{maxPromptChars:600,parameterSchema:[{key:'voice',type:'string',options:['fixture'],required:true}]}]);
+  const narration={modelId,text:'测试朗读',parameters:{voice:'fixture'}},input={...editInput(),narration,originalVolume:0.2};
+  await assert.rejects(f.service.start(f.project.id,f.actor,{...input,narration:{...narration,modelId:'not-published'}}),/不可用/);
+  await assert.rejects(f.service.start(f.project.id,f.actor,{...input,narration:{...narration,text:'字'.repeat(601)}}),/600/);
+  const task=await f.service.start(f.project.id,f.actor,input);
+  assert.equal((await f.service.start(f.project.id,f.actor,input)).id,task.id);
+  assert.deepEqual(task.input.mediaVersionIds,[f.asset.id]);
+  await pool.query('update model_catalog set enabled=false where id=$1',[modelId]);
+  assert.equal((await f.service.start(f.project.id,f.actor,input)).id,task.id,'duplicate must return the original task even if model is later disabled');
+  await pool.query('update model_catalog set enabled=true where id=$1',[modelId]);
+  const voicePath=join(f.temp,'voice.wav');
+  await runMedia(f.ffmpeg,['-v','error','-f','lavfi','-i','sine=frequency=660:duration=1','-c:a','pcm_s16le','-y',voicePath],AbortSignal.timeout(30000));
+  const voiceBytes=await readFile(voicePath),voice={...f.asset,id:randomUUID(),assetId:randomUUID(),mimeType:'audio/wav',storageKey:'voice-fixture-'+randomUUID(),bytes:voiceBytes.length,sha256:createHash('sha256').update(voiceBytes).digest('hex')};
+  await pool.query("insert into assets(id,project_id,kind,name,created_by)values($1,$2,'audio','QA voice.wav',$3)",[voice.assetId,f.workspace,f.actor]);
+  await pool.query("insert into asset_versions(id,asset_id,version,storage_key,mime_type,bytes,sha256,source,created_by)values($1,$2,1,$3,'audio/wav',$4,$5,'upload',$6)",[voice.id,voice.assetId,voice.storageKey,voice.bytes,voice.sha256,f.actor]);
+  await pool.query("insert into autocut_analyses(asset_version_id,analyzer_version,document)values($1,$2,$3)",[f.asset.id,samplingVersion,f.info]);
+  let narrations=0,plans=0,asrCalls=0;
+  const model={narrate:async(id:string)=>{narrations++;const job=(await pool.query("insert into generation_jobs(project_id,created_by,provider,model_id,mode,capability,status,billing_status,credit_delivery_status)values($1,$2,'token360',$3,'tts','audio','completed','settled','released')returning id",[f.workspace,f.actor,modelId])).rows[0];await pool.query("insert into job_artifacts(job_id,project_id,asset_id,asset_version_id,mime_type)values($1,$2,$3,$4,'audio/wav')",[job.id,f.workspace,voice.assetId,voice.id]);await pool.query("insert into autocut_model_calls(task_id,call_key,generation_job_id,quote_cents)values($1,'narration',$2,25)",[id,job.id]);return voice.id;},complete:async(_id:string,key:string,prompt:string)=>{plans++;assert.equal(key,'plan-v3');assert.equal(JSON.parse(prompt).narrationTiming.durationMs,1000);assert.match(JSON.parse(prompt).instruction,/按用户要求的主题/);return{clips:[{asset_index:0,source_in:0,source_out:2000}]}}};
+  const storage={...f.storage,openDownload:async(key:string)=>{const data=key===voice.storageKey?voiceBytes:f.source;return{bytes:data.length,body:new ReadableStream({start(c){c.enqueue(data);c.close()}})}}};
+  const asr={transcribe:async()=>{asrCalls++;return{segments:[{start:50,end:950,text:'实测配音',confidence:1}]}}};
+  const executor=new AutoCutExecutor(pool,f.service,storage as any,model,f.ffmpeg,samplingVersion,f.quota as any,asr,f.temp);
+  await executor.execute(task.id);
+  const state=(await pool.query('select status,error_code,error_message from autocut_tasks where id=$1',[task.id])).rows[0];assert.equal(state.status,'completed',JSON.stringify(state));
+  const detail=await f.service.get(f.project.id,f.actor);
+  assert.equal(detail.project.asset_version_ids.length,1,'generated audio must not consume a source slot');
+  assert.deepEqual((await pool.query('select input from autocut_tasks where id=$1',[task.id])).rows[0].input.mediaVersionIds,[f.asset.id]);
+  assert.ok((await f.service.mediaVersionIds(f.project)).includes(voice.id));
+  assert.equal(detail.timeline.tracks[1].clips[0].asset_version_id,voice.id);assert.equal(detail.timeline.subtitles[0].text,'实测配音');
+  assert.equal(detail.timeline.tracks[0].clips[0].effects.volume,0.2);assert.equal(narrations,1);assert.equal(plans,1);assert.equal(asrCalls,1);
+  const other=await f.service.create(f.workspace,f.actor,{name:'separate edit',assetVersionIds:[f.asset.id]});
+  assert.deepEqual(await f.service.mediaVersionIds(other),[f.asset.id]);
+  const render=await f.service.start(f.project.id,f.actor,{...editInput(),kind:'render',expectedRevision:detail.timeline.revision_id,budgetCents:0,confirmed:false});
+  await executor.execute(render.id);assert.equal((await pool.query('select status from autocut_tasks where id=$1',[render.id])).rows[0].status,'completed');
+  assert.equal(narrations,1);assert.equal(plans,1);assert.equal(asrCalls,1,'render must not re-run speech recognition');
  }finally{await pool.end()}
 });

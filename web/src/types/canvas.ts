@@ -1,3 +1,4 @@
+import type { AutoCutAudioOptions } from "@/services/api/autocut";
 import type { DramaNodeState } from "@/types/drama";
 import type { CameraMotionState } from "@/types/camera-motion";
 import type { KnowledgeReference } from "@/services/api/knowledge-canvas";
@@ -54,7 +55,7 @@ export type CanvasNodeText = {
 };
 
 export type CanvasNodeMetadata = {
-    autocut?: { projectId?: string; taskId?: string; revisionId?: string; budgetCents?: number };
+    autocut?: { projectId?: string; taskId?: string; revisionId?: string; budgetCents?: number; audioOptions?: AutoCutAudioOptions };
     knowledgeReference?: KnowledgeReference;
     content?: string;
     thumbnailUrl?: string;

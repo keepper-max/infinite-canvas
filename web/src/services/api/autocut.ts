@@ -50,7 +50,16 @@ export type AutoCutDetail = {
     revisions: { id: string; parent_id: string | null; created_at: string }[];
     calls: { task_id: string; quote_cents: number; credit_points?: string | null; credit_status?: string | null; billing_status: string; model_id: string }[];
 };
-export type AutoCutRequest = {
+export type AutoCutAudioOptions = {
+    originalVolume?: number;
+    narration?: { text: string; modelId: string; parameters: Record<string, unknown> };
+};
+export type NarrationModel = {
+    id: string; displayName: string; limits: { maxPromptChars?: number };
+    parameters: { key: string; description?: string; required?: boolean; type: string; defaultValue?: unknown; options?: (string | number | boolean)[] }[];
+    defaults: Record<string, unknown>;
+};
+export type AutoCutRequest = AutoCutAudioOptions & {
     operationId: string;
     expectedRevision: string | null;
     kind: "edit" | "render";
@@ -88,3 +97,5 @@ export const startP1Task = (
     id: string,
     input: Omit<AutoCutRequest, "kind"> & { kind: "render" | "prepare" | "export" | "effects"; p1: { version: 1; format?: ExportFormat; includeMedia?: boolean; acceptLossy?: boolean; clipIds?: string[]; previewClipId?: string } },
 ) => platformRequest<AutoCutTask>(`${root}/projects/${encodeURIComponent(id)}/tasks`, { method: "POST", body: JSON.stringify(input) });
+
+export const autoCutNarrationModels = () => platformRequest<{ models: NarrationModel[]; quotePoints: number | null }>(`${root}/narration-models`);

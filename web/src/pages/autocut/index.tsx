@@ -1,3 +1,5 @@
+import { AutoCutAudioOptionsFields } from "@/components/autocut/audio-options";
+import type { AutoCutAudioOptions } from "@/services/api/autocut";
 import { AssetThumbnail } from "./asset-thumbnail";
 import { formatCreditPoints } from "@/lib/credit-display";
 import { createFeedback } from "@/services/api/operations";
@@ -33,7 +35,7 @@ const modes = [
     { value: "product", label: "商品 / 商业宣传" },
     { value: "custom", label: "自定义要求" },
 ];
-const stageNames: Record<string, string> = { queued: "排队中", preprocessing: "读取素材", analysis: "理解画面与语音", billing: "等待模型费用结算", planning: "编排剪辑方案", rendering: "渲染初稿", uploading: "保存成片", completed: "成片已就绪" };
+const stageNames: Record<string, string> = { queued: "排队中", preprocessing: "读取素材", analysis: "理解画面与语音", billing: "等待模型费用结算", planning: "编排剪辑方案", narration: "生成配音与识别字幕", rendering: "渲染初稿", uploading: "保存成片", completed: "成片已就绪" };
 const seconds = (ms: number) => Number((ms / 1000).toFixed(3));
 
 export default function AutoCutPage() {
@@ -58,6 +60,7 @@ export default function AutoCutPage() {
         [duration, setDuration] = useState(60);
     const [aspect, setAspect] = useState<AutoCutTimeline["aspect_ratio"]>("9:16"),
         [budget, setBudget] = useState<number | null>(null),
+        [audioOptions, setAudioOptions] = useState<AutoCutAudioOptions>({}),
         [preview, setPreview] = useState("");
     const [uploading, setUploading] = useState(false);
     const [subtitleOnly, setSubtitleOnly] = useState(false);
@@ -202,6 +205,7 @@ export default function AutoCutPage() {
                 budgetCents: kind === "edit" ? budget || 0 : 0,
                 confirmed: true,
                 scope: subtitleOnly ? "subtitles" : "all",
+                ...(kind === "edit" && !subtitleOnly ? audioOptions : {}),
             });
             await load(id);
         } catch (e) {
@@ -244,7 +248,7 @@ export default function AutoCutPage() {
     function confirmEdit() {
         modal.confirm({
             title: "开始 AI 智能剪辑",
-            content: `关键帧和转写将提交现有模型分析，请确认你有素材使用权并允许此处理。本次积分预算上限 ${formatCreditPoints(budget ?? 0)}。素材分析会复用缓存，失败后不会自动重复付费调用。`,
+            content: `关键帧和转写将提交现有模型分析，配音开启后，文案也会提交所选语音模型处理。请确认你有素材使用权并允许此处理。本次积分预算上限 ${formatCreditPoints(budget ?? 0)}。素材分析会复用缓存，失败后不会自动重复付费调用。`,
             okText: "确认并开始",
             onOk: () => run("edit"),
         });
@@ -339,12 +343,12 @@ export default function AutoCutPage() {
             {!enabled && <Alert className="mb-4" type="info" showIcon title="智能剪辑处理服务尚未启用。已保存工程仍可打开；启用后即可分析和渲染。" />}
             {error && <Alert className="mb-4" type="error" showIcon closable title={error} onClose={() => setError("")} />}
             <div className="grid items-start gap-6 xl:grid-cols-[300px_minmax(0,1fr)]">
-                <aside className="space-y-4">
-                    <section className="rounded-xl border p-3" style={{ borderColor: token.colorBorderSecondary, background: token.colorBgContainer }}>
+                <aside className="space-y-4 xl:sticky xl:top-20 xl:flex xl:max-h-[calc(100dvh-15rem)] xl:flex-col">
+                    <section className="shrink-0 rounded-xl border p-3" style={{ borderColor: token.colorBorderSecondary, background: token.colorBgContainer }}>
                         <div className="mb-2 flex items-center justify-between">
                             <h2 className="font-medium">01 / 素材</h2>
                             <span className="text-xs" style={{ color: token.colorTextSecondary }}>
-                                {detail ? detail.assets.length : selected.length} / 20
+                                {detail ? detail.project.asset_version_ids.length : selected.length} / 20
                             </span>
                         </div>
                         <input ref={fileInput} hidden type="file" multiple accept=".mp4,.mov,.jpg,.jpeg,.png,.webp,.mp3,.wav,.m4a" onChange={(e) => void upload(e.target.files)} />
@@ -358,7 +362,7 @@ export default function AutoCutPage() {
                         </p>
                         <div role="region" aria-label="素材列表" tabIndex={0} className="max-h-[clamp(5rem,calc(100dvh-43rem),15rem)] space-y-2 overflow-y-auto overscroll-contain">
                             {projectId
-                                ? detail?.assets.map((a) => (
+                                ? detail?.assets.filter((a) => detail.project.asset_version_ids.includes(a.id)).map((a) => (
                                       <div key={a.id} className="flex min-w-0 items-center gap-2 border-b py-2" style={{ borderColor: token.colorBorderSecondary }}>
                                           <AssetThumbnail version={assets.find((item) => item.id === a.assetId)?.versions.find((v) => v.id === a.id)} mimeType={a.mimeType} name={a.name} />
                                           <div className="min-w-0 flex-1">
@@ -386,8 +390,9 @@ export default function AutoCutPage() {
                             {!assets.length && !detail && <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="从一段素材开始" />}
                         </div>
                     </section>
-                    <section className="space-y-3 rounded-xl border p-3" style={{ borderColor: token.colorBorderSecondary, background: token.colorBgContainer }}>
-                        <h2 className="font-medium">02 / 创作意图</h2>
+                    <section className="flex min-h-0 flex-col gap-3 rounded-xl border p-3" style={{ borderColor: token.colorBorderSecondary, background: token.colorBgContainer }}>
+                        <h2 className="shrink-0 font-medium">02 / 创作意图</h2>
+                        <div className="min-h-0 space-y-3 xl:overflow-y-auto xl:overscroll-contain">
                         <Select aria-label="剪辑模式" className="w-full" value={mode} options={modes} onChange={setMode} disabled={disabled} />
                         <Input.TextArea
                             aria-label="剪辑要求"
@@ -406,6 +411,8 @@ export default function AutoCutPage() {
                             <label className="text-xs">目标秒数</label>
                             <InputNumber aria-label="目标秒数" min={1} max={1800} value={duration} onChange={(v) => setDuration(v || 60)} disabled={disabled} />
                             <Select aria-label="成片比例" value={aspect} onChange={setAspect} options={["9:16", "16:9", "1:1"].map((value) => ({ value, label: value }))} disabled={disabled} />
+                        </div>
+                        <AutoCutAudioOptionsFields value={audioOptions} onChange={setAudioOptions} disabled={disabled || subtitleOnly} />
                         </div>
                         <label className="flex items-center justify-between gap-3 text-xs">
                             积分预算上限

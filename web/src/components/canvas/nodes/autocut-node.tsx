@@ -1,3 +1,4 @@
+import { AutoCutAudioOptionsFields } from "@/components/autocut/audio-options";
 import { formatCreditPoints } from "@/lib/credit-display";
 import { App, Button, Input, InputNumber, Progress } from "antd";
 import { Scissors } from "lucide-react";
@@ -53,6 +54,7 @@ function Panel({ ctx }: { ctx: CanvasNodeContext }) {
                 aspectRatio: "9:16",
                 budgetCents: state?.budgetCents || 0,
                 confirmed: true,
+                ...state?.audioOptions,
             });
             ctx.updateMetadata({ status: "loading", autocut: { ...state, projectId: id, taskId: task.id } });
         } catch (e) {
@@ -64,6 +66,7 @@ function Panel({ ctx }: { ctx: CanvasNodeContext }) {
     return (
         <div className="space-y-3 p-4">
             <Input.TextArea aria-label="智能剪辑要求" rows={3} value={ctx.node.metadata?.prompt || ""} onChange={(e) => ctx.updateMetadata({ prompt: e.target.value })} placeholder="不填也可以直接帮我剪。素材连接后将导入独立剪辑工程。" />
+            <AutoCutAudioOptionsFields value={state?.audioOptions ?? {}} onChange={(audioOptions) => ctx.updateMetadata({ autocut: { ...state, audioOptions } })} disabled={busy || ctx.node.metadata?.status === "loading"} />
             <label className="flex items-center justify-between text-xs">
                 积分预算上限
                 <InputNumber aria-label="剪辑积分预算" min={1} precision={0} suffix="积分" value={state?.budgetCents || null} onChange={(v) => ctx.updateMetadata({ autocut: { ...state, budgetCents: v || 0 } })} />
@@ -76,7 +79,7 @@ function Panel({ ctx }: { ctx: CanvasNodeContext }) {
                     onClick={() =>
                         modal.confirm({
                             title: "开始智能剪辑？",
-                            content: `AI 智能剪辑 · 测试版。关键帧和转写将提交现有模型分析，请确认有素材使用权并允许此处理。本次积分预算上限 ${formatCreditPoints(state?.budgetCents ?? 0)}，将复用已有分析。`,
+                            content: `AI 智能剪辑 · 测试版。关键帧和转写将提交现有模型分析，配音开启时文案也会提交所选模型，请确认有素材使用权并允许此处理。本次积分预算上限 ${formatCreditPoints(state?.budgetCents ?? 0)}，将复用已有分析。`,
                             onOk: start,
                         })
                     }
