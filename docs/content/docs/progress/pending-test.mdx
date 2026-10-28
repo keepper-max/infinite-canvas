@@ -5,7 +5,7 @@ description: Implemented changes that still need manual verification
 
 # Pending Tests
 
-- AutoCut v0.16.58：关键帧时间分桶、JSON兜底解析与分析版本隔离已在前一轮独立制品部署；本次合并归档并修复零时长分析提示、移除前后端固定积分预算上限。27项定向测试通过，真实模型与客户音频卡点需求不纳入本次补丁验收；生产部署结果另附发布记录。
+- AutoCut v0.16.58已部署：代码5b99248已推送；隔离API/Web构建及本地27项、Linux API/CPU各27项测试通过。管理员和普通账号线上10000积分预算确认、真实缩略图和页面检查通过，测试模型请求/扣费均0。100表备份恢复一致，历史缓存/版本/模型绑定/账本保留；1条旧失败任务重试复用原结果、无重复费用，仍需新建任务验证新提示词。全账号开放、并发1、价格与止损保持；未接通客户文字配音和精确音乐卡点。部署详情见H:/CodexStorage/autocut/release58/release-report.md。
 
 - Agent知识引用与交互简化（v0.16.54已上线）：2d74e5ba5fe6已推送，API/Agent Worker/Web健康；无真实文档来源时先搜索，读取与关系查询验证真实引用，未执行步骤不再误报失败，前台手动决定表单已移除。37项本地回归、两套Linux镜像各24项、生产9项浏览器检查通过，独立API/Web构建及100表/1667对象备份恢复核验完成。原暂停任务及账单不变、零新增付费调用；AutoCut和其他工作区修改保留。详见ops/releases/v0.16.54-agent-knowledge-discovery.md。
 
