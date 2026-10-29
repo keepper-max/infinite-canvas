@@ -39,7 +39,7 @@ function localPluginsManifest(): Plugin {
 }
 
 export default defineConfig({
-    server: { fs: { allow: [webDir, resolve(webDir, "../server/api/src/autocut/p1/runtime.ts")] } },
+    server: { fs: { allow: [webDir, resolve(webDir, "../server/api/src/autocut/p1/runtime.ts"), resolve(webDir, "../server/api/src/autocut/audio-mix.ts")] } },
     base: process.env.VITE_BASE || "/",
     plugins: [react(), localPluginsManifest()],
     resolve: {

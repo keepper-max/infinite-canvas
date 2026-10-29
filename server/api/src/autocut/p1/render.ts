@@ -1,3 +1,4 @@
+import { originalSoundExpression } from "../audio-mix.js";
 import { writeFile, stat, unlink } from "node:fs/promises";
 import { join } from "node:path";
 import { runMedia, inputSafety } from "../media.js";
@@ -366,7 +367,8 @@ export async function renderP1(
           "gain",
           `(t+${seconds(c.timeline_start)})`,
         ),
-        volume = c.effects.volume * tr.volume * t.audio_settings.master_volume;
+        volume = c.effects.volume * tr.volume * t.audio_settings.master_volume,
+        duck = originalSoundExpression(t, `(t+${seconds(c.timeline_start)})`, c.asset_version_id);
       const fades: string[] = [];
       if (tr.role === "original") {
         for (const e of t.effect_stack.filter(
@@ -384,7 +386,7 @@ export async function renderP1(
         filter = join(dir, `p1-audio-${index}.filter`);
       await writeFile(
         filter,
-        `[0:a]asetpts=PTS-STARTPTS,aresample=48000,${tempos.concat(fades).join(",")},atrim=duration=${seconds(clipDuration(c))},volume='${n(volume)}*(${gain})':eval=frame,adelay=${c.timeline_start}:all=1,apad,atrim=duration=${seconds(t.target_duration)}[a]`,
+        `[0:a]asetpts=PTS-STARTPTS,aresample=48000,${tempos.concat(fades).join(",")},atrim=duration=${seconds(clipDuration(c))},volume='${n(volume)}*(${gain})${duck === "1" ? "" : `*(${duck})`}':eval=frame,adelay=${c.timeline_start}:all=1,apad,atrim=duration=${seconds(t.target_duration)},aresample=async=1:first_pts=0[a]`,
       );
       await runMedia(
         ffmpeg,

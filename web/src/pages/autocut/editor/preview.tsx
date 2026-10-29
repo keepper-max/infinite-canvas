@@ -1,3 +1,4 @@
+import { originalSoundGain } from "../../../../../server/api/src/autocut/audio-mix";
 import { useEffect, useRef, useState } from "react";
 import { Alert, Button } from "antd";
 import { Play, Pause } from "lucide-react";
@@ -190,7 +191,7 @@ export function SourcePreview({ timeline, time, playing, onTime, onPlaying, mime
                                     if (e.target.next_id === c.linked_clip_id) fade *= Math.min(1, Math.max(0, (s.time - e.start) / (e.end - e.start)));
                                     if (e.target.id === c.linked_clip_id) fade *= Math.min(1, Math.max(0, (e.end - s.time) / (e.end - e.start)));
                                 }
-                            sound.gain.gain.value = c.effects.volume * tr.volume * t.audio_settings.master_volume * p.gain * fade;
+                            sound.gain.gain.value = c.effects.volume * tr.volume * t.audio_settings.master_volume * p.gain * fade * originalSoundGain(t, s.time, c.asset_version_id);
                             el.play().catch(() => setError("原声播放被浏览器阻止，请再次点击播放"));
                         }
             for (const [id, v] of sounds.current)

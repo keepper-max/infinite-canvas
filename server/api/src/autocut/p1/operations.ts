@@ -1,3 +1,5 @@
+import { bakeNarrationMix } from "./audio-export.js";
+import { validateP1 } from "./contract.js";
 import { mkdir, readFile, writeFile, stat } from "node:fs/promises";
 import { createHash } from "node:crypto";
 import { createReadStream } from "node:fs";
@@ -134,9 +136,9 @@ export async function exportBundle(
       503,
     );
   const timeline =
-      document.schema_version === 2
+      validateP1(bakeNarrationMix(document.schema_version === 2
         ? document
-        : upgradeTimeline(document, (id) => !!analyses[id]?.hasAudio),
+        : upgradeTimeline(document, (id) => !!analyses[id]?.hasAudio)), document.project_id, assets, analyses),
     used = new Set(
       timeline.tracks.flatMap((tr) => tr.clips.map((c) => c.asset_version_id)),
     ),

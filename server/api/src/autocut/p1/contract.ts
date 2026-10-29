@@ -1,3 +1,4 @@
+import { narrationMixProblem } from "../audio-mix.js";
 import { z } from "zod";
 import { DomainError } from "../../domain.js";
 import {
@@ -351,6 +352,8 @@ export function validateP1(
     )
       bad("主轨只能连续或使用已声明转场重叠");
   }
+  const mixProblem = narrationMixProblem(t, analyses);
+  if (mixProblem) bad(mixProblem);
   return t;
 }
 export function validateDocument(

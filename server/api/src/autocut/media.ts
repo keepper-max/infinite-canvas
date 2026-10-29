@@ -1,3 +1,4 @@
+import { originalSoundExpression } from "./audio-mix.js";
 import { spawn } from "node:child_process";
 import { createHash } from "node:crypto";
 import { createWriteStream } from "node:fs";
@@ -484,13 +485,17 @@ async function renderV1Timeline(
       "-i",
       paths[c.asset_version_id],
     );
+  const originalMix = originalSoundExpression(timeline);
   const filters = [
-    `[0:a]asetpts=PTS-STARTPTS,volume=${timeline.audio_settings.master_volume}[a0]`,
+    `[0:a]asetpts=PTS-STARTPTS,volume=${timeline.audio_settings.master_volume}${originalMix === "1" ? "" : `,volume='${originalMix}':eval=frame`}[a0]`,
   ];
-  for (const [i, c] of audio.entries())
-    filters.push(
-      `[${i + 1}:a]asetpts=PTS-STARTPTS,aresample=48000,adelay=${c.timeline_start}:all=1,volume=${c.effects.muted ? 0 : c.effects.volume * timeline.audio_settings.master_volume}[a${i + 1}]`,
-    );
+  for (const [i, c] of audio.entries()) {
+    const duck = originalSoundExpression(timeline, `(t+${c.timeline_start / 1000})`, c.asset_version_id);
+    const gain = c.effects.muted ? 0 : c.effects.volume * timeline.audio_settings.master_volume;
+    filters.push(duck === "1"
+      ? `[${i + 1}:a]asetpts=PTS-STARTPTS,aresample=48000,adelay=${c.timeline_start}:all=1,volume=${gain}[a${i + 1}]`
+      : `[${i + 1}:a]asetpts=PTS-STARTPTS,aresample=48000,volume='${gain}*(${duck})':eval=frame,adelay=${c.timeline_start}:all=1[a${i + 1}]`);
+  }
   filters.push(
     `${Array.from({ length: audio.length + 1 }, (_, i) => `[a${i}]`).join("")}amix=inputs=${audio.length + 1}:normalize=0:duration=first[aout]`,
   );

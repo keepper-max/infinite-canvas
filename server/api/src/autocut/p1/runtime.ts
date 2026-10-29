@@ -1,3 +1,5 @@
+import { clearMissingNarrationMix, type NarrationMix } from "../audio-mix.js";
+
 /** Shared browser/Worker semantics. All times are integer milliseconds; all intervals are half-open. */
 export type Curve = "linear" | "easeIn" | "easeOut" | "easeInOut" | "hold";
 export type EffectValues = {
@@ -82,7 +84,7 @@ export type P1Timeline = {
   tracks: P1Track[];
   subtitles: P1Subtitle[];
   effect_stack: Effect[];
-  audio_settings: { master_volume: number };
+  audio_settings: { master_volume: number; narration_mix?: NarrationMix };
   export_settings: { codec: "h264"; format: "mp4"; resolution: 720 };
   warnings: string[];
 };
@@ -434,6 +436,7 @@ export function reflow(t: P1Timeline, previous?: P1Timeline) {
     (e) =>
       e.end > e.start || (e.type === "transition" && e.params.style === "cut"),
   );
+  clearMissingNarrationMix(t);
   return t;
 }
 export function shiftEffects(t: P1Timeline, id: string, delta: number) {

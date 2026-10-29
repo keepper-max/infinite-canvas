@@ -1,3 +1,4 @@
+import { clearMissingNarrationMix } from "../audio-mix.js";
 import { DomainError } from "../../domain.js";
 import {
   clipEnd,
@@ -76,5 +77,6 @@ export function previewTimeline(document: P1Timeline, id: string): P1Timeline {
   });
   // Existing overlaps and layers retain their exact relative positions in the preview window.
   t.target_duration = end - start;
+  clearMissingNarrationMix(t);
   return t;
 }

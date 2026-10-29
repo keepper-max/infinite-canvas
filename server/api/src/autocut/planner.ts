@@ -1,3 +1,4 @@
+import { clearMissingNarrationMix } from "./audio-mix.js";
 import { randomUUID } from "node:crypto";
 import { z } from "zod";
 import { DomainError } from "../domain.js";
@@ -206,6 +207,7 @@ export function compileSelectionPlan(
       "模型将原声重复加入音轨，已停止执行",
       422,
     );
+  clearMissingNarrationMix(t);
   return validateTimeline(t, id, assets, analyses);
 }
 

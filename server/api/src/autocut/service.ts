@@ -471,8 +471,9 @@ export class AutoCutService {
         503,
       );
     const input = taskSchema.parse(raw);
-    if ((input.narration || input.originalVolume !== undefined) && (input.kind !== "edit" || input.scope === "subtitles"))
+    if ((input.narration || input.originalVolume !== undefined || input.audioAvoidance) && (input.kind !== "edit" || input.scope === "subtitles"))
       throw new DomainError("AUTOCUT_AUDIO_SCOPE", "配音与原声设置只能用于完整剪辑，不能用于字幕修改或重新渲染", 422);
+    if (input.audioAvoidance && !input.narration) throw new DomainError("AUTOCUT_AUDIO_SCOPE", "自动避让需同时启用本次文字配音", 422);
     const hash = createHash("sha256").update(JSON.stringify(input)).digest("hex");
     if (["edit", "effects"].includes(input.kind) && !input.confirmed)
       throw new DomainError(

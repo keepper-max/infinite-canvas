@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { MAX_GENERATION_PROMPT_CHARACTERS } from "../job-contract.js";
 import { DomainError } from "../domain.js";
+import { narrationMixProblem } from "./audio-mix.js";
 
 // All times are integer milliseconds. Source and timeline intervals are [in, out).
 export const AUTOCUT_LIMITS = {
@@ -12,6 +13,7 @@ export const AUTOCUT_LIMITS = {
   concurrency: 1,
   threads: 2,
 } as const;
+export const voiceAvoidanceSchema = z.enum(["preserve-original", "narration-first", "duck-original"]);
 const ms = z.number().int().nonnegative();
 const clip = z
   .object({
@@ -56,7 +58,7 @@ export const timelineSchema = z
     ),
     subtitles: z.array(subtitleSchema),
     audio_settings: z
-      .object({ master_volume: z.number().min(0).max(2) })
+      .object({ master_volume: z.number().min(0).max(2), narration_mix: z.object({ mode: voiceAvoidanceSchema, asset_version_id: z.string().uuid() }).strict().optional() })
       .strict(),
     export_settings: z
       .object({
@@ -166,6 +168,7 @@ export const taskSchema = z
     budgetCents: z.number().int().nonnegative(),
     narration: narrationSchema.optional(),
     originalVolume: z.number().min(0).max(2).optional(),
+    audioAvoidance: voiceAvoidanceSchema.optional(),
     confirmed: z.boolean(),
     scope: z.enum(["all", "subtitles"]).default("all"),
     p1: z
@@ -241,6 +244,8 @@ export function validateTimeline(
     ids.add(cue.id);
     if (cue.end <= cue.start || cue.end > end) bad("字幕时间超出成片范围");
   }
+  const mixProblem = narrationMixProblem(t, analyses);
+  if (mixProblem) bad(mixProblem);
   return t;
 }
 

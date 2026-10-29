@@ -10,7 +10,7 @@ export type AutoCutTimeline = {
     fps: 25 | 30;
     tracks: { id: string; kind: "video" | "audio"; clips: AutoCutClip[] }[];
     subtitles: { id: string; start: number; end: number; text: string }[];
-    audio_settings: { master_volume: number };
+    audio_settings: { master_volume: number; narration_mix?: { mode: "preserve-original" | "narration-first" | "duck-original"; asset_version_id: string } };
     export_settings: { codec: "h264"; format: "mp4"; resolution: 720 };
     warnings: string[];
 };
@@ -51,6 +51,7 @@ export type AutoCutDetail = {
     calls: { task_id: string; quote_cents: number; credit_points?: string | null; credit_status?: string | null; billing_status: string; model_id: string }[];
 };
 export type AutoCutAudioOptions = {
+    audioAvoidance?: "preserve-original" | "narration-first" | "duck-original";
     originalVolume?: number;
     narration?: { text: string; modelId: string; parameters: Record<string, unknown> };
 };

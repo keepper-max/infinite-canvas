@@ -29,13 +29,25 @@ export function AutoCutAudioOptionsFields({ value, onChange, disabled = false }:
                 onChange={(v) => onChange({ ...value, originalVolume: v })} />
         </label>
         <Checkbox checked={!!value.narration} disabled={disabled || catalog.isPending || !models.length} onChange={(e) => {
-            if (!e.target.checked) onChange({ ...value, narration: undefined });
+            if (!e.target.checked) onChange({ ...value, narration: undefined, audioAvoidance: undefined });
             else if (draft && models.some((m) => m.id === draft.modelId)) onChange({ ...value, narration: draft });
             else selectModel(models[0]);
         }}>将文字生成配音</Checkbox>
         {catalog.isError && <Alert type="warning" showIcon title="配音模型加载失败，可稍后重试；原声剪辑仍可使用" action={<button type="button" onClick={() => void catalog.refetch()}>重试</button>} />}
         {!catalog.isPending && !catalog.isError && !models.length && <p className="text-xs" style={{ color: token.colorTextSecondary }}>当前没有启用的配音模型，可继续使用原声剪辑。</p>}
         {value.narration && <>
+            <label className="block space-y-1 text-xs">
+                <span>人声避让</span>
+                <Select aria-label="人声避让模式" className="w-full" disabled={disabled} value={value.audioAvoidance ?? "manual"}
+                    options={[{ value: "manual", label: "手动混音（沿用原声设置）" }, { value: "preserve-original", label: "保留原片讲话：停顿中配音" }, { value: "narration-first", label: "配音优先：配音时原声静音" }, { value: "duck-original", label: "音乐 / 环境声：配音时压低" }]}
+                    onChange={(mode) => onChange({ ...value, audioAvoidance: mode === "manual" ? undefined : mode as AutoCutAudioOptions["audioAvoidance"] })} />
+            </label>
+            {value.audioAvoidance && <p className="text-xs leading-5" style={{ color: token.colorTextSecondary }}>
+                {value.audioAvoidance === "preserve-original" ? "依据已识别人声和静音时段寻找可容纳整段配音的空隙；无法确认时保守处理，空隙不足会停止，不拆句、不加速。"
+                    : value.audioAvoidance === "narration-first" ? "完整配音片段播放期间静音原声，结束后恢复上方原声音量。"
+                    : "适用于没有讲话的音乐或环境声；完整配音片段播放期间降至上方原声音量的20%，结束后恢复。"}
+                {" "}这是音轨避让，不是人声分离；原声中的音乐也会一起变化。已产生的费用按原账本结算，不自动付费重试。
+            </p>}
             <Select aria-label="配音模型" className="w-full" disabled={disabled} value={value.narration.modelId}
                 options={models.map((m) => ({ value: m.id, label: m.displayName }))} onChange={(id) => selectModel(models.find((m) => m.id === id))} />
             {!selected && <Alert type="warning" title="原配音模型已不可用，请重新选择" />}
