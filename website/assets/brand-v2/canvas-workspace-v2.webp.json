@@ -1,0 +1,10 @@
+{
+  "asset": "canvas-workspace-v2.webp",
+  "source": "H:\\CodexCache\\Temp\\codex-clipboard-9af020f8-2c3c-477f-82e0-6eea0fdf622b.png",
+  "processing": "用户提供的新版真实界面；裁切原图(0,78,2536,1184)，移除顶部账号及底部账号/余额；等比缩放WebP，不重绘UI；原版截图衍生图保留",
+  "sha256": "2ca46f587804be8fbb6d6637cfe780ec2bfb54e0978bdc6a40ba728a6dda2419",
+  "bytes": 95668,
+  "width": 1600,
+  "height": 698,
+  "url": "/website-assets/brand-v2/canvas-workspace-v2-2ca46f587804.webp"
+}

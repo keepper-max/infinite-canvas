@@ -23,6 +23,7 @@ files['/website-assets/20261026-site09/service-enterprise.webp'] = ['assets/bran
 files['/website-assets/20261026-site09/service-industry.webp'] = ['assets/brand-v2/service-industry.webp','image/webp'];
 files['/website-assets/20261026-site09/service-agent.webp'] = ['assets/brand-v2/service-agent.webp','image/webp'];
 files['/website-assets/20261026-site09/service-knowledge.webp'] = ['assets/brand-v2/service-knowledge.webp','image/webp'];
+files['/website-assets/brand-v2/canvas-workspace-v2-2ca46f587804.webp'] = ['assets/brand-v2/canvas-workspace-v2.webp','image/webp'];
 const mime={'.html':'text/html; charset=utf-8','.js':'application/javascript','.mjs':'application/javascript; charset=utf-8','.css':'text/css','.webp':'image/webp','.json':'application/json','.md':'text/plain; charset=utf-8','.txt':'text/plain; charset=utf-8','.png':'image/png'};
 const port=Number(process.env.WEBSITE_PREVIEW_PORT||4405);
 const caseIds=new Set(JSON.parse(fs.readFileSync(path.join(__dirname,'ai-cases/cases.json'),'utf8')).map(item=>item.id));
