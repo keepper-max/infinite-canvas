@@ -52,3 +52,5 @@ node tests/pose-costume-browser.mjs
 - web typecheck 通过；`node --test tests/pose-costume-navigation.test.cjs tests/pose-costume.test.cjs` 共 14 项通过，覆盖入口顺序、当前项目保留、默认项目跳转及原首页跳转不变。
 - 完整应用受控浏览器使用实际导航、路由、画布和参考库组件，验证默认项目直达、同项目再次点击重开面板、不重复建立节点及不同项目隔离；无真实模型请求。证据位于 `H:/CodexStorage/pose-costume-nav64/`。
 - 顶部入口不新建独立账号、收藏或生成系统；同画布只改变打开参数时不触发离开确认，其他未保存导航继续沿用原保护。TODO 已核对，本次没有额外新增业务待办。
+
+导航增量已发布 v0.16.64，公网静态摘要、健康与匿名新入口登录跳转通过；回滚检查通过。详情见 `ops/releases/v0.16.64-pose-costume-navigation.md`。
