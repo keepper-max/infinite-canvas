@@ -76,11 +76,6 @@ export function ReferenceBrowser({ favorites, onFavorite, onChoose, disabled }: 
                     </Checkbox>
                 )}
             </div>
-            {kind !== "character" && (
-                <p className="text-xs leading-5 opacity-65">
-                    {PERSONAL_REFERENCE_TRIAL ? "个人非商用试用 · 点击条目逐张预览，可切换视角并加入搭配或画布。仅保存选中的参考，不提供整库下载。" : "此分类已接入全部目录与视角。图片展示与导入待授权。"}
-                </p>
-            )}
             <p className="text-xs opacity-60">筛选结果 {filtered.length} 项</p>
             <div className="max-h-[65vh] overflow-y-auto pr-1">
                 {catalog.isPending ? (
