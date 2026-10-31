@@ -103,6 +103,8 @@ import { registerKnowledgeNodes } from "@/components/canvas/nodes/knowledge-node
 import { knowledgeDragType, referenceSummary, type KnowledgeReference } from "@/services/api/knowledge-canvas";
 import { registerDramaNodes } from "@/components/canvas/nodes/drama-nodes";
 import { registerCameraMotionNode } from "@/components/canvas/nodes/camera-motion-node";
+import { registerPoseCostumeNode } from "@/components/canvas/nodes/pose-costume-node";
+import { POSE_COSTUME_NODE_TYPE } from "@/lib/canvas/pose-costume";
 import { CAMERA_MOTION_NODE_TYPE } from "@/lib/canvas/camera-motion";
 import { buildNodeContext } from "@/lib/canvas/plugin-node-context";
 import { buildDramaTemplate } from "@/lib/drama/drama-template";
@@ -153,6 +155,7 @@ registerKnowledgeNodes();
 registerDramaNodes();
 registerAutoCutNode();
 registerCameraMotionNode();
+registerPoseCostumeNode();
 
 type CanvasClipboard = {
     nodes: CanvasNodeData[];
@@ -646,7 +649,7 @@ function InfiniteCanvasPage({ projectId }: { projectId: string }) {
                 if (!event.nodeId) return;
                 setNodes((previous) =>
                     previous.map((node) =>
-                        node.id === event.nodeId
+                        node.id === event.nodeId && node.type !== POSE_COSTUME_NODE_TYPE
                             ? {
                                   ...node,
                                   metadata: {
@@ -668,7 +671,7 @@ function InfiniteCanvasPage({ projectId }: { projectId: string }) {
                 );
                 if (event.status === "completed") {
                     const node = nodesRef.current.find((item) => item.id === event.nodeId);
-                    if (node) void pollVideoNodeTask(node, true);
+                    if (node && node.type !== POSE_COSTUME_NODE_TYPE) void pollVideoNodeTask(node, true);
                 }
             }),
         [pollVideoNodeTask, projectId],

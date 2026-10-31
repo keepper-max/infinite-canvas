@@ -300,7 +300,7 @@ function waitForMediaEvent(media: HTMLMediaElement, eventName: "loadedmetadata" 
     });
 }
 
-async function digestSha256(blob: Blob, stream = false) {
+export async function digestSha256(blob: Blob, stream = false) {
     try {
         const subtle = globalThis.crypto?.subtle;
         if (subtle && !stream) return bytesToHex(new Uint8Array(await subtle.digest("SHA-256", await blob.arrayBuffer())));

@@ -209,7 +209,7 @@ function resolveRequestSize(quality: string | undefined, size: string) {
     throw new Error(apiText("invalidImageSizeFormat"));
 }
 
-function managedImageParameters(config: AiConfig, model: ChannelModel | undefined, count: number) {
+export function managedImageParameters(config: AiConfig, model: ChannelModel | undefined, count: number) {
     const quality = normalizeQuality(config.quality);
     const size = resolveRequestSize(quality, config.size);
     const background = normalizeBackground(config.background);

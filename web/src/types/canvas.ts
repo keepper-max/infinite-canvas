@@ -2,6 +2,7 @@ import type { AutoCutAudioOptions } from "@/services/api/autocut";
 import type { DramaNodeState } from "@/types/drama";
 import type { CameraMotionState } from "@/types/camera-motion";
 import type { KnowledgeReference } from "@/services/api/knowledge-canvas";
+import type { OutfitReference, PoseCostumeState } from "@/types/pose-costume";
 
 export type Position = {
     x: number;
@@ -55,6 +56,8 @@ export type CanvasNodeText = {
 };
 
 export type CanvasNodeMetadata = {
+    poseCostume?: PoseCostumeState;
+    libraryReference?: OutfitReference;
     autocut?: { projectId?: string; taskId?: string; revisionId?: string; budgetCents?: number; audioOptions?: AutoCutAudioOptions };
     knowledgeReference?: KnowledgeReference;
     content?: string;
