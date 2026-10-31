@@ -189,16 +189,11 @@ test("depth references preserve real IDs and use a distinct image source", () =>
     assert.equal(item.source, "https://ai-pose-gallery.pages.dev/");
 });
 
-test("trial is confined to loopback development and excluded from production", () => {
+test("individual trial is available in production while restricted cards request no images", () => {
     const source = fs.readFileSync(require.resolve("../src/constant/env.ts"), "utf8");
-    const expression = source.match(/export const PERSONAL_REFERENCE_TRIAL = (.*);/)[1].replace("import.meta.env.DEV", "development");
-    for (const [development, hostname, expected] of [
-        [true, "localhost", true],
-        [true, "127.0.0.1", true],
-        [true, "[::1]", true],
-        [false, "localhost", false],
-        [true, "shoumiren.online", false],
-    ]) {
-        assert.equal(vm.runInNewContext(expression, { development, window: { location: { hostname } } }), expected);
-    }
+    const expression = source.match(/export const PERSONAL_REFERENCE_TRIAL = (.*);/)[1];
+    assert.equal(vm.runInNewContext(expression), true);
+    const browser = fs.readFileSync(require.resolve("../src/components/canvas/nodes/pose-costume-library.tsx"), "utf8");
+    assert.ok(browser.includes('policy.allowed && item.kind === "character"'));
+    assert.ok(browser.includes('src={variant.original}'));
 });

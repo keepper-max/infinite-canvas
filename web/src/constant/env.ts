@@ -1,7 +1,8 @@
 export const APP_VERSION = __APP_VERSION__ || "dev";
 
-// Personal reference use is enabled only in a loopback development session.
-export const PERSONAL_REFERENCE_TRIAL = import.meta.env.DEV && typeof window !== "undefined" && ["localhost", "127.0.0.1", "[::1]"].includes(window.location.hostname);
+// Individual reference trial: restricted images load only after opening one item.
+// This enables personal use, not redistribution or a bulk image archive.
+export const PERSONAL_REFERENCE_TRIAL = true;
 
 // Codex/Agent is an internal development aid. Production builds keep it disabled
 // unless an internal deployment explicitly opts in at build time.

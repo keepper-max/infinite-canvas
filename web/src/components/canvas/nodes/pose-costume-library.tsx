@@ -78,7 +78,7 @@ export function ReferenceBrowser({ favorites, onFavorite, onChoose, disabled }: 
             </div>
             {kind !== "character" && (
                 <p className="text-xs leading-5 opacity-65">
-                    {PERSONAL_REFERENCE_TRIAL ? "本地个人参考试用：图片按需读取原站，选中的原图可加入搭配；不提供整库下载或公开镜像。" : "此分类已接入全部目录与视角。图片展示与导入待授权；本地开发环境可个人逐张参考试用。"}
+                    {PERSONAL_REFERENCE_TRIAL ? "个人非商用试用 · 点击条目逐张预览，可切换视角并加入搭配或画布。仅保存选中的参考，不提供整库下载。" : "此分类已接入全部目录与视角。图片展示与导入待授权。"}
                 </p>
             )}
             <p className="text-xs opacity-60">筛选结果 {filtered.length} 项</p>
@@ -106,12 +106,12 @@ export function ReferenceBrowser({ favorites, onFavorite, onChoose, disabled }: 
                                             setDepth(false);
                                         }}
                                     >
-                                        {policy.allowed ? (
+                                        {policy.allowed && item.kind === "character" ? (
                                             <img src={item.variants[0].thumbnail} alt={item.title.zh} className="aspect-[3/4] w-full rounded object-contain" loading="lazy" decoding="async" referrerPolicy="no-referrer" />
                                         ) : (
-                                            <div className="flex min-h-24 flex-col justify-center gap-2 py-4 text-xs">
-                                                <span className="text-base font-medium">{item.code}</span>
-                                                <span>{item.variants.length} 个视角 · 图片待授权</span>
+                                            <div className="flex items-center justify-between gap-2 py-1 text-xs">
+                                                <span className="font-medium">{item.code}</span>
+                                                <span className="opacity-60">{item.variants.length} 个视角 · {policy.allowed ? "点击预览" : "图片待授权"}</span>
                                             </div>
                                         )}
                                         <p className="mt-2 line-clamp-2 text-xs font-medium">{item.title.zh}</p>
@@ -171,7 +171,7 @@ export function ReferenceBrowser({ favorites, onFavorite, onChoose, disabled }: 
                     <p>人物：あぎ · CC0 1.0，原作者同时请求避免图片再分发。不用于冒充真实人物。仅按需读取和保存用户选中的图片。</p>
                     <p>
                         姿势、服装及深度图：ギア · 原站允许逐张作品参考，禁止批量下载、转载及再分发。上游维护者获得的仓库再分发授权不延伸给守守画布。
-                        {PERSONAL_REFERENCE_TRIAL ? "当前仅本地个人试用启用按需浏览与逐张参考导入，不公开再分发素材。" : "公开发布环境未启用受限图片展示和导入。"}
+                        {PERSONAL_REFERENCE_TRIAL ? "当前启用个人非商用逐张试用：打开条目才读取图片，选择后才保存至当前项目，不公开镜像素材或提供批量下载。" : "公开发布环境未启用受限图片展示和导入。"}
                     </p>
                     <p>中文姿势名称来源 Anhao，原始数据未获商业再利用的明确许可，目录仅外部查询；需向相关权利人补充确认。</p>
                     <p>

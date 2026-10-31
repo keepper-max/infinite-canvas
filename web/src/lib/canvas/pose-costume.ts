@@ -70,7 +70,7 @@ export function matchesLibraryQuery(item: LibraryReference, query: string) {
 
 /** Image data permissions are separate from the application's MIT license. */
 export function libraryImagePolicy(item: Pick<LibraryReference, "kind">, personalTrial = false) {
-    if (item.kind !== "character" && personalTrial) return { allowed: true, license: "individual-creative-reference-only", note: "ギア · 仅本地个人逐张创作参考，图片按需从原站读取；不授予图片转载、再分发、转售或整库下载权。" };
+    if (item.kind !== "character" && personalTrial) return { allowed: true, license: "individual-creative-reference-only", note: "ギア · 仅个人逐张创作参考，图片按需从原站读取；不授予图片转载、再分发、转售或整库下载权。" };
     return item.kind === "character"
         ? { allowed: true, license: "CC0-1.0", note: "あぎ · CC0 1.0；原作者同时请求避免图片再分发。仅按需读取所选图片。" }
         : { allowed: false, license: "permission-required", note: "ギア · 允许逐张创作参考，禁止批量下载、转载和再分发。守守画布的库内展示、热链及项目资产保存尚缺授权；可使用自有图片。" };

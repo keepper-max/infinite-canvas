@@ -155,6 +155,7 @@ try {
     console.log(checks.at(-1));
     await page.getByRole("tab", { name: "姿势 288", exact: true }).click();
     await page.getByLabel("参考库搜索", { exact: true }).fill(pose.id);
+    assert.equal(trialImageRequests.length, 0, "The restricted catalog must not automatically request image grids");
     await page.locator("article").first().locator("button").first().click();
     const detailDialog = page.getByRole("dialog").last();
     await detailDialog.getByLabel("参考视角").click();
@@ -172,7 +173,7 @@ try {
     refs.pose = imported;
     await detailDialog.getByRole("button", { name: "Close", exact: true }).click();
     assert.ok(trialImageRequests.length > 0);
-    checks.push("Local personal trial previews pose views/depth and selects the original reference into the pairing slot");
+    checks.push("Individual personal trial previews pose views/depth and selects the original reference into the pairing slot");
     console.log(checks.at(-1));
     await page.getByRole("button", { name: "保存搭配", exact: true }).click();
     await page.getByLabel("组合名称", { exact: true }).fill("测试搭配");
