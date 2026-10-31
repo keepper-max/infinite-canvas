@@ -1,4 +1,4 @@
-import { BookOpen, Box, Clapperboard, Coins, FileText, Gauge, ImagePlus, Images, Maximize2, MessageSquareText, Settings2, Scissors, Video } from "lucide-react";
+import { BookImage, BookOpen, Box, Clapperboard, Coins, FileText, Gauge, ImagePlus, Images, Maximize2, MessageSquareText, Settings2, Scissors, Video } from "lucide-react";
 
 export const navigationTools = [
     { slug: "knowledge", icon: BookOpen },
@@ -14,6 +14,7 @@ export const navigationTools = [
         slug: "director-desk",
         icon: Box,
     },
+    { slug: "pose-costume", icon: BookImage },
     {
         slug: "image",
         icon: ImagePlus,
@@ -50,3 +51,8 @@ export const navigationTools = [
 ] as const;
 
 export type NavigationToolSlug = (typeof navigationTools)[number]["slug"];
+
+export function navigationToolHref(slug: NavigationToolSlug, pathname: string) {
+    if (slug === "pose-costume" && /^\/canvas\/[^/]+\/?$/.test(pathname)) return `${pathname.replace(/\/$/, "")}?open=pose-costume`;
+    return `/${slug}`;
+}

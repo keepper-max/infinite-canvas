@@ -24,6 +24,7 @@ const PromptsPage = lazy(routeModules.prompts);
 const VideoPage = lazy(routeModules.video);
 const TextWorkbenchPage = lazy(routeModules.text);
 const WorkspaceEntryPage = lazy(routeModules.workspaceEntry);
+const PoseCostumeEntryPage = lazy(routeModules["pose-costume"]);
 const OperationsPage = lazy(routeModules.operations);
 const AdminPage = lazy(routeModules.admin);
 const CreditsPage = lazy(routeModules.credits);
@@ -64,6 +65,7 @@ export const router = createBrowserRouter([
             { path: "/assets", element: deferred(<AssetsPage />) },
             { path: "/prompts", element: deferred(<PromptsPage />) },
             { path: "/canvas", element: deferred(<CanvasPage />) },
+            { path: "/pose-costume", element: deferred(<PoseCostumeEntryPage />) },
             { path: "/canvas/:id", element: deferred(<CanvasProjectPage />) },
             { path: "/director", element: deferred(<DirectorWorkbenchPage />) },
             { path: "/director-desk", element: deferred(<DirectorDeskPage />) },

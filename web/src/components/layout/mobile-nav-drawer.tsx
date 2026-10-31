@@ -1,9 +1,9 @@
 import { Button, Drawer } from "antd";
 import { MessageSquareText } from "lucide-react";
-import { Link } from "react-router-dom";
+import { Link, useLocation } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 
-import { navigationTools, type NavigationToolSlug } from "@/constant/navigation-tools";
+import { navigationToolHref, navigationTools, type NavigationToolSlug } from "@/constant/navigation-tools";
 import { cn } from "@/lib/utils";
 import { UserStatusActions } from "@/components/layout/user-status-actions";
 
@@ -18,6 +18,7 @@ type MobileNavDrawerProps = {
 
 export function MobileNavDrawer({ open, activeToolSlug, showOperations, feedbackUnread, onOpenFeedback, onClose }: MobileNavDrawerProps) {
     const { t } = useTranslation();
+    const { pathname } = useLocation();
 
     return (
         <Drawer title={t("topNav.navigation")} placement="left" size={280} open={open} onClose={onClose} className="md:hidden" styles={{ body: { display: "flex", flexDirection: "column" } }}>
@@ -30,7 +31,7 @@ export function MobileNavDrawer({ open, activeToolSlug, showOperations, feedback
                         return (
                             <Link
                                 key={tool.slug}
-                                to={`/${tool.slug}`}
+                                to={navigationToolHref(tool.slug, pathname)}
                                 onClick={onClose}
                                 className={cn(
                                     "flex items-center gap-3 rounded-lg px-3 py-3 text-base transition",

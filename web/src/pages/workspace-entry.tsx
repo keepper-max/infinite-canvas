@@ -1,8 +1,9 @@
-import { Navigate } from "react-router-dom";
+import { Navigate, useLocation } from "react-router-dom";
 
 import { useAuth } from "@/components/auth/auth-context";
 
 export default function WorkspaceEntryPage() {
     const { workspace } = useAuth();
-    return <Navigate to={`/canvas/${workspace.projectId}`} replace />;
+    const { pathname } = useLocation();
+    return <Navigate to={`/canvas/${workspace.projectId}${pathname === "/pose-costume" ? "?open=pose-costume" : ""}`} replace />;
 }

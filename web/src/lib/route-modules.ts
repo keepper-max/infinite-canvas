@@ -31,6 +31,7 @@ export const routeModules = {
     text: cached(() => import("@/pages/text")),
     video: cached(() => import("@/pages/video")),
     workspaceEntry: cached(() => import("@/pages/workspace-entry")),
+    "pose-costume": cached(() => import("@/pages/workspace-entry")),
     admin: cached(() => import("@/pages/admin")),
 };
 

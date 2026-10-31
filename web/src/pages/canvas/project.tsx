@@ -444,7 +444,7 @@ function InfiniteCanvasPage({ projectId }: { projectId: string }) {
     );
     const revealCachedCanvas = useCallback(() => setProjectLoaded(true), []);
     const canvasPersistence = useCloudCanvasPersistence(projectId, applyPersistedCanvas, revealCachedCanvas);
-    const navigationBlocker = useBlocker(canvasPersistence.hasUnsavedChanges);
+    const navigationBlocker = useBlocker(({ currentLocation, nextLocation }) => canvasPersistence.hasUnsavedChanges && !(currentLocation.pathname === nextLocation.pathname && new URLSearchParams(nextLocation.search).get("open") === "pose-costume"));
     const [savingBeforeLeave, setSavingBeforeLeave] = useState(false);
     const [logoutPending, setLogoutPending] = useState(false);
 
@@ -1621,6 +1621,26 @@ function InfiniteCanvasPage({ projectId }: { projectId: string }) {
     },[size.height,size.width]);
     useAutoCutBridge(projectId, projectLoaded, nodes, nodesRef, setNodes);
     useNativeAgentBridge(projectId, canvasPersistence.refreshExternal, focusAgentNodes,canvasPersistence.compareExternal,canvasPersistence.keepDraft);
+
+    const openedReferenceLibrary = useRef("");
+    useEffect(() => {
+        const key = `${projectId}:${location.key}`;
+        if (!projectLoaded || size.width <= 0 || size.height <= 0 || searchParams.get("open") !== "pose-costume" || openedReferenceLibrary.current === key) return;
+        openedReferenceLibrary.current = key;
+        let library = nodesRef.current.find((node) => node.type === POSE_COSTUME_NODE_TYPE);
+        if (!library) {
+            if (!["owner", "admin", "editor"].includes(currentProject?.role || "")) {
+                message.info("当前项目只有查看权限，尚无已保存的姿势与服装参考库");
+                return;
+            }
+            library = createCanvasNode(POSE_COSTUME_NODE_TYPE, getCanvasCenter());
+            const next = [...nodesRef.current, library];
+            nodesRef.current = next;
+            setNodes(next);
+        }
+        focusNode(library.id);
+        setDialogNodeId(library.id);
+    }, [currentProject?.role, focusNode, getCanvasCenter, location.key, message, projectId, projectLoaded, searchParams, size.height, size.width]);
 
     const focusedKnowledgeLink = useRef("");
     useEffect(() => {

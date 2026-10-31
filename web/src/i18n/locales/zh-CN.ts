@@ -888,6 +888,7 @@ export default {
         },
     },
     navigation: {
+        "pose-costume": "姿势与服装",
         autocut: "AI 智能剪辑",
         knowledge: "知识库",
         canvas: "我的画布",

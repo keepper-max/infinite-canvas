@@ -927,6 +927,7 @@ export default {
         },
     },
     navigation: {
+        "pose-costume": "Pose & Costume",
         autocut: "AI 智能剪辑",
         knowledge: "Knowledge",
         canvas: "My Canvases",
