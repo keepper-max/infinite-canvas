@@ -1,27 +1,52 @@
 // Curated summaries, not a browser-side scraper. Keep sources and reporting dates with every update.
 const websiteContent = {
   news: [
-    {date:'2026-10-24',category:'智能体开发',title:'Qwen Code 0.26.1 更新托管会话与恢复流程',
-      summary:'Qwen Code 发布0.26.1正式版，工作区托管会话支持空闲时手动压缩上下文、无需重建会话即可管理MCP服务器，并完善恢复原因与可执行操作的展示。发布说明同时提示QQ群机器人线程范围内的会话隔离有兼容变化。',
-      observation:'长任务助手需要让用户看清恢复状态，也要保护上下文和工具配置。接入方应先验证会话恢复、历史记录与群聊隔离，不能把这些工程更新理解为新的通义模型发布。',
-      source:'Qwen Code 官方发布记录',url:'https://github.com/QwenLM/qwen-code/releases/tag/v0.26.1'},
-    {date:'2026-10-24',category:'智能体记忆',title:'dual-mem 0.2 统一对话与编程记忆，旧编程库不自动迁移',
-      summary:'dual-mem 发布0.2.0正式版，将对话记忆与工程经验纳入同一套写入、检索和版本链，并更新多设备共享MemHub的连接方式。本次移除独立编程记忆接口与旧编程库支持，官方明确旧编程库不迁移，对话记忆格式保持不变。',
-      observation:'跨工具复用经验的价值在于少做重复整理，但升级前须备份旧编程记忆、核对接口变化与访问范围。统一存储并不代表所有历史数据自动兼容，也不能据此保证真实业务的召回效果。',
-      source:'dual-mem 官方发布记录',url:'https://github.com/shibing624/dual-mem/releases/tag/v0.2.0'},
-    {date:'2026-10-24',category:'企业智能体',title:'Paperclip 发布新版，补齐私密任务与成本核算能力',
-      summary:'Paperclip 发布 v2026.1023.0 正式版，增加按成员共享的私密任务和项目、外接模型网关，以及区分已报价、估算和未定价用量的成本账本。升级同时扩大 Operator 角色权限，并默认阻止预算策略下的未定价用量继续运行。',
-      observation:'企业部署智能体不能只看任务能否执行，还需核对谁能查看结果、费用如何追溯。已有用户应先审查成员权限、预算策略和数据库迁移，再验证升级，不能把新增私密功能理解为历史任务自动转为私密。',
-      source:'Paperclip 官方发布记录',url:'https://github.com/paperclipai/paperclip/releases/tag/v2026.1023.0'},
-    {date:'2026-10-23',category:'智能体工具',title:'OpenHands 1.32 更新自动化与 MCP 安装流程',
-      summary:'OpenHands 发布1.32.0正式版，将固定的自动化项目保存到代理服务设置，MCP安装对话框支持选择可安装的库选项，自动化仓库选择器也扩展到所有可克隆的提供方。官方同时更新相关组件依赖。',
-      observation:'团队部署自动化助手时，除了模型表现，还应检查任务配置能否保存、仓库权限是否匹配，以及工具安装选项是否清楚。版本更新不等于所有托管与自建环境无需配置即可使用。',
-      source:'OpenHands 官方发布记录',url:'https://github.com/OpenHands/OpenHands/releases/tag/v1.32.0'},
-    {date:'2026-10-23',category:'开发兼容',title:'LangChain Core 1.7 调整工具调用流，升级需核对事件解析',
-      summary:'LangChain Core 发布1.7.0，工具参数的原始流事件改为 tool-call-delta 增量片段，不再通过 block-delta 发送累计快照；官方说明完整工具调用与最终输出读取接口保持不变。',
-      observation:'自行消费流事件的团队应检查参数拼接和工具进度展示，避免把增量片段当完整参数。若需暂时保留旧快照行为，可按官方说明锁定旧版本，再安排兼容验证，而不是直接升级生产环境。',
-      source:'LangChain 官方发布记录',url:'https://github.com/langchain-ai/langchain/releases/tag/langchain-core%3D%3D1.7.0'},
-  ],
+  {
+    "date": "2026-11-02",
+    "category": "开发工具",
+    "title": "OpenAI Java SDK 4.96 增加 Responses WebSocket 预热支持",
+    "summary": "OpenAI发布Java SDK 4.96.0，为Responses WebSocket增加预热支持，并补充实时翻译客户端密钥的使用示例。本次属于SDK接口与文档更新，不是新模型发布。",
+    "observation": "使用Java开发实时交互应用的团队，可核对预热选项与现有连接管理是否兼容，再用自己的网络环境测试首轮响应。新增客户端支持不等于所有账号能力相同，也不能据此承诺固定延迟收益。",
+    "source": "OpenAI Java SDK 官方发布记录",
+    "url": "https://github.com/openai/openai-java/releases/tag/v4.96.0"
+  },
+  {
+    "date": "2026-11-01",
+    "category": "智能体工具",
+    "title": "Qwen Code 0.26.5 默认开启交互视图，完善长会话与人工接管",
+    "summary": "Qwen Code发布0.26.5稳定版，默认开启Generated UI，交互卡片中的值可作为可移除的上下文继续对话。Managed WebShell分页读取较早消息，自动修复PR也增加重试预算与受阻时的人工接管说明。",
+    "observation": "长流程助手既要保留任务上下文，也应在反复失败时明确交还给人。已有集成可重点验证卡片数据进入对话的范围、历史分页和重试配置；新版功能不代表本平台已经升级或获得相同能力。",
+    "source": "Qwen Code 官方发布记录",
+    "url": "https://github.com/QwenLM/qwen-code/releases/tag/v0.26.5"
+  },
+  {
+    "date": "2026-10-30",
+    "category": "智能体工程",
+    "title": "Cloudflare Agents 0.32 调整技能加载接口，增加实验性链路追踪",
+    "summary": "Cloudflare Agents发布0.32.0，技能可从工作区、R2或代码加载，原SkillRegistry等接口被替换，属于破坏性变更。版本还加入实验性OpenTelemetry接入，并优化未使用模块的打包剔除。",
+    "observation": "技能接入更灵活，也需要检查已有注册、导入与执行代码的迁移。团队可先在测试环境验证技能目录及失败追踪；实验性观测接口仍可能调整，不能直接视为稳定承诺。",
+    "source": "Cloudflare Agents 官方发布记录",
+    "url": "https://github.com/cloudflare/agents/releases/tag/agents%400.32.0"
+  },
+  {
+    "date": "2026-10-29",
+    "category": "开发工具",
+    "title": "Qwen Code 0.26.4 增加独立工作树，改进交互视图与离线恢复",
+    "summary": "Qwen Code发布0.26.4稳定版，为主会话增加独立工作树，生成视图可跟随宿主主题并作为交互视图展示。Web Shell在离线时暂停请求、恢复连接后自动恢复，自动修复流程也增加轮次预算约束。",
+    "observation": "并行开发需要同时管理工作目录、会话状态与自动修改边界。升级后应以自己的项目检查工作树隔离、断网恢复及预算配置，避免将界面新增能力误认为现有业务已自动获得保障。",
+    "source": "Qwen Code 官方发布记录",
+    "url": "https://github.com/QwenLM/qwen-code/releases/tag/v0.26.4"
+  },
+  {
+    "date": "2026-10-29",
+    "category": "行业应用",
+    "title": "Google 在新加坡推进医疗 AI 研究与临床辅助评估",
+    "summary": "Google宣布在新加坡设立研究中心，推进基础AI模型与本地科研合作，并扩展MedGemma等开放模型的医疗研究。Google DeepMind与当地医疗系统评估AI临床助手，辅助汇总指南、文献和临床问题信息。",
+    "observation": "行业落地需要把研究、临床评估和正式应用分开看。对医疗等高要求场景，数据主权、专业人员复核与系统治理仍是核心条件，合作公告不能替代实际安全性和有效性验证。",
+    "source": "Google 官方博客",
+    "url": "https://blog.google/innovation-and-ai/technology/health/google-for-health-summit-singapore/"
+  }
+],
   projects: [
     {name:'AI 智能品控审核系统',type:'企业知识库 × 图像辅助审核',image:'quality-concept-v1.png',alt:'品控审核产品概念图：知识文件、包装标签检查和人工复核相互连接',
       intro:'把法规、企业规范与包装图片连接起来，让审核结论能回到具体依据。',

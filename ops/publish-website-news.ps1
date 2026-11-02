@@ -18,6 +18,14 @@ if (-not $Bootstrap) {
     $indexHash = $baseline.indexSha256
     $configHash = $baseline.snippetSha256
 }
+# The public canvas now belongs to a different platform; verify its web entry locally.
+# The edge server keeps the original application's readiness check on canvas2.
+$platform = Invoke-WebRequest 'https://canvas.shoumiren.online/'
+$platformUri = $platform.BaseResponse.RequestMessage.RequestUri
+if ($platform.StatusCode -ne 200 -or $platformUri.Scheme -ne 'https' -or $platformUri.Host -ne 'canvas.shoumiren.online' -or $platformUri.AbsolutePath -ne '/zh-CN/login' -or $platform.Content -notmatch '<title>登录 \| 守密人Ai智能工作台</title>') {
+    throw 'New canvas login entry verification failed; no news command dispatched'
+}
+Write-Host 'NEW_CANVAS_ENTRY_OK (public login page only)'
 $script = @'
 set -eu
 umask 077
@@ -94,7 +102,13 @@ if test "$bootstrap" = true; then
 fi
 curl -fsS https://shoumiren.online/ -o "$backup/index.public"
 cmp "$release/index.html" "$backup/index.public"
-curl -fsS https://canvas.shoumiren.online/api/health/ready >/dev/null
+curl -fsS https://canvas2.shoumiren.online/api/health/ready > "$backup/legacy-ready.public"
+python3 - "$backup/legacy-ready.public" <<'READY_CHECK'
+import json,sys
+with open(sys.argv[1]) as response:
+    if json.load(response).get('data', {}).get('ok') is not True:
+        raise SystemExit('Original canvas readiness failed')
+READY_CHECK
 cmp /etc/nginx/sites-available/shoumiren-live "$backup/main.before"
 cp -p "$content" "$backup/content.after"
 cp -p "$snippet" "$backup/homepage.after"
