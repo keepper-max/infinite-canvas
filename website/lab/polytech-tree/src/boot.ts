@@ -1,4 +1,12 @@
 import './style.css'
+const from = document.referrer && new URL(document.referrer)
+if (from && from.origin === location.origin && from.pathname === '/demos/') {
+  const back = document.querySelector<HTMLAnchorElement>('.back')!
+  back.href = from.pathname + from.search
+  back.textContent = '← 返回技术演示'
+  document.querySelector('#credits')?.remove()
+  document.body.classList.add('from-demos')
+}
 let dispose: (() => void) | undefined
 let generation = 0
 const progress = document.querySelector<HTMLProgressElement>('#load-progress')!

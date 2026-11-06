@@ -1248,7 +1248,15 @@
       });
       sessionMeta = { label: resolved.label };
       const step = parseInt(params.get('step'), 10);
-      runDemo(step >= 0 ? step : Infinity);
+      const from = document.referrer && new URL(document.referrer);
+      const fromHall = from && from.origin === location.origin && from.pathname === '/demos/';
+      if (fromHall) {
+        const back = document.querySelector('.official-home');
+        back.href = from.pathname + from.search;
+        back.textContent = '返回技术演示';
+        document.querySelector('.site-footer').hidden = true;
+      }
+      runDemo(step >= 0 ? step : (fromHall ? 0 : Infinity));
       render();
       return;
     }

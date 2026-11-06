@@ -26,10 +26,21 @@ files['/website-assets/20261026-site09/service-knowledge.webp'] = ['assets/brand
 files['/website-assets/brand-v2/canvas-workspace-v2-2ca46f587804.webp'] = ['assets/brand-v2/canvas-workspace-v2.webp','image/webp'];
 const mime={'.html':'text/html; charset=utf-8','.js':'application/javascript','.mjs':'application/javascript; charset=utf-8','.css':'text/css','.webp':'image/webp','.json':'application/json','.md':'text/plain; charset=utf-8','.txt':'text/plain; charset=utf-8','.png':'image/png'};
 const port=Number(process.env.WEBSITE_PREVIEW_PORT||4405);
+const demoFiles = new Set(require('./tools/demo-public-files.json'));
 const caseIds=new Set(JSON.parse(fs.readFileSync(path.join(__dirname,'ai-cases/cases.json'),'utf8')).map(item=>item.id));
 http.createServer((req,res)=>{
   const route=new URL(req.url,'http://localhost').pathname;
   let file=files[route];
+  if (route === '/demos' || route.startsWith('/demos/')) {
+    const relative = route.slice(1);
+    if (demoFiles.has(relative + '/index.html')) {
+      res.writeHead(302, {Location: route + '/' + new URL(req.url,'http://localhost').search});
+      return res.end();
+    }
+    const target = relative.endsWith('/') ? relative + 'index.html' : relative;
+    if (!demoFiles.has(target)) { res.writeHead(404); return res.end('Not found'); }
+    file = [target === 'demos/home.js' ? 'brand.js' : target, mime[path.extname(target)] || 'video/mp4'];
+  }
   // Learning pages are static documents; normalize directories without dropping query parameters.
   if(['/learn','/learn/explore','/learn/diagnose'].includes(route)) {
     res.writeHead(302,{Location:route+'/'+new URL(req.url,'http://localhost').search});return res.end();
@@ -74,6 +85,29 @@ http.createServer((req,res)=>{
     else {res.writeHead(404,{'Content-Type':mime['.html'],'Cache-Control':'no-store'});return fs.createReadStream(path.join(__dirname,'ai-cases/404.html')).pipe(res)}
   }
   if(!file||!fs.existsSync(path.join(__dirname,file[0]))){res.writeHead(404);return res.end('Not found')}
+  if (file[1] === 'video/mp4') {
+    const filename = path.join(__dirname,file[0]);
+    const size = fs.statSync(filename).size;
+    const headers = {'Content-Type':'video/mp4','Accept-Ranges':'bytes','X-Content-Type-Options':'nosniff'};
+    const range = req.headers.range;
+    let start = 0, end = size - 1;
+    if (range) {
+      const match = /^bytes=(\d*)-(\d*)$/.exec(range);
+      if (match && (match[1] || match[2])) {
+        start = match[1] ? Number(match[1]) : Math.max(0,size-Number(match[2]));
+        if (match[1] && match[2]) end = Math.min(end,Number(match[2]));
+      }
+      if (!match || (!match[1] && !match[2]) || start > end || start >= size) {
+        res.writeHead(416, {...headers,'Content-Range':'bytes */'+size}); return res.end();
+      }
+      headers['Content-Range'] = 'bytes '+start+'-'+end+'/'+size;
+    }
+    res.writeHead(range ? 206 : 200,{...headers,'Content-Length':end-start+1});
+    if (req.method === 'HEAD') return res.end();
+    const stream = fs.createReadStream(filename,{start,end});
+    res.on('close',()=>stream.destroy());
+    return stream.pipe(res);
+  }
   res.writeHead(200,{'Content-Type':file[1],'Cache-Control':'no-store','X-Content-Type-Options':'nosniff'});
   fs.createReadStream(path.join(__dirname,file[0])).pipe(res);
 }).listen(port,'127.0.0.1',()=>console.log('Website release preview: http://127.0.0.1:'+port+'/'));

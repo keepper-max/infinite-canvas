@@ -33,7 +33,8 @@ for (const [, attrs, code] of home.matchAll(/<script\b([^>]*)>([\s\S]*?)<\/scrip
 for (const file of ['assets/home.js','assets/learn.js','explore/app.js','diagnose/app.js','diagnose/share.js','diagnose/engine.js','../preview.cjs']) {
   new Script(fs.readFileSync(path.join(root, file), 'utf8'), { filename: file });
 }
-assert.equal((home.match(/href="\/learn\/">学习中心/g) || []).length, 2, 'desktop and mobile navigation');
+assert.match(home, /id="ai-courses"[\s\S]*?<a[^>]+href="\/learn\/">进入学习中心<\/a>/, 'academy learning entry');
+assert.match(home, /<footer\b[\s\S]*?<a href="\/learn\/">学习中心<\/a>/, 'footer learning entry');
 const topics = JSON.parse(fs.readFileSync(path.join(root,'data/topics.json'), 'utf8'));
 const questions = JSON.parse(fs.readFileSync(path.join(root,'data/questions.json'), 'utf8'));
 assert.equal(topics.length, 1244);

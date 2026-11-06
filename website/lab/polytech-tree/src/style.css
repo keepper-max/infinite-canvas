@@ -1,3 +1,4 @@
+.from-demos .node-source{display:none}
 :root{font-family:'Microsoft YaHei','PingFang SC',sans-serif;color:#203f53;background:#f4f9ff;font-synthesis:none;--muted:#587181;--line:#d7e3eb;--accent:#155e83;--stage:#071b2d}
 *{box-sizing:border-box}body{margin:0}a{color:inherit;text-underline-offset:4px}button,select,input{font:inherit;accent-color:var(--accent)}
 button,select{min-height:40px;border:1px solid var(--line);border-radius:8px;background:#fff;color:inherit;padding:8px 12px}button{cursor:pointer;transition:background .18s,border-color .18s}button:hover{background:#e9f3f9;border-color:#a6c1d1}

@@ -61,7 +61,7 @@ const url = 'http://127.0.0.1:4415/';
       const context=await browser.newContext({javaScriptEnabled:mode!=='no-javascript'});
       const fallback=await context.newPage(); const requests=[];
       fallback.on('request', request=>requests.push(request.url()));
-      if(mode==='blocked-script') await fallback.route('**/brand.js', route=>route.fulfill({status:404,body:'Not found'}));
+      if(mode==='blocked-script') await fallback.route('**/demos/home.js', route=>route.fulfill({status:404,body:'Not found'}));
       await fallback.goto(url);
       assert.equal(await fallback.locator('#inquiry-content').isDisabled(),true);
       assert.equal(await fallback.locator('#inquiry-form button').isDisabled(),true);
