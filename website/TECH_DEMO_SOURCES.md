@@ -40,3 +40,7 @@
 - tools/demo-public-files.json 是内部映射清单；demos/home.js 映射到网站的 brand.js，实现新的首页脚本地址。后续若单独发布，应复制清单中的文件到对应 URL，配合首页 index.html、既有诊断 app.js 与科技树 dist 的正式路由映射；不要发布整个 website 或 tools 目录，不复用旧整站发布脚本。
 - 来源、原始链接、工序和素材版本只存在于本维护文件。公开卡片、阅读器和视频无来源导航或作者信息。依据原有许可，科技树保留独立的版权文件。渲染依赖、原始下载、完整浏览器验收记录与截图位于 H:/CodexStorage/tech-demo-work，不在官网目录中。
 - 本地导出可使用 node website/tools/build-demos.cjs <全新输出目录>。交付时已实际导出到 H:/CodexStorage/tech-demo-work/verified-public，含 75 个静态增量文件；目录内无维护文档、清单或源码。
+
+## 线上状态
+
+v0.16.67 已发布到 https://shoumiren.online/demos/ 。12 项公网桌面和手机模拟操作通过，75 个公开文件与发布包哈希一致。维护文件未进入公开包；发布和回滚细节见 ops/releases/v0.16.67-website-demos.md。

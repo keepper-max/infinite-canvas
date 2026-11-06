@@ -1,6 +1,6 @@
 {
-  "release": "v0.16.62",
-  "directory": "/var/www/shoumiren-site/releases/20261026-site09",
-  "indexSha256": "c0966afffe3dfff3ae873238cc2ac3a1b8ac0117670f66c4f7ee3b9c0e44b875",
-  "snippetSha256": "79385887ab2d016b2d64aed92d1e700290978eaf54066750c2495af3b983d7ad"
+  "release": "v0.16.67",
+  "directory": "/var/www/shoumiren-site/releases/20261106-site10",
+  "indexSha256": "5698f19a7f314b7cfbe5474184132ddeb64d328567134fe42a47e2473ac29e0e",
+  "snippetSha256": "5d547739dc54ada51b1f7d8fec9ac8a31f322b765609100c7389e6b3ffd86113"
 }
