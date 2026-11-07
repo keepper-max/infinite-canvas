@@ -1,0 +1,137 @@
+[
+  {
+    "id": "agent",
+    "title": "AI Agent 调度作战大屏",
+    "description": "启动一项模拟任务，观察四个成员依次完成资料、策划、制作与复核。",
+    "href": "/demos/showcase/agent/",
+    "group": "product",
+    "actual": false,
+    "cover": "/demos/showcase/previews/agent.webp"
+  },
+  {
+    "id": "cashflow",
+    "title": "还清日现金流规划系统",
+    "description": "调整收入、必要支出与利率，查看示例偿还计划和余额趋势。",
+    "href": "/demos/showcase/cashflow/",
+    "group": "product",
+    "actual": false,
+    "cover": "/demos/showcase/previews/cashflow.webp"
+  },
+  {
+    "id": "media",
+    "title": "AI 自媒体矩阵工作台",
+    "description": "输入主题，生成三种渠道的可编辑模板草稿，不连接平台账号。",
+    "href": "/demos/showcase/media/",
+    "group": "product",
+    "actual": false,
+    "cover": "/demos/showcase/previews/media.webp"
+  },
+  {
+    "id": "tender",
+    "title": "AI 自动投标系统",
+    "description": "调整报价、勾选材料，查看示例预算与准备清单的检查结果。",
+    "href": "/demos/showcase/tender/",
+    "group": "product",
+    "actual": false,
+    "cover": "/demos/showcase/previews/tender.webp"
+  },
+  {
+    "id": "dify",
+    "title": "网站客服与知识库",
+    "description": "基于三条示例资料体验有来源的规则问答，资料不足时明确提示。",
+    "href": "/demos/showcase/dify/",
+    "group": "product",
+    "actual": false,
+    "cover": "/demos/showcase/previews/dify.webp"
+  },
+  {
+    "id": "fish",
+    "title": "鱼塘治愈互动游戏",
+    "description": "点击水面投食，看原创几何鱼群靠近，也可以调整数量与暂停。",
+    "href": "/demos/showcase/fish/",
+    "group": "film",
+    "actual": false,
+    "cover": "/demos/showcase/previews/fish.webp"
+  },
+  {
+    "id": "idphoto",
+    "title": "AI 证件照",
+    "description": "切换原创插画头像的底色与张数，下载一份示意排版。",
+    "href": "/demos/showcase/idphoto/",
+    "group": "film",
+    "actual": false,
+    "cover": "/demos/showcase/previews/idphoto.webp"
+  },
+  {
+    "id": "restore",
+    "title": "老照片修复",
+    "description": "拖动分隔线比较原创插画的旧化滤镜与原图，不执行AI修复。",
+    "href": "/demos/showcase/restore/",
+    "group": "film",
+    "actual": false,
+    "cover": "/demos/showcase/previews/restore.webp"
+  },
+  {
+    "id": "room",
+    "title": "空房软装",
+    "description": "为原创矢量客厅切换预设配色、地毯与绿植，查看软装示意。",
+    "href": "/demos/showcase/room/",
+    "group": "film",
+    "actual": false,
+    "cover": "/demos/showcase/previews/room.webp"
+  },
+  {
+    "id": "avatar",
+    "title": "虚拟人口播",
+    "description": "输入脚本，体验原创角色与定时字幕，不合成真实口型或声音。",
+    "href": "/demos/showcase/avatar/",
+    "group": "film",
+    "actual": false,
+    "cover": "/demos/showcase/previews/avatar.webp"
+  },
+  {
+    "id": "archify",
+    "title": "交互架构图",
+    "description": "切换业务场景，点选流程节点查看输入、处理与交付关系。",
+    "href": "/demos/showcase/archify/",
+    "group": "product",
+    "actual": false,
+    "cover": "/demos/showcase/previews/archify.webp"
+  },
+  {
+    "id": "tree",
+    "title": "3D 科技树",
+    "description": "探索现有三维科技树，查看时代、领域与前置知识的关联。",
+    "href": "/lab/polytech-tree/",
+    "group": "learn",
+    "actual": true,
+    "cover": "/demos/showcase/previews/tree.webp"
+  },
+  {
+    "id": "datav",
+    "title": "数据可视化大屏",
+    "description": "旋转现有四川三维地图，查看两侧图表与示例运营指标。",
+    "href": "/demos/media/region/",
+    "group": "product",
+    "actual": true,
+    "cover": "/demos/showcase/previews/datav.webp"
+  },
+  {
+    "id": "html",
+    "title": "交互网页生成",
+    "description": "输入原创文字，切换阅读版式，下载可独立打开的HTML文件。",
+    "href": "/demos/showcase/html/",
+    "group": "learn",
+    "actual": false,
+    "cover": "/demos/showcase/previews/html.webp"
+  },
+  {
+    "id": "slides",
+    "title": "网页演示文稿",
+    "description": "切换四页原创讲稿与配色，体验键盘控制的网页演示。",
+    "href": "/demos/showcase/slides/",
+    "group": "learn",
+    "actual": false,
+    "cover": "/demos/showcase/previews/slides.webp"
+  }
+]

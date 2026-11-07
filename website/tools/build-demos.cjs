@@ -19,7 +19,10 @@ const items = [
   id, title, text, action, group, pages, direct, href: direct || '/demos/' + id + '/',
   cover: id === 'tree' ? '/website-assets/polytech-tree/cover-f67e358e16e5.webp' : '/demos/media/' + id + '/cover.webp'
 }));
-const groups = {all:'全部', product:'企业与产品', film:'影像与品牌', learn:'教育与知识'};
+const showcaseItems = require('./showcase-items.json');
+for (const item of showcaseItems.filter(item => !item.actual)) {
+  items.push({id:item.id,title:item.title,text:item.description,action:'打开演示',group:item.group,direct:item.href,href:item.href,cover:item.cover || '/demos/showcase/previews/'+item.id+'.webp'});
+}
 function card(item, level) {
   return `<article class="demo-card" data-group="${item.group}">
   <div class="demo-cover"><img src="${item.cover}" alt="" width="640" height="360" loading="lazy" decoding="async"></div>
@@ -31,17 +34,17 @@ function page(title, body) {
   return `<!doctype html>
 <html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
 <title>${title} · 守密人科技</title><link rel="icon" href="${logo}">
-<link rel="stylesheet" href="/website-assets/20261026-site09/brand.css"><link rel="stylesheet" href="/demos/demos.css"><script defer src="/demos/demos.js"></script></head>
+<link rel="stylesheet" href="/website-assets/20261026-site09/brand.css"><link rel="stylesheet" href="/demos/demos.css"><link rel="stylesheet" href="/demos/showcase/app.css?v=ui2"><script defer src="/demos/demos.js"></script></head>
 <body class="demo-page"><a class="skip-link" href="#main">跳至主要内容</a>
 <header class="demo-nav"><div class="container"><a class="brand" href="/"><img src="${logo}" width="38" height="38" alt=""><span>守密人科技<small>SHOUMIREN TECHNOLOGY</small></span></a><a href="/#demos">返回官网首页 <span aria-hidden="true">↗</span></a></div></header>
-<main id="main" class="container demo-main" tabindex="-1">${body}</main></body></html>
+<main id="main" class="container demo-main" tabindex="-1"><aside class="notice"><strong>仅为演示效果</strong> 示例数据与模拟流程，未接入真实业务。 <a href="/demos/licenses/">许可与演示说明 ↗</a></aside>${body}</main></body></html>
 `;
 }
-const grid = `<section aria-label="演示案例" class="demo-grid">${items.map(i=>card(i,2)).join('\n')}</section>`;
-const filters = Object.entries(groups).map(([id,label]) => `<a data-filter="${id}" href="${id==='all'?'/demos/':'/demos/?category='+id}">${label}</a>`).join('');
 fs.mkdirSync(demos,{recursive:true});
-fs.writeFileSync(path.join(demos,'index.html'),page('技术演示',`<div class="demo-title"><h1>技术演示</h1><span>${items.length} 个演示</span></div>
-<nav class="demo-filters" aria-label="演示分类">${filters}</nav>${grid}`));
+const renderGallery = require('./render-gallery.cjs');
+fs.writeFileSync(path.join(demos,'index.html'),renderGallery(items));
+fs.mkdirSync(path.join(demos,'showcase'),{recursive:true});
+fs.writeFileSync(path.join(demos,'showcase/index.html'),renderGallery(showcaseItems,{topic:true}));
 for (const item of items.filter(i=>!i.direct)) {
   const media = '/demos/media/' + item.id + '/';
   const stage = item.pages ? `<div class="slide-reader" data-pages="${item.pages}" data-media="${media}"><a id="slide-full" href="${media}1.webp" target="_blank" rel="noopener" aria-label="查看当前页原图"><img id="slide" width="1280" height="720" src="${media}1.webp" alt="${item.title}，第 1 页"></a><div class="reader-controls"><button id="prev" disabled>← 上一页</button><output id="counter" aria-live="polite">1 / ${item.pages}</output><button id="next">下一页 →</button></div></div>`
@@ -76,6 +79,9 @@ const mapBase = 'demos/media/region/';
 publicFiles.push(mapBase+'index.html');
 for (const name of fs.readdirSync(path.join(website,mapBase,'assets'))) {
   if (/^(?:index-[\w-]+\.(?:css|js)|(?:terrain|normal|elevation)-[\w-]+\.webp)$/.test(name)) publicFiles.push(mapBase+'assets/'+name);
+}
+for (const file of require('./showcase-public-files.json')) {
+  if (!publicFiles.includes(file)) publicFiles.push(file);
 }
 fs.writeFileSync(path.join(__dirname,'demo-public-files.json'),JSON.stringify(publicFiles,null,2)+'\n');
 for (const file of publicFiles) {

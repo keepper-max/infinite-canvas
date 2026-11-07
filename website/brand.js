@@ -53,3 +53,5 @@ document.querySelector('#inquiry-form').addEventListener('submit', async event =
 document.querySelector('.inquiry-fields').disabled = false;
 document.querySelector('#inquiry-form button[type=submit]').disabled = false;
 document.querySelector('#inquiry-availability').hidden = true;
+
+(() => { const section=document.querySelector('#demos'); if(!section)return; for(const link of section.querySelectorAll('a[href="/demos/"]')){for(const child of link.childNodes){if(child.nodeType===3)child.nodeValue=child.nodeValue.replace(/查看全部\s*12\s*个演示/,'查看全部 25 个演示');}} const label=document.createElement('p');label.textContent='仅为演示效果 · 示例数据与模拟流程';label.style.cssText='font-size:13px;color:#61737a;margin:12px 0';section.querySelector('.section-heading')?.after(label);})();

@@ -1,0 +1,19 @@
+# Run on the physical application server after placing the private bundle/env.
+# Existing API image and Docker network are reused; no database migrations.
+services:
+  website-ziwei:
+    image: infinite-canvas-api:v0.16.60
+    container_name: shoumiren-website-ziwei
+    restart: unless-stopped
+    working_dir: /app
+    command: ["node", "/app/website-ziwei/main.cjs"]
+    env_file: /opt/infinite-canvas-releases/ziwei-ai1/config.env
+    volumes:
+      - /opt/infinite-canvas-releases/ziwei-ai1/main.cjs:/app/website-ziwei/main.cjs:ro
+    networks:
+      canvas:
+        aliases: [website-ziwei]
+networks:
+  canvas:
+    external: true
+    name: jingjie-studio_default

@@ -24,13 +24,28 @@ files['/website-assets/20261026-site09/service-industry.webp'] = ['assets/brand-
 files['/website-assets/20261026-site09/service-agent.webp'] = ['assets/brand-v2/service-agent.webp','image/webp'];
 files['/website-assets/20261026-site09/service-knowledge.webp'] = ['assets/brand-v2/service-knowledge.webp','image/webp'];
 files['/website-assets/brand-v2/canvas-workspace-v2-2ca46f587804.webp'] = ['assets/brand-v2/canvas-workspace-v2.webp','image/webp'];
-const mime={'.html':'text/html; charset=utf-8','.js':'application/javascript','.mjs':'application/javascript; charset=utf-8','.css':'text/css','.webp':'image/webp','.json':'application/json','.md':'text/plain; charset=utf-8','.txt':'text/plain; charset=utf-8','.png':'image/png'};
+const mime={'.svg':'image/svg+xml','.html':'text/html; charset=utf-8','.js':'application/javascript','.mjs':'application/javascript; charset=utf-8','.css':'text/css','.webp':'image/webp','.json':'application/json','.md':'text/plain; charset=utf-8','.txt':'text/plain; charset=utf-8','.png':'image/png'};
 const port=Number(process.env.WEBSITE_PREVIEW_PORT||4405);
+const laboratoryFiles = new Set(require('./laboratory/public-files.json'));
 const demoFiles = new Set(require('./tools/demo-public-files.json'));
 const caseIds=new Set(JSON.parse(fs.readFileSync(path.join(__dirname,'ai-cases/cases.json'),'utf8')).map(item=>item.id));
 http.createServer((req,res)=>{
   const route=new URL(req.url,'http://localhost').pathname;
+  if (route === '/api/website/ziwei/interpret') {
+    res.writeHead(503, {'Content-Type':'application/json; charset=utf-8','Cache-Control':'no-store'});
+    return res.end(JSON.stringify({error:{code:'ZIWEI_AI_NOT_CONFIGURED',message:'AI 解读尚未配置，请先复制资料到文本工作台'}}));
+  }
   let file=files[route];
+  if (route === '/laboratory' || route.startsWith('/laboratory/')) {
+    const relative=route.slice(1);
+    if(laboratoryFiles.has(relative+'/index.html')){
+      res.writeHead(302,{Location:route+'/'+new URL(req.url,'http://localhost').search});return res.end();
+    }
+    const target=relative.endsWith('/')?relative+'index.html':relative;
+    if(!laboratoryFiles.has(target)){res.writeHead(404);return res.end('Not found');}
+    file=[target, target.endsWith('.zip')?'application/zip':mime[path.extname(target)]||'text/plain; charset=utf-8'];
+  }
+
   if (route === '/demos' || route.startsWith('/demos/')) {
     const relative = route.slice(1);
     if (demoFiles.has(relative + '/index.html')) {
@@ -40,6 +55,14 @@ http.createServer((req,res)=>{
     const target = relative.endsWith('/') ? relative + 'index.html' : relative;
     if (!demoFiles.has(target)) { res.writeHead(404); return res.end('Not found'); }
     file = [target === 'demos/home.js' ? 'brand.js' : target, mime[path.extname(target)] || 'video/mp4'];
+  }
+  // Standalone Ziwei website tool. Serve only built, explicitly public files.
+  if (route === '/ziwei' || route.startsWith('/ziwei/')) {
+    if (route === '/ziwei') {res.writeHead(302,{Location:'/ziwei/'+new URL(req.url,'http://localhost').search});return res.end();}
+    const allowed = new Set(JSON.parse(fs.readFileSync(path.join(__dirname,'ziwei/public-files.json'),'utf8')));
+    const relative = route.slice('/ziwei/'.length) || 'index.html';
+    if (!allowed.has(relative)) {res.writeHead(404);return res.end('Not found');}
+    file=['ziwei/dist/'+relative, mime[path.extname(relative)] || 'text/plain; charset=utf-8'];
   }
   // Learning pages are static documents; normalize directories without dropping query parameters.
   if(['/learn','/learn/explore','/learn/diagnose'].includes(route)) {

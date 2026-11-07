@@ -1,0 +1,39 @@
+{
+  "schemaVersion": 1,
+  "status": "enabled",
+  "endpoint": "/api/website/ziwei/interpret",
+  "method": "POST",
+  "provider": "server-side-pinhaozhan",
+  "requestFields": [
+    "schemaVersion",
+    "requestId",
+    "chartFingerprint",
+    "knowledgeVersion",
+    "chart"
+  ],
+  "response": {
+    "data": {
+      "schemaVersion": 1,
+      "requestId": "echo-request-id",
+      "chartFingerprint": "echo-safe-chart-sha256",
+      "text": "model interpretation"
+    }
+  },
+  "serverRequirements": [
+    "Server validates fixed chart schema and reconstructs its own prompt and knowledge",
+    "Fixed server model; credentials are environment-only",
+    "Atomic persistent Redis quota; unknown IP or quota storage failure blocks inference",
+    "Completed duplicate request returns cached response; pending/failed duplicates never resubmit",
+    "Sponsor-funded public website; does not debit visitor canvas balance"
+  ],
+  "rawBirthDetailsIncluded": false,
+  "largeInterpretationDatasetRequired": false,
+  "model": "deepseek-v4.1-flash-1017",
+  "quota": {
+    "scope": "ip",
+    "maximumCalls": 2,
+    "rollingWindowHours": 24,
+    "submittedFailuresCount": true,
+    "idempotentRequestId": true
+  }
+}

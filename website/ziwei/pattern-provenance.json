@@ -1,0 +1,9 @@
+{
+  "source": "https://github.com/Renhuai123/ziwei-doushu/blob/a600484a49255039d0725f1ba9e11ca81a948f97/lib/ziwei/patterns.ts",
+  "sha256": "73a04da49f5ece55afaf8b2a6cb08cb245713a58fcc9c2eccd28a5dd021b25cc",
+  "changes": [
+    "Remove server-only marker for browser use",
+    "Replace description values; do not redistribute modern-course quotations",
+    "Preserve detector conditions and classical source labels"
+  ]
+}

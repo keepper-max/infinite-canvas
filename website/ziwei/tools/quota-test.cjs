@@ -1,0 +1,51 @@
+// Run inside the private backend container. Uses random HMAC namespaces and a
+// fake model; never calls a paid provider or alters real visitor reservations.
+const assert = require('node:assert/strict');
+const {randomUUID,createHash,createHmac} = require('node:crypto');
+const {Redis} = require('ioredis');
+process.env.WEBSITE_ZIWEI_START='false';
+const {WebsiteZiweiService,ZIWEI_WINDOW_MS} = require('/app/website-ziwei/main.cjs');
+(async () => {
+  const redis = new Redis(process.env.REDIS_URL);
+  const secret = randomUUID();
+  let calls=0, release;
+  const waiting = new Promise(resolve => {release=resolve;});
+  const service = new WebsiteZiweiService(redis,secret,'test-model',async () => {calls++;await waiting;return 'test interpretation';});
+  const chart={test:'only synthetic quota data'};
+  const request=() => ({schemaVersion:1,requestId:randomUUID(),knowledgeVersion:'test',chart,chartFingerprint:createHash('sha256').update(JSON.stringify(chart)).digest('hex')});
+  const ip='203.0.113.1', first=request();
+  const start=service.interpret(first,ip);
+  // Wait until the reservation has actually reached the fake model.
+  while(!calls) await new Promise(resolve => setImmediate(resolve));
+  await assert.rejects(service.interpret(first,ip),error => error.code==='ZIWEI_PENDING');
+  release();
+  const result=await start;
+  assert.equal(calls,1);
+  assert.equal(result.remainingCalls,1);
+  assert.deepEqual(await service.interpret(first,ip),result);
+  assert.equal(calls,1);
+  assert.equal((await service.interpret(request(),ip)).remainingCalls,0);
+  const restarted = new WebsiteZiweiService(redis,secret,'test-model',async () => {throw Error('must not call');});
+  await assert.rejects(restarted.interpret(request(),ip),error => error.code==='ZIWEI_RATE_LIMITED' && error.details.retryAfterSeconds>0);
+  assert.equal(calls,2);
+  await service.interpret(request(),'203.0.113.2');
+  assert.equal(calls,3);
+  const key='website-ziwei:quota:'+createHmac('sha256',secret).update(ip).digest('hex');
+  const members=await redis.zrange(key,0,-1);
+  for(const member of members) await redis.zadd(key,Date.now()-ZIWEI_WINDOW_MS-1000,member);
+  assert.equal((await service.interpret(request(),ip)).remainingCalls,1);
+  let failures=0;
+  const failing = new WebsiteZiweiService(redis,secret+'fail','test-model',async () => {failures++;throw Error('synthetic failure');});
+  const failed=request();
+  await assert.rejects(failing.interpret(failed,ip),error => error.code==='ZIWEI_MODEL_FAILED');
+  await assert.rejects(failing.interpret(failed,ip),error => error.code==='ZIWEI_PREVIOUS_FAILED');
+  await assert.rejects(failing.interpret(request(),ip),error => error.code==='ZIWEI_MODEL_FAILED');
+  await assert.rejects(failing.interpret(request(),ip),error => error.code==='ZIWEI_RATE_LIMITED');
+  assert.equal(failures,2);
+  await assert.rejects(service.interpret(request(),'unknown'),error => error.code==='ZIWEI_IP_UNAVAILABLE');
+  const unavailable = new WebsiteZiweiService({eval:async () => {throw Error('offline');}},secret,'test-model',async () => {throw Error('must not call');});
+  await assert.rejects(unavailable.interpret(request(),ip),error => error.code==='ZIWEI_QUOTA_UNAVAILABLE');
+  assert.ok(await redis.pttl(key)>0);
+  await redis.quit();
+  console.log('PASS Redis: pending/completed idempotency, 2 calls, IP isolation, process restart, rolling expiry, submitted failures, unknown IP and storage fail-closed. No paid calls.');
+})().catch(() => {console.error('Quota integration failed; private details suppressed');process.exitCode=1;});

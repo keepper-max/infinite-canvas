@@ -1,0 +1,21 @@
+{
+  "release": "/var/www/shoumiren-site/releases/20261107-site15-ziwei",
+  "previous": "/var/www/shoumiren-site/releases/20261107-site14-ziwei",
+  "previousSnippetSha256": "9d47ca9b01697e51ab1c48d951874ee4cc4d086e0c800e5f555a3a3ec7e25787",
+  "snippetSha256": "37d257481ca95d1e48d814549d6d1aa66eef1ad3fa39b6d6b0895737db66f5ce",
+  "mainSha256": "109b39f25e53d4eebec367ff847fc155b1984c9daf5fde7b3028dca2f739bd12",
+  "files": {
+    "index.html": "1897c915ad171c92e4f606f2cfc02453566ed9e4b6bab3d1e2befa73b4d31687",
+    "ziwei/index.html": "d2226fef5c1fd7f832257d497deb6e31a5fa0079ad1c6639e86255038932c3fd",
+    "ziwei/styles.css": "dee54d4ca06d7cb23431abb1b56a9f7e4019c3f08d2bb06783939f444b14d8ac",
+    "ziwei/credits.html": "778d5500653db2b2a3ec55600c646e49a507190ba10bbf15cda3d6ed398bbcbe",
+    "ziwei/api-contract.json": "12d6d5bde7282507b1f832e216fa8b4e4b318642b5278c1c55dc947da85a7f26",
+    "ziwei/app.js": "0d41b5a251de6cc1896e9ba9897f618cdf18c2314d10ec83eb2eb058073c4afe",
+    "ziwei/app.js.LEGAL.txt": "2e5180a6ae9715c8338b2a355be9ff87aa78568f803df05fe4bc47ef8360c0f1",
+    "ziwei/licenses/ziwei-doushu.txt": "60b3142704dd628421f647af55b2817a1756c74cd0850e7536538840bee06313",
+    "ziwei/licenses/iztro.txt": "e6c7b6e313cbda3135b41bccc66c98be132cb8319d0d465903d17e669e748b36",
+    "ziwei/licenses/lunar-javascript.txt": "d9210caf1844dcf410095cea464b79800aad30dbd49df092076b9f0ddc015404",
+    "ziwei/licenses/lunar-lite.txt": "21c79dc1c4df538c682573291f8824be1b1313e309a32f1e2367e3fd4c66d62a",
+    "ziwei/licenses/localforage.txt": "8c3c0576866d6c22f56cbe65b8ef20e63c8aa75ec58f8cd139a242edb42bf8f1"
+  }
+}

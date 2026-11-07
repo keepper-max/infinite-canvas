@@ -1,0 +1,21 @@
+{
+  "name": "shoumiren-ziwei",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "node tools/build.mjs",
+    "build:server": "node tools/build-server.mjs",
+    "typecheck": "tsc --noEmit",
+    "test": "node tools/test.mjs",
+    "test:browser": "node tools/browser.mjs"
+  },
+  "dependencies": {
+    "iztro": "2.6.1",
+    "lunar-javascript": "1.7.7",
+    "localforage": "1.10.0"
+  },
+  "devDependencies": {
+    "esbuild": "0.28.2",
+    "typescript": "5.9.3"
+  }
+}

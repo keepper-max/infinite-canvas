@@ -2,49 +2,49 @@
 const websiteContent = {
   news: [
   {
-    "date": "2026-11-02",
+    "date": "2026-11-07",
     "category": "开发工具",
-    "title": "OpenAI Java SDK 4.96 增加 Responses WebSocket 预热支持",
-    "summary": "OpenAI发布Java SDK 4.96.0，为Responses WebSocket增加预热支持，并补充实时翻译客户端密钥的使用示例。本次属于SDK接口与文档更新，不是新模型发布。",
-    "observation": "使用Java开发实时交互应用的团队，可核对预热选项与现有连接管理是否兼容，再用自己的网络环境测试首轮响应。新增客户端支持不等于所有账号能力相同，也不能据此承诺固定延迟收益。",
-    "source": "OpenAI Java SDK 官方发布记录",
-    "url": "https://github.com/openai/openai-java/releases/tag/v4.96.0"
+    "title": "Qwen Code 0.26.9 完善 Skill 安装与恢复，支持批量启停",
+    "summary": "Qwen Code发布0.26.9稳定版，增加Skill ZIP上传、守护进程接口及TypeScript SDK接入，支持批量启用或停用用户Skill，并可通过安装回执核对失败或状态不明的操作。版本还修复会话分页遗漏与草稿保留问题。",
+    "observation": "团队分发技能包时，除了安装成功，也需要明确启用范围与失败恢复。可先在隔离环境验证归档来源、安装回执和权限边界；这些工具支持不代表技能内容已经过安全审查。",
+    "source": "Qwen Code 官方发布记录",
+    "url": "https://github.com/QwenLM/qwen-code/releases/tag/v0.26.9"
   },
   {
-    "date": "2026-11-01",
+    "date": "2026-11-06",
     "category": "智能体工具",
-    "title": "Qwen Code 0.26.5 默认开启交互视图，完善长会话与人工接管",
-    "summary": "Qwen Code发布0.26.5稳定版，默认开启Generated UI，交互卡片中的值可作为可移除的上下文继续对话。Managed WebShell分页读取较早消息，自动修复PR也增加重试预算与受阻时的人工接管说明。",
-    "observation": "长流程助手既要保留任务上下文，也应在反复失败时明确交还给人。已有集成可重点验证卡片数据进入对话的范围、历史分页和重试配置；新版功能不代表本平台已经升级或获得相同能力。",
-    "source": "Qwen Code 官方发布记录",
-    "url": "https://github.com/QwenLM/qwen-code/releases/tag/v0.26.5"
+    "title": "OpenHands 1.37 用流程图解释自动化，优化会话恢复",
+    "summary": "OpenHands发布1.37.0，为自动化任务增加Mermaid流程图说明，并修复会话恢复时的历史排序、启动过程标题丢失和过早显示空白聊天建议等问题。实时更新也减少了重复扫描会话历史。",
+    "observation": "自动化流程可视化有助于团队检查任务结构，但流程图不能代替实际权限与执行结果验证。已有部署可重点回归会话恢复和长历史交互；本次未对新版性能收益作独立测量。",
+    "source": "OpenHands 官方发布记录",
+    "url": "https://github.com/OpenHands/OpenHands/releases/tag/v1.37.0"
   },
   {
-    "date": "2026-10-30",
-    "category": "智能体工程",
-    "title": "Cloudflare Agents 0.32 调整技能加载接口，增加实验性链路追踪",
-    "summary": "Cloudflare Agents发布0.32.0，技能可从工作区、R2或代码加载，原SkillRegistry等接口被替换，属于破坏性变更。版本还加入实验性OpenTelemetry接入，并优化未使用模块的打包剔除。",
-    "observation": "技能接入更灵活，也需要检查已有注册、导入与执行代码的迁移。团队可先在测试环境验证技能目录及失败追踪；实验性观测接口仍可能调整，不能直接视为稳定承诺。",
-    "source": "Cloudflare Agents 官方发布记录",
-    "url": "https://github.com/cloudflare/agents/releases/tag/agents%400.32.0"
+    "date": "2026-11-06",
+    "category": "智能体工具",
+    "title": "OpenHands 1.36 完善自动化配置，支持服务账号运行",
+    "summary": "OpenHands发布1.36.0，统一自动化任务的创建、查看和编辑流程，并支持在Agent Canvas中以服务账号运行自动化。模板设置可列出Bitbucket Data Center和Azure DevOps仓库，也完善了自托管GitHub的连接引导。",
+    "observation": "将自动化交给团队长期运行时，需要明确执行身份、仓库访问和凭据归属。已有部署可先核对扩展版本、权限与模板草稿恢复，再启用服务账号；新增入口不代表所有集成都已自动配置。",
+    "source": "OpenHands 官方发布记录",
+    "url": "https://github.com/OpenHands/OpenHands/releases/tag/v1.36.0"
   },
   {
-    "date": "2026-10-29",
+    "date": "2026-11-06",
     "category": "开发工具",
-    "title": "Qwen Code 0.26.4 增加独立工作树，改进交互视图与离线恢复",
-    "summary": "Qwen Code发布0.26.4稳定版，为主会话增加独立工作树，生成视图可跟随宿主主题并作为交互视图展示。Web Shell在离线时暂停请求、恢复连接后自动恢复，自动修复流程也增加轮次预算约束。",
-    "observation": "并行开发需要同时管理工作目录、会话状态与自动修改边界。升级后应以自己的项目检查工作树隔离、断网恢复及预算配置，避免将界面新增能力误认为现有业务已自动获得保障。",
+    "title": "Qwen Code 0.26.8 增加订阅接入，改进 GitHub 事件协作",
+    "summary": "Qwen Code发布0.26.8稳定版，在CLI、VS Code和Desktop中增加Qwen订阅支持；GitHub事件可关联PR、Issue和会话，并按角色调整绑定会话的动作模板。版本还修复临时线程错误或次级限流下的通知、回复保留问题。",
+    "observation": "多入口开发助手需要同时管理账号资格、事件状态与自动回复边界。团队可检查自己的订阅权限、模板和失败恢复行为，避免把工具支持误当作所有模型或额度都已包含。",
     "source": "Qwen Code 官方发布记录",
-    "url": "https://github.com/QwenLM/qwen-code/releases/tag/v0.26.4"
+    "url": "https://github.com/QwenLM/qwen-code/releases/tag/v0.26.8"
   },
   {
-    "date": "2026-10-29",
-    "category": "行业应用",
-    "title": "Google 在新加坡推进医疗 AI 研究与临床辅助评估",
-    "summary": "Google宣布在新加坡设立研究中心，推进基础AI模型与本地科研合作，并扩展MedGemma等开放模型的医疗研究。Google DeepMind与当地医疗系统评估AI临床助手，辅助汇总指南、文献和临床问题信息。",
-    "observation": "行业落地需要把研究、临床评估和正式应用分开看。对医疗等高要求场景，数据主权、专业人员复核与系统治理仍是核心条件，合作公告不能替代实际安全性和有效性验证。",
-    "source": "Google 官方博客",
-    "url": "https://blog.google/innovation-and-ai/technology/health/google-for-health-summit-singapore/"
+    "date": "2026-11-05",
+    "category": "智能体工程",
+    "title": "LangGraph 1.2.20 为人工中断分配独立标识，增加严格恢复模式",
+    "summary": "LangGraph发布1.2.20，同一任务中的每次interrupt调用获得独立标识，并新增严格恢复模式，用于拒绝已经过期的中断答复。版本也更新了多次中断错误提示所指向的文档。",
+    "observation": "长流程中的审批可能晚于任务状态变化。集成方应核对恢复参数与中断标识，让旧页面或重复提交的答复不能误作用于新步骤；需要验证自己的并发、持久化和人工接管流程。",
+    "source": "LangGraph 官方发布记录",
+    "url": "https://github.com/langchain-ai/langgraph/releases/tag/1.2.20"
   }
 ],
   projects: [
