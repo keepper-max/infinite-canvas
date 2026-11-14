@@ -99,7 +99,7 @@ export type AdminOverview = {
 export type AdminFailure = { id: string; kind: string; status: string; error: { code?: string; message: string; retryable: boolean }; updatedAt: string };
 export type AdminModel = { id: string; displayName: string; capability: string; providerId: string; enabled: boolean; configurable: boolean; healthy: boolean; discovered: boolean; checkedAt?: string };
 export type DirectorSettings = { enabled: boolean; modelId: string | null; modelDisplayName: string | null };
-export type AdminProvider = { id: "token360" | "runninghub" | "runninghub_global" | "volcengine_ark"; displayName: string; enabled: boolean; configured: boolean; updatedAt?: string };
+export type AdminProvider = { id: "token360" | "runninghub" | "runninghub_global" | "volcengine_ark" | "wangsu"; displayName: string; enabled: boolean; configured: boolean; updatedAt?: string };
 export type AdminProviders = { activeProviderId: AdminProvider["id"]; providers: AdminProvider[] };
 export type AdminUser = {
     id: string;

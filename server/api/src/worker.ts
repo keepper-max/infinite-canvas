@@ -69,6 +69,7 @@ await gateway
     ),
   );
 await gateway.refreshVolcengineArkCatalog();
+await gateway.refreshWangsuCatalog();
 const runningHubProvider = new RunningHubProvider(
   config.runningHub,
   config.jobs.submitTimeoutMs,
@@ -101,6 +102,10 @@ const provider = new ProviderRouter(
         storage,
       ),
     ],
+    ...(config.wangsu ? [[
+      "wangsu",
+      new VolcengineArkProvider(config.wangsu, config.jobs.submitTimeoutMs, storage, "wangsu_model_catalog", false),
+    ] as [string, GenerationProvider]] : []),
   ]),
 );
 const credits = new CreditService(pool);

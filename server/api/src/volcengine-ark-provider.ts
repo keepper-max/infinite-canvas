@@ -15,6 +15,8 @@ export class VolcengineArkProvider implements GenerationProvider {
     private readonly config: ProviderConfig,
     private readonly submitTimeoutMs: number,
     private readonly storage?: ObjectStorage,
+    private readonly billingAmountSource = "volcengine_official_list_price",
+    private readonly failedTasksAreFree = true,
   ) {}
 
   async create(
@@ -46,13 +48,13 @@ export class VolcengineArkProvider implements GenerationProvider {
       { method: "GET", signal },
     );
     const status = normalizeStatus(payload);
-    const usage = arkUsage(payload, providerJobId);
+    const usage = arkUsage(payload, providerJobId, this.billingAmountSource);
     if (status === "failed")
       throw new ProviderError(
         "PROVIDER_REJECTED",
         providerUserMessage(readError(payload), "视频生成失败"),
         false,
-        { usage: { ...usage, billable: false } },
+        { usage: { ...usage, ...(this.failedTasksAreFree ? { billable: false } : {}) } },
       );
     if (status !== "completed")
       return { providerJobId, status, progress: 10, usage };
@@ -246,7 +248,7 @@ export class VolcengineArkProvider implements GenerationProvider {
       billingTraceId: id,
       status,
       progress: 1,
-      usage: arkUsage(payload, id),
+      usage: arkUsage(payload, id, this.billingAmountSource),
     };
   }
 
@@ -379,14 +381,14 @@ function videoReferencesForMode(request: CompiledGenerationRequest) {
   return references;
 }
 
-function arkUsage(value: unknown, providerRequestId?: string) {
+function arkUsage(value: unknown, providerRequestId?: string, billingAmountSource = "volcengine_official_list_price") {
   const record = asRecord(value);
   const usage = asRecord(record.usage);
   return {
     ...usage,
     ...(providerRequestId ? { provider_request_id: providerRequestId } : {}),
     currency: "CNY",
-    billing_amount_source: "volcengine_official_list_price",
+    billing_amount_source: billingAmountSource,
   };
 }
 

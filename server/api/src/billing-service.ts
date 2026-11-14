@@ -537,7 +537,15 @@ export class BillingService {
   private async settleDirectProvider(job: Record<string, unknown>) {
     const usage = asRecord(job.billing_meter_usage);
     const compiled = asRecord(job.compiled_request);
-    const providerPaidAmount = job.provider === "volcengine_ark"
+    // Wangsu's verified catalog currently covers only this video model.
+    const videoTokens = usage.completion_tokens ?? usage.total_tokens;
+    if (job.provider === "wangsu" && (
+      job.capability !== "video" || compiled.upstreamModel !== "doubao-seedance-2-5-260628" ||
+      (usage.billable !== false && (
+        !["string", "number"].includes(typeof videoTokens) || String(videoTokens).trim() === ""
+      ))
+    )) return this.reviewWangsuUsage(String(job.id));
+    const providerPaidAmount = isArkMeteredProvider(job.provider)
       ? volcengineArkAmount({
           upstreamModel: stringValue(compiled.upstreamModel) || "",
           capability: String(job.capability || ""),
@@ -550,15 +558,17 @@ export class BillingService {
         })
       : decimalValue(usage.third_party_consume_money) ||
         decimalValue(usage.consume_money);
+    if (job.provider === "wangsu" && providerPaidAmount === null)
+      return this.reviewWangsuUsage(String(job.id));
     const ruleSnapshot = billingRuleSnapshot(job.billing_rule_snapshot);
     const originalAmount = isRunningHubProvider(job.provider)
       ? runningHubOriginalAmount(ruleSnapshot, providerPaidAmount)
       : providerPaidAmount;
-    const normalizedUsage = job.provider === "volcengine_ark" && providerPaidAmount !== null
+    const normalizedUsage = isArkMeteredProvider(job.provider) && providerPaidAmount !== null
       ? {
           ...usage,
           third_party_consume_money: providerPaidAmount,
-          billing_amount_source: "volcengine_official_list_price_2026-10-01",
+          billing_amount_source: job.provider === "wangsu" ? "wangsu_model_catalog" : "volcengine_official_list_price_2026-10-01",
         }
       : providerPaidAmount !== null && originalAmount !== providerPaidAmount
         ? {
@@ -585,7 +595,7 @@ export class BillingService {
     ) {
       await this.finishUnavailable(
         String(job.id),
-        job.provider === "volcengine_ark"
+        isArkMeteredProvider(job.provider)
           ? "火山方舟终态未返回可计算的实际用量"
           : "海马云终态未返回可记录的实际用量",
       );
@@ -654,6 +664,14 @@ export class BillingService {
       [jobId, message],
     );
   }
+
+  private async reviewWangsuUsage(jobId: string) {
+    await this.pool.query(
+      "update generation_jobs set billing_status='manual_review',billing_error='网宿终态实际用量未核实，保留积分预留等待核账',billing_next_check_at=null,updated_at=now() where id=$1",
+      [jobId],
+    );
+    return { status: "manual_review" };
+  }
 }
 
 function asRecord(value: unknown): Record<string, unknown> {
@@ -665,7 +683,10 @@ function isRunningHubProvider(value: unknown) {
   return value === "runninghub" || value === "runninghub_global";
 }
 function isDirectMeteredProvider(value: unknown) {
-  return isRunningHubProvider(value) || value === "volcengine_ark";
+  return isRunningHubProvider(value) || isArkMeteredProvider(value);
+}
+function isArkMeteredProvider(value: unknown) {
+  return value === "volcengine_ark" || value === "wangsu";
 }
 function isManualReviewJob(job: Record<string, unknown>) {
   return (

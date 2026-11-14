@@ -2641,6 +2641,7 @@ const managedProviderId = z.enum([
   "runninghub",
   "runninghub_global",
   "volcengine_ark",
+  "wangsu",
 ]);
 const managedProviderInput = z
   .object({ providerId: managedProviderId })

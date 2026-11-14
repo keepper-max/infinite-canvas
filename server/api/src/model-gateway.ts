@@ -118,7 +118,7 @@ export class ModelGateway {
       const profile = catalogModelProfile(candidate);
       const displayName = String(candidate.displayName || name).trim();
       const known = await this.pool.query(
-        "update model_catalog set display_name=$2,discovered=true,healthy=true,catalog_metadata=$3,discovered_at=now(),checked_at=now(),updated_at=now() where upstream_model=$1 returning id",
+        "update model_catalog set display_name=$2,discovered=true,healthy=true,catalog_metadata=$3,discovered_at=now(),checked_at=now(),updated_at=now() where upstream_model=$1 and provider_id='token360' returning id",
         [name, displayName, sanitizeCatalogEntry(candidate)],
       );
       let id = String(known.rows[0]?.id || "");
@@ -204,8 +204,17 @@ export class ModelGateway {
     );
   }
 
+  async refreshWangsuCatalog() {
+    return this.replaceRunningHubCatalog(
+      "wangsu",
+      volcengineArkCatalogItems()
+        .filter((item) => item.endpoint === "doubao-seedance-2-5-260628")
+        .map((item) => ({ ...item, model: item.endpoint })),
+    );
+  }
+
   private async replaceRunningHubCatalog(
-    providerId: "runninghub" | "runninghub_global" | "volcengine_ark",
+    providerId: "runninghub" | "runninghub_global" | "volcengine_ark" | "wangsu",
     candidates: Array<Record<string, unknown>>,
     capability?: Capability,
   ) {
@@ -437,7 +446,7 @@ export class ModelGateway {
       providerId: row.provider_id,
       upstreamParameters,
       providerMetadata:
-        ["runninghub", "runninghub_global", "volcengine_ark"].includes(
+        ["runninghub", "runninghub_global", "volcengine_ark", "wangsu"].includes(
           row.provider_id,
         ) &&
         isRecord(row.catalog_metadata)

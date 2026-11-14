@@ -96,7 +96,7 @@ export default function AdminPage() {
     const { user } = useAuth();
     const { section = "overview", subsection } = useParams();
     const active = sections.some((item) => item.key === section) ? (section as Section) : "overview";
-    const modelProvider: AdminProvider["id"] = subsection === "runninghub-global" ? "runninghub_global" : subsection === "runninghub" ? "runninghub" : subsection === "volcengine-ark" ? "volcengine_ark" : "token360";
+    const modelProvider: AdminProvider["id"] = subsection === "runninghub-global" ? "runninghub_global" : subsection === "runninghub" ? "runninghub" : subsection === "volcengine-ark" ? "volcengine_ark" : subsection === "wangsu" ? "wangsu" : "token360";
     if (!user.isAdmin) return <AdminForbidden />;
     return (
         <div className="flex h-dvh overflow-hidden bg-stone-950 text-stone-100">
@@ -137,6 +137,7 @@ export default function AdminPage() {
                                                 ["runninghub", "海马云 · 中国区"],
                                                 ["runninghub_global", "海马云 · 国际区"],
                                                 ["volcengine_ark", "火山方舟"],
+                                                ["wangsu", "网宿 AI"],
                                             ] as const
                                         ).map(([key, label]) => (
                                             <Link
@@ -1706,7 +1707,7 @@ function ModelsPanel({ provider }: { provider: AdminProvider["id"] }) {
     return (
         <Panel
             title={`${current?.displayName || provider} 模型`}
-            note={`${items.filter((item) => item.healthy).length}/${items.length} 正常 · ${current?.configured ? "密钥已配置" : "密钥未配置"}`}
+            note={`${items.filter((item) => item.healthy).length}/${items.length} 正常 · ${current?.configured ? "密钥已配置" : "密钥未配置"}${provider === "wangsu" ? " · 仅提供视频，设为画布渠道后其他类型模型将不可选" : ""}`}
             actions={
                 <Button
                     type={active ? "default" : "primary"}
@@ -2390,6 +2391,7 @@ function formatJobDuration(createdAt: string, finishedAt?: string) {
 }
 function providerLabel(value?: string) {
     if (value === "volcengine_ark") return "火山方舟";
+    if (value === "wangsu") return "网宿 AI";
     if (value === "runninghub_global") return "海马云 · 国际区";
     if (value === "runninghub") return "海马云 · 中国区";
     return value === "token360" ? "Token360" : value || "—";

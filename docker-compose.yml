@@ -104,6 +104,8 @@ services:
       VOLCENGINE_ARK_API_KEY: ${VOLCENGINE_ARK_API_KEY:-}
       VOLCENGINE_ARK_API_BASE_URL: ${VOLCENGINE_ARK_API_BASE_URL:-https://ark.cn-beijing.volces.com/api/v3}
       VOLCENGINE_ARK_CATALOG_URL: ${VOLCENGINE_ARK_CATALOG_URL:-https://ark.cn-beijing.volces.com/api/v3/models}
+      AIGATEWAY_TOKEN: ${AIGATEWAY_TOKEN:-}
+      WANGSU_API_BASE_URL: ${WANGSU_API_BASE_URL:-https://api.edgecloudapp.com/v2/llm/doubao}
       PINHAOZHAN_API_KEY: ${PINHAOZHAN_API_KEY:-}
       PINHAOZHAN_API_BASE_URL: ${PINHAOZHAN_API_BASE_URL:-https://pinhaozhan.vip}
     depends_on:
@@ -173,6 +175,8 @@ services:
       VOLCENGINE_ARK_API_KEY: ${VOLCENGINE_ARK_API_KEY:-}
       VOLCENGINE_ARK_API_BASE_URL: ${VOLCENGINE_ARK_API_BASE_URL:-https://ark.cn-beijing.volces.com/api/v3}
       VOLCENGINE_ARK_CATALOG_URL: ${VOLCENGINE_ARK_CATALOG_URL:-https://ark.cn-beijing.volces.com/api/v3/models}
+      AIGATEWAY_TOKEN: ${AIGATEWAY_TOKEN:-}
+      WANGSU_API_BASE_URL: ${WANGSU_API_BASE_URL:-https://api.edgecloudapp.com/v2/llm/doubao}
       PINHAOZHAN_API_KEY: ${PINHAOZHAN_API_KEY:-}
       PINHAOZHAN_API_BASE_URL: ${PINHAOZHAN_API_BASE_URL:-https://pinhaozhan.vip}
     depends_on:

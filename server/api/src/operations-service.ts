@@ -149,7 +149,7 @@ export interface OperationsServicePort {
   adminProviders(userId: string): Promise<unknown>;
   setManagedProvider(
     userId: string,
-    providerId: "token360" | "runninghub" | "runninghub_global" | "volcengine_ark",
+    providerId: "token360" | "runninghub" | "runninghub_global" | "volcengine_ark" | "wangsu",
     requestId: string,
   ): Promise<unknown>;
   adminUsers(userId: string, query: AdminListQuery): Promise<unknown>;
@@ -1198,7 +1198,7 @@ export class OperationsService implements OperationsServicePort {
     );
     const providers = await this.pool.query(
       "select provider_id,display_name,enabled,updated_at from provider_configs where provider_id=any($1::text[]) order by provider_id",
-      [["token360", "runninghub", "runninghub_global", "volcengine_ark"]],
+      [["token360", "runninghub", "runninghub_global", "volcengine_ark", "wangsu"]],
     );
     return {
       activeProviderId: String(active.rows[0]?.provider_id || "token360"),
@@ -1214,14 +1214,14 @@ export class OperationsService implements OperationsServicePort {
 
   async setManagedProvider(
     userId: string,
-    providerId: "token360" | "runninghub" | "runninghub_global" | "volcengine_ark",
+    providerId: "token360" | "runninghub" | "runninghub_global" | "volcengine_ark" | "wangsu",
     requestId: string,
   ) {
     await this.requireAdmin(userId);
     if (!this.providerAvailability[providerId])
       throw new DomainError(
         "PROVIDER_NOT_CONFIGURED",
-        `${providerId === "token360" ? "Token360" : providerId === "runninghub_global" ? "海马云国际区" : providerId === "volcengine_ark" ? "火山方舟" : "海马云中国区"} API Key 尚未配置`,
+        `${providerId === "token360" ? "Token360" : providerId === "runninghub_global" ? "海马云国际区" : providerId === "volcengine_ark" ? "火山方舟" : providerId === "wangsu" ? "网宿 AI" : "海马云中国区"} API Key 尚未配置`,
         422,
       );
     await this.pool.query(

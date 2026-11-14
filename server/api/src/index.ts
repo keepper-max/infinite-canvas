@@ -76,6 +76,7 @@ await modelGateway
     ),
   );
 await modelGateway.refreshVolcengineArkCatalog();
+await modelGateway.refreshWangsuCatalog();
 if (config.pinhaozhan?.apiKey) await modelGateway.refreshPinhaozhanCatalog();
 const jobQueue = createQueue(config.jobs);
 const creditService = new CreditService(
@@ -118,6 +119,7 @@ const operationsService = new OperationsService(
     runninghub: Boolean(config.runningHub.apiKey),
     runninghub_global: Boolean(config.runningHubGlobal.apiKey),
     volcengine_ark: Boolean(config.volcengineArk.apiKey),
+    wangsu: Boolean(config.wangsu?.apiKey),
   },
   paymentService,
 );

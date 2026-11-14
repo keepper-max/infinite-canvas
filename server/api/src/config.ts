@@ -11,6 +11,7 @@ export type ApiConfig = {
   runningHub: RunningHubConfig;
   runningHubGlobal: RunningHubConfig;
   volcengineArk: ProviderConfig;
+  wangsu?: ProviderConfig;
   pinhaozhan?: ProviderConfig;
   operations: OperationsConfig;
   payments: PaymentConfig;
@@ -259,6 +260,11 @@ export function readConfig(env: NodeJS.ProcessEnv = process.env): ApiConfig {
     runningHub,
     runningHubGlobal,
     volcengineArk,
+    wangsu: {
+      baseUrl: (env.WANGSU_API_BASE_URL?.trim() || "https://api.edgecloudapp.com/v2/llm/doubao").replace(/\/+$/, ""),
+      apiKey: env.AIGATEWAY_TOKEN?.trim() || "",
+      catalogUrl: "",
+    },
     pinhaozhan: {
       baseUrl: (env.PINHAOZHAN_API_BASE_URL?.trim() || "https://pinhaozhan.vip").replace(/\/+$/, ""),
       apiKey: env.PINHAOZHAN_API_KEY?.trim() || "",
