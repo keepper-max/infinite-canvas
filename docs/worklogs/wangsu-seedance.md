@@ -20,4 +20,4 @@
 
 - API/Web 类型检查通过；72 项定向测试全部通过，覆盖模型目录、创建/查询、参考角色、失败/缺结果/鉴权失败、四档成本、用量缺失与现有任务/账本/积分回归。命令：API 目录运行 `node --import tsx --test --test-concurrency=1 tests/wangsu-provider.test.ts tests/volcengine-ark-provider.test.ts tests/billing-service.test.ts tests/model-gateway.test.ts tests/job-service.test.ts tests/credit-service.test.ts`，API/Web 分别运行 `npm run typecheck`。
 - 修正 Token360 按同名上游模型更新所有渠道的问题，限定更新自身渠道，避免覆盖网宿原生参数。
-- 未执行生产迁移、未部署、未注入真实密钥、未发起付费视频；生产真实响应、下载入库和积分扣款仍需验收。未执行完整构建或数据库集成测试。
+- 已发布 v0.16.68：API/Web生产构建通过，API与Worker候选镜像各72项Linux测试通过；100张表备份恢复摘要一致，新迁移已在恢复库及生产执行。服务端密钥已配置，网宿只读模型鉴权通过，后台与服务健康验证通过；未发起付费视频，真实终态用量、下载入库和积分扣款仍待验收。详见 `ops/releases/v0.16.68-wangsu-seedance.md`。
