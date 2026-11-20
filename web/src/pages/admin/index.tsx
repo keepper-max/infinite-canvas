@@ -1707,7 +1707,7 @@ function ModelsPanel({ provider }: { provider: AdminProvider["id"] }) {
     return (
         <Panel
             title={`${current?.displayName || provider} 模型`}
-            note={`${items.filter((item) => item.healthy).length}/${items.length} 正常 · ${current?.configured ? "密钥已配置" : "密钥未配置"}${provider === "wangsu" ? " · 仅提供视频，设为画布渠道后其他类型模型将不可选" : ""}`}
+            note={`${items.filter((item) => item.healthy).length}/${items.length} 正常 · ${current?.configured ? "密钥已配置" : "密钥未配置"}${provider === "wangsu" ? " · 提供图片和视频，设为画布渠道后文字和音频模型将不可选" : ""}`}
             actions={
                 <Button
                     type={active ? "default" : "primary"}

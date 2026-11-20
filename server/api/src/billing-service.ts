@@ -7,6 +7,7 @@ import { DomainError } from "./domain.js";
 import { hasUnconfirmedSubmission } from "./provider-submission.js";
 import type { ManualBillingResolutionInput } from "./operations-contract.js";
 import { volcengineArkAmount } from "./volcengine-ark-pricing.js";
+import { wangsuAmount } from "./wangsu-pricing.js";
 
 const TERMINAL_JOB_STATUSES = ["completed", "failed", "cancelled", "billing_pending"];
 const RECONCILE_DELAYS_SECONDS = [30, 120, 300, 900];
@@ -537,16 +538,8 @@ export class BillingService {
   private async settleDirectProvider(job: Record<string, unknown>) {
     const usage = asRecord(job.billing_meter_usage);
     const compiled = asRecord(job.compiled_request);
-    // Wangsu's verified catalog currently covers only this video model.
-    const videoTokens = usage.completion_tokens ?? usage.total_tokens;
-    if (job.provider === "wangsu" && (
-      job.capability !== "video" || compiled.upstreamModel !== "doubao-seedance-2-5-260628" ||
-      (usage.billable !== false && (
-        !["string", "number"].includes(typeof videoTokens) || String(videoTokens).trim() === ""
-      ))
-    )) return this.reviewWangsuUsage(String(job.id));
     const providerPaidAmount = isArkMeteredProvider(job.provider)
-      ? volcengineArkAmount({
+      ? (job.provider === "wangsu" ? wangsuAmount : volcengineArkAmount)({
           upstreamModel: stringValue(compiled.upstreamModel) || "",
           capability: String(job.capability || ""),
           usage,
@@ -560,6 +553,9 @@ export class BillingService {
         decimalValue(usage.consume_money);
     if (job.provider === "wangsu" && providerPaidAmount === null)
       return this.reviewWangsuUsage(String(job.id));
+    const currency = job.provider === "wangsu"
+      ? (job.capability === "image" ? "USD" : "CNY")
+      : ["runninghub_global", "pinhaozhan"].includes(String(job.provider)) && stringValue(usage.currency)?.toUpperCase() === "USD" ? "USD" : "CNY";
     const ruleSnapshot = billingRuleSnapshot(job.billing_rule_snapshot);
     const originalAmount = isRunningHubProvider(job.provider)
       ? runningHubOriginalAmount(ruleSnapshot, providerPaidAmount)
@@ -569,6 +565,7 @@ export class BillingService {
           ...usage,
           third_party_consume_money: providerPaidAmount,
           billing_amount_source: job.provider === "wangsu" ? "wangsu_model_catalog" : "volcengine_official_list_price_2026-10-01",
+          ...(job.provider === "wangsu" ? { currency } : {}),
         }
       : providerPaidAmount !== null && originalAmount !== providerPaidAmount
         ? {
@@ -580,8 +577,8 @@ export class BillingService {
             billing_amount_source: "versioned_rule_snapshot",
           }
         : usage;
-    const promptTokens = integerValue(usage.prompt_tokens);
-    const completionTokens = integerValue(usage.completion_tokens);
+    const promptTokens = integerValue(usage.prompt_tokens ?? (job.provider === "wangsu" ? usage.input_tokens : undefined));
+    const completionTokens = integerValue(usage.completion_tokens ?? (job.provider === "wangsu" ? usage.output_tokens : undefined));
     const totalTokens = integerValue(usage.total_tokens);
     const billingSeconds = decimalValue(usage.billing_seconds);
     const consumedCoins = decimalValue(usage.consume_coins);
@@ -607,13 +604,6 @@ export class BillingService {
       String(job.id);
     const billingRequestId = `${String(job.provider)}:${providerRequestId}`;
     const parameters = asRecord(job.parameters);
-    // Standard RunningHub generation reports consume-money in CNY. The global
-    // OpenAI-compatible LLM route is priced from its official USD token catalog.
-    const currency =
-      ["runninghub_global", "pinhaozhan"].includes(String(job.provider)) &&
-      stringValue(usage.currency)?.toUpperCase() === "USD"
-        ? "USD"
-        : "CNY";
     await this.pool.query(
       `insert into generation_usage(job_id,project_id,user_id,billing_request_id,provider,model_id,capability,status,billed,credit_status,
         prompt_tokens,completion_tokens,total_tokens,audio_duration_seconds,video_duration_seconds,requested_seconds,

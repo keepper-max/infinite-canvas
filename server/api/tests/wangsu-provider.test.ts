@@ -35,13 +35,14 @@ test("网宿凭据只从服务端环境读取，原生接口地址不重复拼�
   assert.equal(readConfig(env).wangsu?.baseUrl, config.baseUrl);
 });
 
-test("网宿目录只新增 Seedance 2.5，保留已有启停状态与原生视频模式", async () => {
+test("网宿目录包含 Seedance 与两个图片型号，保留已有启停状态和视频模式", async () => {
   const calls: Array<{ sql: string; values?: unknown[] }> = [];
   const gateway = new ModelGateway({ async query(sql: string, values?: unknown[]) {
     calls.push({ sql, values });
     return { rows: [], rowCount: 1 };
   } } as never);
-  assert.equal(await gateway.refreshWangsuCatalog(), 1);
+  assert.equal(await gateway.refreshWangsuCatalog(), 3);
+  assert.deepEqual(calls.filter((call) => call.sql.includes("insert into model_catalog")).map((call) => call.values?.[3]), [request.upstreamModel, "gpt-image-2.5-flare", "gpt-image-2.5-sunburst"]);
   const model = calls.find((call) => call.sql.includes("insert into model_catalog"));
   assert.equal(model?.values?.[0], request.modelId);
   assert.equal(model?.values?.[3], request.upstreamModel);

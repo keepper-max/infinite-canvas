@@ -14,6 +14,7 @@ import {
 } from "./provider.js";
 import { RunningHubProvider } from "./runninghub-provider.js";
 import { VolcengineArkProvider } from "./volcengine-ark-provider.js";
+import { WangsuProvider } from "./wangsu-provider.js";
 import { ProviderRouter } from "./provider-router.js";
 import {
   isStalledQueueJobError,
@@ -104,7 +105,7 @@ const provider = new ProviderRouter(
     ],
     ...(config.wangsu ? [[
       "wangsu",
-      new VolcengineArkProvider(config.wangsu, config.jobs.submitTimeoutMs, storage, "wangsu_model_catalog", false),
+      new WangsuProvider(config.wangsu, config.jobs.submitTimeoutMs, storage),
     ] as [string, GenerationProvider]] : []),
   ]),
 );

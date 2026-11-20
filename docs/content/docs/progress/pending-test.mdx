@@ -5,6 +5,8 @@ description: Implemented changes that still need manual verification
 
 # Pending Tests
 
+- 网宿 GPT Image 2.5（本地待发布）：增加 Flare/Sunburst 文生图、参考图编辑及美元Token积分结算，视频继续走原生接口；84项定向回归及API/Web类型检查通过，实际供应商图片生成、编辑素材兼容、终态细分用量和扣分仍需有预算的验收。详见 `docs/worklogs/wangsu-gpt-image25.md`。
+
 - 网宿 Seedance 2.5 已发布v0.16.68：后台新增「模型 → 网宿 AI」，服务端密钥已配置，模型启用且正常；API/Web构建、API/Worker各72项Linux回归、100表备份恢复、新迁移及双域名健康/资源哈希/后台权限验证通过。当前仍使用Token360渠道，5/10秒时长；未发起付费生成，真实终态用量、资产下载和扣分仍待有预算的验收。详见 `ops/releases/v0.16.68-wangsu-seedance.md`。
 
 - 官网独立紫微排盘：`/ziwei/` 及首页导航/页脚入口已上线，支持单人命盘、本机保存与刷新恢复、JSON 导出、格局知识资料复制及网页内 DeepSeek V4.1 Flash 1017 解读（同 IP 滚动24小时2次）；输入改变后拦截旧结果导出。类型、构建、8 项单测和桌面/手机官网端到端通过，详见 `docs/worklogs/ziwei/verification.md`。公网浏览器复验通过；真实模型两次成功、相同请求缓存及第三次429已验证（含伪造IP头）；Redis 并发/持久计次和失效拦截已验证；自动经度/历史时区及跨设备保存未实现。早先误接的画布改动已撤回。

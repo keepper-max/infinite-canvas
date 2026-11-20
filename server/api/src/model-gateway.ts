@@ -207,9 +207,7 @@ export class ModelGateway {
   async refreshWangsuCatalog() {
     return this.replaceRunningHubCatalog(
       "wangsu",
-      volcengineArkCatalogItems()
-        .filter((item) => item.endpoint === "doubao-seedance-2-5-260628")
-        .map((item) => ({ ...item, model: item.endpoint })),
+      wangsuCatalogItems(),
     );
   }
 
@@ -506,6 +504,16 @@ export function runningHubModelProfile(
       },
     };
   const params = runningHubParameters(candidate.params);
+  if (candidate.category === "Wangsu Image") {
+    const scalar = params.filter((item) => item.sourceType !== "IMAGE" && !isPromptField(item.upstreamKey));
+    return {
+      capability: "image", modes: ["t2i", "i2i"],
+      acceptedParameters: [...scalar.map((item) => item.key), "references"],
+      requiredParametersByMode: { i2i: ["references"] },
+      limits: { maxVideos: 0, maxAudios: 0, parameterSchema: scalar.map((item) => item.publicDefinition) },
+      parameterMap: Object.fromEntries(scalar.map((item) => [item.key, item.upstreamKey])),
+    };
+  }
   const promptField = findRunningHubPromptField(params);
   const scalar = params.filter(
     (item) =>
@@ -1269,6 +1277,26 @@ const VOLCENGINE_ARK_MODELS: Array<Record<string, unknown>> =
 
 export function volcengineArkCatalogItems() {
   return VOLCENGINE_ARK_MODELS;
+}
+
+export function wangsuCatalogItems(): Array<Record<string, unknown>> {
+  return [
+    ...volcengineArkCatalogItems()
+      .filter((item) => item.endpoint === "doubao-seedance-2-5-260628")
+      .map((item) => ({ ...item, model: item.endpoint })),
+    ...["flare", "sunburst"].map((variant) => ({
+      endpoint: `gpt-image-2.5-${variant}`,
+      display_name: `GPT Image 2.5 ${variant === "flare" ? "Flare" : "Sunburst"}`,
+      output_type: "image", category: "Wangsu Image",
+      params: [
+        { fieldKey: "prompt", type: "STRING", required: true },
+        ...RUNNINGHUB_GLOBAL_IMAGE_PARAMS.filter((item) => item.fieldKey !== "prompt" && item.fieldKey !== "quality"),
+        { fieldKey: "quality", type: "LIST", options: ["auto", "low", "medium", "high", "xhigh", "max"] },
+        { fieldKey: "n", type: "INT" },
+        { fieldKey: "image", type: "IMAGE", multipleInputs: true },
+      ],
+    })),
+  ];
 }
 
 export function runningHubGlobalTextCatalogItems(payload: unknown) {
