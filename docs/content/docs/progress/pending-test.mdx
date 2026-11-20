@@ -5,7 +5,7 @@ description: Implemented changes that still need manual verification
 
 # Pending Tests
 
-- 网宿图片待核费修复：兼容供应商省略零图片/文字输入Token，但仅在另一分项等于输入总数时补零，其他缺失继续待核账。85项定向回归和API类型检查通过，准备备份后以原回执恢复已有图片，不重发模型。
+- 网宿图片待核费修复已发布v0.16.70：省略零输入Token仅在总数等式可唯一证明时补零；本地/API/Worker各85项回归、100表备份恢复与隔离原回执重复结算验证通过。原截图任务已恢复1536×864 PNG交付，按原回执首次结算29积分，扣费1次，无新模型调用；其他实际字段组合仍持续观察。详见 `ops/releases/v0.16.70-wangsu-zero-input.md`。
 
 - 网宿 GPT Image 2.5 已发布v0.16.69：Flare/Sunburst文生图和参考图编辑接入，现有令牌目录已含两个型号；API/Web构建、候选API/Worker各84项Linux回归、100表备份恢复、新迁移和双域名健康/资源哈希/后台权限验证通过。沿用发布前已有网宿活动渠道，未付费生成；实际编辑素材兼容、终态细分用量和扣分仍待有预算的验收。详见 `ops/releases/v0.16.69-wangsu-image25.md`。
 
