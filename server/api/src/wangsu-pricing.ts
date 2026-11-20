@@ -11,8 +11,14 @@ export function wangsuAmount(input: PricingInput): string | null {
   if (input.capability !== "image" || !["gpt-image-2.5-flare", "gpt-image-2.5-sunburst"].includes(input.upstreamModel)) return null;
   if (input.usage.billable === false) return "0";
   const details = record(input.usage.input_tokens_details);
-  const text = count(details.text_tokens), image = count(details.image_tokens);
+  let text = count(details.text_tokens), image = count(details.image_tokens);
   const output = count(input.usage.output_tokens), totalInput = count(input.usage.input_tokens);
+  // The gateway omits zero-valued subtypes. Infer zero only when the other
+  // subtype accounts for the entire independently reported input total.
+  if (totalInput !== null) {
+    if (details.image_tokens === undefined && text === totalInput) image = 0;
+    if (details.text_tokens === undefined && image === totalInput) text = 0;
+  }
   // Cache subtype attribution has not been verified on this gateway; never guess a discount.
   if (text === null || image === null || output === null || output < 1 || totalInput === null || text + image !== totalInput) return null;
   if (details.cached_tokens !== undefined && count(details.cached_tokens) !== 0) return null;

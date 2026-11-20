@@ -103,6 +103,19 @@ test("图片金额按文字/图片输入及输出分档计算，未知或不完�
   }
 });
 
+test("网宿实际回执省略零分项时仅凭总量等式补零，缺失和不一致继续待核账", () => {
+  const input = { upstreamModel: "gpt-image-2.5-flare", capability: "image", usage: {
+    input_tokens: 395, input_tokens_details: { text_tokens: 395 }, output_tokens: 1078,
+    total_tokens: 1473, output_tokens_details: { image_tokens: 1078 },
+  } };
+  assert.equal(wangsuAmount(input), "0.034315");
+  assert.equal(wangsuAmount({ ...input, usage: { input_tokens: 200, input_tokens_details: { image_tokens: 200 }, output_tokens: 1000 } }), "0.0316");
+  for (const details of [{}, { text_tokens: 394 }, { text_tokens: 396 }, { text_tokens: 395, image_tokens: null }, { text_tokens: 395, image_tokens: "" }, { image_tokens: 394 }]) {
+    assert.equal(wangsuAmount({ ...input, usage: { ...input.usage, input_tokens_details: details } }), null);
+  }
+  assert.equal(wangsuAmount({ ...input, usage: { ...input.usage, input_tokens: undefined } }), null);
+});
+
 test("图片金额写入USD账本并交给既有积分结算，缺细分用量保留预留", async () => {
   for (const complete of [true, false]) {
     const calls: Array<{ sql: string; values?: unknown[] }> = [];
